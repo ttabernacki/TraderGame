@@ -1,6 +1,7 @@
 import type { GameState, Caravan, TradeRoute, RouteStop } from "./types";
 import { executeTrade } from "./economy";
 import { caravanCargoUnits, dispatchCaravan } from "./caravan";
+import { depositToWarehouse, withdrawFromWarehouse } from "./warehouse";
 import { CITY_BY_ID } from "../data/cities";
 import { GOOD_BY_ID } from "../data/goods";
 import { pushLog } from "./log";
@@ -93,27 +94,41 @@ export function tickRoutesDay(state: GameState) {
 function executeStopOrders(state: GameState, caravan: Caravan, stop: RouteStop, route: TradeRoute) {
   const parts: string[] = [];
 
-  // Sells first to free capacity and raise cash for the buys.
-  for (const order of stop.orders) {
-    if (order.mode !== "sell") continue;
+  // Outflows first (sell, unload) to free capacity and raise cash, then
+  // inflows (buy, load). Within those, the order they're listed is preserved.
+  const outflow = stop.orders.filter((o) => o.mode === "sell" || o.mode === "unload");
+  const inflow = stop.orders.filter((o) => o.mode === "buy" || o.mode === "load");
+
+  for (const order of outflow) {
     const have = caravan.cargo[order.goodId] ?? 0;
     const maxUnits = order.qty === "all" ? have : Math.min(have, order.qty);
-    const res = executeTrade(state, stop.cityId, order.goodId, "sell", maxUnits, order.limit);
-    if (res.units > 0) {
-      caravan.cargo[order.goodId] = have - res.units;
-      parts.push(`sold ${res.units} ${GOOD_BY_ID[order.goodId].name} (+${res.gold}ɡ)`);
+    if (maxUnits <= 0) continue;
+    if (order.mode === "sell") {
+      const res = executeTrade(state, stop.cityId, order.goodId, "sell", maxUnits, order.limit);
+      if (res.units > 0) {
+        caravan.cargo[order.goodId] = have - res.units;
+        parts.push(`sold ${res.units} ${GOOD_BY_ID[order.goodId].name} (+${res.gold}ɡ)`);
+      }
+    } else {
+      const moved = depositToWarehouse(state, caravan.id, stop.cityId, order.goodId, maxUnits);
+      if (moved > 0) parts.push(`stored ${moved} ${GOOD_BY_ID[order.goodId].name}`);
     }
   }
 
-  for (const order of stop.orders) {
-    if (order.mode !== "buy") continue;
+  for (const order of inflow) {
     const space = caravan.capacity - caravanCargoUnits(caravan);
     if (space <= 0) break;
     const maxUnits = order.qty === "all" ? space : Math.min(space, order.qty);
-    const res = executeTrade(state, stop.cityId, order.goodId, "buy", maxUnits, order.limit);
-    if (res.units > 0) {
-      caravan.cargo[order.goodId] = (caravan.cargo[order.goodId] ?? 0) + res.units;
-      parts.push(`bought ${res.units} ${GOOD_BY_ID[order.goodId].name} (−${res.gold}ɡ)`);
+    if (maxUnits <= 0) continue;
+    if (order.mode === "buy") {
+      const res = executeTrade(state, stop.cityId, order.goodId, "buy", maxUnits, order.limit);
+      if (res.units > 0) {
+        caravan.cargo[order.goodId] = (caravan.cargo[order.goodId] ?? 0) + res.units;
+        parts.push(`bought ${res.units} ${GOOD_BY_ID[order.goodId].name} (−${res.gold}ɡ)`);
+      }
+    } else {
+      const moved = withdrawFromWarehouse(state, caravan.id, stop.cityId, order.goodId, maxUnits, space);
+      if (moved > 0) parts.push(`loaded ${moved} ${GOOD_BY_ID[order.goodId].name}`);
     }
   }
 

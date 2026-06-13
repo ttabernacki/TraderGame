@@ -58,13 +58,25 @@ export interface Caravan {
   loadingDays: number;
 }
 
+// buy:    market  -> caravan (costs gold)
+// sell:   caravan -> market  (earns gold)
+// unload: caravan -> warehouse (free; requires a warehouse in the city)
+// load:   warehouse -> caravan (free; requires a warehouse in the city)
+export type RouteOrderMode = "buy" | "sell" | "unload" | "load";
+
 export interface RouteOrder {
   goodId: GoodId;
-  mode: "buy" | "sell";
-  // "all" = fill remaining capacity (buy) / sell everything carried (sell).
+  mode: RouteOrderMode;
+  // "all" = fill remaining capacity (buy/load) / move everything held (sell/unload).
   qty: number | "all";
-  // Buy: refuse to pay more than this. Sell: refuse to accept less.
+  // Buy: refuse to pay more than this. Sell: refuse to accept less. (Ignored for load/unload.)
   limit?: number;
+}
+
+export interface Warehouse {
+  cityId: CityId;
+  goods: Record<GoodId, number>;
+  capacity: number;
 }
 
 export interface RouteStop {
@@ -130,8 +142,11 @@ export interface GameState {
   markets: Record<CityId, CityMarket>;
   caravans: Caravan[];
   routes: TradeRoute[];
+  warehouses: Record<CityId, Warehouse>;
   intel: Record<CityId, MarketIntel>;
   family: FamilyMember[];
+  // Which caravan the inline city trade panel is acting on (per session, not saved logic).
+  activeTradeCaravan: string | null;
   log: LogEntry[];
   milestones: MilestoneEvent[];
   selection:
@@ -144,7 +159,6 @@ export interface GameState {
 }
 
 export type ModalState =
-  | { kind: "trade"; caravanId: string; cityId: CityId }
   | { kind: "milestone"; eventId: string }
   | { kind: "routes" }
   | { kind: "route-edit"; routeId: string };

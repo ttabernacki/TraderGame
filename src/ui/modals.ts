@@ -1,10 +1,8 @@
 import type { GameState, GoodId, TradeRoute, RouteOrder } from "../game/types";
-import { GOODS, GOOD_BY_ID } from "../data/goods";
+import { GOODS } from "../data/goods";
 import { CITIES, CITY_BY_ID } from "../data/cities";
-import { caravanCargoUnits } from "../game/caravan";
-import { executeTrade } from "../game/economy";
 import { createRoute, deleteRoute, caravansOnRoute } from "../game/routes";
-import { pushLog } from "../game/log";
+import { hasWarehouse } from "../game/warehouse";
 import { formatDateShort } from "../game/time";
 
 export interface ModalUI {
@@ -21,9 +19,6 @@ export function renderModal(state: GameState, ui: ModalUI) {
   switch (state.modal.kind) {
     case "milestone":
       renderMilestone(state, root, ui);
-      break;
-    case "trade":
-      renderTrade(state, root, ui);
       break;
     case "routes":
       renderRoutesList(state, root, ui);
@@ -51,104 +46,6 @@ function renderMilestone(state: GameState, root: HTMLElement, ui: ModalUI) {
     </div>
   `;
   root.querySelector<HTMLButtonElement>("#modal-dismiss")?.addEventListener("click", () => ui.close());
-}
-
-// ---- Trade dialog ----
-
-function renderTrade(state: GameState, root: HTMLElement, ui: ModalUI) {
-  if (state.modal?.kind !== "trade") return;
-  const { caravanId, cityId } = state.modal;
-  const caravan = state.caravans.find((c) => c.id === caravanId);
-  const city = CITY_BY_ID[cityId];
-  if (!caravan || !city || caravan.cityId !== cityId) { root.innerHTML = ""; return; }
-  const market = state.markets[cityId];
-  const cargo = caravanCargoUnits(caravan);
-  const space = caravan.capacity - cargo;
-
-  const rows = GOODS.map((g) => {
-    const have = caravan.cargo[g.id] ?? 0;
-    const stock = Math.round(market.stock[g.id]);
-    const price = market.prices[g.id];
-    return `
-      <div class="trade-good-row">
-        <div class="good-name"><span class="good-glyph">${g.glyph}</span>
-          <div>
-            <div>${g.name}</div>
-            <div style="font-size:11px; color: var(--ink-faded);">price ${price}ɡ · stock ${stock} · carry ${have}</div>
-          </div>
-        </div>
-        <button class="action" data-action="sell-all" data-good="${g.id}" ${have <= 0 ? "disabled" : ""}>Sell all</button>
-        <div class="qty-controls">
-          <button class="qty-btn" data-action="sell" data-good="${g.id}" ${have <= 0 ? "disabled" : ""}>−</button>
-          <div class="qty-val">${have}</div>
-          <button class="qty-btn" data-action="buy" data-good="${g.id}">+</button>
-        </div>
-        <button class="action" data-action="buy-max" data-good="${g.id}">Buy max</button>
-      </div>
-    `;
-  }).join("");
-
-  root.innerHTML = `
-    <div class="modal-bg">
-      <div class="modal" style="max-width: 640px;">
-        <div class="modal-title">${city.name} — Market</div>
-        <div style="display:flex; justify-content: space-between; font-size:12px; color: var(--ink-faded); margin-bottom: 10px;">
-          <span>${caravan.name} · cargo ${cargo}/${caravan.capacity} (${space} free)</span>
-          <span>Treasury: ${state.treasury.toLocaleString("de-DE")} ɡ</span>
-        </div>
-        <div style="font-size:11px; color: var(--ink-faded); margin-bottom:8px; font-style:italic;">
-          Prices shift as you trade — large orders move shallow markets.
-        </div>
-        ${rows}
-        <div class="modal-actions">
-          <button class="action" id="modal-dismiss">Close</button>
-        </div>
-      </div>
-    </div>
-  `;
-  root.querySelector<HTMLButtonElement>("#modal-dismiss")?.addEventListener("click", () => ui.close());
-  root.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const good = btn.dataset.good as GoodId;
-      const action = btn.dataset.action!;
-      if (action === "buy") manualTrade(state, caravanId, cityId, good, "buy", 1);
-      else if (action === "sell") manualTrade(state, caravanId, cityId, good, "sell", 1);
-      else if (action === "buy-max") manualTrade(state, caravanId, cityId, good, "buy", Infinity);
-      else if (action === "sell-all") manualTrade(state, caravanId, cityId, good, "sell", Infinity);
-      ui.refresh();
-    });
-  });
-}
-
-function manualTrade(
-  state: GameState,
-  caravanId: string,
-  cityId: string,
-  good: GoodId,
-  mode: "buy" | "sell",
-  qty: number,
-) {
-  const caravan = state.caravans.find((c) => c.id === caravanId);
-  if (!caravan) return;
-  if (mode === "buy") {
-    const space = caravan.capacity - caravanCargoUnits(caravan);
-    const maxUnits = Math.min(qty, space);
-    const res = executeTrade(state, cityId, good, "buy", maxUnits);
-    if (res.units > 0) {
-      caravan.cargo[good] = (caravan.cargo[good] ?? 0) + res.units;
-      const avg = (res.gold / res.units).toFixed(1);
-      pushLog(state, `Bought ${res.units} ${GOOD_BY_ID[good].name} in ${CITY_BY_ID[cityId].name} (avg ${avg}ɡ, total ${res.gold}ɡ).`, "trade");
-    }
-  } else {
-    const have = caravan.cargo[good] ?? 0;
-    const maxUnits = Math.min(qty, have);
-    const res = executeTrade(state, cityId, good, "sell", maxUnits);
-    if (res.units > 0) {
-      caravan.cargo[good] = have - res.units;
-      const avg = (res.gold / res.units).toFixed(1);
-      pushLog(state, `Sold ${res.units} ${GOOD_BY_ID[good].name} in ${CITY_BY_ID[cityId].name} (avg ${avg}ɡ, total ${res.gold}ɡ).`, "trade");
-    }
-  }
 }
 
 // ---- Routes list ----
@@ -220,19 +117,28 @@ function cityOptions(): string {
     .join("");
 }
 
-function orderRow(stopIdx: number, orderIdx: number, order: RouteOrder, intelPrice: number | null): string {
+function orderRow(stopIdx: number, orderIdx: number, order: RouteOrder, intelPrice: number | null, hasWh: boolean): string {
+  const whOpts = hasWh
+    ? `<option value="unload" ${order.mode === "unload" ? "selected" : ""}>Store</option>
+       <option value="load" ${order.mode === "load" ? "selected" : ""}>Load</option>`
+    : "";
+  const isMarket = order.mode === "buy" || order.mode === "sell";
+  const limitField = isMarket
+    ? `<input type="number" min="1" placeholder="any ɡ" value="${order.limit ?? ""}"
+        data-edit="order-limit" data-stop="${stopIdx}" data-order="${orderIdx}"
+        title="${order.mode === "buy" ? "Max price to pay" : "Min price to accept"}" />`
+    : `<span class="order-intel" style="opacity:0.5;">whs</span>`;
   return `
     <div class="order-row">
       <select data-edit="order-good" data-stop="${stopIdx}" data-order="${orderIdx}">${goodOptions(order.goodId)}</select>
       <select data-edit="order-mode" data-stop="${stopIdx}" data-order="${orderIdx}">
         <option value="buy" ${order.mode === "buy" ? "selected" : ""}>Buy</option>
         <option value="sell" ${order.mode === "sell" ? "selected" : ""}>Sell</option>
+        ${whOpts}
       </select>
       <input type="number" min="1" placeholder="all" value="${order.qty === "all" ? "" : order.qty}"
-        data-edit="order-qty" data-stop="${stopIdx}" data-order="${orderIdx}" title="Quantity (blank = fill capacity / sell everything)" />
-      <input type="number" min="1" placeholder="any ɡ" value="${order.limit ?? ""}"
-        data-edit="order-limit" data-stop="${stopIdx}" data-order="${orderIdx}"
-        title="${order.mode === "buy" ? "Max price to pay" : "Min price to accept"}" />
+        data-edit="order-qty" data-stop="${stopIdx}" data-order="${orderIdx}" title="Quantity (blank = as much as possible)" />
+      ${limitField}
       <span class="order-intel">${intelPrice !== null ? `~${intelPrice}ɡ` : "?"}</span>
       <button class="qty-btn" data-edit="order-del" data-stop="${stopIdx}" data-order="${orderIdx}">✕</button>
     </div>
@@ -252,8 +158,9 @@ function renderRouteEditor(state: GameState, root: HTMLElement, ui: ModalUI) {
   const stopCards = route.stops.map((stop, si) => {
     const city = CITY_BY_ID[stop.cityId];
     const intel = state.intel[stop.cityId];
+    const hasWh = hasWarehouse(state, stop.cityId);
     const orders = stop.orders.map((o, oi) =>
-      orderRow(si, oi, o, intel ? intel.prices[o.goodId] : null)
+      orderRow(si, oi, o, intel ? intel.prices[o.goodId] : null, hasWh)
     ).join("");
     const intelNote = intel
       ? `prices as of ${formatDateShort(intel.date)}`
@@ -339,7 +246,7 @@ function renderRouteEditor(state: GameState, root: HTMLElement, ui: ModalUI) {
   });
   root.querySelectorAll<HTMLSelectElement>("[data-edit='order-mode']").forEach((e) => {
     e.addEventListener("change", () => {
-      route.stops[Number(e.dataset.stop)].orders[Number(e.dataset.order)].mode = e.value as "buy" | "sell";
+      route.stops[Number(e.dataset.stop)].orders[Number(e.dataset.order)].mode = e.value as RouteOrder["mode"];
       ui.refresh();
     });
   });

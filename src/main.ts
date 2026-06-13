@@ -7,10 +7,16 @@ import { renderHUD } from "./ui/hud";
 import { renderBottomBar } from "./ui/bottomBar";
 import { renderEventLog } from "./ui/eventLog";
 import { renderSidePanel, PanelActions } from "./ui/sidePanel";
+import { renderFleetRoster } from "./ui/fleetRoster";
 import { renderModal } from "./ui/modals";
-import { dispatchCaravan, hireCaravan } from "./game/caravan";
+import { dispatchCaravan, hireCaravan, caravanCargoUnits } from "./game/caravan";
 import { assignCaravanToRoute } from "./game/routes";
-import type { Speed, GameState } from "./game/types";
+import { executeTrade } from "./game/economy";
+import { rentWarehouse, depositToWarehouse, withdrawFromWarehouse } from "./game/warehouse";
+import { GOOD_BY_ID } from "./data/goods";
+import { CITY_BY_ID } from "./data/cities";
+import { pushLog } from "./game/log";
+import type { Speed, GameState, GoodId } from "./game/types";
 
 const state: GameState = makeInitialState();
 (window as unknown as { __state: GameState }).__state = state;
@@ -99,8 +105,23 @@ function refreshHtmlUI() {
   renderHUD(state);
   renderBottomBar(state, setSpeed, openRoutes);
   renderEventLog(state);
+  renderFleetRoster(state, rosterActions);
   renderSidePanel(state, panelActions);
   renderModal(state, modalUI);
+}
+
+function centerOnCity(cityId: string) {
+  const pos = lastRender.cityPositions[cityId];
+  if (!pos) return;
+  // Recenter the camera so the city sits near screen centre.
+  const vp = viewport();
+  camera.x = vp.width / 2 - pos.x;
+  camera.y = vp.height / 2 - pos.y;
+}
+
+function centerOnCaravan(c: { cityId: string | null; fromCityId: string | null }) {
+  const id = c.cityId ?? c.fromCityId;
+  if (id) centerOnCity(id);
 }
 
 function setSpeed(s: Speed) {
@@ -119,14 +140,54 @@ const modalUI = {
   refresh: () => { needsHtmlRefresh = true; },
 };
 
+// ---- Trade / warehouse action handlers (shared by panel) ----
+
+function doTrade(caravanId: string, cityId: string, goodId: GoodId, dir: "buy" | "sell", qty: number | "max" | "all") {
+  const caravan = state.caravans.find((c) => c.id === caravanId);
+  if (!caravan || caravan.cityId !== cityId) return;
+  if (dir === "buy") {
+    const space = caravan.capacity - caravanCargoUnits(caravan);
+    const maxUnits = qty === "max" ? space : Math.min(qty as number, space);
+    const res = executeTrade(state, cityId, goodId, "buy", maxUnits);
+    if (res.units > 0) {
+      caravan.cargo[goodId] = (caravan.cargo[goodId] ?? 0) + res.units;
+      const avg = (res.gold / res.units).toFixed(1);
+      pushLog(state, `Bought ${res.units} ${GOOD_BY_ID[goodId].name} in ${CITY_BY_ID[cityId].name} (avg ${avg}ɡ, total ${res.gold}ɡ).`, "trade");
+    }
+  } else {
+    const have = caravan.cargo[goodId] ?? 0;
+    const maxUnits = qty === "all" ? have : Math.min(qty as number, have);
+    const res = executeTrade(state, cityId, goodId, "sell", maxUnits);
+    if (res.units > 0) {
+      caravan.cargo[goodId] = have - res.units;
+      const avg = (res.gold / res.units).toFixed(1);
+      pushLog(state, `Sold ${res.units} ${GOOD_BY_ID[goodId].name} in ${CITY_BY_ID[cityId].name} (avg ${avg}ɡ, total ${res.gold}ɡ).`, "trade");
+    }
+  }
+  needsHtmlRefresh = true;
+}
+
+function doWarehouseMove(caravanId: string, cityId: string, goodId: GoodId, dir: "store" | "take", qty: number | "all") {
+  const caravan = state.caravans.find((c) => c.id === caravanId);
+  if (!caravan) return;
+  if (dir === "store") {
+    const have = caravan.cargo[goodId] ?? 0;
+    const n = qty === "all" ? have : Math.min(qty, have);
+    depositToWarehouse(state, caravanId, cityId, goodId, n);
+  } else {
+    const space = caravan.capacity - caravanCargoUnits(caravan);
+    const wh = state.warehouses[cityId];
+    const stored = wh ? wh.goods[goodId] : 0;
+    const n = qty === "all" ? stored : Math.min(qty, stored);
+    withdrawFromWarehouse(state, caravanId, cityId, goodId, n, space);
+  }
+  needsHtmlRefresh = true;
+}
+
 const panelActions: PanelActions = {
   closePanel: () => { state.selection = { kind: "none" }; needsHtmlRefresh = true; },
   selectCaravan: (id: string) => { state.selection = { kind: "caravan", id }; needsHtmlRefresh = true; },
   beginDispatch: (caravanId: string) => { state.selection = { kind: "dispatch", caravanId }; needsHtmlRefresh = true; },
-  openTrade: (caravanId: string, cityId: string) => {
-    state.modal = { kind: "trade", caravanId, cityId };
-    needsHtmlRefresh = true;
-  },
   recallSelection: () => {
     if (state.selection.kind === "dispatch") {
       state.selection = { kind: "caravan", id: state.selection.caravanId };
@@ -141,6 +202,32 @@ const panelActions: PanelActions = {
   },
   assignRoute: (caravanId: string, routeId: string | null) => {
     assignCaravanToRoute(state, caravanId, routeId);
+    needsHtmlRefresh = true;
+  },
+  setActiveTradeCaravan: (caravanId: string) => {
+    state.activeTradeCaravan = caravanId;
+    // Keep selection in sync so the panel's forced-active caravan updates too.
+    if (state.selection.kind === "caravan") {
+      state.selection = { kind: "caravan", id: caravanId };
+    }
+    needsHtmlRefresh = true;
+  },
+  trade: doTrade,
+  rentWarehouse: (cityId: string) => {
+    rentWarehouse(state, cityId);
+    needsHtmlRefresh = true;
+  },
+  warehouseMove: doWarehouseMove,
+};
+
+const rosterActions = {
+  selectCaravan: (id: string) => { state.selection = { kind: "caravan", id }; needsHtmlRefresh = true; },
+  beginDispatch: (caravanId: string) => { state.selection = { kind: "dispatch", caravanId }; needsHtmlRefresh = true; },
+  focusCaravan: (id: string) => {
+    const c = state.caravans.find((x) => x.id === id);
+    state.selection = { kind: "caravan", id };
+    state.activeTradeCaravan = id;
+    if (c) centerOnCaravan(c);
     needsHtmlRefresh = true;
   },
 };
@@ -200,6 +287,7 @@ canvas.addEventListener("click", (e) => {
     needsHtmlRefresh = true;
   } else if (hit?.kind === "caravan") {
     state.selection = { kind: "caravan", id: hit.id };
+    state.activeTradeCaravan = hit.id;
     needsHtmlRefresh = true;
   } else {
     state.selection = { kind: "none" };
@@ -207,11 +295,34 @@ canvas.addEventListener("click", (e) => {
   }
 });
 
+// Right-click: dispatch the currently selected caravan to the clicked city in
+// one gesture. Falls back to cancelling dispatch mode.
 canvas.addEventListener("contextmenu", (e) => {
   e.preventDefault();
+  if (state.modal) return;
+  const rect = canvas.getBoundingClientRect();
+  const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+
   if (state.selection.kind === "dispatch") {
-    state.selection = { kind: "caravan", id: state.selection.caravanId };
+    if (hit?.kind === "city") {
+      dispatchCaravan(state, state.selection.caravanId, hit.id);
+      state.selection = { kind: "caravan", id: state.selection.caravanId };
+    } else {
+      state.selection = { kind: "caravan", id: state.selection.caravanId };
+    }
     needsHtmlRefresh = true;
+    return;
+  }
+
+  // If a caravan is selected and clickable destination is a city, send it.
+  const selCaravanId =
+    state.selection.kind === "caravan" ? state.selection.id : null;
+  if (selCaravanId && hit?.kind === "city") {
+    const c = state.caravans.find((x) => x.id === selCaravanId);
+    if (c && c.status === "idle" && !c.routeId && c.cityId && c.cityId !== hit.id) {
+      dispatchCaravan(state, selCaravanId, hit.id);
+      needsHtmlRefresh = true;
+    }
   }
 });
 
