@@ -16,14 +16,21 @@ const RIVER = "#7d92a8";
 const GOLD = "#b8923a";
 const BLOOD = "#7a2418";
 
-let noiseCache: ImageData | null = null;
+// Noise is rendered to an offscreen canvas (then drawImage'd) rather than
+// putImageData'd directly: putImageData ignores the active transform and the
+// CSS-pixel-sized ImageData would land in the top-left of the backing buffer
+// on HiDPI displays, leaving the rest exposed as transparent.
+let noiseCache: HTMLCanvasElement | null = null;
 let noiseCacheKey = "";
 
-function getNoise(ctx: CanvasRenderingContext2D, w: number, h: number): ImageData {
+function getNoiseCanvas(w: number, h: number): HTMLCanvasElement {
   const key = `${w}x${h}`;
   if (noiseCache && noiseCacheKey === key) return noiseCache;
-  const img = ctx.createImageData(w, h);
-  // Deterministic mulberry32 for stable noise.
+  const off = document.createElement("canvas");
+  off.width = w;
+  off.height = h;
+  const offCtx = off.getContext("2d")!;
+  const img = offCtx.createImageData(w, h);
   let seed = 0x9e3779b1;
   for (let i = 0; i < img.data.length; i += 4) {
     seed = (seed + 0x6d2b79f5) | 0;
@@ -37,9 +44,10 @@ function getNoise(ctx: CanvasRenderingContext2D, w: number, h: number): ImageDat
     img.data[i + 2] = 0;
     img.data[i + 3] = n < 12 ? 18 : n < 24 ? 8 : 0;
   }
-  noiseCache = img;
+  offCtx.putImageData(img, 0, 0);
+  noiseCache = off;
   noiseCacheKey = key;
-  return img;
+  return off;
 }
 
 function drawPolyline(
@@ -100,6 +108,7 @@ export function renderMap(
   ctx: CanvasRenderingContext2D,
   state: GameState,
   vp: Viewport,
+  camera: { x: number; y: number },
 ): RenderInfo {
   ctx.save();
   ctx.fillStyle = PARCHMENT;
@@ -113,6 +122,10 @@ export function renderMap(
   grad.addColorStop(1, "rgba(90, 60, 24, 0.45)");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, vp.width, vp.height);
+
+  // Everything below pans with the camera. Noise overlay is drawn at
+  // (-camera.x, -camera.y) so it remains pinned to the viewport.
+  ctx.translate(camera.x, camera.y);
 
   // Seas
   for (const poly of SEA_FILL) drawFilledPoly(ctx, poly, vp, SEA);
@@ -175,9 +188,8 @@ export function renderMap(
     drawPolyline(ctx, r, vp, RIVER, 2.0);
   }
 
-  // Parchment noise overlay
-  const noise = getNoise(ctx, vp.width, vp.height);
-  ctx.putImageData(noise, 0, 0);
+  // Parchment noise overlay — drawn at (-camera) so it stays viewport-fixed.
+  ctx.drawImage(getNoiseCanvas(vp.width, vp.height), -camera.x, -camera.y);
 
   // Hovered/selected route preview (dispatch mode)
   const cityPositions: Record<string, { x: number; y: number; r: number }> = {};

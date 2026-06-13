@@ -21,6 +21,11 @@ let lastRender: RenderInfo = { cityPositions: {}, caravanPositions: {} };
 let lastFrameMs = performance.now();
 let needsHtmlRefresh = true;
 
+const camera = { x: 0, y: 0 };
+const keysHeld = new Set<string>();
+const PAN_PX_PER_SEC = 520;
+const PAN_BOOST_PX_PER_SEC = 1100;
+
 function sizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
   const w = window.innerWidth;
@@ -45,11 +50,12 @@ function viewport(): Viewport {
 function frame(now: number) {
   const dt = Math.min(80, now - lastFrameMs);
   lastFrameMs = now;
+  updateCamera(dt);
   const beforeYear = state.date.year;
   const beforeModal = state.modal;
   tickGame(state, dt);
   // Render map every frame for caravan animation.
-  lastRender = renderMap(ctx, state, viewport());
+  lastRender = renderMap(ctx, state, viewport(), camera);
   // Refresh DOM UI when state-relevant fields change or speed changes.
   if (needsHtmlRefresh || beforeYear !== state.date.year || beforeModal !== state.modal) {
     refreshHtmlUI();
@@ -60,6 +66,32 @@ function frame(now: number) {
     renderEventLog(state);
   }
   requestAnimationFrame(frame);
+}
+
+function updateCamera(dtMs: number) {
+  if (state.modal) return;
+  let dx = 0, dy = 0;
+  if (keysHeld.has("w") || keysHeld.has("arrowup")) dy += 1;
+  if (keysHeld.has("s") || keysHeld.has("arrowdown")) dy -= 1;
+  if (keysHeld.has("a") || keysHeld.has("arrowleft")) dx += 1;
+  if (keysHeld.has("d") || keysHeld.has("arrowright")) dx -= 1;
+  if (dx === 0 && dy === 0) return;
+  // Normalise so diagonal isn't faster than cardinal.
+  const len = Math.hypot(dx, dy);
+  dx /= len; dy /= len;
+  const speed = keysHeld.has("shift") ? PAN_BOOST_PX_PER_SEC : PAN_PX_PER_SEC;
+  const step = (dtMs / 1000) * speed;
+  camera.x += dx * step;
+  camera.y += dy * step;
+  // Soft clamp so the user can't pan into the void: the camera offset is in
+  // CSS pixels, so cap roughly to one viewport on each side.
+  const vp = viewport();
+  const maxX = vp.width * 0.9;
+  const maxY = vp.height * 0.9;
+  if (camera.x > maxX) camera.x = maxX;
+  if (camera.x < -maxX) camera.x = -maxX;
+  if (camera.y > maxY) camera.y = maxY;
+  if (camera.y < -maxY) camera.y = -maxY;
 }
 
 function refreshHtmlUI() {
@@ -102,13 +134,16 @@ const panelActions = {
 // ---- Input ----
 
 function hitTest(x: number, y: number): { kind: "city" | "caravan"; id: string } | null {
+  // Stored positions are in pre-camera world coords; adjust the mouse.
+  const wx = x - camera.x;
+  const wy = y - camera.y;
   for (const [id, p] of Object.entries(lastRender.caravanPositions)) {
-    const dx = x - p.x, dy = y - p.y;
+    const dx = wx - p.x, dy = wy - p.y;
     if (dx * dx + dy * dy <= p.r * p.r) return { kind: "caravan", id };
   }
   let best: { id: string; d2: number } | null = null;
   for (const [id, p] of Object.entries(lastRender.cityPositions)) {
-    const dx = x - p.x, dy = y - p.y;
+    const dx = wx - p.x, dy = wy - p.y;
     const r = p.r + 6;
     const d2 = dx * dx + dy * dy;
     if (d2 <= r * r && (!best || d2 < best.d2)) best = { id, d2 };
@@ -166,7 +201,22 @@ canvas.addEventListener("contextmenu", (e) => {
   }
 });
 
+const PAN_KEYS = new Set([
+  "w", "a", "s", "d",
+  "arrowup", "arrowdown", "arrowleft", "arrowright",
+]);
+
 window.addEventListener("keydown", (e) => {
+  const k = e.key.toLowerCase();
+  if (PAN_KEYS.has(k)) {
+    keysHeld.add(k);
+    e.preventDefault();
+    return;
+  }
+  if (e.key === "Shift") {
+    keysHeld.add("shift");
+    return;
+  }
   if (e.key === "Escape") {
     if (state.modal) { closeModal(); return; }
     if (state.selection.kind === "dispatch") {
@@ -188,6 +238,22 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "1") setSpeed(1);
   if (e.key === "2") setSpeed(2);
   if (e.key === "3") setSpeed(5);
+  if (k === "0" || k === "h") {
+    camera.x = 0;
+    camera.y = 0;
+  }
+});
+
+window.addEventListener("keyup", (e) => {
+  const k = e.key.toLowerCase();
+  if (PAN_KEYS.has(k)) keysHeld.delete(k);
+  if (e.key === "Shift") keysHeld.delete("shift");
+});
+
+window.addEventListener("blur", () => {
+  // Window lost focus while user was holding a key — clear so we don't
+  // pan forever after they tab away.
+  keysHeld.clear();
 });
 
 // First HTML render and start the loop.
