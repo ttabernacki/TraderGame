@@ -50,10 +50,8 @@ export function age(member: FamilyMember, year: number): number {
   return year - member.birthYear;
 }
 
-export function tickDynasty(state: GameState, daysAdvanced: number) {
-  // Run a yearly check when the day crosses Jan 1.
-  // We trigger on day=1, month=1 transitions; called from advance loop after date update.
-  void daysAdvanced;
+export function tickDynasty(state: GameState) {
+  // Yearly mortality check on the 1st of January.
   if (state.date.month !== 1 || state.date.day !== 1) return;
   const year = state.date.year;
 

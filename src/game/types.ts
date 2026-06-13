@@ -53,6 +53,35 @@ export interface Caravan {
   toCityId: CityId | null;
   travelProgress: number;
   travelDuration: number;
+  routeId: string | null;
+  routeStopIndex: number;
+  loadingDays: number;
+}
+
+export interface RouteOrder {
+  goodId: GoodId;
+  mode: "buy" | "sell";
+  // "all" = fill remaining capacity (buy) / sell everything carried (sell).
+  qty: number | "all";
+  // Buy: refuse to pay more than this. Sell: refuse to accept less.
+  limit?: number;
+}
+
+export interface RouteStop {
+  cityId: CityId;
+  orders: RouteOrder[];
+}
+
+export interface TradeRoute {
+  id: string;
+  name: string;
+  stops: RouteStop[];
+}
+
+export interface MarketIntel {
+  prices: Record<GoodId, number>;
+  stock: Record<GoodId, number>;
+  date: GameDate;
 }
 
 export interface FamilyMember {
@@ -100,6 +129,8 @@ export interface GameState {
   cities: City[];
   markets: Record<CityId, CityMarket>;
   caravans: Caravan[];
+  routes: TradeRoute[];
+  intel: Record<CityId, MarketIntel>;
   family: FamilyMember[];
   log: LogEntry[];
   milestones: MilestoneEvent[];
@@ -114,4 +145,6 @@ export interface GameState {
 
 export type ModalState =
   | { kind: "trade"; caravanId: string; cityId: CityId }
-  | { kind: "milestone"; eventId: string };
+  | { kind: "milestone"; eventId: string }
+  | { kind: "routes" }
+  | { kind: "route-edit"; routeId: string };

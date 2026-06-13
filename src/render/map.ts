@@ -245,12 +245,13 @@ export function renderMap(
     caravanPositions[c.id] = { x: cx2, y: cy2, r: 9 };
   }
 
-  // Cities
+  // Cities. Markets with no price intelligence are drawn faded.
   for (const city of state.cities) {
     const { x, y, r } = cityPositions[city.id];
     const isHover = state.hoveredCity === city.id;
     const isSelected = state.selection.kind === "city" && state.selection.id === city.id;
-    drawCityMarker(ctx, x, y, r, city.name, isHover, isSelected);
+    const known = state.intel[city.id] !== undefined;
+    drawCityMarker(ctx, x, y, r, city.name, isHover, isSelected, known);
   }
 
   // Caravans idle in a city: draw a small badge.
@@ -285,8 +286,10 @@ function drawCityMarker(
   name: string,
   hover: boolean,
   selected: boolean,
+  known: boolean,
 ) {
   ctx.save();
+  if (!known && !hover && !selected) ctx.globalAlpha = 0.55;
   // Outer ring (selection)
   if (selected) {
     ctx.beginPath();

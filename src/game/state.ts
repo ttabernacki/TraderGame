@@ -1,14 +1,15 @@
 import type { GameState, CityMarket, CityId } from "./types";
-import { CITIES } from "../data/cities";
+import { CITIES, HOME_CITY_ID } from "../data/cities";
 import { initMarket } from "./economy";
 import { makeStartingCaravans } from "./caravan";
 import { makeFoundingFamily } from "./dynasty";
 import { MILESTONES } from "../data/milestones";
+import { snapshotCity } from "./intel";
 import { pushLog } from "./log";
 
 export const START_YEAR = 1450;
 export const HOUSE_SURNAME = "Tucher";
-export const HOME_CITY = "augsburg";
+export const HOME_CITY = HOME_CITY_ID;
 
 export function makeInitialState(): GameState {
   const markets: Record<CityId, CityMarket> = {};
@@ -26,6 +27,8 @@ export function makeInitialState(): GameState {
     })),
     markets,
     caravans: makeStartingCaravans(HOME_CITY),
+    routes: [],
+    intel: {},
     family: makeFoundingFamily(HOUSE_SURNAME, START_YEAR),
     log: [],
     milestones: MILESTONES.map((m) => ({ ...m, fired: false })),
@@ -33,6 +36,9 @@ export function makeInitialState(): GameState {
     hoveredCity: null,
     modal: null,
   };
+
+  // The house knows its home market from day one.
+  snapshotCity(state, HOME_CITY);
 
   pushLog(state, `The House of ${HOUSE_SURNAME} opens its ledgers in ${state.cities.find(c => c.id === HOME_CITY)?.name}.`, "event");
   pushLog(state, "Treasury: 5,000 Gulden. Two caravans ready in the city.", "info");

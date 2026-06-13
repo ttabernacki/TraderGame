@@ -6,9 +6,10 @@ import type { Viewport } from "./render/projection";
 import { renderHUD } from "./ui/hud";
 import { renderBottomBar } from "./ui/bottomBar";
 import { renderEventLog } from "./ui/eventLog";
-import { renderSidePanel } from "./ui/sidePanel";
+import { renderSidePanel, PanelActions } from "./ui/sidePanel";
 import { renderModal } from "./ui/modals";
-import { dispatchCaravan } from "./game/caravan";
+import { dispatchCaravan, hireCaravan } from "./game/caravan";
+import { assignCaravanToRoute } from "./game/routes";
 import type { Speed, GameState } from "./game/types";
 
 const state: GameState = makeInitialState();
@@ -96,10 +97,10 @@ function updateCamera(dtMs: number) {
 
 function refreshHtmlUI() {
   renderHUD(state);
-  renderBottomBar(state, setSpeed);
+  renderBottomBar(state, setSpeed, openRoutes);
   renderEventLog(state);
   renderSidePanel(state, panelActions);
-  renderModal(state, closeModal);
+  renderModal(state, modalUI);
 }
 
 function setSpeed(s: Speed) {
@@ -108,12 +109,17 @@ function setSpeed(s: Speed) {
   needsHtmlRefresh = true;
 }
 
-function closeModal() {
-  state.modal = null;
+function openRoutes() {
+  state.modal = { kind: "routes" };
   needsHtmlRefresh = true;
 }
 
-const panelActions = {
+const modalUI = {
+  close: () => { state.modal = null; needsHtmlRefresh = true; },
+  refresh: () => { needsHtmlRefresh = true; },
+};
+
+const panelActions: PanelActions = {
   closePanel: () => { state.selection = { kind: "none" }; needsHtmlRefresh = true; },
   selectCaravan: (id: string) => { state.selection = { kind: "caravan", id }; needsHtmlRefresh = true; },
   beginDispatch: (caravanId: string) => { state.selection = { kind: "dispatch", caravanId }; needsHtmlRefresh = true; },
@@ -127,6 +133,14 @@ const panelActions = {
     } else {
       state.selection = { kind: "none" };
     }
+    needsHtmlRefresh = true;
+  },
+  hireCaravan: (cityId: string) => {
+    hireCaravan(state, cityId);
+    needsHtmlRefresh = true;
+  },
+  assignRoute: (caravanId: string, routeId: string | null) => {
+    assignCaravanToRoute(state, caravanId, routeId);
     needsHtmlRefresh = true;
   },
 };
@@ -206,19 +220,17 @@ const PAN_KEYS = new Set([
   "arrowup", "arrowdown", "arrowleft", "arrowright",
 ]);
 
+function typingInField(e: KeyboardEvent): boolean {
+  const t = e.target as HTMLElement | null;
+  if (!t) return false;
+  const tag = t.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable;
+}
+
 window.addEventListener("keydown", (e) => {
-  const k = e.key.toLowerCase();
-  if (PAN_KEYS.has(k)) {
-    keysHeld.add(k);
-    e.preventDefault();
-    return;
-  }
-  if (e.key === "Shift") {
-    keysHeld.add("shift");
-    return;
-  }
+  // Escape always works, even mid-typing, to back out of modals.
   if (e.key === "Escape") {
-    if (state.modal) { closeModal(); return; }
+    if (state.modal) { modalUI.close(); return; }
     if (state.selection.kind === "dispatch") {
       state.selection = { kind: "caravan", id: state.selection.caravanId };
       needsHtmlRefresh = true;
@@ -230,6 +242,20 @@ window.addEventListener("keydown", (e) => {
     }
     return;
   }
+
+  // Don't hijack keys while the user is editing a route name or order field.
+  if (typingInField(e)) return;
+
+  const k = e.key.toLowerCase();
+  if (PAN_KEYS.has(k)) {
+    keysHeld.add(k);
+    e.preventDefault();
+    return;
+  }
+  if (e.key === "Shift") {
+    keysHeld.add("shift");
+    return;
+  }
   if (e.key === " " || e.code === "Space") {
     e.preventDefault();
     setSpeed(state.speed === 0 ? 1 : 0);
@@ -238,10 +264,8 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "1") setSpeed(1);
   if (e.key === "2") setSpeed(2);
   if (e.key === "3") setSpeed(5);
-  if (k === "0" || k === "h") {
-    camera.x = 0;
-    camera.y = 0;
-  }
+  if (k === "r" && !state.modal) openRoutes();
+  if (k === "0") { camera.x = 0; camera.y = 0; }
 });
 
 window.addEventListener("keyup", (e) => {

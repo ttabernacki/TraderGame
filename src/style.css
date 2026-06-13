@@ -440,6 +440,129 @@ button.action:disabled {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
 
+/* Intel banners (fog of prices) */
+.intel-banner {
+  font-size: 11px;
+  padding: 5px 8px;
+  margin-bottom: 8px;
+  border-left: 3px solid var(--ink-faded);
+  background: rgba(168, 144, 96, 0.15);
+  color: var(--ink-soft);
+}
+
+.intel-banner.live {
+  border-left-color: var(--leaf);
+}
+
+.intel-banner.stale {
+  border-left-color: var(--gold);
+  font-style: italic;
+}
+
+.intel-banner.unknown {
+  border-left-color: var(--blood);
+  font-style: italic;
+}
+
+/* Bottom-bar separator */
+.bar-sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--ink-faded);
+  margin: 0 4px;
+}
+
+/* Route selector in caravan panel */
+.route-select,
+.route-name-input,
+.route-stop-card select,
+.route-stop-card input,
+.route-add-stop select {
+  font-family: inherit;
+  background: var(--parchment);
+  border: 1.5px solid var(--ink-soft);
+  color: var(--ink);
+  padding: 4px 6px;
+  border-radius: 2px;
+  font-size: 13px;
+}
+
+.route-select {
+  width: 100%;
+}
+
+.route-name-input {
+  font-size: 20px;
+  font-weight: 700;
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--ink-faded);
+}
+
+/* Routes list */
+.route-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px dotted rgba(90, 64, 40, 0.3);
+  gap: 10px;
+}
+
+/* Route editor */
+.route-stop-card {
+  border: 1.5px solid var(--ink-faded);
+  background: rgba(201, 180, 133, 0.25);
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border-radius: 3px;
+}
+
+.route-stop-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.order-row {
+  display: grid;
+  grid-template-columns: 1.3fr 0.9fr 64px 70px 44px 24px;
+  gap: 5px;
+  align-items: center;
+  padding: 3px 0;
+}
+
+.order-row input {
+  width: 100%;
+  min-width: 0;
+}
+
+.order-intel {
+  font-size: 11px;
+  color: var(--ink-faded);
+  text-align: right;
+}
+
+.order-add {
+  margin-top: 6px;
+  font-size: 12px;
+  padding: 3px 8px;
+}
+
+.route-add-stop {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+  align-items: center;
+}
+
+.route-add-stop select {
+  flex: 1;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: rgba(90, 64, 40, 0.1); }
