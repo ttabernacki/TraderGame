@@ -30,7 +30,12 @@ export function tickMilestones(state: GameState) {
       ms.fired = true;
       ms.apply(state);
       pushLog(state, `${ms.title}.`, "milestone");
-      state.modal = { kind: "milestone", eventId: ms.id };
+      // Interactive milestones open a decision; the rest show a flavor card.
+      if (ms.decisionId) {
+        state.modal = { kind: "decision", decisionId: ms.decisionId };
+      } else {
+        state.modal = { kind: "milestone", eventId: ms.id };
+      }
       state.speed = 0;
     }
   }

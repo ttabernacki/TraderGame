@@ -8,6 +8,7 @@ import {
   warehouseUnits, warehouseSpace, WAREHOUSE_RENT_COST,
 } from "../game/warehouse";
 import { formatDateShort } from "../game/time";
+import { cityFactions, FACTION_BY_ID } from "../data/factions";
 import { sparkline } from "./sparkline";
 
 export interface PanelActions {
@@ -110,6 +111,10 @@ function renderCity(state: GameState, city: City, forcedCaravan?: string): strin
   const wh = state.warehouses[city.id];
 
   // ---- Header ----
+  const factionTags = cityFactions(city.id).map((f) => {
+    const def = FACTION_BY_ID[f];
+    return `<span class="faction-tag" style="border-color:${def.color}; color:${def.color}">${def.short}</span>`;
+  }).join("");
   let html = `
     <div class="panel-header">
       <div>
@@ -118,6 +123,7 @@ function renderCity(state: GameState, city: City, forcedCaravan?: string): strin
       </div>
       <button class="panel-close">✕</button>
     </div>
+    ${factionTags ? `<div class="faction-tags">${factionTags}</div>` : ""}
   `;
 
   // ---- Active caravan chips ----

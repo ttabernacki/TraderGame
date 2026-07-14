@@ -6,6 +6,7 @@ import { tickRoutesDay } from "./routes";
 import { tickIntelDay } from "./intel";
 import { tickDynasty } from "./dynasty";
 import { tickMilestones, tickSeasonNotes } from "./events";
+import { pendingPromotion } from "./progression";
 
 // At speed=1 the game advances one game-day per (DAY_REAL_MS) of real time.
 export const DAY_REAL_MS = 600;
@@ -32,4 +33,17 @@ export function advanceDay(state: GameState) {
   tickDynasty(state);
   tickSeasonNotes(state);
   tickMilestones(state);
+  tickProgression(state);
+}
+
+// Once the house newly qualifies for the next rank, auto-open the ennoblement
+// offer a single time. If declined, the player re-opens it from the ledger.
+function tickProgression(state: GameState) {
+  if (state.modal !== null) return;
+  const next = pendingPromotion(state);
+  if (next && state.promotionOffered !== next) {
+    state.promotionOffered = next;
+    state.modal = { kind: "decision", decisionId: `promote:${next}` };
+    state.speed = 0;
+  }
 }

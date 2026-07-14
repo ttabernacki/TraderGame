@@ -21,6 +21,10 @@ export interface Good {
 
 export type CityId = string;
 
+export type FactionId = "habsburg" | "hansa" | "imperial-cities";
+
+export type Rank = "burger" | "patrizier" | "ritter" | "freiherr" | "graf" | "furst";
+
 export interface City {
   id: CityId;
   name: string;
@@ -128,6 +132,8 @@ export interface MilestoneEvent {
   title: string;
   flavor: string;
   fired: boolean;
+  // If set, firing opens this interactive decision instead of a flavor card.
+  decisionId?: string;
   apply: (state: GameState) => void;
 }
 
@@ -138,6 +144,11 @@ export interface GameState {
   tickAccumulator: number;
   speed: Speed;
   treasury: number;
+  rank: Rank;
+  standing: Record<FactionId, number>;
+  electionParticipated: boolean;
+  // The highest rank we've already auto-offered, so we don't re-nag after a decline.
+  promotionOffered: Rank | null;
   cities: City[];
   markets: Record<CityId, CityMarket>;
   caravans: Caravan[];
@@ -160,5 +171,23 @@ export interface GameState {
 
 export type ModalState =
   | { kind: "milestone"; eventId: string }
+  | { kind: "decision"; decisionId: string }
   | { kind: "routes" }
   | { kind: "route-edit"; routeId: string };
+
+// An interactive event: a titled prompt with mutually exclusive choices.
+// Built on demand from a registry so options can depend on current state.
+export interface DecisionOption {
+  label: string;
+  detail?: string;
+  disabled?: (state: GameState) => boolean;
+  disabledReason?: string;
+  apply: (state: GameState) => void;
+}
+
+export interface Decision {
+  id: string;
+  title: string;
+  flavor: string;
+  options: DecisionOption[];
+}

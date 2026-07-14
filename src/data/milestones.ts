@@ -60,10 +60,11 @@ export const MILESTONES: MilestoneEvent[] = [
     month: 6,
     title: "The Imperial Election",
     flavor:
-      "Maximilian is dead. Charles of Habsburg and Francis of Valois bid against one another for the imperial crown. The price of an electoral vote in Frankfurt has reached unholy sums. The Fugger and Welser houses pour silver into Habsburg coffers — will yours?",
+      "Maximilian is dead. Charles of Habsburg and Francis of Valois bid against one another for the imperial crown.",
     fired: false,
-    apply(state) {
-      pushLog(state, "Charles V is elected Holy Roman Emperor with Fugger gold.", "milestone");
+    decisionId: "election-1519",
+    apply() {
+      // Consequences are decided by the player's choice in the decision modal.
     },
   },
   {

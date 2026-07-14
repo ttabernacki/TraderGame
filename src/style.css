@@ -715,6 +715,78 @@ button.action:disabled {
   border: 1px dashed var(--ink-faded);
 }
 
+/* Faction tags in the city panel */
+.faction-tags { display: flex; gap: 5px; margin-bottom: 8px; }
+.faction-tag {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border: 1.5px solid;
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-weight: 600;
+}
+
+/* ---- HUD columns, rank & factions ---- */
+.hud-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.hud-col > .plate { pointer-events: auto; }
+.hud-left { align-items: flex-start; }
+.hud-right { align-items: flex-end; }
+
+.rank-plate { min-width: 240px; max-width: 300px; }
+.rank-gloss { font-weight: 400; color: var(--ink-faded); text-transform: none; letter-spacing: 0; }
+.rank-reqs { margin: 6px 0 4px; }
+.req { font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
+.req-ok { color: var(--leaf); font-weight: 700; }
+.req-no { color: var(--ink-faded); font-weight: 700; }
+.rank-fee { font-size: 11px; color: var(--ink-faded); font-style: italic; margin-bottom: 4px; }
+.rank-summit { font-size: 13px; font-weight: 600; color: var(--gold); margin-top: 4px; }
+.seek-btn { margin-top: 4px; width: 100%; background: var(--gold-bright); font-weight: 600; }
+
+.faction-plate { min-width: 240px; }
+.faction-bar {
+  display: grid;
+  grid-template-columns: 72px 1fr 28px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 5px;
+}
+.faction-name { font-size: 12px; font-weight: 600; }
+.faction-track {
+  height: 9px;
+  background: rgba(90, 64, 40, 0.2);
+  border: 1px solid var(--ink-faded);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.faction-fill { height: 100%; transition: width 0.3s; }
+.faction-val { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+
+/* ---- Decision modal ---- */
+.decision-modal { max-width: 560px; }
+.decision-options { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.decision-option {
+  text-align: left;
+  font-family: inherit;
+  background: var(--parchment-dark);
+  border: 1.5px solid var(--ink-soft);
+  color: var(--ink);
+  padding: 10px 12px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.decision-option:hover:not(:disabled) { background: var(--gold-bright); border-color: var(--ink); }
+.decision-option:disabled { opacity: 0.5; cursor: not-allowed; }
+.decision-option-label { font-weight: 700; font-size: 15px; }
+.decision-option-detail { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+.decision-reason { font-size: 11px; color: var(--blood); font-style: italic; margin-top: 3px; }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: rgba(90, 64, 40, 0.1); }

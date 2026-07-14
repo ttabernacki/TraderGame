@@ -20,6 +20,10 @@ export function makeInitialState(): GameState {
     tickAccumulator: 0,
     speed: 0,
     treasury: 5000,
+    rank: "burger",
+    standing: { habsburg: 0, hansa: 0, "imperial-cities": 10 },
+    electionParticipated: false,
+    promotionOffered: null,
     cities: CITIES.map((c) => ({
       ...c,
       produces: { ...c.produces },
@@ -42,7 +46,7 @@ export function makeInitialState(): GameState {
   // The house knows its home market from day one.
   snapshotCity(state, HOME_CITY);
 
-  pushLog(state, `The House of ${HOUSE_SURNAME} opens its ledgers in ${state.cities.find(c => c.id === HOME_CITY)?.name}.`, "event");
-  pushLog(state, "Treasury: 5,000 Gulden. Two caravans ready in the city.", "info");
+  pushLog(state, `The House of ${HOUSE_SURNAME}, burghers of Augsburg, opens its ledgers.`, "event");
+  pushLog(state, "5,000 Gulden and two caravans. The road to nobility begins here.", "info");
   return state;
 }

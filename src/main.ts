@@ -12,6 +12,7 @@ import { renderModal } from "./ui/modals";
 import { dispatchCaravan, hireCaravan, caravanCargoUnits } from "./game/caravan";
 import { assignCaravanToRoute } from "./game/routes";
 import { executeTrade } from "./game/economy";
+import { accrueTradeFavor, pendingPromotion } from "./game/progression";
 import { rentWarehouse, depositToWarehouse, withdrawFromWarehouse } from "./game/warehouse";
 import { GOOD_BY_ID } from "./data/goods";
 import { CITY_BY_ID } from "./data/cities";
@@ -69,7 +70,7 @@ function frame(now: number) {
     needsHtmlRefresh = false;
   } else {
     // Cheap refreshes that need to happen every frame (date display + log timestamps + treasury).
-    renderHUD(state);
+    renderHUD(state, seekTitle);
     renderEventLog(state);
   }
   requestAnimationFrame(frame);
@@ -101,8 +102,16 @@ function updateCamera(dtMs: number) {
   if (camera.y < -maxY) camera.y = -maxY;
 }
 
+function seekTitle() {
+  const next = pendingPromotion(state);
+  if (!next) return;
+  state.modal = { kind: "decision", decisionId: `promote:${next}` };
+  state.speed = 0;
+  needsHtmlRefresh = true;
+}
+
 function refreshHtmlUI() {
-  renderHUD(state);
+  renderHUD(state, seekTitle);
   renderBottomBar(state, setSpeed, openRoutes);
   renderEventLog(state);
   renderFleetRoster(state, rosterActions);
@@ -151,6 +160,7 @@ function doTrade(caravanId: string, cityId: string, goodId: GoodId, dir: "buy" |
     const res = executeTrade(state, cityId, goodId, "buy", maxUnits);
     if (res.units > 0) {
       caravan.cargo[goodId] = (caravan.cargo[goodId] ?? 0) + res.units;
+      accrueTradeFavor(state, cityId, res.gold);
       const avg = (res.gold / res.units).toFixed(1);
       pushLog(state, `Bought ${res.units} ${GOOD_BY_ID[goodId].name} in ${CITY_BY_ID[cityId].name} (avg ${avg}ɡ, total ${res.gold}ɡ).`, "trade");
     }
@@ -160,6 +170,7 @@ function doTrade(caravanId: string, cityId: string, goodId: GoodId, dir: "buy" |
     const res = executeTrade(state, cityId, goodId, "sell", maxUnits);
     if (res.units > 0) {
       caravan.cargo[goodId] = have - res.units;
+      accrueTradeFavor(state, cityId, res.gold);
       const avg = (res.gold / res.units).toFixed(1);
       pushLog(state, `Sold ${res.units} ${GOOD_BY_ID[goodId].name} in ${CITY_BY_ID[cityId].name} (avg ${avg}ɡ, total ${res.gold}ɡ).`, "trade");
     }

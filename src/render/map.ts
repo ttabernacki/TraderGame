@@ -4,6 +4,7 @@ import {
   HRE_OUTLINE, RHINE, DANUBE, ELBE, MAIN_RIVER, ODER, SEA_FILL, ITALY_HINT,
 } from "./geography";
 import { caravanCurrentPos } from "../game/caravan";
+import { cityFactions, FACTION_BY_ID } from "../data/factions";
 
 const PARCHMENT = "#e8d9b0";
 const PARCHMENT_DARK = "#d4be8a";
@@ -251,7 +252,9 @@ export function renderMap(
     const isHover = state.hoveredCity === city.id;
     const isSelected = state.selection.kind === "city" && state.selection.id === city.id;
     const known = state.intel[city.id] !== undefined;
-    drawCityMarker(ctx, x, y, r, city.name, isHover, isSelected, known);
+    const factions = cityFactions(city.id);
+    const factionColor = factions.length > 0 ? FACTION_BY_ID[factions[0]].color : null;
+    drawCityMarker(ctx, x, y, r, city.name, isHover, isSelected, known, factionColor);
   }
 
   // Caravans idle in a city: draw a small badge.
@@ -287,9 +290,18 @@ function drawCityMarker(
   hover: boolean,
   selected: boolean,
   known: boolean,
+  factionColor: string | null,
 ) {
   ctx.save();
   if (!known && !hover && !selected) ctx.globalAlpha = 0.55;
+  // Faction affiliation: a coloured ring just outside the city dot.
+  if (factionColor) {
+    ctx.beginPath();
+    ctx.arc(x, y, r + 1.6, 0, Math.PI * 2);
+    ctx.strokeStyle = factionColor;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
   // Outer ring (selection)
   if (selected) {
     ctx.beginPath();

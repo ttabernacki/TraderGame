@@ -1,5 +1,6 @@
 import type { GameState, Caravan, TradeRoute, RouteStop } from "./types";
 import { executeTrade } from "./economy";
+import { accrueTradeFavor } from "./progression";
 import { caravanCargoUnits, dispatchCaravan } from "./caravan";
 import { depositToWarehouse, withdrawFromWarehouse } from "./warehouse";
 import { CITY_BY_ID } from "../data/cities";
@@ -107,6 +108,7 @@ function executeStopOrders(state: GameState, caravan: Caravan, stop: RouteStop, 
       const res = executeTrade(state, stop.cityId, order.goodId, "sell", maxUnits, order.limit);
       if (res.units > 0) {
         caravan.cargo[order.goodId] = have - res.units;
+        accrueTradeFavor(state, stop.cityId, res.gold);
         parts.push(`sold ${res.units} ${GOOD_BY_ID[order.goodId].name} (+${res.gold}ɡ)`);
       }
     } else {
@@ -124,6 +126,7 @@ function executeStopOrders(state: GameState, caravan: Caravan, stop: RouteStop, 
       const res = executeTrade(state, stop.cityId, order.goodId, "buy", maxUnits, order.limit);
       if (res.units > 0) {
         caravan.cargo[order.goodId] = (caravan.cargo[order.goodId] ?? 0) + res.units;
+        accrueTradeFavor(state, stop.cityId, res.gold);
         parts.push(`bought ${res.units} ${GOOD_BY_ID[order.goodId].name} (−${res.gold}ɡ)`);
       }
     } else {

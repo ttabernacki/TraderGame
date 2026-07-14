@@ -3,6 +3,7 @@ import { GOODS } from "../data/goods";
 import { CITIES, CITY_BY_ID } from "../data/cities";
 import { createRoute, deleteRoute, caravansOnRoute } from "../game/routes";
 import { hasWarehouse } from "../game/warehouse";
+import { getDecision } from "../game/decisions";
 import { formatDateShort } from "../game/time";
 
 export interface ModalUI {
@@ -20,6 +21,9 @@ export function renderModal(state: GameState, ui: ModalUI) {
     case "milestone":
       renderMilestone(state, root, ui);
       break;
+    case "decision":
+      renderDecision(state, root, ui);
+      break;
     case "routes":
       renderRoutesList(state, root, ui);
       break;
@@ -27,6 +31,43 @@ export function renderModal(state: GameState, ui: ModalUI) {
       renderRouteEditor(state, root, ui);
       break;
   }
+}
+
+function renderDecision(state: GameState, root: HTMLElement, ui: ModalUI) {
+  if (state.modal?.kind !== "decision") return;
+  const decision = getDecision(state, state.modal.decisionId);
+  if (!decision) { ui.close(); return; }
+
+  const opts = decision.options.map((o, i) => {
+    const disabled = o.disabled ? o.disabled(state) : false;
+    const reason = disabled && o.disabledReason ? `<div class="decision-reason">${o.disabledReason}</div>` : "";
+    return `
+      <button class="decision-option" data-opt="${i}" ${disabled ? "disabled" : ""}>
+        <div class="decision-option-label">${o.label}</div>
+        ${o.detail ? `<div class="decision-option-detail">${o.detail}</div>` : ""}
+        ${reason}
+      </button>
+    `;
+  }).join("");
+
+  root.innerHTML = `
+    <div class="modal-bg">
+      <div class="modal decision-modal">
+        <div class="modal-title">${decision.title}</div>
+        <div class="modal-flavor">${decision.flavor.replace(/\n/g, "<br>")}</div>
+        <div class="decision-options">${opts}</div>
+      </div>
+    </div>
+  `;
+  root.querySelectorAll<HTMLButtonElement>(".decision-option").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.opt);
+      const opt = decision.options[idx];
+      if (!opt || (opt.disabled && opt.disabled(state))) return;
+      opt.apply(state);
+      ui.close();
+    });
+  });
 }
 
 function renderMilestone(state: GameState, root: HTMLElement, ui: ModalUI) {
