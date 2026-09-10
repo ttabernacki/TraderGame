@@ -28,7 +28,13 @@ interface Context {
 
 interface OfficerEventDef {
   id: string;
-  /** Mean days between occurrences while the gate stands open. */
+  /**
+   * Mean days between occurrences while the gate stands open.
+   *
+   * These were two to three times rarer and a ninety-day passage produced none
+   * of them at all — the best-written content in the game, never seen. They are
+   * also each gated on a situation, so they cannot all fire at once.
+   */
   everyDays: number;
   /** Which men can raise this. */
   who: (c: Context) => boolean;
@@ -52,7 +58,7 @@ const EVENTS: OfficerEventDef[] = [
   // --- The pilot who wants to turn back ------------------------------------
   {
     id: 'turnback',
-    everyDays: 26,
+    everyDays: 11,
     who: (c) => (c.o.role === 'piloto' || c.o.role === 'mestre')
       && c.g.beyondTheKnown && c.daysOut > 22
       && (has(c, 'timid') || c.g.crew.morale < 0.45),
@@ -105,7 +111,7 @@ const EVENTS: OfficerEventDef[] = [
   // --- The boatswain and the flogging --------------------------------------
   {
     id: 'flogging',
-    everyDays: 30,
+    everyDays: 13,
     who: (c) => c.o.role === 'contramestre' && c.g.crew.morale < 0.6 && c.daysOut > 12,
     build: (c) => ({
       id: 'flogging',
@@ -155,7 +161,7 @@ const EVENTS: OfficerEventDef[] = [
   // --- The clerk and the Crown's books -------------------------------------
   {
     id: 'books',
-    everyDays: 40,
+    everyDays: 17,
     who: (c) => c.o.role === 'escrivao' && c.g.ventures.some((v) => !v.delivered && !v.failed),
     build: (c) => ({
       id: 'books',
@@ -207,7 +213,7 @@ const EVENTS: OfficerEventDef[] = [
   // --- The interpreter's request -------------------------------------------
   {
     id: 'shorepartry',
-    everyDays: 34,
+    everyDays: 15,
     who: (c) => (c.o.role === 'lingua' || c.o.role === 'degredado')
       && c.g.sounding.shoreDistNm < 25 && c.daysOut > 6,
     build: (c) => ({
@@ -247,7 +253,7 @@ const EVENTS: OfficerEventDef[] = [
   // --- The chaplain --------------------------------------------------------
   {
     id: 'massrequest',
-    everyDays: 42,
+    everyDays: 18,
     who: (c) => c.o.role === 'capelao' && (c.g.crew.morale < 0.5 || c.g.crew.scurvy > 0.2),
     build: (c) => ({
       id: 'massrequest',
@@ -289,7 +295,7 @@ const EVENTS: OfficerEventDef[] = [
   // --- The ambitious man's proposal ----------------------------------------
   {
     id: 'ambition',
-    everyDays: 45,
+    everyDays: 19,
     who: (c) => has(c, 'ambitious') && c.daysOut > 30,
     build: (c) => ({
       id: 'ambition',
@@ -342,7 +348,7 @@ const EVENTS: OfficerEventDef[] = [
   // --- Wine ----------------------------------------------------------------
   {
     id: 'winetheft',
-    everyDays: 38,
+    everyDays: 16,
     who: (c) => has(c, 'drunk') && c.daysOut > 15,
     build: (c) => ({
       id: 'winetheft',

@@ -72,6 +72,7 @@ export class TouchControls {
       { label: 'Log', key: 'l', hint: 'Logbook' },
       { label: 'Crew', key: 'k', hint: 'Crew' },
       { label: 'Padrão', key: 'u', hint: 'Land a pillar and claim the place' },
+      { label: '♪', key: 'm', hint: 'Sound on or off' },
       { label: 'Anchor', key: ' ', hint: 'Anchor', wide: true },
     ]);
 

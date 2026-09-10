@@ -1,6 +1,6 @@
 import { clamp } from '../core/math';
 import { good } from '../economy/goods';
-import { provisioningCost, type Listing } from '../economy/market';
+import { Markets, provisioningCost, type Listing } from '../economy/market';
 import { people } from '../world/peoples';
 import { availableUpgrades, UPGRADE_BY_ID } from '../ship/upgrades';
 import { hullClass } from '../ship/hull';
@@ -240,13 +240,25 @@ export class PortView {
       this.render();
       return;
     }
-    const cost = take * l.ask;
-    g.ship.addCargo(l.goodId, take, l.ask);
+    // A quote is for a reasonable parcel. Sweeping the town moves the price
+    // against you while you are doing it.
+    const paid = l.ask * Markets.slippage(take, l.stock);
+    const cost = take * paid;
+    if (cost > g.crown.gold) {
+      const canAfford = Math.floor(g.crown.gold / paid);
+      if (canAfford <= 0) {
+        this.notice = { text: 'Not enough in the purse, once they see how much you want.', grave: true };
+        this.render();
+        return;
+      }
+      return this.buy(g, l, canAfford);
+    }
+    g.ship.addCargo(l.goodId, take, paid);
     g.crown.gold -= cost;
     g.markets.buy(g.portHere!.id, l.goodId, take);
     train(g.skills, 'comercio', take * 0.02);
     g.crown.syncCargoObjectives((id) => g.ship.quantityOf(id));
-    g.logEvent('trade', `Bought ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} at ${l.ask.toFixed(1)} the ${gd.unit}, ${cost.toFixed(0)} cruzados in all.`);
+    g.logEvent('trade', `Bought ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} at ${paid.toFixed(1)} the ${gd.unit}, ${cost.toFixed(0)} cruzados in all.`);
     this.notice = { text: `Took aboard ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} for ${cost.toFixed(0)} cruzados.` };
     this.render();
   }
@@ -280,7 +292,10 @@ export class PortView {
 
     const lot = g.ship.cargo.find((c) => c.goodId === l.goodId);
     const paid = lot ? lot.cost : 0;
-    const revenue = take * l.bid;
+    // Landing a great parcel at once gluts the quay and the price falls under
+    // you as you sell.
+    const got = l.bid / Markets.slippage(take, l.appetite);
+    const revenue = take * got;
     g.ship.removeCargo(l.goodId, take);
     g.crown.gold += revenue;
     g.markets.sell(g.portHere!.id, l.goodId, take);
@@ -289,7 +304,7 @@ export class PortView {
 
     const profit = revenue - paid * take;
     g.logEvent('trade',
-      `Sold ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} at ${l.bid.toFixed(1)}, ${revenue.toFixed(0)} cruzados` +
+      `Sold ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} at ${got.toFixed(1)}, ${revenue.toFixed(0)} cruzados` +
       (paid > 0 ? `, against ${(paid * take).toFixed(0)} paid — ${profit >= 0 ? 'a gain' : 'a loss'} of ${Math.abs(profit).toFixed(0)}.` : '.'));
     this.notice = {
       text: `Sold for ${revenue.toFixed(0)} cruzados` + (paid > 0 ? ` — ${profit >= 0 ? 'profit' : 'loss'} ${Math.abs(profit).toFixed(0)}.` : '.'),

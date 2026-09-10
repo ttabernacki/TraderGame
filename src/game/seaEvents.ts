@@ -313,8 +313,8 @@ const EVENTS: SeaEventDef[] = [
   // --- Another ship --------------------------------------------------------
   {
     id: 'strangesail',
-    everyDays: 34,
-    gate: (c) => c.shoreNm < 200 && day(c) && c.absLat < 34,
+    everyDays: 20,
+    gate: (c) => c.shoreNm < 420 && day(c) && c.absLat < 36,
     build: (c) => ({
       id: 'strangesail', severity: 'note',
       title: 'A sail on the horizon',
@@ -368,6 +368,113 @@ const EVENTS: SeaEventDef[] = [
       id: 'soldiersWind', severity: 'note',
       title: 'A soldier\u0027s wind',
       text: 'Free wind, an easy sea, and she is running off the miles without a hand touching a sheet. Days like this are what the whole trade is for.',
+    }),
+  },
+
+  // --- Blue water ----------------------------------------------------------
+  // The table used to be gated almost entirely on being near a shore or on a
+  // crew state that rarely arrives, so a ninety-day passage produced two
+  // events, both squalls. These are the ones that happen where there is nothing
+  // to see, which is where a voyage most needs something to happen.
+  {
+    id: 'sargasso',
+    everyDays: 30,
+    gate: (c) => c.shoreNm > 200 && c.absLat > 18 && c.absLat < 38 && day(c),
+    build: () => ({
+      id: 'sargasso', severity: 'note',
+      title: 'Weed as far as the eye carries',
+      text: 'She is sailing through a meadow. Yellow weed in rafts to the horizon, with small '
+        + 'crabs in it and a smell of the shore, and no land within four hundred miles. The hands '
+        + 'have decided it means shallow water and are not to be talked out of it.',
+    }),
+  },
+  {
+    id: 'phosphor',
+    everyDays: 16,
+    gate: (c) => c.night && c.speedKnots > 2.5,
+    build: () => ({
+      id: 'phosphor', severity: 'note',
+      title: 'Fire in the water',
+      text: 'The whole of her wake is burning cold green, and every fish that crosses it leaves a '
+        + 'streak like a falling star. The watch below have come up to look at it. Nobody has any '
+        + 'idea what it is.',
+    }),
+  },
+  {
+    id: 'sailhulldown',
+    everyDays: 24,
+    gate: (c) => c.shoreNm > 120 && day(c),
+    build: (c) => ({
+      id: 'sailhulldown', severity: 'note',
+      title: 'A sail, hull down',
+      text: `Topsails on the ${signBearing(c)} horizon and nothing else of her. She is there for `
+        + 'two hours and gone by the afternoon watch, and whoever she was she never came near '
+        + 'enough to speak. The ship talks about very little else for a day.',
+    }),
+  },
+  {
+    id: 'crossing',
+    everyDays: 400,
+    gate: (c) => c.absLat < 1.2 && c.g.crown.landmarksFound.has('equator'),
+    build: () => ({
+      id: 'crossing', severity: 'note',
+      title: 'Crossing the line',
+      text: 'The boatswain has rigged a tub on the main deck and every man who has not crossed '
+        + 'before is being ducked in it, shaved with a barrel hoop and made to pay his footing in '
+        + 'wine. It has taken the whole afternoon. It is the first time anyone has laughed in a '
+        + 'fortnight.',
+      choices: [
+        {
+          label: 'Let them have their day',
+          detail: 'An afternoon of the passage, and worth it.',
+          resolve: (g) => {
+            g.clock.t += 5 * 3600;
+            g.crew.morale = clamp(g.crew.morale + 0.16, 0, 1);
+            g.crew.unrest = clamp(g.crew.unrest - 0.3, 0, 2);
+            g.crew.provisions.wine = Math.max(0, g.crew.provisions.wine - 4);
+            return 'Hove to for the afternoon and let the whole thing run its course. Four arrobas '
+              + 'of wine gone and the ship a different ship afterwards.';
+          },
+        },
+        {
+          label: 'Half an hour and back to work',
+          detail: 'Keeps the passage moving.',
+          resolve: (g) => {
+            g.crew.morale = clamp(g.crew.morale + 0.04, 0, 1);
+            return 'Half an hour of it, and the boatswain piped them back to work with the tub '
+              + 'still full. They took it well enough. They noticed.';
+          },
+        },
+      ],
+    }),
+  },
+  {
+    id: 'argument',
+    everyDays: 22,
+    gate: (c) => c.daysOut > 12 && c.shoreNm > 90,
+    build: (c) => ({
+      id: 'argument', severity: 'note',
+      title: 'An argument on the fo\u2019c\u2019sle',
+      text: c.rng.pick([
+        'Two men are betting a week\u2019s wine on how far south she is, and the pilot has been '
+          + 'asked to settle it and has declined. The figures being shouted are three degrees apart.',
+        'The cooper is telling anyone who will listen that the sun is standing higher every noon '
+          + 'and that this means something. He is right, and he cannot say what.',
+        'A dispute about whether the water changes colour at the line. It has been going on since '
+          + 'the forenoon watch and has begun to involve the chaplain.',
+      ]),
+    }),
+  },
+  {
+    id: 'dolphins',
+    everyDays: 9,
+    gate: (c) => day(c) && c.speedKnots > 3,
+    build: () => ({
+      id: 'dolphins', severity: 'note',
+      title: 'Under the bow',
+      text: 'Dolphins on the bow wave, a dozen of them, holding station without appearing to move '
+        + 'and going faster than the ship. Half the watch is forward looking at them and the '
+        + 'boatswain has given up saying anything about it.',
     }),
   },
 
@@ -484,6 +591,48 @@ export function rollSeaEvent(g: Game, days: number): SeaEvent | null {
     applyBaseEffect(g, event.id);
     return event;
   }
+
+  // The pacing floor.
+  //
+  // Every event in this table is a die roll, and a run of bad rolls on a long
+  // passage is not "quiet", it is nothing happening for a fortnight — measured,
+  // a ninety-day crossing produced two events in total. A voyage is a story and
+  // a story cannot have a fortnight of blank pages in it. So once she has gone
+  // long enough without anything, the next thing that *could* happen, does. The
+  // gates still hold: this only ever fires something that was already possible
+  // where she is and in the weather she has.
+  //
+  // Two clocks, because they are two different kinds of emptiness. Atmosphere —
+  // birds, dolphins, fire in the water — keeps the passage from being blank.
+  // Decisions are what make it a voyage, and going a fortnight without being
+  // asked anything is the failure that matters, so the floor reaches for one
+  // of those first once it has been long enough.
+  if (g.daysSinceDecision > 9) {
+    // Not the rarities. A once-a-voyage find like the ambergris is worth
+    // something because it is rare; having the floor reach for it four times in
+    // three months turns a windfall into a chore.
+    const asks = open.filter((e) => {
+      if (e.everyDays > 45) return false;
+      const built = e.build(c);
+      return built.choices && built.choices.length > 0;
+    });
+    if (asks.length > 0) {
+      const def = g.rng.pick(asks);
+      const event = def.build(c);
+      applyBaseEffect(g, event.id);
+      return event;
+    }
+  }
+
+  if (g.daysSinceEvent > 3) {
+    const quiet = open.filter((e) => e.everyDays < 60);
+    if (quiet.length > 0) {
+      const def = g.rng.pick(quiet);
+      const event = def.build(c);
+      applyBaseEffect(g, event.id);
+      return event;
+    }
+  }
   return null;
 }
 
@@ -498,7 +647,12 @@ function applyBaseEffect(g: Game, id: string): void {
     case 'fish': {
       const gained = g.rng.range(1.4, 4.5);
       p.fresh += gained;
-      g.crew.daysWithoutFresh = Math.max(0, g.crew.daysWithoutFresh - gained * 2);
+      // Credit for what was actually caught, and less than one for one. A
+      // dozen bonito is a good dinner for a ship's company; it is not a cure
+      // for two months of salt meat, and treating it as two days of credit per
+      // day of food meant a lucky afternoon's fishing wiped out the scurvy
+      // clock entirely and the disease never happened.
+      g.crew.daysWithoutFresh = Math.max(0, g.crew.daysWithoutFresh - gained * 0.6);
       g.crew.morale = clamp(g.crew.morale + 0.05, 0, 1);
       break;
     }

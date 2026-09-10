@@ -67,7 +67,18 @@ export class Markets {
   private baseAppetite(def: PortDef, g: Good, hunger: number): number {
     const scale = { anchorage: 0.12, village: 0.35, town: 0.9, city: 2, emporium: 4 }[def.size];
     const bulkiness = clamp(0.06 / Math.max(g.bulk, 0.001), 0.4, 14);
-    return Math.round(hunger * scale * bulkiness * 38 * (0.4 + def.wealth));
+    // What a great market craves, it will take as much of as you can carry.
+    //
+    // Lisbon's appetite for pepper measured at ninety-one quintais, against a
+    // caravel's hold of five hundred — so the hold, which is the central
+    // scarcity of the entire genre, never once bound on any route. It was
+    // always the far end's appetite, which meant a captain filled a third of
+    // his ship and there was no cargo decision to make at all. A city that
+    // wants a thing badly now wants more of it than one voyage can bring, and
+    // the goods it only half wants still cap out — so the choice is what to
+    // fill her with, not how little to bother carrying.
+    const craving = 1 + hunger * hunger * 5;
+    return Math.round(hunger * scale * bulkiness * 38 * (0.4 + def.wealth) * craving);
   }
 
   /** Refresh stocks and let gluts decay. Called when the player arrives. */
@@ -115,13 +126,19 @@ export class Markets {
 
       let priceFactor: number;
       if (abundance > 0) {
-        // At the source, goods are astonishingly cheap.
-        priceFactor = lerp(0.42, 0.10, abundance) * (1 + scarcity * 1.6);
+        // At the source, goods are cheap — but not thirty-one times cheaper
+        // than at the sink, which is what the old floor and ceiling multiplied
+        // out to. Every route in the game returned somewhere between eight and
+        // twenty times the outlay with no risk and no scarcity, so a captain
+        // was rich after one voyage and the ships, the upgrades, the charters
+        // and the whole economy stopped meaning anything. The Guinea trade was
+        // extraordinary; it was not free money.
+        priceFactor = lerp(0.55, 0.22, abundance) * (1 + scarcity * 1.6);
       } else {
         priceFactor = 1;
       }
       if (hunger > 0) {
-        const wantFactor = lerp(1.35, 3.1, hunger) / (1 + glut * 1.5);
+        const wantFactor = lerp(1.15, 2.1, hunger) / (1 + glut * 1.5);
         priceFactor = abundance > 0 ? Math.max(priceFactor, wantFactor * 0.6) : wantFactor;
       }
       priceFactor *= 1 + season;
@@ -144,6 +161,20 @@ export class Markets {
       if (a.local !== b.local) return a.local ? -1 : 1;
       return good(b.goodId).lisbon - good(a.goodId).lisbon;
     });
+  }
+
+  /**
+   * What a large order actually costs, as a multiple of the quoted price.
+   *
+   * A quote is for a reasonable parcel. Taking a third of everything in the
+   * town moves the price against you while you are doing it — which is both
+   * true and the thing that stops "buy the entire market in one click" from
+   * being the optimal play in every port.
+   */
+  static slippage(quantity: number, available: number): number {
+    if (available <= 0) return 1;
+    const share = clamp(quantity / available, 0, 1);
+    return 1 + share * share * 0.55;
   }
 
   /** Record a purchase, which draws down stock and pushes the price up. */

@@ -24,6 +24,8 @@ export interface UiCallbacks {
   onCycleCamera: () => void;
   /** Hold or release a virtual key, for the on-screen controls. */
   onVirtualKey: (key: string, down: boolean) => void;
+  /** Turn the sound on or off. Returns whether it is now on. */
+  onToggleSound: () => boolean;
 }
 
 /**
@@ -218,6 +220,11 @@ export class Ui {
         if (g.dockedAt) { this.setMode('port'); return true; }
         return false;
       case 'v': this.cb.onCycleCamera(); return true;
+      case 'm': {
+        const on = this.cb.onToggleSound();
+        g.pushAlert(on ? 'Sound on.' : 'Sound off.', 'note');
+        return true;
+      }
       case 'u': {
         // Land a pillar. The one act in the game that leaves something behind.
         const check = g.padraoCheck();

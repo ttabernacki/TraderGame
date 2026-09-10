@@ -9,6 +9,7 @@ import { sightOpportunities, takeSight } from './navigation/navigator';
 import { KNOTS } from './ship/physics';
 import { sightingRangeNm } from './navigation/charts';
 import { Renderer, type RenderFrame } from './render/renderer';
+import { Sound } from './render/sound';
 import { InputState, Ui } from './ui';
 
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
@@ -20,6 +21,13 @@ let renderedHullId = '';
 
 const input = new InputState();
 input.attach(canvas);
+
+// Audio cannot begin until the player has touched the page, so it is started
+// from the first interaction rather than at load.
+const sound = new Sound();
+const wake = () => sound.start();
+window.addEventListener('pointerdown', wake, { once: true });
+window.addEventListener('keydown', wake, { once: true });
 
 const ui = new Ui(uiHost, {
   onNewGame: (difficulty) => startNew(difficulty),
@@ -33,6 +41,7 @@ const ui = new Ui(uiHost, {
     );
   },
   onVirtualKey: (key, down) => input.setVirtual(key, down),
+  onToggleSound: () => { sound.start(); sound.setMuted(!sound.isMuted()); return !sound.isMuted(); },
 });
 
 function startNew(difficulty: Difficulty = 'watch'): void {
@@ -160,7 +169,18 @@ function frame(now: number): void {
     game.update(realDt);
     const simDt = game.clock.t - before;
 
-    renderer.render(buildFrame(game), realDt, simDt);
+    const frame = buildFrame(game);
+    renderer.render(frame, realDt, simDt);
+    sound.update({
+      windKnots: frame.windKnots,
+      apparentKnots: frame.apparentKnots,
+      speedKnots: frame.speedKnots,
+      waveHeight: frame.waveHeight,
+      roll: game.displayHeel + renderer.drawnRoll,
+      rate: game.clock.scale,
+      bells: game.mode === 'sailing' ? game.clock.bells : 0,
+      belowDecks: false,
+    });
     ui.update(game);
   }
 

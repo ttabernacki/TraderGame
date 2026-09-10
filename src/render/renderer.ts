@@ -102,6 +102,8 @@ export class Renderer {
   private hullClass: HullClass;
   private shipPitch = 0;
   private shipRoll = 0;
+  /** How far she is rolling right now, for anything outside the renderer. */
+  get drawnRoll(): number { return this.shipRoll; }
   private shipHeave = 0;
   private shipYaw = 0;
   private pitchRate = 0;

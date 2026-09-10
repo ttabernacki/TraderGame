@@ -207,8 +207,27 @@ export class Hud {
       hudRow('Crew', moraleWord(g.crew.morale)),
       hudRow('Stores', `${endurance.toFixed(0)} days`),
       hudRow('By the lead', g.sounding.depth > 200 ? 'no bottom' : `${g.sounding.depth.toFixed(0)} fathoms`),
-      g.ship.condition.bilge > 0.5
-        ? hudRow('Bilge', `${g.ship.condition.bilge.toFixed(1)} tons`)
+      // The pump, which is the thing that quietly sinks ships.
+      //
+      // She makes water after any damage, the slider that decides whether the
+      // pumps keep up is three clicks deep in the crew screen, and nothing ever
+      // pointed at it. Playtesting sank her in eight days from a single
+      // grounding without the player ever being told there was a decision to
+      // make. It belongs on the deck, next to the leak.
+      g.ship.condition.bilge > 0.3
+        ? el('div', { class: 'hud-row' },
+            el('span', { class: 'k' }, 'Bilge'),
+            el('span', {
+              class: 'v',
+              style: { color: pumpLosing(g) ? '#d4553f' : '#e0b96a' },
+            }, `${g.ship.condition.bilge.toFixed(1)} tons — ${
+              pumpLosing(g) ? 'GAINING' : 'holding'}`))
+        : null,
+      g.ship.condition.bilge > 0.3
+        ? el('div', { class: 'hud-row' },
+            el('span', { class: 'k' }, 'At the pumps'),
+            el('span', { class: 'v' },
+              `${(g.pumpEffort * 100).toFixed(0)}% of the watch (K)`))
         : null,
     );
 
@@ -319,7 +338,7 @@ export class Hud {
         '<b>A</b>/<b>D</b> helm — alter course when the clock is up &nbsp; ' +
         '<b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
         '<b>O</b> orders &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
-        '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
+        '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>M</b> sound &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
     }
   }
 
@@ -413,6 +432,13 @@ function lastObserved(g: Game): string {
   if (days < 1.4) return 'yesterday';
   if (days < 14) return `${days.toFixed(0)} days ago`;
   return `${(days / 7).toFixed(0)} weeks ago`;
+}
+
+/** Whether she is making more water than the pumps are clearing. */
+function pumpLosing(g: Game): boolean {
+  const leak = g.ship.condition.leak * (2 - g.ship.condition.hull);
+  const pumped = g.pumpEffort * g.ship.effects.pumping * 3.2;
+  return leak > pumped;
 }
 
 function kindShort(kind: string): string {

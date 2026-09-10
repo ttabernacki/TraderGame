@@ -91,6 +91,16 @@ export class Clock {
     return w.name;
   }
 
+  /**
+   * Bells of the watch: one to eight, struck every half hour from the start of
+   * each four-hour watch. It was the only clock anybody aboard had, and it is
+   * how a sailor knew how long he had left on deck.
+   */
+  get bells(): number {
+    const intoWatch = this.hour % 4;
+    return Math.floor(intoWatch * 2) + 1;
+  }
+
   formatTime(): string {
     const h = Math.floor(this.hour);
     const m = Math.floor((this.hour - h) * 60);

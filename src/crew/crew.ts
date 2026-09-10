@@ -74,6 +74,9 @@ export interface CrewState {
   /** Rising unrest. Above one, they rise. */
   unrest: number;
   deaths: number;
+  /** Days the casks have been dry, so the horror is reported once and not daily. */
+  dryDays?: number;
+  hungryDays?: number;
 }
 
 const FIRST_NAMES = [
@@ -202,18 +205,32 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
   const p = crew.provisions;
 
   // --- Consumption --------------------------------------------------------
-  const rate = d * ctx.ration;
+  //
+  // Per man, not per ship. Stores were held as *man-days* — that is what the
+  // word "provisions for ninety days" meant — and a ship that has buried half
+  // her company can go twice as far on what is left. Consuming at a flat rate
+  // regardless of how many mouths there are removed the grimmest and most
+  // interesting arithmetic in the genre: that the men dying is, in the one way
+  // that matters for getting home, help.
+  const mouths = Math.max(crew.count, 1) / Math.max(crew.complement, 1);
+  const rate = d * ctx.ration * mouths;
   p.water -= rate;
   p.biscuit -= rate;
   p.saltMeat -= rate * 0.8;
   p.wine -= rate * 0.6;
-  p.fresh -= d * 1.4;
+  p.fresh -= d * 1.4 * mouths;
 
   if (p.fresh <= 0) {
     p.fresh = 0;
     crew.daysWithoutFresh += d;
-  } else {
-    crew.daysWithoutFresh = Math.max(0, crew.daysWithoutFresh - d * 2.5);
+  } else if (p.fresh > 1) {
+    // Recovery is slower than the deficit, and needs real quantities of real
+    // food. It used to run down at two and a half days of credit for every day
+    // aboard, so a lucky afternoon's fishing — four days of fresh food for
+    // twenty-four men — erased a month of scurvy debt, and the disease that the
+    // whole route was famous for could not accumulate at all. A dozen bonito is
+    // not a cure for anything; getting ashore where there are oranges is.
+    crew.daysWithoutFresh = Math.max(0, crew.daysWithoutFresh - d * 0.8);
   }
 
   if (ctx.ashore) {
@@ -227,31 +244,55 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
   if (p.water <= 0) {
     p.water = 0;
     mortality += d * 0.09;
-    events.push({
-      kind: 'thirst', severity: 'grave',
-      message: 'The water is gone. The men are drinking rain from the sails and their own urine.',
-    });
-  } else if (p.water < 8) {
+    // Said once when it happens, not on every step for the rest of the voyage.
+    // Measured: three hundred and sixteen identical crew entries in one passage,
+    // which buries everything else in the logbook.
+    crew.dryDays = (crew.dryDays ?? 0) + d;
+    if (crew.dryDays - d <= 0) {
+      events.push({
+        kind: 'thirst', severity: 'grave',
+        message: 'The water is gone. The men are drinking rain from the sails and their own urine.',
+      });
+    }
+  } else if ((crew.dryDays ?? 0) > 0) {
+    crew.dryDays = 0;
+  }
+  if (p.water > 0 && p.water < 8) {
     crew.morale -= d * 0.05;
   }
 
   if (p.biscuit <= 0) {
     p.biscuit = 0;
     mortality += d * 0.035;
-    events.push({
-      kind: 'starvation', severity: 'grave',
-      message: 'The bread is finished. They are boiling leather and eating the rats, and paying for them.',
-    });
-  } else if (p.biscuit < 12) {
+    crew.hungryDays = (crew.hungryDays ?? 0) + d;
+    if (crew.hungryDays - d <= 0) {
+      events.push({
+        kind: 'starvation', severity: 'grave',
+        message: 'The bread is finished. They are boiling leather and eating the rats, and paying for them.',
+      });
+    }
+  } else if ((crew.hungryDays ?? 0) > 0) {
+    crew.hungryDays = 0;
+  }
+  if (p.biscuit > 0 && p.biscuit < 12) {
     crew.morale -= d * 0.03;
   }
 
   // --- Scurvy -------------------------------------------------------------
   // Symptoms appear somewhere around six weeks without fresh food and worsen
   // steeply from there.
-  if (crew.daysWithoutFresh > 38) {
-    const over = crew.daysWithoutFresh - 38;
-    const rateScurvy = d * (0.0022 + over * 0.00028) * (1 - ctx.surgeonQuality * 0.18);
+  if (crew.daysWithoutFresh > 34) {
+    // Steeper than it was, because it was not happening at all.
+    //
+    // Measured on a ninety-day passage with the fresh food gone on day fifteen:
+    // sixty days without it and the scurvy burden across the whole company was
+    // two per cent. Gama buried a hundred men out of a hundred and seventy on
+    // the first voyage to India. The disease is the reason the route was
+    // terrifying, it is the reason every ship that could touch at an island did
+    // so whatever the delay cost, and it has to be frightening by the second
+    // month or none of those decisions mean anything.
+    const over = crew.daysWithoutFresh - 34;
+    const rateScurvy = d * (0.004 + over * 0.00115) * (1 - ctx.surgeonQuality * 0.18);
     const before = crew.scurvy;
     crew.scurvy = clamp(crew.scurvy + rateScurvy, 0, 1);
     if (before < 0.12 && crew.scurvy >= 0.12) {
@@ -332,6 +373,12 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
   if (ctx.ashore) moraleDelta += d * 0.05;
   if (p.wine > 0) moraleDelta += d * 0.004;
   if (p.fresh > 0) moraleDelta += d * 0.006;
+  // Salt meat and biscuit, for the fortieth day running. Morale used to climb
+  // to nearly one on a three-month crossing with the fresh food long gone,
+  // which is the opposite of what a long passage does to a ship's company.
+  if (crew.daysWithoutFresh > 20) {
+    moraleDelta -= d * clamp((crew.daysWithoutFresh - 20) / 90, 0, 1) * 0.018;
+  }
   moraleDelta += d * (ctx.wardroomMorale ?? 0);
 
   crew.morale = clamp(crew.morale + moraleDelta, 0, 1);

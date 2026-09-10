@@ -1,7 +1,7 @@
 import { Clock } from '../core/clock';
 import {
   NM, angleDelta, clamp, cosd, formatBearing, formatLat, formatLon, haversine,
-  lerp, wrap360,
+  lerp, rhumbStep, wrap360,
 } from '../core/math';
 import { Rng } from '../core/rng';
 import { Weather, type WeatherSample } from '../world/weather';
@@ -152,6 +152,10 @@ export class Game {
   pendingEvent: SeaEvent | null = null;
   /** The last few event ids, so the same thing does not happen twice running. */
   recentEvents: string[] = [];
+  /** Simulated days since anything at all happened, for the pacing floor. */
+  daysSinceEvent = 0;
+  /** Simulated days since the captain was asked anything, which matters more. */
+  daysSinceDecision = 0;
   /** Simulated days since she last lay in a port. */
   daysSincePort = 0;
 
@@ -250,6 +254,15 @@ export class Game {
   correctedNm = 0;
   private lastSurveyWord = -1e9;
   private lastSightWord = -1e9;
+  private lastLandWord = -1e9;
+  /** The last course the watch settled on after looking at the water. */
+  private avoidCourse = 0;
+  private avoidWant = 0;
+  private avoidCheckedT = -1e9;
+  /** True while the watch are steering off the course to keep her off a shore. */
+  avoidingLand = false;
+  /** Which way round she is weathering it: +1 starboard, -1 larboard. */
+  private avoidSide = 0;
   private lastPortCheck = -1e9;
   private lastCanvasWord = -1e9;
   private lastManualTrim = -1e9;
@@ -538,7 +551,8 @@ export class Game {
    */
   private advancePassage(dt: number): void {
     const s = this.ship.state;
-    const want = this.holdCourse ? this.courseToSteer() : null;
+    const wanted = this.holdCourse ? this.courseToSteer() : null;
+    const want = wanted === null ? null : this.clearCourse(wanted);
 
     if (want !== null) {
       // She comes round at a rate a ship actually turns, not instantly, so a
@@ -597,9 +611,160 @@ export class Game {
     return wanted;
   }
 
+  /**
+   * Whether the water along a given course is clear for the next few hours.
+   *
+   * Probed rather than computed: a handful of points along the bearing, each
+   * asked how deep it is. Anything shoaler than a few times her draft counts as
+   * land, because a caravel drawing two metres does not want to find out
+   * whether four is enough in a swell.
+   */
+  private waterClearOn(bearing: number, aheadNm: number): boolean {
+    const from = this.ship.state.pos;
+    // Twenty metres under her and three and a half miles of offing.
+    //
+    // Clearing her draft is not the test. A ship embayed on a lee shore in
+    // twelve metres with the wind onto it is already lost, and the whole
+    // practice of the period was to keep an offing — enough water to claw off
+    // in if it came on to blow. Testing depth alone had her threading the
+    // Moroccan shallows a mile and a half off the beach in eight metres, which
+    // is survivable until the first gale and then is not.
+    const safe = this.ship.baseHull.draft * 10;
+    const offingNm = 3.5;
+    const probes = 7;
+    for (let i = 1; i <= probes; i++) {
+      const d = (aheadNm * i) / probes;
+      const at = rhumbStep(from, bearing, d * NM);
+      // A tight search radius: the question is only whether *this* spot is
+      // clear, and nothing far away can make it foul. Asking depthAt directly
+      // searches ninety miles for the nearest coast, which is an enormous query
+      // to run seven times a probe on a course checked all voyage.
+      const shore = nearestShore(at, 16);
+      if (shore.land < 0) continue;
+      if (shore.signed <= 0) return false;
+      if (shore.distance / NM < offingNm) return false;
+      if (depthAt(at, shore) < safe) return false;
+    }
+    return true;
+  }
+
+  /**
+   * The course the watch will actually steer, having looked at the water.
+   *
+   * The single most important thing this function does is refuse to sail her
+   * ashore. Before it existed the course-keeper steered the bearing of the mark
+   * and nothing else, and since the rhumb from Lisbon to Mina runs across
+   * Portugal, five runs out of five ended aground within a day of weighing and
+   * the ship broke up inside a week. A quartermaster does not do that. He sees
+   * the land, he says so, and he keeps her off it until the captain tells him
+   * otherwise.
+   *
+   * He alters as little as he can: the sweep runs outward from the course he
+   * wants, and he takes the first heading that is both clear and sailable, so
+   * she is never further off her course than the coast obliges her to be.
+   */
+  private clearCourse(want: number): number {
+    const speed = Math.max(Math.abs(this.physics?.speedKnots ?? 0), 2);
+    // Three hours of looking ahead, which is about as far as a lookout at the
+    // masthead can see anyway.
+    const ahead = clamp(speed * 3, 6, 26);
+
+    // Cached: probing the coast is a spatial query and the steering loop runs
+    // up to forty-eight times a frame. The water does not change in two minutes.
+    const fresh = this.clock.t - this.avoidCheckedT < 120
+      && Math.abs(angleDelta(this.avoidWant, want)) < 4;
+    if (fresh) return this.avoidCourse;
+
+    this.avoidCheckedT = this.clock.t;
+    this.avoidWant = want;
+
+    // Most of a voyage is a long way from anything. If the nearest land is
+    // further off than she can possibly reach in the look-ahead, there is
+    // nothing to check and no reason to pay for checking it.
+    if (this.sounding.shoreDistNm > ahead + 12) {
+      if (this.avoidingLand) {
+        this.avoidingLand = false;
+        this.avoidSide = 0;
+        this.pushAlert('Clear water ahead. The watch have her back on her course.', 'note');
+      }
+      this.avoidCourse = want;
+      return want;
+    }
+
+    // Coming back onto the course wants a wider look than going off it did, so
+    // she rounds a headland properly instead of cutting the corner the moment
+    // the point is abeam.
+    if (this.waterClearOn(want, this.avoidingLand ? ahead * 1.6 : ahead)) {
+      if (this.avoidingLand) {
+        this.avoidingLand = false;
+        this.avoidSide = 0;
+        this.pushAlert('Clear water ahead. The watch have her back on her course.', 'note');
+      }
+      this.avoidCourse = want;
+      return want;
+    }
+
+    // Something is in the way. Take the smallest alteration that clears it, and
+    // do not steer into the wind's eye to do it.
+    //
+    // Once she has begun to weather something she keeps going the same way
+    // round it. Re-choosing the smallest deviation from scratch on every check
+    // is what walks a ship into a bay: each look says the shortest way to the
+    // mark is a little to port, then a little to starboard, and she creeps into
+    // the corner and grounds. Measured, that is exactly what happened at the
+    // Cap-Vert peninsula — she got sixteen hundred miles down the coast and
+    // then trapped herself on the one headland that sticks out. Committing to a
+    // side and holding it until the mark can be laid is coast-following, which
+    // is what a pilot does and why the Portuguese got round Africa at all.
+    const windEye = this.weatherNow.wind.from;
+    const noGo = this.noGoAngle;
+    // Which way to go round it: away from where the land actually bears, which
+    // is what a seaman does and what picking the smaller sweep does not. On a
+    // coast running down her port side, the smaller sweep is repeatedly to
+    // port, and that is how she ends up in the bay.
+    const towardLand = angleDelta(want, this.sounding.shoreBearing);
+    const away = towardLand > 0 ? -1 : 1;
+    const sides: number[] = this.avoidingLand && this.avoidSide !== 0
+      ? [this.avoidSide, -this.avoidSide]
+      : [away, -away];
+
+    for (const side of sides) {
+      for (let off = 12; off <= 120; off += 12) {
+        const trial = wrap360(want + side * off);
+        if (Math.abs(angleDelta(windEye, trial)) < noGo) continue;
+        if (!this.waterClearOn(trial, ahead)) continue;
+        if (!this.avoidingLand) {
+          this.avoidingLand = true;
+          this.avoidSide = side;
+          this.pushAlert(
+            `Land ahead. The watch have hauled her ${off}° to ${side > 0 ? 'starboard' : 'larboard'} to weather it.`,
+            'warning');
+          this.logEvent('navigation',
+            `Land raised fine on the ${side > 0 ? 'starboard' : 'larboard'} bow, standing right `
+            + 'across the course laid off. Hauled her up to weather it. The chart says one thing '
+            + 'and the coast says another, and the coast is always right.');
+        }
+        this.avoidCourse = trial;
+        return trial;
+      }
+    }
+
+    // Embayed: nothing within ninety-six degrees of the course is clear water.
+    // Get her head off the land and tell the captain, because this is his
+    // problem now and not the quartermaster's.
+    const off = wrap360(this.sounding.shoreBearing + 180);
+    if (!this.avoidingLand) {
+      this.avoidingLand = true;
+      this.pushAlert('Land all round the bow. She is standing off — come and look at the chart.', 'grave');
+    }
+    this.avoidCourse = off;
+    return off;
+  }
+
   private steerToCourse(dt: number): void {
-    const want = this.courseToSteer();
-    if (want === null) return;
+    const wanted = this.courseToSteer();
+    if (wanted === null) return;
+    const want = this.clearCourse(wanted);
 
     const windEye = this.weatherNow.wind.from;
     const noGo = this.noGoAngle;
@@ -1048,11 +1213,37 @@ export class Game {
       return;
     }
 
-    if (this.sounding.shoaling && !this.anchored && this.physics.speedKnots > 1) {
-      this.pushAlert(
-        `By the lead, ${this.sounding.depth.toFixed(0)} fathoms shoaling — land bears ${formatBearing(this.sounding.shoreBearing)}`,
-        'warning',
-      );
+    // The lookout, who is the warning that matters.
+    //
+    // The lead only speaks when there is already less than eight metres under
+    // her, and at three hundred times real time she crosses that in a fraction
+    // of a second — it was a warning that arrived after the crunch. A man at the
+    // masthead sees the land twenty miles off, and what he is asked is not "is
+    // it near" but "are we standing at it", which is the question that actually
+    // saves ships.
+    if (!this.anchored && !this.dockedAt && this.physics.speedKnots > 1) {
+      const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
+      const bearing = this.sounding.shoreBearing;
+      const off = Math.abs(angleDelta(this.ship.state.heading, bearing));
+      const closing = off < 55;
+      const hours = this.sounding.shoreDistNm / Math.max(Math.abs(this.physics.speedKnots), 0.5);
+
+      if (this.sounding.shoreDistNm < range && closing && hours < 6
+          && this.clock.t - this.lastLandWord > 3 * 3600) {
+        this.lastLandWord = this.clock.t;
+        this.pushAlert(
+          `Land ho — ${formatBearing(bearing)}, ${this.sounding.shoreDistNm.toFixed(0)} miles, `
+          + `and she is standing at it. ${hours < 2 ? 'Under two hours.' : `About ${hours.toFixed(0)} hours.`}`,
+          hours < 2 ? 'grave' : 'warning',
+        );
+      }
+
+      if (this.sounding.shoaling) {
+        this.pushAlert(
+          `By the lead, ${this.sounding.depth.toFixed(0)} fathoms shoaling — land bears ${formatBearing(bearing)}`,
+          'grave',
+        );
+      }
     }
 
     // Landmarks of the route.
@@ -1098,6 +1289,8 @@ export class Game {
   private rollIncidents(simDt: number): void {
     const days = simDt / 86400;
     this.daysSincePort += days;
+    this.daysSinceEvent += days;
+    this.daysSinceDecision += days;
     this.eventCooldown = Math.max(0, this.eventCooldown - days);
     if (this.eventCooldown > 0) return;
 
@@ -1112,10 +1305,12 @@ export class Game {
     if (!event) return;
 
     this.eventCooldown = event.choices ? 1.6 : 0.55;
+    this.daysSinceEvent = 0;
     this.recentEvents.unshift(event.id);
-    if (this.recentEvents.length > 4) this.recentEvents.pop();
+    if (this.recentEvents.length > 5) this.recentEvents.pop();
 
     if (event.choices && event.choices.length > 0) {
+      this.daysSinceDecision = 0;
       this.pendingEvent = event;
       return;
     }

@@ -277,7 +277,15 @@ const PATENT_TEMPLATES: {
 
 export class Crown {
   standing = 0;
-  gold = 240;
+  /**
+   * What the captain has of his own, which is not much.
+   *
+   * Two hundred and forty plus the Crown's advance bought the entire profitable
+   * stock of several goods at once, so the purse never bound and the first
+   * voyage had no financial decision in it. It should be tight enough that what
+   * to fill her with is a real question.
+   */
+  gold = 85;
   /** Total renown ever earned, which titles are measured against. */
   lifetimeStanding = 0;
   discoveries: Discovery[] = [];
