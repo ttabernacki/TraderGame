@@ -10,6 +10,9 @@ import type { SailState } from '../ship/physics';
 
 export type CameraMode = 'chase' | 'deck' | 'masthead' | 'beam';
 
+/** The colour of light off the whole sky dome, which the zenith is bluer than. */
+const SKYLIGHT = new THREE.Color(0.72, 0.78, 0.86);
+
 export interface RenderFrame {
   pos: LatLon;
   heading: number;
@@ -59,8 +62,14 @@ export class Renderer {
 
   private sun = new THREE.DirectionalLight(0xffffff, 1);
   private ambient = new THREE.HemisphereLight(0x88aacc, 0x2a2418, 0.6);
-  private waveOriginE = 0;
-  private waveOriginN = 0;
+  /**
+   * Seconds of drawn motion since the view opened. Everything that flutters,
+   * shakes or streams is driven from this rather than from the simulation clock:
+   * that clock counts seconds since 1430, and a sine of seventeen billion has no
+   * precision left to animate with.
+   */
+  private waveClock = 0;
+  private fog = new THREE.FogExp2(0x9ab4c8, 0.00006);
   private hullClass: HullClass;
   private shipPitch = 0;
   private shipRoll = 0;
@@ -80,12 +89,15 @@ export class Renderer {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    this.camera = new THREE.PerspectiveCamera(58, 1, 0.5, 30000);
+    // The far plane must clear the ocean's outer rim, or the water is clipped
+    // short of the horizon and the sky shows through beneath it.
+    this.camera = new THREE.PerspectiveCamera(58, 1, 0.4, 90000);
     this.camera.position.set(0, 22, -55);
 
     this.hullClass = hull;
     this.ship = new ShipMesh(hull);
 
+    this.scene.fog = this.fog;
     this.scene.add(this.sky.group);
     this.scene.add(this.ocean.mesh);
     this.scene.add(this.land.group);
@@ -131,22 +143,26 @@ export class Renderer {
   render(f: RenderFrame, realDt: number, simDt: number): void {
     // The ship is held at the origin and the world moves past her, which keeps
     // floating-point precision perfect across a twelve-thousand-mile voyage.
-    this.waveOriginE += f.velocityE * simDt;
-    this.waveOriginN += f.velocityN * simDt;
-    // The wake is laid down against her track, so it needs real elapsed time
-    // rather than compressed simulation time or it streams away at sixty knots.
-    this.ocean.updateTrack(f.velocityE, f.velocityN, Math.min(simDt, realDt * 4));
-
-    // Position and time first: setSea folds them into the wrapped wave phases.
-    const waveTime = f.simTime * 0.35;
-    this.ocean.setOrigin(this.waveOriginE, this.waveOriginN);
-    this.ocean.setTime(waveTime);
-    this.ocean.setSea({
-      windFrom: f.windFrom,
-      windKnots: f.windKnots,
-      waveHeight: f.waveHeight,
-      swellFrom: f.swellFrom,
-    });
+    //
+    // At anything above real time the water is drawn at a plausible rate rather
+    // than a literal one: at the half-day scale a literal sea would run past at
+    // two thousand knots, which reads as a strobing white blur and tells the
+    // player nothing. Time and distance are clamped together so the wave train
+    // and the flow past the hull stay in step with one another either way.
+    const visualDt = Math.min(simDt, realDt * 3);
+    this.ocean.updateTrack(f.velocityE, f.velocityN, visualDt);
+    this.ocean.setSea(
+      {
+        windFrom: f.windFrom,
+        windKnots: f.windKnots,
+        waveHeight: f.waveHeight,
+        swellFrom: f.swellFrom,
+      },
+      f.velocityE * visualDt,
+      f.velocityN * visualDt,
+      visualDt * 0.62,
+    );
+    this.waveClock += visualDt;
 
     // The ship pushes the water aside: a bow wave forward and a spreading wake
     // astern, both keyed to how hard she is driving.
@@ -201,7 +217,7 @@ export class Renderer {
       apparentBeta: f.apparentBeta,
       apparentKnots: f.apparentKnots,
       rudder: f.rudder,
-      t: f.simTime,
+      t: this.waveClock,
     });
 
     // --- Spray at the bow ---------------------------------------------------
@@ -217,7 +233,9 @@ export class Renderer {
     );
 
     // --- Land ---------------------------------------------------------------
-    const landRange = clamp(f.sightingRangeNm * 1.5, 12, 90);
+    // Only as far as the lookout could actually raise it. Building further than
+    // that costs geometry for terrain the curve has already put out of sight.
+    const landRange = clamp(f.sightingRangeNm * 1.1, 12, 70);
     if (this.land.needsRebuild(f.pos, landRange)) {
       this.land.rebuild(f.pos, landRange);
     }
@@ -240,15 +258,20 @@ export class Renderer {
     // stretched maps they produce are worse than none.
     this.sun.castShadow = l.sunDir.y > 0.12;
 
-    this.ambient.color.copy(l.zenith).multiplyScalar(2.1);
-    this.ambient.groundColor.copy(l.horizon).multiplyScalar(0.35);
-    this.ambient.intensity = lerp(1.25, 0.28, l.night);
+    // Skylight is blue, but not as blue as the zenith looks: most of what falls
+    // on a deck comes from the whole dome, not from the darkest part of it.
+    // Taking the zenith colour neat and multiplying it turns every shadowed
+    // piece of timber aboard a bright mint green.
+    this.ambient.color.copy(l.zenith).lerp(SKYLIGHT, 0.55).multiplyScalar(1.5);
+    this.ambient.groundColor.copy(l.horizon).multiplyScalar(0.55);
+    this.ambient.intensity = lerp(1.15, 0.26, l.night);
 
     // Visibility drives atmospheric extinction, so fog thickens in haze and rain.
     const visM = Math.max(visibilityNm, 0.15) * 1852;
     const fogDensity = 2.6 / visM;
     this.ocean.setLighting(l.sunDir, l.sunColor, l.zenith, l.horizon, l.night, fogDensity);
-    this.scene.fog = new THREE.FogExp2(l.horizon.getHex(), fogDensity * 0.85);
+    this.fog.color.copy(l.horizon);
+    this.fog.density = fogDensity * 0.85;
   }
 
   private updateCamera(f: RenderFrame, dt: number, seaHeight: number, waveHeight: number): void {
@@ -263,14 +286,17 @@ export class Renderer {
 
     switch (this.cameraMode) {
       case 'deck': {
-        // Standing at the weather rail in the waist, forward of the mainmast and
-        // clear of the lateen yards that sweep the quarterdeck, looking ahead.
+        // Standing at the break of the quarterdeck by the weather rail, which is
+        // where the officer of the watch stands and where the whole ship — deck,
+        // rail, mast and the set of her canvas — is in front of him. Put him
+        // right forward instead, as this once did, and he sees nothing but the
+        // bowsprit and a great deal of empty water.
         const fwd = new THREE.Vector3(Math.sin(hdg), 0, -Math.cos(hdg));
         const stb = new THREE.Vector3(Math.cos(hdg), 0, Math.sin(hdg));
         const eye = this.ship.group.position.clone()
-          .add(fwd.clone().multiplyScalar(this.hullClass.lwl * 0.24))
-          .add(stb.clone().multiplyScalar(this.hullClass.beam * 0.32))
-          .add(new THREE.Vector3(0, this.hullClass.draft * 1.5 + 1.7, 0));
+          .add(fwd.clone().multiplyScalar(-this.hullClass.lwl * 0.3))
+          .add(stb.clone().multiplyScalar(this.hullClass.beam * 0.26))
+          .add(new THREE.Vector3(0, this.hullClass.draft * 1.6 + 2.4, 0));
         this.camera.position.copy(eye);
         const yaw = hdg + this.lookYaw * DEG;
         const pitch = clamp(this.lookPitch, -60, 55) * DEG;
@@ -346,7 +372,7 @@ export class Renderer {
     if (this.cameraMode === 'deck' || this.cameraMode === 'masthead') return;
     const shake = clamp(f.waveHeight / 5, 0, 1) * clamp(0.3 + speed / 9, 0, 1.2);
     if (shake < 0.01) return;
-    const t = f.simTime;
+    const t = this.waveClock;
     this.camera.position.x += Math.sin(t * 1.9) * shake * 0.32;
     this.camera.position.y += Math.sin(t * 2.7 + 1.1) * shake * 0.26;
     this.camera.position.z += Math.cos(t * 1.6 + 0.4) * shake * 0.32;

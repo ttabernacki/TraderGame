@@ -211,6 +211,9 @@ if (import.meta.env.DEV) {
         g.anchored = false;
         g.dockedAt = null;
         g.refreshEnvironment();
+        // Take the new weather whole rather than slewing into it over several
+        // seconds, so a test scene is the sea it says it is on the first frame.
+        renderer?.ocean.reseed();
 
         // Run the ship forward until she has way on and the sails have settled,
         // holding the heading so she does not wander off the test course.

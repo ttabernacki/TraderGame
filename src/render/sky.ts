@@ -4,6 +4,23 @@ import { STARS, moonPosition, starPosition, sunPosition } from '../navigation/ce
 
 const SKY_RADIUS = 11000;
 
+/** Faint unnamed stars filling in the sky behind the navigational ones. */
+const FILLER_STARS = 900;
+
+/** A fixed pseudo-random sequence, so the same sky is drawn every session. */
+function fillerRandom(i: number): number {
+  const x = Math.sin(i * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/**
+ * Declination for a filler star, distributed so the stars come out even over the
+ * sphere. Drawing declination uniformly would crowd them round both poles.
+ */
+function fillerDec(k: number): number {
+  return Math.asin(fillerRandom(k * 2 + 2) * 2 - 1) / DEG;
+}
+
 /** Asterisms a period navigator actually used, drawn so they can be recognised. */
 const ASTERISMS: string[][] = [
   ['Acrux', 'Gacrux'],
@@ -52,8 +69,10 @@ void main() {
   // Overcast flattens the whole dome toward a uniform grey.
   col = mix(col, uCloudColor, uOvercast * (0.55 + 0.35 * (1.0 - up)));
 
-  // A band of haze thickening down to the horizon.
-  col = mix(col, uHorizon, smoothstep(0.22, -0.06, d.y) * 0.8);
+  // A band of haze thickening down to the horizon, reaching the horizon colour
+  // exactly at eye level. The sea fogs to the same colour at its rim, so the two
+  // meet there without a seam.
+  col = mix(col, uHorizon, smoothstep(0.30, 0.0, d.y));
 
   gl_FragColor = vec4(col, 1.0);
 }
@@ -136,15 +155,23 @@ export class Sky {
     this.group.add(this.dome);
 
     // --- Stars -------------------------------------------------------------
-    const n = STARS.length;
+    // The named stars are the ones a navigator shoots and the ones the asterism
+    // lines are drawn between. On their own they make a sky of forty points,
+    // which is not a night sky; the rest of the firmament is filled in behind
+    // them with faint stars that carry no meaning but without which the real
+    // ones have nothing to stand out from.
+    const n = STARS.length + FILLER_STARS;
     this.starPositions = new Float32Array(n * 3);
     const sizes = new Float32Array(n);
     const colors = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
-      const m = STARS[i].mag;
-      sizes[i] = clamp(13 - m * 2.6, 2.6, 16);
+      const named = i < STARS.length;
+      const m = named ? STARS[i].mag : 3.6 + fillerRandom(i) * 2.6;
+      sizes[i] = named ? clamp(13 - m * 2.6, 3.0, 16) : clamp(7.4 - m * 1.05, 1.3, 4.2);
       // Rough colour by magnitude class; the bright ones read as slightly warm.
-      const c = new THREE.Color().setHSL(0.58 - clamp((2 - m) * 0.02, -0.05, 0.06), 0.25, 0.92);
+      const c = new THREE.Color().setHSL(
+        0.58 - clamp((2 - m) * 0.02, -0.05, 0.06), 0.25, named ? 0.92 : 0.8,
+      );
       colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
     }
     const starGeo = new THREE.BufferGeometry();
@@ -276,16 +303,26 @@ export class Sky {
     lat: number, lon: number, dayFromEpoch: number, hourLocal: number, year: number,
   ): void {
     const byName = new Map<string, THREE.Vector3>();
-    for (let i = 0; i < STARS.length; i++) {
-      const s = STARS[i];
-      const h = starPosition(s, lat, lon, dayFromEpoch, hourLocal, year);
+    const place = (i: number, h: { altitude: number; azimuth: number }): THREE.Vector3 => {
       const d = dirFromAltAz(h.altitude, h.azimuth).multiplyScalar(SKY_RADIUS * 0.97);
-      // Stars below the horizon are pulled to the origin, where nothing sees them.
+      // Stars below the horizon are pulled far below, where nothing sees them.
       const below = h.altitude < -1;
       this.starPositions[i * 3] = below ? 0 : d.x;
       this.starPositions[i * 3 + 1] = below ? -SKY_RADIUS * 2 : d.y;
       this.starPositions[i * 3 + 2] = below ? 0 : d.z;
-      byName.set(s.name, d);
+      return d;
+    };
+
+    for (let i = 0; i < STARS.length; i++) {
+      const s = STARS[i];
+      byName.set(s.name, place(i, starPosition(s, lat, lon, dayFromEpoch, hourLocal, year)));
+    }
+    // The filler stars are carried on the same celestial sphere as the named
+    // ones, so the whole sky wheels together and a player who learns to steer by
+    // a pattern of faint stars is not being lied to.
+    for (let k = 0; k < FILLER_STARS; k++) {
+      const fake = { name: '', ra: fillerRandom(k * 2 + 1) * 360, dec: fillerDec(k), mag: 4 };
+      place(STARS.length + k, starPosition(fake, lat, lon, dayFromEpoch, hourLocal, year));
     }
     (this.starPoints.geometry.getAttribute('position') as THREE.BufferAttribute).needsUpdate = true;
 

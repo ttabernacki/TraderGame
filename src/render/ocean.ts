@@ -9,11 +9,28 @@ import { clamp, lerp, smoothstep } from '../core/math';
 const WAVE_COUNT = 8;
 
 /** How many points of the ship's recent track the wake is measured against. */
-const TRACK_POINTS = 18;
+const TRACK_POINTS = 20;
+
+/** Spacing between track points, metres. Twenty of them give ~180m of wake. */
+const TRACK_STEP = 9;
+
+/** Half-angle of the Kelvin cusp line, the same for every displacement hull. */
+const KELVIN_TAN = 0.3541;
 
 const SPREAD = [0, 26, -32, 58, -64, 88, -96, 150];
-const WAVELENGTH_SCALE = [1.0, 0.64, 0.42, 0.26, 0.155, 0.092, 0.055, 2.6];
-const AMPLITUDE_SCALE = [1.0, 0.66, 0.45, 0.29, 0.185, 0.115, 0.07, 0.42];
+/**
+ * The spectrum, as fractions of the peak wavelength and of the peak amplitude.
+ *
+ * The short end reaches a good deal further down than the long end suggests it
+ * needs to. A fully developed sea has almost constant steepness at its peak
+ * whatever the wind, so a gale drawn from the peak alone is a 300-metre swell
+ * with a slope of two degrees: physically right, and it reads on screen as a
+ * flat calm. What makes a gale look like a gale is the steep short chop riding
+ * on top of the swell, so the short components are carried down to a few metres
+ * and given progressively more steepness, which is what wind chop actually has.
+ */
+const WAVELENGTH_SCALE = [1.0, 0.58, 0.34, 0.19, 0.105, 0.055, 0.026, 2.4];
+const AMPLITUDE_SCALE = [1.0, 0.62, 0.40, 0.25, 0.15, 0.085, 0.045, 0.40];
 
 export interface OceanParams {
   /** Direction the wind blows from, degrees. */
@@ -50,6 +67,7 @@ uniform float uShipHalfBeam;
 uniform float uShipHalfLength;
 uniform vec2 uTrack[${TRACK_POINTS}];
 uniform float uTrackAge[${TRACK_POINTS}];
+uniform float uTrackRun[${TRACK_POINTS}];
 uniform int uTrackCount;
 
 /**
@@ -60,16 +78,26 @@ uniform int uTrackCount;
  * she disturbed two minutes ago stays disturbed where it was: put the helm over
  * and the wake bends astern of her instead of swinging round like a searchlight.
  *
- * x: foam coverage, y: surface displacement in metres.
+ * Its geometry is set by distance run rather than by elapsed time. A wake is a
+ * wave pattern the hull drags along with it, so its width at a given point is
+ * fixed by how far astern that point lies, not by how long ago the ship passed:
+ * driving the spread with age instead makes a slow ship in a calm lay down a
+ * wake half a cable wide.
+ *
+ * x: foam coverage, y: surface displacement in metres, z: how far the water has
+ * been smoothed — the flattened slick a hull drags behind it, which is what the
+ * eye actually reads as a wake long after the foam itself has gone.
  */
-vec2 wakeAt(vec2 rel) {
-  if (uWakeStrength < 0.002) return vec2(0.0);
+vec3 wakeAt(vec2 rel) {
+  if (uWakeStrength < 0.002) return vec3(0.0);
   // Everything past this is open water: skip the whole track search for it.
-  if (dot(rel, rel) > 300.0 * 300.0) return vec2(0.0);
+  if (dot(rel, rel) > 260.0 * 260.0) return vec3(0.0);
 
-  // Nearest point on the track, and how long ago she laid it down.
+  // Nearest point on the track: how far off it we are, how far astern along it,
+  // and how long ago she laid it down.
   float bestD = 1.0e9;
   float bestAge = 0.0;
+  float bestRun = 0.0;
   for (int i = 0; i < ${TRACK_POINTS - 1}; i++) {
     if (i + 1 >= uTrackCount) break;
     vec2 a = uTrack[i];
@@ -81,31 +109,51 @@ vec2 wakeAt(vec2 rel) {
     if (d < bestD) {
       bestD = d;
       bestAge = mix(uTrackAge[i], uTrackAge[i + 1], t);
+      bestRun = mix(uTrackRun[i], uTrackRun[i + 1], t);
     }
   }
 
-  // The wake spreads and dies as it ages.
-  float halfWidth = uShipHalfBeam * 0.85 + bestAge * 0.42;
-  float fade = exp(-bestAge / (7.0 + uWakeStrength * 16.0));
-  float edge = abs(bestD - halfWidth);
+  // The pattern itself persists with distance run; the froth in it dies away far
+  // sooner, which is why a wake is white for a ship's length or two and then a
+  // smooth glassy road for a mile.
+  float pattern = exp(-bestRun / (uShipHalfLength * 26.0));
+  float froth = exp(-bestAge / (14.0 + uWakeStrength * 20.0))
+              * exp(-bestRun / (uShipHalfLength * 9.0));
 
-  float shoulders = exp(-edge * edge / 2.4) * fade;
-  float centre = (1.0 - smoothstep(halfWidth * 0.2, halfWidth, bestD))
-               * exp(-bestAge / (3.5 + uWakeStrength * 7.0)) * 0.55;
+  // The band of broken water directly astern, about the ship's beam at the
+  // transom and opening only slowly.
+  float halfWidth = uShipHalfBeam * (0.9 + bestRun * 0.0045);
+  float q = bestD / max(halfWidth, 0.4);
+  float trail = exp(-q * q * 1.6);
+
+  // The Kelvin cusps: two lines of steeper water running out at a fixed angle
+  // either side of the track, whatever the ship's speed. They are a pattern in
+  // the surface rather than a painted stripe, so they carry almost no foam.
+  float arm = uShipHalfBeam * 0.9 + bestRun * ${KELVIN_TAN.toFixed(4)};
+  float armWidth = 0.9 + bestRun * 0.035;
+  float e = (bestD - arm) / armWidth;
+  float cusps = exp(-e * e) * pattern * smoothstep(0.0, 8.0, bestRun);
 
   // The bow throws water aside just forward of the stem, which is fixed to her
   // and so is still measured from her heading.
   float along = dot(rel, uWakeDir);
   float across = dot(rel, vec2(uWakeDir.y, -uWakeDir.x));
-  float bowAlong = along - uShipHalfLength * 0.72;
-  float bow = exp(-(bowAlong * bowAlong) / 9.0)
-            * exp(-(across * across) / max(uShipHalfBeam * uShipHalfBeam * 1.4, 1.0));
+  float bowAlong = along - uShipHalfLength * 0.78;
+  float bowSpread = max(uShipHalfBeam * uShipHalfBeam * 1.4, 1.0);
+  float bow = exp(-(bowAlong * bowAlong) / 6.0) * exp(-(across * across) / bowSpread);
 
-  float foam = clamp((shoulders * 0.95 + centre + bow * 1.2) * uWakeStrength, 0.0, 1.0);
+  float foam = clamp((trail * froth * 0.85 + cusps * 0.10 + bow * 0.8) * uWakeStrength,
+                     0.0, 1.0);
 
-  // She piles water up at the bow and leaves a trough astern of it.
-  float lift = bow * 0.55 - centre * 0.42 + shoulders * 0.18;
-  return vec2(foam, lift * uWakeStrength * (uShipHalfBeam * 0.42));
+  // She piles water up at the bow, leaves a trough in the trail astern of it,
+  // and raises the two cusp lines either side.
+  float lift = bow * 0.62 - trail * pattern * 0.34 + cusps * 0.30;
+
+  // Astern of her the chop is knocked flat for a long way, and that smooth road
+  // catches the sky differently from the broken water round it.
+  float slick = clamp((trail * pattern * 1.25 + cusps * 0.3) * uWakeStrength, 0.0, 1.0);
+
+  return vec3(foam, lift * uWakeStrength * (uShipHalfBeam * 0.4), slick);
 }
 `;
 
@@ -139,19 +187,19 @@ void main() {
   float crest = 0.0;
 
   float d = length(pos.xz);
-  // Short components are dropped in the far field, where the mesh cannot carry
-  // them and they would only alias.
-  float nearFade = 1.0 - smoothstep(120.0, 1600.0, d);
-  float farFade = 1.0 - smoothstep(2200.0, 9500.0, d);
 
   for (int i = 0; i < ${WAVE_COUNT}; i++) {
     float k = 6.28318530718 / uLen[i];
     vec2 dir = uDir[i];
     float f = k * dot(dir, p) + uPhase[i];
 
-    // Wavelengths under about eight metres only survive close to the camera.
-    float scaleFade = mix(farFade, nearFade, clamp((14.0 - uLen[i]) / 12.0, 0.0, 1.0));
-    float a = uAmp[i] * scaleFade;
+    // A wave is dropped once the mesh can no longer carry it, which happens at a
+    // distance set by its own wavelength rather than by one shared cutoff. Every
+    // fade therefore starts and ends somewhere different, and the sea thins out
+    // gradually instead of stepping down all at once and drawing a band across
+    // the middle of the view.
+    float reach = uLen[i] * 190.0;
+    float a = uAmp[i] * (1.0 - smoothstep(reach, reach * 7.0, d));
     float s = uSteep[i];
 
     float sinf = sin(f);
@@ -179,7 +227,9 @@ void main() {
   // Only the displacement is taken per-vertex. The foam is evaluated per-pixel
   // in the fragment stage, because far-field triangles are hundreds of metres
   // across and interpolating foam over them smears the wake into a solid sheet.
-  pos.y += wakeAt(position.xz).y;
+  // Only near the ship: the wake search is a loop over the whole track, and the
+  // far field has hundreds of vertices that will never be within a mile of her.
+  if (d < 320.0) pos.y += wakeAt(position.xz).y;
   vLocal = position.xz;
 
   vNormal = normalize(cross(binormal, tangent));
@@ -218,6 +268,49 @@ varying float vDist;
 varying vec2 vSurface;
 varying vec2 vLocal;
 
+/**
+ * Tiling value noise.
+ *
+ * Products and sums of sines are cheap but they lay down a regular lattice, and
+ * once anything is thresholded against them — whitecaps, wake froth — the
+ * lattice shows through as rows of identical round blobs. This hashes the
+ * integer lattice instead, so the field is irregular at every scale.
+ *
+ * The cell index is taken modulo a period before it is hashed, which both makes
+ * the field tile seamlessly and keeps the hash's argument small: a hash built on
+ * fract() of a coordinate in the tens of thousands has no precision left, and
+ * the noise degenerates into bands.
+ */
+float hash21(vec2 p) {
+  vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+
+float vnoise(vec2 p, float period) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  vec2 a = mod(i, period);
+  vec2 b = mod(i + 1.0, period);
+  return mix(mix(hash21(a), hash21(vec2(b.x, a.y)), f.x),
+             mix(hash21(vec2(a.x, b.y)), hash21(b), f.x), f.y);
+}
+
+/** Four octaves of it, tiling on the same period at every scale. */
+float fbm(vec2 p) {
+  float v = 0.0;
+  float amp = 0.52;
+  float per = 64.0;
+  for (int i = 0; i < 4; i++) {
+    v += amp * vnoise(p, per);
+    p *= 2.0;
+    per *= 2.0;
+    amp *= 0.5;
+  }
+  return v;
+}
+
 // Ripple detail finer than the mesh can carry, as a normal perturbation.
 vec2 chopNormal(vec2 q, float t) {
   vec2 n = vec2(0.0);
@@ -236,15 +329,27 @@ void main() {
   vec3 n = normalize(vNormal);
   vec3 viewDir = normalize(cameraPosition - vWorld);
 
-  // Ripple, at three ranges so the texture holds up as it recedes.
-  float near = 1.0 - smoothstep(40.0, 340.0, vDist);
-  float mid = (1.0 - smoothstep(300.0, 1500.0, vDist)) * 0.55;
-  vec2 detail = vec2(0.0);
-  if (near + mid > 0.004) {
-    detail = chopNormal(vSurface, uNoiseTime) * near
-           + chopNormal(vSurface * 0.27 + 41.0, uNoiseTime * 0.55) * (mid + near * 0.5);
-  }
-  n = normalize(n + vec3(detail.x, 0.0, detail.y) * 0.17 * clamp(uChop, 0.12, 1.1));
+  vec3 wk = wakeAt(vLocal);
+
+  // Ripple, in four octaves whose ranges overlap heavily. Each is roughly four
+  // times coarser and reaches roughly four times further than the one before, so
+  // as the fine texture drops out the next scale up is already carrying the
+  // surface. The coarsest never fades at all: without it the water beyond a few
+  // hundred metres goes glassy and a flat strip appears across the view.
+  float o1 = 1.0 - smoothstep(60.0, 900.0, vDist);
+  float o2 = 1.0 - smoothstep(260.0, 3400.0, vDist);
+  float o3 = 1.0 - smoothstep(1100.0, 13000.0, vDist);
+  vec2 detail =
+      chopNormal(vSurface, uNoiseTime) * o1
+    + chopNormal(vSurface * 0.26 + 41.0, uNoiseTime * 0.52) * (o2 * 0.78)
+    + chopNormal(vSurface * 0.068 + 91.0, uNoiseTime * 0.27) * (o3 * 0.52)
+    + chopNormal(vSurface * 0.018 + 137.0, uNoiseTime * 0.14) * 0.34;
+  // The slick astern flattens the ripple as well as the swell, which is what
+  // makes a wake visible on a calm day when there is no foam left in it at all.
+  float smoothed = 1.0 - wk.z * 0.78;
+  n = normalize(n + vec3(detail.x, 0.0, detail.y)
+                * 0.13 * clamp(uChop, 0.12, 1.1) * smoothed);
+  n = normalize(mix(n, vec3(0.0, 1.0, 0.0), wk.z * 0.35));
 
   float ndv = max(dot(n, viewDir), 0.0);
   float fresnel = mix(0.02, 1.0, pow(1.0 - ndv, 5.0));
@@ -260,8 +365,10 @@ void main() {
   float sunDot = max(dot(reflDir, uSunDir), 0.0);
   float sparkle = 0.55 + 0.45 * sin(vSurface.x * 3.1 + uNoiseTime * 4.3)
                               * sin(vSurface.y * 2.7 - uNoiseTime * 3.7);
-  float spec = pow(sunDot, 90.0) * 0.8 * mix(1.0, sparkle, clamp(uChop, 0.0, 1.0));
-  float sheen = pow(sunDot, 11.0) * 0.14;
+  float spec = pow(sunDot, 110.0) * 0.85 * mix(0.35, sparkle, clamp(uChop, 0.0, 1.0));
+  // The broad sheen either side of the sun's track is what blows out to a white
+  // sheet if it is let run: it is held down hard and narrowed.
+  float sheen = pow(sunDot, 24.0) * 0.09;
 
   vec3 col = mix(body, sky, fresnel * 0.70);
   col += uSunColor * (spec + sheen) * (1.0 - uNight * 0.82);
@@ -277,29 +384,56 @@ void main() {
   // patches and downwind streaks rather than a covering of white, so the crest
   // test is broken up by a moving noise field.
   float crest = vCrest / max(uCrestMax, 0.001);
-  float mottle = 0.55 + 0.45 * sin(vSurface.x * 0.21 + uNoiseTime * 0.5)
-                            * sin(vSurface.y * 0.17 - uNoiseTime * 0.41)
-                     + 0.22 * sin(dot(vSurface, vec2(0.44, -0.38)) - uNoiseTime * 1.3);
-  float breaking = smoothstep(uFoamThreshold, uFoamThreshold + 0.13, crest * mottle);
-  // Foam lingers on the back of the crest that made it.
-  breaking *= smoothstep(-0.1, 0.35, n.y * 0.3 + vWorld.y / max(uCrestMax, 0.3));
-  breaking *= 1.0 - smoothstep(900.0, 4000.0, vDist);
+  // Broken up across four scales. A single low-frequency pair of sines picks out
+  // patches thirty metres across, and at gale strength a whole wave face crosses
+  // the threshold at once and goes solid white; whitecaps are metres wide, not
+  // tens of metres, and they tear rather than fade.
+  // Drifting downwind, because whitecaps do: the patch that is breaking now was
+  // being blown to leeward a moment ago.
+  vec2 drift = uChopDir * uNoiseTime * 0.8;
+  float mottle = 0.55 + 0.92 * fbm((vSurface + drift) * 0.09);
+  // A short ramp, so a crest breaks rather than dissolving.
+  float breaking = smoothstep(uFoamThreshold, uFoamThreshold + 0.06, crest * mottle);
+  // Foam sits on the crest and streams down its back, never in the troughs.
+  breaking *= smoothstep(0.02, 0.42, n.y * 0.25 + vWorld.y / max(uCrestMax, 0.3));
+  breaking *= 1.0 - smoothstep(2500.0, 14000.0, vDist);
 
-  // Wake and bow foam, textured so it reads as bubbles rather than paint.
-  float bubbles = 0.74
-    + 0.16 * sin(dot(vSurface, vec2(1.7, 2.3)) + uNoiseTime * 2.6)
-    + 0.13 * sin(dot(vSurface, vec2(-2.9, 1.1)) - uNoiseTime * 3.4)
-    + 0.10 * sin(dot(vSurface, vec2(4.3, 5.1)) + uNoiseTime * 5.2);
-  float wake = clamp(wakeAt(vLocal).x * bubbles * 1.2, 0.0, 1.0);
+  // Wake and bow foam, textured so it reads as bubbles rather than paint. The
+  // fine grain is dropped with distance: a two-metre pattern seen from eighty
+  // metres away falls below one sample per pixel and beats against the pixel
+  // grid, which is what turns a wake into broad diagonal moire bands.
+  float grain = 1.0 - smoothstep(30.0, 170.0, vDist);
+  // Warp the sampling point before texturing it, so the froth breaks into
+  // irregular patches and streaks instead of an even wash. A wake that is not
+  // broken up reads as a ribbon of white paint laid on the sea.
+  // Sampled squashed along the ship's heading, so the patches come out drawn
+  // into streaks in the direction the water was dragged rather than round blobs.
+  vec2 w = vec2(dot(vSurface, uWakeDir) * 0.34,
+                dot(vSurface, vec2(uWakeDir.y, -uWakeDir.x)));
+  float bubbles = 0.28 + 1.5 * fbm(w * 0.42 + uNoiseTime * 0.11)
+                + 0.35 * (vnoise(w * 2.6 - uNoiseTime * 0.6, 512.0) - 0.5) * grain;
+  // A soft threshold, so froth either covers a patch of water or it does not —
+  // except close under the counter, where the water she is actually shouldering
+  // aside is solid white however the noise happens to fall.
+  float broken = smoothstep(0.30, 0.95, wk.x * max(bubbles, 0.0) + wk.x * 0.4);
+  float wake = clamp(max(broken, wk.x * wk.x * 0.95), 0.0, 1.0);
 
   float foam = clamp(breaking * 0.72 + wake, 0.0, 1.0);
   vec3 foamColor = vec3(0.93, 0.96, 0.98) * (1.0 - uNight * 0.82);
-  col = mix(col, foamColor, foam * 0.78);
+  // Foam is aerated water, not paint: even a hard-driven wake leaves the sea
+  // showing through it.
+  col = mix(col, foamColor, foam * 0.68);
 
-  // Wind streaks running downwind, the long pale lines a breeze draws on water.
-  float streak = sin(dot(vSurface, uChopDir) * 0.06 + uNoiseTime * 0.4)
-               * sin(dot(vSurface, vec2(-uChopDir.y, uChopDir.x)) * 0.9 - uNoiseTime * 1.1);
-  col *= 1.0 + streak * 0.05 * uChop * (1.0 - smoothstep(200.0, 2200.0, vDist));
+  // Wind streaks running downwind: the long pale lines a breeze draws on water,
+  // spaced tens of metres apart and drifting, not the close regular grating that
+  // a single pair of sines lays down across the whole sea like corduroy.
+  vec2 alongWind = uChopDir;
+  vec2 acrossWind = vec2(-uChopDir.y, uChopDir.x);
+  float lane = dot(vSurface, acrossWind);
+  float run = dot(vSurface, alongWind);
+  float streak = sin(lane * 0.038 + sin(run * 0.007) * 2.1 + uNoiseTime * 0.09)
+               * (0.6 + 0.4 * sin(run * 0.013 - uNoiseTime * 0.22));
+  col *= 1.0 + streak * 0.028 * uChop * (1.0 - smoothstep(300.0, 3000.0, vDist));
 
   // The ship's shadow on the water. The ocean is a custom shader and takes no
   // part in the shadow map, so the silhouette is projected analytically: she is
@@ -323,6 +457,12 @@ void main() {
   }
 
   float fog = 1.0 - exp(-vDist * uFogDensity);
+  // On a clear day extinction alone never quite finishes, and water that is
+  // ninety-five per cent hazed against a sky that is eighty per cent hazed meets
+  // it in a visible pale seam right along the horizon. The last of the haze is
+  // therefore forced home well inside the rim of the mesh, so the sea arrives at
+  // exactly the sky's own horizon colour and the join disappears.
+  fog = max(fog, smoothstep(6000.0, 32000.0, vDist));
   col = mix(col, uFogColor, clamp(fog, 0.0, 1.0));
 
   gl_FragColor = vec4(col, 1.0);
@@ -339,14 +479,25 @@ export class Ocean {
   private steeps: number[] = [];
   private phases: number[] = [];
 
-  /** Distance travelled, in metres. Kept in doubles; never sent to the GPU raw. */
+  /** Noise-field origin, wrapped; decorative only, so it need not be exact. */
   private originE = 0;
   private originN = 0;
-  private simTime = 0;
-  private track: { x: number; z: number; age: number }[] = [{ x: 0, z: 0, age: 0 }];
+  private noiseTime = 0;
+  /** Sea state as the water is actually drawing it, slewed toward the weather. */
+  private seaHeight = 0.4;
+  private seaWind = 8;
+  private seaWindFrom = 0;
+  private seaSwellFrom = 0;
+  private seeded = false;
+
+  private track: { x: number; z: number; age: number; run: number }[] =
+    [{ x: 0, z: 0, age: 0, run: 0 }];
 
   constructor() {
-    const geometry = buildRadialGrid(256, 210, 1.6, 12000);
+    // The grid must reach past the true horizon — sixteen kilometres from a
+    // masthead on a clear day — or the player sees the edge of the water before
+    // he sees where the sea meets the sky.
+    const geometry = buildRadialGrid(256, 224, 1.6, 42000);
 
     this.dirs = Array.from({ length: WAVE_COUNT }, () => new THREE.Vector2(1, 0));
     this.amps = new Array(WAVE_COUNT).fill(0.4);
@@ -386,6 +537,7 @@ export class Ocean {
         uShadow: { value: 1 },
         uTrack: { value: Array.from({ length: TRACK_POINTS }, () => new THREE.Vector2()) },
         uTrackAge: { value: new Array(TRACK_POINTS).fill(0) },
+        uTrackRun: { value: new Array(TRACK_POINTS).fill(0) },
         uTrackCount: { value: 0 },
       },
     });
@@ -396,15 +548,47 @@ export class Ocean {
     this.mesh.receiveShadow = true;
   }
 
-  /** Recompute the wave train for the current weather. */
-  setSea(p: OceanParams): void {
-    const baseAmp = clamp(p.waveHeight, 0.05, 14) * 0.34;
-    // Fully developed wavelength grows with the square of wind speed.
-    const baseLen = clamp(6 + p.windKnots * p.windKnots * 0.34, 12, 420);
+  /**
+   * Advance the sea by one frame.
+   *
+   * `dEast` and `dNorth` are the metres she has made good since the last frame,
+   * and `dt` the seconds of wave time elapsed. Everything is integrated rather
+   * than recomputed from absolute position and absolute clock: see `advance`.
+   */
+  setSea(p: OceanParams, dEast: number, dNorth: number, dt: number): void {
+    // A sea does not answer a gust. Slew the state the water is drawing toward
+    // the weather over a minute or so, both because that is how a sea builds and
+    // because it keeps the wave train's geometry from twitching frame to frame.
+    // The first frame takes the weather whole: the player should open his eyes
+    // on the sea that is running, not watch it build from a calm.
+    if (!this.seeded) {
+      this.seeded = true;
+      this.seaHeight = clamp(p.waveHeight, 0.05, 14);
+      this.seaWind = p.windKnots;
+      this.seaWindFrom = p.windFrom;
+      this.seaSwellFrom = p.swellFrom;
+    }
+    // Three seconds is enough. The weather itself already changes over hours;
+    // all this has to do is take the twitch out of a gust so the wave train's
+    // geometry does not jitter from frame to frame. Any slower and sailing into
+    // a gale leaves the ship in a flat calm for minutes on end.
+    const k = clamp(dt / 3, 0, 1);
+    this.seaHeight = lerp(this.seaHeight, clamp(p.waveHeight, 0.05, 14), k);
+    this.seaWind = lerp(this.seaWind, p.windKnots, k);
+    this.seaWindFrom = slewAngle(this.seaWindFrom, p.windFrom, k);
+    this.seaSwellFrom = slewAngle(this.seaSwellFrom, p.swellFrom, k);
+
+    // Chosen so the sum of the components comes out at the significant wave
+    // height the weather asked for: with random phases, Hs is four times the
+    // standard deviation, not the sum of the amplitudes.
+    const baseAmp = this.seaHeight * 0.275;
+    // Peak wavelength of a fully developed sea: 0.79 U squared in metres, which
+    // in knots is a shade over a fifth of the square of the wind.
+    const baseLen = clamp(5 + this.seaWind * this.seaWind * 0.21, 8, 520);
 
     for (let i = 0; i < WAVE_COUNT; i++) {
       const isSwell = i === WAVE_COUNT - 1;
-      const fromDeg = (isSwell ? p.swellFrom : p.windFrom) + SPREAD[i];
+      const fromDeg = (isSwell ? this.seaSwellFrom : this.seaWindFrom) + SPREAD[i];
       const towardRad = ((fromDeg + 180) * Math.PI) / 180;
       this.dirs[i].set(Math.sin(towardRad), Math.cos(towardRad));
 
@@ -418,15 +602,24 @@ export class Ocean {
     this.material.uniforms.uCrestMax.value = Math.max(
       this.amps.reduce((s, a) => s + a, 0), 0.02,
     );
+    // Whitecaps start at about force four and by a full gale the sea is more
+    // white than blue. The threshold is measured against the summed crest, which
+    // averages about a third of its maximum, so it has to come a long way down
+    // before a gale looks like one.
     this.material.uniforms.uFoamThreshold.value =
-      lerp(1.10, 0.62, smoothstep(11, 48, p.windKnots));
+      lerp(1.16, 0.52, smoothstep(9, 46, this.seaWind));
 
-    const chopRad = ((p.windFrom + 180) * Math.PI) / 180;
+    const chopRad = ((this.seaWindFrom + 180) * Math.PI) / 180;
     (this.material.uniforms.uChopDir.value as THREE.Vector2)
       .set(Math.sin(chopRad), Math.cos(chopRad));
-    this.material.uniforms.uChop.value = clamp(p.windKnots / 26, 0, 1.3);
+    this.material.uniforms.uChop.value = clamp(this.seaWind / 26, 0, 1.3);
 
-    this.syncPhases();
+    this.advance(dEast, dNorth, dt);
+  }
+
+  /** Take the next weather whole instead of slewing into it. */
+  reseed(): void {
+    this.seeded = false;
   }
 
   /** Tell the water where the ship is pushing it aside and where her shadow falls. */
@@ -457,17 +650,28 @@ export class Ocean {
 
     // A new point whenever she has run far enough for the track to bend.
     const head = this.track[0];
-    if (!head || Math.hypot(head.x, head.z) > 6) {
-      this.track.unshift({ x: 0, z: 0, age: 0 });
+    if (!head || Math.hypot(head.x, head.z) > TRACK_STEP) {
+      this.track.unshift({ x: 0, z: 0, age: 0, run: 0 });
     }
     while (this.track.length > TRACK_POINTS) this.track.pop();
     // Drop the tail once it has faded out anyway.
-    while (this.track.length > 2 && this.track[this.track.length - 1].age > 70) {
+    while (this.track.length > 2 && this.track[this.track.length - 1].age > 120) {
       this.track.pop();
+    }
+
+    // Distance run along the track from the ship, which is what sets the wake's
+    // geometry. Measured along the path rather than straight-line, so a wake
+    // laid through a turn keeps its width all the way round the bend.
+    this.track[0].run = 0;
+    for (let i = 1; i < this.track.length; i++) {
+      const a = this.track[i - 1];
+      const b = this.track[i];
+      b.run = a.run + Math.hypot(b.x - a.x, b.z - a.z);
     }
 
     const pts = this.material.uniforms.uTrack.value as THREE.Vector2[];
     const ages = this.material.uniforms.uTrackAge.value as number[];
+    const runs = this.material.uniforms.uTrackRun.value as number[];
 
     // Until she has run far enough to have a real track, the tail is carried on
     // in the direction she is going, so a ship that has just got under way still
@@ -476,57 +680,61 @@ export class Ocean {
     const tailX = speed > 0.05 ? (velocityE / speed) * -1 : 0;
     const tailZ = speed > 0.05 ? (velocityN / speed) : 0;
     const last = this.track[this.track.length - 1];
-    const step = 7;
 
     for (let i = 0; i < TRACK_POINTS; i++) {
       if (i < this.track.length) {
         const p = this.track[i];
         pts[i].set(p.x, p.z);
         ages[i] = p.age;
+        runs[i] = p.run;
       } else {
         const n = i - this.track.length + 1;
-        pts[i].set(last.x + tailX * step * n, last.z + tailZ * step * n);
-        ages[i] = last.age + (step * n) / Math.max(speed, 0.6);
+        const reach = TRACK_STEP * n;
+        pts[i].set(last.x + tailX * reach, last.z + tailZ * reach);
+        ages[i] = last.age + reach / Math.max(speed, 0.6);
+        runs[i] = last.run + reach;
       }
     }
     this.material.uniforms.uTrackCount.value = TRACK_POINTS;
   }
 
-  /** Move the wave field so the water flows past a ship held at the origin. */
-  setOrigin(east: number, north: number): void {
-    this.originE = east;
-    this.originN = north;
-  }
-
-  setTime(t: number): void {
-    this.simTime = t;
-  }
-
   /**
-   * Fold the ship's travelled distance and the simulation time into a single
-   * wrapped phase per wave.
+   * Carry every wave's phase forward by one frame.
    *
-   * Both quantities grow without bound — a voyage runs to millions of metres and
-   * the clock counts seconds since 1430 — and a float32 sine of a number that
-   * large returns nothing but quantisation noise, which freezes the whole sea.
-   * Doing the arithmetic here in doubles and handing the GPU only the fraction
-   * of a turn keeps every wavelength exact for as long as the voyage lasts.
+   * Phase must be integrated, never evaluated from absolutes. A voyage runs to
+   * millions of metres and the clock counts seconds since 1430, so the product
+   * of a wavenumber and either of those is an enormous number — and the
+   * wavenumber itself moves with the wind. Taking `k * c * t` directly means a
+   * gust of a hundredth of a knot shifts the wavelength by a tenth of a
+   * millimetre and the phase by several million radians: the sea is re-rolled
+   * from scratch every frame and the water shivers in place instead of running.
+   *
+   * Integrating the increment `k * c * dt` instead makes a change in the wind a
+   * change in the sea's *rate*, which is what it physically is. The wave train
+   * then keeps running through gusts, through a shift of wind, and across twelve
+   * thousand miles of ocean, and only ever needs a single turn of phase on the
+   * GPU.
    */
-  private syncPhases(): void {
+  private advance(dEast: number, dNorth: number, dt: number): void {
     const TAU = Math.PI * 2;
     for (let i = 0; i < WAVE_COUNT; i++) {
       const k = TAU / this.lens[i];
+      // Deep-water phase speed: long waves outrun short ones, which is what
+      // makes a real sea look layered rather than like a single moving cloth.
       const c = Math.sqrt(9.81 / k);
       const d = this.dirs[i];
-      const spatial = k * (d.x * this.originE + d.y * -this.originN);
-      const temporal = k * c * this.simTime;
-      this.phases[i] = ((spatial - temporal) % TAU + TAU) % TAU;
+      const step = k * (d.x * dEast + d.y * -dNorth) - k * c * dt;
+      this.phases[i] = ((this.phases[i] + step) % TAU + TAU) % TAU;
     }
-    // The decorative noise fields are wrapped too, well inside float precision.
-    (this.material.uniforms.uNoiseOrigin.value as THREE.Vector2).set(
-      wrap(this.originE, 20000), wrap(-this.originN, 20000),
-    );
-    this.material.uniforms.uNoiseTime.value = wrap(this.simTime, 4096);
+
+    // The decorative noise fields are carried the same way and wrapped well
+    // inside float precision.
+    this.originE = wrap(this.originE + dEast, 20000);
+    this.originN = wrap(this.originN + dNorth, 20000);
+    this.noiseTime = wrap(this.noiseTime + dt, 4096);
+    (this.material.uniforms.uNoiseOrigin.value as THREE.Vector2)
+      .set(this.originE, -this.originN);
+    this.material.uniforms.uNoiseTime.value = this.noiseTime;
   }
 
   setLighting(
@@ -592,6 +800,12 @@ export class Ocean {
 function wrap(v: number, limit: number): number {
   const span = limit * 2;
   return ((v + limit) % span + span) % span - limit;
+}
+
+/** Ease one compass bearing toward another the short way round. */
+function slewAngle(from: number, to: number, k: number): number {
+  let delta = ((to - from) % 360 + 540) % 360 - 180;
+  return from + delta * k;
 }
 
 /**

@@ -6,6 +6,24 @@ import { LANDMASSES, elevationAt, isLand } from '../world/landmass';
 const BANDS = [0, 320, 1100, 3200, 8000, 17000];
 const BAND_TINT = [0.55, 0.62, 0.72, 0.84, 0.95, 1.0];
 
+const EARTH_RADIUS_M = 6371000;
+
+/**
+ * How far the earth's curve carries a point below the level of the eye, in
+ * metres, at a given distance.
+ *
+ * The sea is drawn as a flat plane, which is the right approximation for water
+ * the ship is sailing on, but land is not: without this a beach fifty miles off
+ * is drawn at sea level, which on a flat plane is exactly the horizon, and it
+ * comes out as a bright hairline ruled along the skyline. Sinking the terrain by
+ * the curve instead puts it where it belongs — hull-down, high ground first —
+ * so a landfall opens as it really does, a peak lifting out of the sea long
+ * before the shore beneath it is anywhere in sight.
+ */
+function curvatureDrop(distanceM: number): number {
+  return (distanceM * distanceM) / (2 * EARTH_RADIUS_M);
+}
+
 interface Segment {
   aLat: number; aLon: number;
   bLat: number; bLon: number;
@@ -99,12 +117,13 @@ export class Land {
           const h = b === 0 ? 0.4 : elevationAt({ lat, lon });
           // Guarantee the band rises even where the elevation field is flat.
           const floor = relief * 0.12 * (inland / 17000);
-          positions.push(x, Math.max(h, floor), z);
+          const height = Math.max(h, floor);
+          positions.push(x, height - curvatureDrop(Math.hypot(x, z)), z);
 
           const tint = BAND_TINT[b];
           // Vegetation and rock tinted by latitude: desert coasts are pale,
           // equatorial ones green, southern capes brown and scrubby.
-          const c = groundColour(lat, Math.max(h, floor), relief);
+          const c = groundColour(lat, height, relief);
           colors.push(c.r * tint, c.g * tint, c.b * tint);
         }
       }
@@ -118,13 +137,17 @@ export class Land {
         indices.push(i1, i2, i3);
       }
 
-      // A strip of surf just seaward of the shoreline.
+      // A strip of surf just seaward of the shoreline. It sinks with the curve
+      // like everything else ashore, so it drops out of sight long before the
+      // headland behind it does.
       const sBase = surfPositions.length / 3;
       const outward = 130;
-      surfPositions.push(ax, 0.35, az);
-      surfPositions.push(bx, 0.35, bz);
-      surfPositions.push(ax - nx * outward, 0.3, az - nz * outward);
-      surfPositions.push(bx - nx * outward, 0.3, bz - nz * outward);
+      const cx = ax - nx * outward, cz = az - nz * outward;
+      const dx2 = bx - nx * outward, dz2 = bz - nz * outward;
+      surfPositions.push(ax, 0.35 - curvatureDrop(Math.hypot(ax, az)), az);
+      surfPositions.push(bx, 0.35 - curvatureDrop(Math.hypot(bx, bz)), bz);
+      surfPositions.push(cx, 0.3 - curvatureDrop(Math.hypot(cx, cz)), cz);
+      surfPositions.push(dx2, 0.3 - curvatureDrop(Math.hypot(dx2, dz2)), dz2);
       surfIndices.push(sBase, sBase + 2, sBase + 1);
       surfIndices.push(sBase + 1, sBase + 2, sBase + 3);
     }
@@ -150,10 +173,24 @@ export class Land {
     this.group.add(this.surf);
   }
 
+  /**
+   * The pieces of coastline actually within sight, clipped to the horizon.
+   *
+   * Each segment is clipped against the circle of visibility rather than merely
+   * tested for it. A coastline ring's segments run for whole degrees at a time,
+   * so rejecting them by their midpoints keeps every segment whose middle is
+   * anywhere near — and then builds the entire thing, hundreds of miles of it,
+   * stretching away past the horizon. From the middle of the Atlantic that draws
+   * the coast of Africa as a hairline right along the skyline.
+   */
   private segmentsNear(origin: LatLon, nm: number): Segment[] {
     const out: Segment[] = [];
-    const radiusDeg = nm / 60;
-    const lonSpan = radiusDeg / Math.max(cosd(origin.lat), 0.2);
+    const cosLat = Math.max(cosd(origin.lat), 0.2);
+    // Local coordinates in nautical miles, east and north of the ship.
+    const toNm = (lat: number, lon: number): [number, number] =>
+      [wrap180(lon - origin.lon) * 60 * cosLat, (lat - origin.lat) * 60];
+    const toLatLon = (x: number, y: number): [number, number] =>
+      [origin.lat + y / 60, origin.lon + x / (60 * cosLat)];
 
     for (let li = 0; li < LANDMASSES.length; li++) {
       const ring = LANDMASSES[li].ring;
@@ -163,15 +200,29 @@ export class Land {
         const aLat = ring[i * 2], aLon = ring[i * 2 + 1];
         const bLat = ring[j * 2], bLon = ring[j * 2 + 1];
 
-        // Cheap bounding rejection on the segment's midpoint and extent.
-        const midLat = (aLat + bLat) / 2;
-        const midLon = (aLon + bLon) / 2;
-        const half = Math.max(Math.abs(aLat - bLat), Math.abs(aLon - bLon)) / 2;
-        if (Math.abs(midLat - origin.lat) > radiusDeg + half) continue;
-        if (Math.abs(wrap180(midLon - origin.lon)) > lonSpan + half) continue;
+        const [ax, ay] = toNm(aLat, aLon);
+        const [bx, by] = toNm(bLat, bLon);
+        const dx = bx - ax, dy = by - ay;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq < 1e-9) continue;
+
+        // Where the segment crosses the circle of radius nm about the ship.
+        // Solving |a + t d| = nm for t, and keeping the part inside.
+        const b2 = ax * dx + ay * dy;
+        const c = ax * ax + ay * ay - nm * nm;
+        const disc = b2 * b2 - lenSq * c;
+        if (disc <= 0) continue;
+        const root = Math.sqrt(disc);
+        const t0 = Math.max((-b2 - root) / lenSq, 0);
+        const t1 = Math.min((-b2 + root) / lenSq, 1);
+        if (t1 <= t0) continue;
+
+        const [clipALat, clipALon] = toLatLon(ax + dx * t0, ay + dy * t0);
+        const [clipBLat, clipBLon] = toLatLon(ax + dx * t1, ay + dy * t1);
 
         out.push({
-          aLat, aLon, bLat, bLon, land: li,
+          aLat: clipALat, aLon: clipALon, bLat: clipBLat, bLon: clipBLon, land: li,
+          // Taken from the whole segment, whose orientation clipping does not change.
           inward: this.inwardFor(li, i, aLat, aLon, bLat, bLon),
         });
       }

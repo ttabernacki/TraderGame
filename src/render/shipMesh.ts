@@ -39,9 +39,29 @@ interface SailBuild {
   /** Which local axis the sail bellies along: 0 for x, 2 for z. */
   axis: 0 | 2;
   scale: number;
-  /** Where the cross sits in texture space, and the sail's aspect. */
+  /** Where the cross sits in texture space. */
   crossAt: [number, number];
-  aspect: number;
+  /**
+   * How a metre along each of two world axes in the plane of the sail moves in
+   * texture space. The device is drawn through this, so it comes out upright
+   * and square on the cloth however the sail is cut and however the yard is
+   * raked — laying it out in the texture's own frame instead puts the arms at
+   * whatever angle the cut happens to have, which on a lateen is a pinwheel.
+   */
+  crossAxes: { up: [number, number]; across: [number, number] };
+  /** Length of a cross arm, in metres. */
+  crossArm: number;
+}
+
+/**
+ * One rope of the running rigging: an end made fast to something that swings
+ * with the yard, and an end made fast to the ship.
+ */
+interface Rope {
+  /** In the mast pivot's frame, so it turns with the trim. */
+  local: THREE.Vector3;
+  /** In the hull's frame. */
+  fixed: THREE.Vector3;
 }
 
 interface MastParts {
@@ -51,6 +71,7 @@ interface MastParts {
   sail: THREE.Mesh;
   bundle: THREE.Mesh;
   build: SailBuild;
+  ropes: Rope[];
 }
 
 /**
@@ -72,6 +93,8 @@ export class ShipMesh {
   private flagBase: Float32Array;
   private rudder: THREE.Group;
   private tiller: THREE.Mesh;
+  private runningRig!: THREE.LineSegments;
+  private runningPos!: THREE.BufferAttribute;
 
   constructor(hull: HullClass) {
     const L = hull.lwl;
@@ -97,6 +120,20 @@ export class ShipMesh {
     for (let i = 0; i < hull.masts.length; i++) {
       this.masts.push(this.buildMast(hull.masts[i], hull, i === mainIndex));
     }
+
+    // The running rigging is redrawn every frame, since both its ends move.
+    const ropeCount = this.masts.reduce((n, m) => n + m.ropes.length, 0);
+    const runningGeo = new THREE.BufferGeometry();
+    this.runningPos = new THREE.BufferAttribute(new Float32Array(ropeCount * 6), 3);
+    this.runningPos.setUsage(THREE.DynamicDrawUsage);
+    runningGeo.setAttribute('position', this.runningPos);
+    runningGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), L * 2);
+    this.runningRig = new THREE.LineSegments(
+      runningGeo,
+      new THREE.LineBasicMaterial({ color: ROPE, transparent: true, opacity: 0.85 }),
+    );
+    this.runningRig.frustumCulled = false;
+    this.group.add(this.runningRig);
 
     // A banner at the main truck, which is also the best wind vane aboard.
     this.flagGeo = new THREE.PlaneGeometry(3.2, 1.9, 10, 5);
@@ -141,15 +178,12 @@ export class ShipMesh {
       build.geometry,
       new THREE.MeshLambertMaterial({
         side: THREE.DoubleSide,
-        map: makeSailTexture(
-          build.aspect,
-          isMain ? build.crossAt : null,
-          spec.rig === 'lateen' ? 90 - LATEEN_RAKE : 0,
-        ),
+        map: makeSailTexture(build, isMain),
         transparent: true,
         // Canvas is thin enough that the sun glows through it, so a backlit sail
-        // is never just a black shape against the sky.
-        emissive: 0x333026,
+        // is never just a black shape against the sky. Kept low: any more and it
+        // swamps the shading, and a sail with no shading on it has no shape.
+        emissive: 0x191710,
       }),
     );
     pivot.add(sail);
@@ -190,32 +224,12 @@ export class ShipMesh {
     pivot.add(yard);
     pivot.add(bundle);
 
-    // Standing rigging: shrouds to the channels, ratlines across them, a stay
-    // forward. Drawn as lines, which is what they look like at any real range.
-    const shroudMat = new THREE.LineBasicMaterial({ color: 0x2b2319, transparent: true, opacity: 0.85 });
-    const pts: THREE.Vector3[] = [];
-    const head = new THREE.Vector3(0, mastHeight * 0.9, 0);
-    for (const side of [-1, 1]) {
-      const feet: THREE.Vector3[] = [];
-      for (let k = 0; k < 3; k++) {
-        const foot = new THREE.Vector3(side * hull.beam * 0.46, deckY, (k - 1) * 1.7);
-        feet.push(foot);
-        pts.push(head.clone(), foot);
-      }
-      // Ratlines between the forward and after shroud of each side.
-      for (let r = 1; r <= 8; r++) {
-        const t = r / 9.5;
-        pts.push(
-          feet[0].clone().lerp(head, t),
-          feet[2].clone().lerp(head, t),
-        );
-      }
-    }
-    pts.push(new THREE.Vector3(0, mastHeight * 0.88, 0));
-    pts.push(new THREE.Vector3(0, deckY + D * 0.3, L * 0.46 - z));
-    pivot.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), shroudMat));
+    this.group.add(buildStandingRigging(spec, hull, mastHeight, z));
 
-    return { spec, pivot, yard, sail, bundle, build };
+    return {
+      spec, pivot, yard, sail, bundle, build,
+      ropes: buildRunningRigging(spec, hull, mastHeight, z, deckY),
+    };
   }
 
   /** Set the rig and the steering to match the simulation. */
@@ -271,6 +285,24 @@ export class ShipMesh {
       // Reefed canvas is a shorter sail, hoisted from the same yard.
       m.sail.scale.y = clamp(setAmount, 0.25, 1);
     }
+
+    // Redraw the running rigging against wherever the yards have swung to.
+    const arr = this.runningPos.array as Float32Array;
+    let o = 0;
+    for (const m of this.masts) {
+      const a = m.pivot.rotation.y;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const oz = m.pivot.position.z;
+      for (const r of m.ropes) {
+        arr[o++] = r.local.x * ca + r.local.z * sa;
+        arr[o++] = r.local.y;
+        arr[o++] = -r.local.x * sa + r.local.z * ca + oz;
+        arr[o++] = r.fixed.x;
+        arr[o++] = r.fixed.y;
+        arr[o++] = r.fixed.z;
+      }
+    }
+    this.runningPos.needsUpdate = true;
 
     // The rudder answers the helm, and the tiller swings the other way.
     const rudderAngle = clamp(v.rudder, -1, 1) * 32 * DEG;
@@ -334,26 +366,25 @@ function lateenPoints(area: number, deckY: number): { tack: THREE.Vector3; peak:
 
 function buildLateenSail(area: number, deckY: number): SailBuild {
   const { tack, peak, clew } = lateenPoints(area, deckY);
-  const N = 10;
+  const N = 14;
 
-  // The cloth is mapped on the ship's own axes — fore-and-aft across the sail,
-  // vertical up it — so the cross of the Order of Christ stands upright as it was
-  // painted, rather than leaning over with the rake of the yard. The seams are
-  // drawn into the texture at the yard's angle instead, which is where they
-  // actually ran.
-  const corners = [tack, peak, clew];
-  const zMin = Math.min(...corners.map((c) => c.z)), zMax = Math.max(...corners.map((c) => c.z));
-  const yMin = Math.min(...corners.map((c) => c.y)), yMax = Math.max(...corners.map((c) => c.y));
-  const uSpan = Math.max(zMax - zMin, 0.01);
-  const vSpan = Math.max(yMax - yMin, 0.01);
+  // The cloth is mapped in the sail's own frame — along the luff, and out across
+  // it toward the leech — rather than on the ship's axes. A lateen's cloths were
+  // seamed square to its own edges and its device painted square to the cloths,
+  // so laying the texture out any other way puts the seams across the weave at
+  // an angle that changes with the cut and makes them crawl as the sail bellies.
+  const luffVec = new THREE.Vector3().subVectors(peak, tack);
+  const luffLen = luffVec.length();
+  const luffDir = luffVec.clone().normalize();
+  const toClew = new THREE.Vector3().subVectors(clew, tack);
+  const outDir = toClew.clone()
+    .addScaledVector(luffDir, -toClew.dot(luffDir)).normalize();
+  const outSpan = Math.max(toClew.dot(outDir), 0.01);
 
-  const toUv = (c: THREE.Vector3): [number, number] =>
-    [(zMax - c.z) / uSpan, (c.y - yMin) / vSpan];
-  const cornerUv = corners.map(toUv);
-  const crossAt: [number, number] = [
-    (cornerUv[0][0] + cornerUv[1][0] + cornerUv[2][0]) / 3,
-    (cornerUv[0][1] + cornerUv[1][1] + cornerUv[2][1]) / 3,
-  ];
+  const uvOf = (p: THREE.Vector3): [number, number] => {
+    const d = new THREE.Vector3().subVectors(p, tack);
+    return [clamp(d.dot(outDir) / outSpan, 0, 1), clamp(d.dot(luffDir) / luffLen, 0, 1)];
+  };
 
   const positions: number[] = [];
   const weight: number[] = [];
@@ -376,13 +407,28 @@ function buildLateenSail(area: number, deckY: number): SailBuild {
         peak.y * a + clew.y * b + tack.y * c,
         peak.z * a + clew.z * b + tack.z * c,
       );
+      // A roach on the leech: the free edge from peak to clew is cut with a
+      // convex curve and held out by battens, not ruled straight.
+      const onLeech = b + a;
+      if (onLeech > 0.001) {
+        const along = a / onLeech;
+        const roach = Math.sin(Math.PI * along) * onLeech * outSpan * 0.075;
+        p.addScaledVector(outDir, roach * (1.0 - c * c));
+      }
       positions.push(p.x, p.y, p.z);
-      const t = toUv(p);
+      const t = uvOf(p);
       uv.push(t[0], t[1]);
-      // Peaks at the centroid and falls to nothing at every edge.
-      weight.push(27 * a * b * c);
-      // The luff is the edge from tack to peak, the one laced to the yard.
-      luff.push(clamp(1 - b * 2.2, 0, 1));
+
+      // Draft is fullest a little abaft the luff and well up the sail, not at
+      // the centroid: a sail is a wing, and a wing's deepest section is forward.
+      const across = clamp(t[0], 0, 1);
+      const up = clamp(t[1], 0, 1);
+      const chordwise = Math.sin(Math.PI * Math.pow(across, 0.72));
+      const spanwise = Math.sin(Math.PI * Math.pow(up, 0.85));
+      weight.push(chordwise * spanwise);
+      // The luff is the edge from tack to peak, the one laced to the yard, and
+      // the first part of the sail to shake when she comes up into the wind.
+      luff.push(clamp(1 - across * 2.2, 0, 1));
     }
   }
 
@@ -406,8 +452,16 @@ function buildLateenSail(area: number, deckY: number): SailBuild {
     luff: new Float32Array(luff),
     axis: 0,
     scale: Math.sqrt(area),
-    crossAt,
-    aspect: uSpan / vSpan,
+    // Well up the sail and a third out from the luff, where the cloth is broad
+    // enough to carry the device and the yard does not cross it.
+    crossAt: [0.42, 0.46],
+    // The sail stands in the ship's fore-and-aft plane, so its two world axes
+    // are straight up and straight aft.
+    crossAxes: {
+      up: [outDir.y / outSpan, luffDir.y / luffLen],
+      across: [-outDir.z / outSpan, -luffDir.z / luffLen],
+    },
+    crossArm: Math.min(outSpan, luffLen) * 0.26,
   };
 }
 
@@ -462,7 +516,9 @@ function buildSquareSail(area: number, yardY: number): SailBuild {
     axis: 2,
     scale: Math.sqrt(area),
     crossAt: [0.5, 0.52],
-    aspect: width / height,
+    // A square sail hangs square already: its texture axes are the world's.
+    crossAxes: { up: [0, 1 / height], across: [1 / width, 0] },
+    crossArm: Math.min(width, height) * 0.3,
   };
 }
 
@@ -474,7 +530,9 @@ function beamAt(t: number): number {
   if (t < 0.12) return lerp(0.34, 0.66, t / 0.12);
   if (t < 0.45) return lerp(0.66, 1.0, smoothstep(0.12, 0.45, t));
   if (t < 0.78) return lerp(1.0, 0.62, smoothstep(0.45, 0.78, t));
-  return lerp(0.62, 0.07, smoothstep(0.78, 1.0, t));
+  // The bow closes right down to the stem. Leaving any beam on the last station
+  // ends her in a squared-off block instead of a cutwater.
+  return lerp(0.62, 0.012, Math.pow(smoothstep(0.78, 1.0, t), 0.78));
 }
 
 function sheerAt(t: number): number {
@@ -483,10 +541,37 @@ function sheerAt(t: number): number {
   return lerp(1.05, 1.44, Math.pow(d, 1.9));
 }
 
+/**
+ * How far forward a station leans as it rises, in metres at the sheer.
+ *
+ * A hull is not a vertical extrusion. The stem rakes well forward of the forefoot
+ * and the sternpost rakes aft of the heel, and it is that overhang at both ends
+ * — not the plan shape — that makes a ship look like a ship in profile. Without
+ * it she ends in two flat cliffs, however finely the waterlines are drawn.
+ */
+function rakeAt(t: number, L: number): number {
+  const bow = Math.pow(smoothstep(0.55, 1, t), 1.6);
+  const stern = Math.pow(1 - smoothstep(0, 0.36, t), 1.5);
+  return bow * L * 0.115 - stern * L * 0.062;
+}
+
 function keelAt(t: number): number {
   if (t < 0.08) return lerp(0.55, 1.0, t / 0.08);
   if (t > 0.86) return lerp(1.0, 0.35, (t - 0.86) / 0.14);
   return 1;
+}
+
+/**
+ * Half-beam at the sheer: where the planking actually finishes.
+ *
+ * The topsides tumble home, so the widest part of a station is well below the
+ * rail and the rail itself is a good deal narrower than the maximum beam. The
+ * deck, the rails, the castles and the shrouds' chainwales all have to be set
+ * out from this and not from the beam, or they stand outboard of the ship's own
+ * side and the player sees open water through the gap between them.
+ */
+function railHalfBeam(t: number, B: number): number {
+  return beamAt(t) * (B / 2) * sectionWidth(1, t);
 }
 
 function sectionWidth(v: number, t: number): number {
@@ -519,7 +604,7 @@ function buildHull(L: number, B: number, D: number): THREE.Mesh {
     // The wale is a heavier strake, standing slightly proud of the planking.
     const waleness = Math.exp(-Math.pow((v - 0.74) / 0.055, 2));
     const w = sectionWidth(v, t) * bw * (1 + waleness * 0.085);
-    positions.push(side * w, y, z);
+    positions.push(side * w, y, z + rakeAt(t, L) * v);
 
     if (y < 0.02) {
       // Tallow and pitch, fouling darker as it goes deeper.
@@ -565,15 +650,14 @@ function buildDeck(L: number, B: number, D: number): THREE.Mesh {
   const positions: number[] = [];
   const colors: number[] = [];
   const indices: number[] = [];
-  const halfB = B / 2;
   const c = new THREE.Color();
   const deckLight = new THREE.Color(0xb59468);
   const deckDark = new THREE.Color(0x8a6c46);
 
   for (let i = 0; i < stations; i++) {
     const t = i / (stations - 1);
-    const z = (t - 0.5) * L;
-    const bw = beamAt(t) * halfB * 0.93;
+    const z = (t - 0.5) * L + rakeAt(t, L);
+    const bw = railHalfBeam(t, B) * 0.97;
     const y = sheerAt(t) * D * FREEBOARD;
     for (let k = 0; k < across; k++) {
       const u = k / (across - 1);
@@ -603,7 +687,7 @@ function buildDeck(L: number, B: number, D: number): THREE.Mesh {
 
 function buildSterncastle(L: number, B: number, D: number): THREE.Group {
   const g = new THREE.Group();
-  const w = beamAt(0.14) * B * 0.94;
+  const w = railHalfBeam(0.14, B) * 1.88;
   const h = D * 0.72;
   const len = L * 0.2;
   const deck = sheerAt(0.14) * D * FREEBOARD;
@@ -619,27 +703,84 @@ function buildSterncastle(L: number, B: number, D: number): THREE.Group {
   rail.position.set(0, box.position.y + h / 2 + 0.32, box.position.z);
   g.add(rail);
 
-  // Transom across the stern, raked aft and cut to the hull's after sections.
-  const sternBeam = beamAt(0.03) * B * 1.9;
-  const transom = new THREE.Mesh(new THREE.BoxGeometry(sternBeam, h * 1.3, 0.2), trim);
-  transom.position.set(0, deck + h * 0.25, -L * 0.485);
-  transom.rotation.x = -0.16;
-  g.add(transom);
+  // The transom, planked across the stern and raked aft. It is lofted rather
+  // than boxed: a slab of BoxGeometry here shows the player one enormous
+  // unlit rectangle, because its after face is the only one he ever sees and it
+  // points away from the sun all day.
+  g.add(buildTransom(L, B, D, h, deck));
 
   // Quarter windows, which catch the light and give the stern a face.
-  const glass = new THREE.MeshLambertMaterial({ color: 0x2a2a24, emissive: 0x141008 });
+  const glass = new THREE.MeshLambertMaterial({ color: 0x241f16, emissive: 0x2a2113 });
+  const sternBeam = railHalfBeam(0.06, B) * 2;
   for (const side of [-1, 1]) {
-    const win = new THREE.Mesh(new THREE.BoxGeometry(sternBeam * 0.22, h * 0.26, 0.09), glass);
-    win.position.set(side * sternBeam * 0.26, deck + h * 0.42, -L * 0.478);
-    win.rotation.x = -0.16;
+    const win = new THREE.Mesh(new THREE.BoxGeometry(sternBeam * 0.34, h * 0.24, 0.1), glass);
+    win.position.set(side * sternBeam * 0.42, deck + h * 0.34, -L * 0.474);
+    win.rotation.x = -0.2;
     g.add(win);
   }
   return g;
 }
 
+/**
+ * A flat raked transom, planked in strakes like the rest of her and closing the
+ * stern off above the waterline. It takes its width from the hull's own after
+ * sections at each height, so it meets the planking instead of standing proud
+ * of it.
+ */
+function buildTransom(
+  L: number, B: number, D: number, castle: number, deck: number,
+): THREE.Mesh {
+  const rows = 12;
+  const cols = 9;
+  const positions: number[] = [];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const c = new THREE.Color();
+  const top = deck + castle * 0.62;
+  const foot = -D * 0.22;
+
+  for (let j = 0; j < rows; j++) {
+    const v = j / (rows - 1);
+    const y = lerp(foot, top, v);
+    // A transom is narrow at the tuck and flares out and aft as it rises, but
+    // never wider than the rail it has to meet.
+    const halfWidth = railHalfBeam(0.015 + v * 0.075, B) * (0.92 + v * 0.42);
+    // Follows the same raked profile the hull's own after stations are lofted
+    // to, so it closes the planking off instead of sitting inside it and letting
+    // the hull's last station show as a flat wall astern of it.
+    const z = -L * 0.5 + rakeAt(0.02, L) * v - 0.05;
+    for (let i = 0; i < cols; i++) {
+      const u = i / (cols - 1);
+      // The corners are eased, so the transom reads as a panel rather than a box.
+      const round = 1 - Math.pow(Math.abs(u - 0.5) * 2, 3.4) * 0.25;
+      positions.push((u - 0.5) * 2 * halfWidth * round, y, z);
+      const strake = Math.sin(v * rows * Math.PI * 0.86) * 0.5 + 0.5;
+      c.copy(OAK).lerp(OAK_DARK, strake * 0.42 + 0.18);
+      if (v < 0.12) c.lerp(WALE, 0.5);
+      colors.push(c.r, c.g, c.b);
+    }
+  }
+  for (let j = 0; j < rows - 1; j++) {
+    for (let i = 0; i < cols - 1; i++) {
+      const a = j * cols + i;
+      indices.push(a, a + 1, a + cols);
+      indices.push(a + 1, a + cols + 1, a + cols);
+    }
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  g.setIndex(indices);
+  g.computeVertexNormals();
+  return new THREE.Mesh(g, new THREE.MeshLambertMaterial({
+    vertexColors: true, side: THREE.DoubleSide,
+  }));
+}
+
 function buildForecastle(L: number, B: number, D: number): THREE.Group {
   const g = new THREE.Group();
-  const w = beamAt(0.9) * B * 0.94;
+  const w = railHalfBeam(0.9, B) * 1.88;
   const h = D * 0.42;
   const len = L * 0.12;
   const deck = sheerAt(0.9) * D * FREEBOARD;
@@ -656,6 +797,34 @@ function buildForecastle(L: number, B: number, D: number): THREE.Group {
   sprit.rotation.x = Math.PI / 2 - 22 * DEG;
   sprit.position.set(0, box.position.y + h * 0.3, L * 0.57);
   g.add(sprit);
+
+  // The stem: the timber the planking is rabbeted into, following the same raked
+  // profile the last station of the hull is lofted to, so the two meet instead
+  // of the planking stopping in mid air and the stem standing clear of it.
+  const stemMat = new THREE.MeshLambertMaterial({ color: 0x574024 });
+  const stemPos: number[] = [];
+  const stemIdx: number[] = [];
+  const rows = 12;
+  for (let i = 0; i < rows; i++) {
+    const v = i / (rows - 1);
+    const y = lerp(-keelAt(1) * D, sheerAt(1) * D * FREEBOARD + h * 0.55, v);
+    // Below the waterline the stem curves back into the forefoot.
+    const forefoot = v < 0.28 ? Math.pow(v / 0.28, 1.7) : 1;
+    const z = L * 0.5 + rakeAt(1, L) * v * forefoot;
+    // A blade standing a little proud of the planking, with a rounded cutwater.
+    stemPos.push(-0.15, y, z - 0.3, 0.15, y, z - 0.3, 0, y, z + 0.16, 0, y, z + 0.16);
+  }
+  for (let i = 0; i < rows - 1; i++) {
+    const a = i * 4;
+    stemIdx.push(a, a + 4, a + 2, a + 4, a + 6, a + 2);
+    stemIdx.push(a + 1, a + 3, a + 5, a + 3, a + 7, a + 5);
+  }
+  const stemGeo = new THREE.BufferGeometry();
+  stemGeo.setAttribute('position', new THREE.Float32BufferAttribute(stemPos, 3));
+  stemGeo.setIndex(stemIdx);
+  stemGeo.computeVertexNormals();
+  g.add(new THREE.Mesh(stemGeo, stemMat));
+
   return g;
 }
 
@@ -669,8 +838,8 @@ function buildRails(L: number, B: number, D: number): THREE.Group {
     const indices: number[] = [];
     for (let i = 0; i < stations; i++) {
       const t = 0.08 + (i / (stations - 1)) * 0.84;
-      const z = (t - 0.5) * L;
-      const bw = beamAt(t) * (B / 2) * 0.96;
+      const z = (t - 0.5) * L + rakeAt(t, L);
+      const bw = railHalfBeam(t, B);
       const y = sheerAt(t) * D * FREEBOARD;
       positions.push(side * bw, y, z);
       positions.push(side * bw * 0.97, y + D * 0.32, z);
@@ -716,16 +885,249 @@ function buildDeckFittings(L: number, B: number, D: number): THREE.Group {
   boat.position.set(0, deck + 0.55, L * 0.08);
   g.add(boat);
 
-  const bowStation = 0.9;
-  const bowHalfBeam = beamAt(bowStation) * B * 0.5;
+  const bowStation = 0.8;
+  const bowHalfBeam = railHalfBeam(bowStation, B);
   const bowDeck = sheerAt(bowStation) * D * FREEBOARD;
+  const bowZ = (bowStation - 0.5) * L + rakeAt(bowStation, L);
+  const iron = new THREE.MeshLambertMaterial({ color: IRON });
+
+  // Anchors catted at the bow: a stock athwartships, a shank down, and the two
+  // flukes, hung outboard where they can be let go without fouling anything.
   for (const side of [-1, 1]) {
-    const anchor = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.3, 0.45), dark);
-    anchor.position.set(side * bowHalfBeam * 0.94, bowDeck - 0.35, (bowStation - 0.5) * L);
-    anchor.rotation.z = side * 0.22;
-    g.add(anchor);
+    const shank = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.5, 6), iron);
+    shank.position.set(side * bowHalfBeam * 1.02, bowDeck - 0.5, bowZ);
+    shank.rotation.z = side * 0.2;
+    g.add(shank);
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 1.15), oak);
+    stock.position.set(side * bowHalfBeam * 1.06, bowDeck + 0.15, bowZ);
+    g.add(stock);
+    for (const f of [-1, 1]) {
+      const fluke = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.5, 0.24), iron);
+      fluke.position.set(side * bowHalfBeam * 0.98, bowDeck - 1.16, bowZ + f * 0.28);
+      fluke.rotation.x = f * 0.5;
+      g.add(fluke);
+    }
+  }
+
+  // A second hatch, and the bitts the anchor cable is made fast to.
+  const fore = new THREE.Mesh(new THREE.BoxGeometry(B * 0.26, 0.3, L * 0.09), oak);
+  fore.position.set(0, deck + 0.15, L * 0.2);
+  g.add(fore);
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(B * 0.22, 0.07, L * 0.075), dark)
+    .translateY(deck + 0.32).translateZ(L * 0.2));
+
+  const bitts = new THREE.Mesh(new THREE.BoxGeometry(B * 0.4, 0.16, 0.2), oak);
+  bitts.position.set(0, deck + 0.72, L * 0.31);
+  g.add(bitts);
+  for (const side of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.85, 0.2), oak);
+    post.position.set(side * B * 0.17, deck + 0.42, L * 0.31);
+    g.add(post);
+  }
+
+  // Water casks struck down on deck, the largest single stores a ship carried
+  // and the thing that decides how far she can go.
+  for (let i = 0; i < 4; i++) {
+    const cask = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.78, 10), oak);
+    cask.rotation.x = Math.PI / 2;
+    cask.position.set(
+      (i % 2 === 0 ? -1 : 1) * B * 0.19,
+      deck + 0.34,
+      -L * 0.02 - Math.floor(i / 2) * 0.78,
+    );
+    g.add(cask);
+    const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.33, 0.035, 5, 12), dark);
+    hoop.position.copy(cask.position);
+    g.add(hoop);
+  }
+
+  // Belaying pins along the rails, where every rope aboard is made fast.
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 7; i++) {
+      const t = 0.24 + i * 0.075;
+      const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.34, 5), oak);
+      pin.position.set(
+        side * railHalfBeam(t, B) * 0.9,
+        sheerAt(t) * D * FREEBOARD + D * 0.2,
+        (t - 0.5) * L + rakeAt(t, L),
+      );
+      g.add(pin);
+    }
   }
   return g;
+}
+
+// ---------------------------------------------------------------------------
+// Rigging
+// ---------------------------------------------------------------------------
+
+const ROPE = 0x241d14;
+
+/** Deck height at a station, in the hull's own frame. */
+function deckAtZ(z: number, L: number, D: number): number {
+  return sheerAt(clamp(z / L + 0.5, 0, 1)) * D * FREEBOARD;
+}
+
+/** Half-beam at the rail at a station. */
+function railAtZ(z: number, L: number, B: number): number {
+  return railHalfBeam(clamp(z / L + 0.5, 0, 1), B);
+}
+
+/**
+ * Standing rigging: the ropes that hold the mast up.
+ *
+ * This belongs to the hull and never to the yard. Shrouds are set up to
+ * chainwales bolted through the ship's side and stay exactly where they are
+ * while the yard swings across them — parenting them to the sail's pivot, as
+ * they once were here, sends the whole gang sweeping out over the water every
+ * time the sheet is eased.
+ */
+function buildStandingRigging(
+  spec: MastSpec, hull: HullClass, mastHeight: number, mastZ: number,
+): THREE.Group {
+  const L = hull.lwl;
+  const B = hull.beam;
+  const D = hull.draft;
+  const g = new THREE.Group();
+
+  const rope = new THREE.LineBasicMaterial({ color: ROPE, transparent: true, opacity: 0.9 });
+  const timber = new THREE.MeshLambertMaterial({ color: 0x4a3520 });
+  const pts: THREE.Vector3[] = [];
+
+  // A heavier rig carries more shrouds. They stand nearly all of them abaft the
+  // mast, where they take the forward drive of the sail.
+  const count = spec.area > 90 ? 4 : 3;
+  const offsets = [1.0, -1.3, -3.2, -5.1].slice(0, count);
+
+  for (const side of [-1, 1]) {
+    const gang: THREE.Vector3[] = [];
+    for (let k = 0; k < count; k++) {
+      const z = mastZ + offsets[k];
+      // The chainwale stands proud of the planking so the shrouds clear the rail.
+      const x = side * (railAtZ(z, L, B) + 0.34);
+      const y = deckAtZ(z, L, D) + 0.12;
+      const foot = new THREE.Vector3(x, y, z);
+      gang.push(foot);
+
+      // Shrouds are seized in pairs over the masthead, each pair sitting a little
+      // lower than the one before, which is what gives a mast its stepped collar.
+      const head = new THREE.Vector3(
+        side * 0.16, mastHeight * (0.95 - k * 0.028), mastZ,
+      );
+      pts.push(head, foot);
+
+      const deadeye = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.1, 8), timber);
+      deadeye.position.copy(foot).setY(foot.y + 0.22);
+      deadeye.rotation.x = Math.PI / 2;
+      g.add(deadeye);
+    }
+
+    // The chainwale itself: a plank on edge, spanning the whole gang.
+    const first = gang[0], last = gang[gang.length - 1];
+    const chain = new THREE.Mesh(
+      new THREE.BoxGeometry(0.4, 0.16, Math.abs(first.z - last.z) + 0.7), timber,
+    );
+    chain.position.set((first.x + last.x) / 2, (first.y + last.y) / 2, (first.z + last.z) / 2);
+    g.add(chain);
+
+    // Ratlines: the rungs a topman climbs, seized across the gang. They taper
+    // with it, because they are tied to the shrouds and the shrouds converge.
+    const heads = gang.map((_, k) =>
+      new THREE.Vector3(side * 0.16, mastHeight * (0.95 - k * 0.028), mastZ));
+    for (let r = 0; r <= 11; r++) {
+      const t = 0.05 + (r / 11) * 0.66;
+      for (let k = 0; k < count - 1; k++) {
+        pts.push(
+          gang[k].clone().lerp(heads[k], t),
+          gang[k + 1].clone().lerp(heads[k + 1], t),
+        );
+      }
+    }
+  }
+
+  // The stay, taking the mast's pull forward: to the next mast's step if there
+  // is one ahead of her, otherwise all the way to the stemhead.
+  const head = new THREE.Vector3(0, mastHeight * 0.97, mastZ);
+  let ahead = Infinity;
+  for (const m of hull.masts) {
+    const mz = m.station * L * 0.42;
+    if (mz > mastZ + 1 && mz < ahead) ahead = mz;
+  }
+  const stayZ = Number.isFinite(ahead) ? ahead : L * 0.49;
+  const stayY = Number.isFinite(ahead)
+    ? deckAtZ(stayZ, L, D) + 0.4
+    : deckAtZ(stayZ, L, D) + D * 0.5;
+  pts.push(head.clone(), new THREE.Vector3(0, stayY, stayZ));
+
+  // Backstays, one each side to the after rail, which is what lets her carry
+  // sail on a run without pitching the mast out of her.
+  for (const side of [-1, 1]) {
+    const z = -L * 0.4;
+    pts.push(
+      head.clone(),
+      new THREE.Vector3(side * railAtZ(z, L, B) * 0.9, deckAtZ(z, L, D) + 0.1, z),
+    );
+  }
+
+  g.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), rope));
+  return g;
+}
+
+/**
+ * Running rigging: the ropes the watch actually handles.
+ *
+ * Each has one end on the yard or the sail, which swings with the trim, and one
+ * end belayed to the ship. Drawing them is what makes a change of trim read as
+ * work being done aloft rather than as a sail rotating on a spindle.
+ */
+function buildRunningRigging(
+  spec: MastSpec, hull: HullClass, mastHeight: number, mastZ: number, deckY: number,
+): Rope[] {
+  const L = hull.lwl;
+  const B = hull.beam;
+  const D = hull.draft;
+  const ropes: Rope[] = [];
+  const railZ = (z: number, side: number) =>
+    new THREE.Vector3(side * railAtZ(z, L, B) * 0.94, deckAtZ(z, L, D) + 0.2, z);
+
+  if (spec.rig === 'lateen') {
+    const s = lateenPoints(spec.area, deckY);
+
+    // The halyard, which hoists the yard: masthead down to the slings, a third
+    // of the way along the yard from the peak.
+    ropes.push({
+      local: s.peak.clone().lerp(s.tack, 0.32),
+      fixed: new THREE.Vector3(0, mastHeight * 0.93, mastZ),
+    });
+
+    // The sheet, hauled aft from the clew, and a lazy sheet on the other quarter
+    // standing ready for the next tack.
+    for (const side of [-1, 1]) {
+      ropes.push({ local: s.clew.clone(), fixed: railZ(mastZ - L * 0.24, side) });
+    }
+
+    // The tack, which holds the foot of the sail down and forward.
+    ropes.push({
+      local: s.tack.clone(),
+      fixed: new THREE.Vector3(0, deckY + 0.3, mastZ + L * 0.16),
+    });
+  } else {
+    const s = squarePoints(spec.area, spec.ceHeight * 1.42);
+
+    // Braces from each yardarm aft, which is how a square yard is trimmed at all.
+    for (const side of [-1, 1]) {
+      ropes.push({
+        local: new THREE.Vector3(side * s.width * 0.55, s.top, 0),
+        fixed: railZ(mastZ - L * 0.26, side),
+      });
+      // Sheets, hauling the two clews down and aft to the rail.
+      ropes.push({
+        local: new THREE.Vector3(side * s.width * 0.47, s.top - s.height, 0),
+        fixed: railZ(mastZ - L * 0.1, side),
+      });
+    }
+  }
+  return ropes;
 }
 
 /** Rudder hung on the sternpost, with the tiller coming inboard over it. */
@@ -734,26 +1136,56 @@ function buildSteering(L: number, _B: number, D: number): { rudder: THREE.Group;
   const iron = new THREE.MeshLambertMaterial({ color: IRON });
 
   const rudder = new THREE.Group();
-  rudder.position.set(0, 0, -L * 0.455);
+  // Hung on the sternpost, which rakes aft with the rest of her after body.
+  rudder.position.set(0, 0, (0 - 0.5) * L + rakeAt(0, L) * 0.5 + L * 0.045);
 
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.16, D * 1.55, L * 0.075), oak);
-  blade.position.set(0, -D * 0.62, -L * 0.03);
+  // The blade is cut to the run of the sternpost: deep at its heel, tapering up
+  // to the head, and never reaching below the keel, where it would be knocked
+  // off the first time she took the ground.
+  const rows = 8;
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const heel = -keelAt(0.02) * D * 0.96;
+  const head = sheerAt(0.02) * D * FREEBOARD * 0.55;
+  for (let i = 0; i < rows; i++) {
+    const v = i / (rows - 1);
+    const y = lerp(heel, head, v);
+    // The trailing edge rakes aft as it rises, following the sternpost.
+    const back = -L * (0.055 + v * 0.03) * (v < 0.15 ? v / 0.15 : 1);
+    const half = 0.09 + v * 0.03;
+    pos.push(-half, y, 0, half, y, 0, -half, y, back, half, y, back);
+  }
+  for (let i = 0; i < rows - 1; i++) {
+    const a = i * 4;
+    for (const [p, q, r, s] of [[0, 2, 4, 6], [1, 5, 3, 7], [0, 4, 1, 5], [2, 3, 6, 7]]) {
+      idx.push(a + p, a + q, a + r, a + q, a + s, a + r);
+    }
+  }
+  const bladeGeo = new THREE.BufferGeometry();
+  bladeGeo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  bladeGeo.setIndex(idx);
+  bladeGeo.computeVertexNormals();
+  const blade = new THREE.Mesh(bladeGeo, oak);
+  blade.material.side = THREE.DoubleSide;
   rudder.add(blade);
 
-  const stock = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, D * 1.9, 8), oak);
-  stock.position.set(0, -D * 0.42, 0);
+  const stock = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.13, head - heel + 0.5, 8), oak,
+  );
+  stock.position.set(0, (heel + head) / 2 + 0.2, 0);
   rudder.add(stock);
 
-  for (const y of [-D * 1.1, -D * 0.5, D * 0.05]) {
-    const pintle = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.13, L * 0.035), iron);
-    pintle.position.set(0, y, -L * 0.012);
+  // Pintles and gudgeons: the iron hinges she swings on.
+  for (const v of [0.12, 0.45, 0.82]) {
+    const pintle = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.14, L * 0.03), iron);
+    pintle.position.set(0, lerp(heel, head, v), -L * 0.011);
     rudder.add(pintle);
   }
 
   const tiller = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.13, L * 0.2, 8), oak);
   tiller.geometry.translate(0, L * 0.1, 0);
   tiller.rotation.x = Math.PI / 2;
-  tiller.position.set(0, sheerAt(0.12) * D * FREEBOARD + 0.35, -L * 0.47);
+  tiller.position.set(0, sheerAt(0.12) * D * FREEBOARD + 0.35, -L * 0.5 + rakeAt(0.02, L) + L * 0.05);
   return { rudder, tiller };
 }
 
@@ -767,41 +1199,51 @@ function buildSteering(L: number, _B: number, D: number): { rudder: THREE.Group;
  * the inverse of the sail's aspect so that it comes out square once the texture
  * is mapped onto the cut of the sail.
  */
-function makeSailTexture(
-  aspect: number, crossAt: [number, number] | null, seamAngleDeg: number,
-): THREE.Texture {
-  const size = 512;
+function makeSailTexture(build: SailBuild, withCross: boolean): THREE.Texture {
+  const size = 1024;
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d')!;
 
-  ctx.fillStyle = '#e6ddc8';
+  ctx.fillStyle = '#ded3ba';
   ctx.fillRect(0, 0, size, size);
 
-  // Cloth seams: narrow widths of canvas sewn edge to edge, running square to
-  // the yard.
-  ctx.save();
-  ctx.translate(size / 2, size / 2);
-  ctx.rotate(seamAngleDeg * DEG);
-  ctx.strokeStyle = 'rgba(150, 138, 112, 0.5)';
-  ctx.lineWidth = 2;
-  const cloths = 13;
-  for (let i = -cloths; i <= cloths; i++) {
-    const y = (i / cloths) * size;
-    ctx.beginPath();
-    ctx.moveTo(-size, y);
-    ctx.lineTo(size, y);
-    ctx.stroke();
+  // The weave: a fine cross-hatch, which is what keeps canvas from reading as
+  // paper at close range.
+  ctx.strokeStyle = 'rgba(168, 155, 128, 0.28)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < size; i += 4) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(size, i); ctx.stroke();
   }
-  ctx.restore();
 
-  // A little soiling so the canvas is not flat white.
-  for (let i = 0; i < 90; i++) {
+  // Cloth seams. The texture is laid out in the sail's own frame — across the
+  // sail one way, up the luff the other — so these run straight up it whatever
+  // the cut, and stay straight when the canvas bellies.
+  const cloths = 11;
+  for (let i = 1; i < cloths; i++) {
+    const x = (i / cloths) * size;
+    ctx.strokeStyle = 'rgba(146, 132, 104, 0.55)';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, size); ctx.stroke();
+    // The doubled edge of the overlapping cloth catches the light beside it.
+    ctx.strokeStyle = 'rgba(246, 240, 226, 0.42)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x + 3, 0); ctx.lineTo(x + 3, size); ctx.stroke();
+  }
+
+  // Reef bands: the reinforced strips a sail is shortened along.
+  ctx.fillStyle = 'rgba(150, 137, 108, 0.3)';
+  for (const v of [0.3, 0.52]) ctx.fillRect(0, v * size, size, size * 0.018);
+
+  // Sun, salt and weather. Canvas at sea is never one flat colour.
+  for (let i = 0; i < 130; i++) {
     const x = Math.random() * size;
     const y = Math.random() * size;
-    const r = 18 + Math.random() * 55;
+    const r = 30 + Math.random() * 130;
     const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, 'rgba(150, 138, 110, 0.07)');
+    const dark = Math.random() < 0.62;
+    g.addColorStop(0, dark ? 'rgba(142, 128, 100, 0.08)' : 'rgba(255, 252, 244, 0.09)');
     g.addColorStop(1, 'rgba(150, 138, 110, 0)');
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -809,49 +1251,62 @@ function makeSailTexture(
     ctx.fill();
   }
 
-  // Bolt rope.
-  ctx.strokeStyle = 'rgba(120, 104, 76, 0.55)';
-  ctx.lineWidth = 7;
-  ctx.strokeRect(4, 4, size - 8, size - 8);
+  // Bolt rope round the edge.
+  ctx.strokeStyle = 'rgba(112, 96, 70, 0.6)';
+  ctx.lineWidth = 12;
+  ctx.strokeRect(6, 6, size - 12, size - 12);
 
-  if (crossAt) {
-    const cx = crossAt[0] * size;
-    const cy = (1 - crossAt[1]) * size;
-    // Squash horizontally by the aspect so it maps back to a square cross.
-    const arm = size * 0.15;
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.scale(1 / Math.max(aspect, 0.05), 1);
-    ctx.fillStyle = '#a8302a';
-    for (const rot of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
-      drawCrossArm(ctx, 0, 0, arm, size * 0.056, size * 0.04, rot);
-    }
-    ctx.fillStyle = '#e6ddc8';
-    for (const rot of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
-      drawCrossArm(ctx, 0, 0, arm * 0.6, size * 0.022, size * 0.018, rot);
-    }
-    ctx.restore();
+  if (withCross) {
+    const cx = build.crossAt[0] * size;
+    const cy = (1 - build.crossAt[1]) * size;
+    const a = build.crossArm;
+    ctx.fillStyle = '#a3302b';
+    drawCross(ctx, cx, cy, size, build.crossAxes, a, a * 0.30, a * 0.17);
+    ctx.fillStyle = '#ded3ba';
+    drawCross(ctx, cx, cy, size, build.crossAxes, a * 0.56, a * 0.115, a * 0.065);
   }
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.anisotropy = 8;
   return tex;
 }
 
-function drawCrossArm(
+/**
+ * The cross of the Order of Christ: four arms flaring out from a solid centre.
+ *
+ * Every dimension is given in metres on the actual sail and carried into texture
+ * space through the sail's own axes, so the device comes out square and upright
+ * on the cloth whatever the cut of the sail and whatever the rake of its yard.
+ */
+function drawCross(
   ctx: CanvasRenderingContext2D,
-  cx: number, cy: number, len: number, thick: number, flare: number, rot: number,
+  cx: number, cy: number, size: number,
+  axes: { up: [number, number]; across: [number, number] },
+  len: number, thick: number, flare: number,
 ): void {
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(rot);
+  // A metre up the sail, and a metre across it, as canvas pixels.
+  const ux = axes.up[0] * size, uy = -axes.up[1] * size;
+  const ax = axes.across[0] * size, ay = -axes.across[1] * size;
+  const t = thick / 2;
+  const w = t + flare;
+  // One arm reaching along the first axis, as (along, sideways) in metres.
+  const arm: [number, number][] = [[0, -t], [len, -w], [len, w], [0, t]];
+
   ctx.beginPath();
-  ctx.moveTo(-thick / 2, 0);
-  ctx.lineTo(-thick / 2 - flare, -len);
-  ctx.lineTo(thick / 2 + flare, -len);
-  ctx.lineTo(thick / 2, 0);
-  ctx.closePath();
+  // The four arms: up, across, down, back across.
+  for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]] as [number, number][]) {
+    arm.forEach(([along, side], i) => {
+      // Rotate in metres, then map into texture space, never the other way
+      // round: a rotation applied after a non-square mapping shears each arm by
+      // a different amount and the cross comes out a pinwheel.
+      const mUp = along * dx - side * dy;
+      const mAcross = along * dy + side * dx;
+      const px = cx + mUp * ux + mAcross * ax;
+      const py = cy + mUp * uy + mAcross * ay;
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    });
+    ctx.closePath();
+  }
   ctx.fill();
-  ctx.restore();
 }
