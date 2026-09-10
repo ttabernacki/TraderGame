@@ -18,11 +18,16 @@ export class Hud {
   private wind = el('div', { class: 'hud-panel', id: 'hud-wind' });
   private time = el('div', { class: 'hud-panel', id: 'hud-time' });
   private ship = el('div', { class: 'hud-panel', id: 'hud-ship' });
-  private alerts = el('div', { class: 'hud-panel', id: 'hud-alerts' });
+  // Deliberately NOT a .hud-panel. It is a message overlay, not an instrument,
+  // and inheriting the panels' backdrop-filter put an invisible 480×60 pane of
+  // frosted glass across the exact centre of the screen — see the CSS.
+  private alerts = el('div', { id: 'hud-alerts' });
   private course = el('div', { class: 'hud-panel', id: 'hud-course' });
   private orders = el('div', { class: 'hud-panel', id: 'hud-orders' });
   tape = new HeadingTape();
   private hint = el('div', { class: 'hint' });
+  /** The alert ids currently drawn, so the panel is only rebuilt when they change. */
+  private alertKey = '';
 
   private compassSvg: SVGElement;
   private compassCard: SVGElement;
@@ -319,10 +324,24 @@ export class Hud {
     this.renderOrders(g);
 
     // --- Alerts ------------------------------------------------------------
-    clear(this.alerts);
-    for (const a of g.alerts.slice(-3)) {
-      this.alerts.append(el('div', { class: `alert ${a.severity}` }, a.text));
-      this.alerts.append(el('br'));
+    //
+    // Rebuilt only when the list actually changes, not every frame.
+    //
+    // This whole panel is redrawn sixty times a second along with the rest of
+    // the head-up display, and `.alert` carries a 0.3s fade-in. A brand-new
+    // element every frame means the animation restarts every frame, so it never
+    // got past the first tick of `from { opacity: 0 }` — every warning the game
+    // has ever raised was in the DOM, correctly positioned, and drawn at zero
+    // opacity. Land ho, the pilot asking for a sight, the watch shortening
+    // sail, the noon report: none of them were ever visible.
+    const key = g.alerts.slice(-3).map((a) => a.id).join(',');
+    if (key !== this.alertKey) {
+      this.alertKey = key;
+      clear(this.alerts);
+      for (const a of g.alerts.slice(-3)) {
+        this.alerts.append(el('div', { class: `alert ${a.severity}` }, a.text));
+        this.alerts.append(el('br'));
+      }
     }
 
     // --- Context hint ------------------------------------------------------

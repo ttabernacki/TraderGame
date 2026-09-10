@@ -108,7 +108,32 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
 }
 #hud-left { left: 14px; width: min(258px, 45vw); }
 #hud-right { right: 14px; width: min(238px, 45vw); }
-#hud-alerts { top: 50%; left: 50%; transform: translate(-50%, -50%); width: 480px; background: none; border: none; text-align: center; pointer-events: none; }
+/* The alerts, which are messages over the sea and not an instrument panel.
+   
+   This carried .hud-panel for a long time, and that class sets
+   `backdrop-filter: blur(3px)`. The rule here overrode the panel's background
+   and its border but had no way to override the filter, so what was left was an
+   invisible 480 by 60 pane of frosted glass sitting at exactly 50% / 50% of the
+   viewport — blurring the horizon, and only the horizon, across the middle of
+   the screen. It was reported three times as an ocean-rendering bug and chased
+   through the fog, the detail fade, the Fresnel term and the wave spectrum. It
+   was a stylesheet. The box was even selectable, which is what finally gave it
+   away.
+   
+   Nothing here may set a backdrop-filter, and it is not a .hud-panel. */
+#hud-alerts {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 480px;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+  font-size: 13px;
+  line-height: 1.45;
+  backdrop-filter: none;
+}
 
 .alert {
   display: inline-block;
