@@ -478,20 +478,28 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
 .touch-rig { right: 18px; bottom: 18px; }
 
 /* The clock and the ship's business along the top, where nothing is steering. */
+/* The row never wraps. A second line of controls drops onto the heading tape
+   and hides the one instrument the helmsman is actually steering by, so when
+   there is not room the row scrolls sideways instead. */
 .touch-top {
   left: 50%;
   transform: translateX(-50%);
   top: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
-  max-width: min(760px, calc(100vw - 24px));
-  gap: 8px;
+  max-width: min(920px, calc(100vw - 24px));
+  gap: 7px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
 }
+.touch-top::-webkit-scrollbar { display: none; }
 .touch-top .touch-btn {
   height: 42px;
-  min-width: 48px;
-  font-size: 14px;
-  padding: 0 11px;
+  min-width: 46px;
+  font-size: 13.5px;
+  padding: 0 10px;
+  flex: 0 0 auto;
 }
 
 /* On a phone the head-up panels and the controls are fighting for the same
