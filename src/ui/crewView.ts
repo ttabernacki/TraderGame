@@ -5,6 +5,9 @@ import {
 } from '../crew/crew';
 import { SKILLS, rankOf, skill, type SkillSet } from '../crew/skills';
 import { UPGRADE_BY_ID } from '../ship/upgrades';
+import { sailHandRate } from '../ship/physics';
+import { loyaltyWord, traitDef } from '../progression/officers';
+import { DIFFICULTIES, difficultyDef } from '../game/difficulty';
 import type { Game } from '../game/state';
 import { button, card, clear, el, kv, meter } from './dom';
 
@@ -105,7 +108,12 @@ export class CrewView {
                   el('span', {}, `${o.name} — ${def.title}`),
                   el('span', { class: 'tag' }, o.alive ? (o.ashoreAt ? 'ashore' : rankOf(o.ability * 100)) : 'dead'),
                 ),
-                el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '3px', lineHeight: '1.5' } }, def.blurb),
+                el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '3px', lineHeight: '1.5' } },
+                  traitDef(o.trait)?.blurb ?? def.blurb),
+                o.alive && !o.ashoreAt
+                  ? el('div', { style: { fontSize: '12px', marginTop: '3px', color: 'var(--ink-soft)' } },
+                      `Toward you: ${loyaltyWord(o.loyalty)}.`)
+                  : null,
                 o.languages.length > 0
                   ? el('div', { style: { fontSize: '12px', marginTop: '3px' } }, `Speaks: ${o.languages.join(', ')}`)
                   : null,
@@ -213,6 +221,36 @@ export class CrewView {
     ));
 
     const right = el('div', {});
+
+    // Who works her. Changeable at any point in a voyage, because a player who
+    // finds out on the tenth day that he does not enjoy trimming yards should
+    // not have to start again to stop doing it.
+    const rules = difficultyDef(g.difficulty);
+    right.append(card('Working the ship',
+      el('div', { class: 'difficulty inline' },
+        ...DIFFICULTIES.map((d) => el('button', {
+          class: `difficulty-btn${g.difficulty === d.id ? ' active' : ''}`,
+          onclick: () => {
+            g.difficulty = d.id;
+            if (d.autoTrim) g.autoTrim = true;
+            // The watch need to know what canvas to work back up to.
+            g.orderedCanvas = Math.max(g.orderedCanvas, g.ship.canvasSet);
+            g.pushAlert(d.id === 'watch'
+              ? 'The mestre has the working of her.'
+              : 'You have the sheets.', 'note');
+            this.render();
+          },
+        },
+          el('span', { class: 'difficulty-name' }, d.name),
+          el('span', { class: 'difficulty-english' }, d.english),
+        )),
+      ),
+      el('p', { class: 'flavour', style: { marginTop: '10px' } }, rules.blurb),
+      kv('The sheets', g.autoTrim ? 'with the watch' : 'yours (T to hand them over)'),
+      kv('Shortening sail', rules.autoCanvas ? 'the watch see to it' : 'your affair'),
+      kv('Canvas ordered', `${(g.orderedCanvas * 100).toFixed(0)}%`),
+    ));
+
     right.append(card('Masts and canvas',
       ...s.state.sails.map((sail, i) => {
         const m = s.hull.masts[i];
@@ -223,7 +261,11 @@ export class CrewView {
             sail.condition <= 0
               ? 'Gone by the board.'
               : `Set ${(sail.set * 100).toFixed(0)}%, trimmed ${sail.trim.toFixed(0)}° from the centreline` +
-                (sail.shifting > 0 ? ` — shifting across, ${sail.shifting.toFixed(0)}s` : '')),
+                // The shift counter is in nominal seconds; how long it actually
+                // takes depends on how many hands are on it.
+                (sail.shifting > 0
+                  ? ` — shifting across, ${(sail.shifting / sailHandRate(g.tuning)).toFixed(0)}s`
+                  : '')),
         );
       }),
     ));

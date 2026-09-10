@@ -30,6 +30,7 @@ import { newRelations, type Relations } from '../diplomacy/contact';
 import { Logbook, type LogKind } from './log';
 import { rollSeaEvent, type SeaEvent } from './seaEvents';
 import { rollOfficerEvent } from './officerEvents';
+import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty';
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
 import { daysLeft, offerVentures, ventureLine, type Venture } from '../progression/ventures';
 import { advanceRival, newRival, type RivalState } from '../progression/rival';
@@ -152,6 +153,23 @@ export class Game {
   ration = 1;
   /** Hands told off to the pumps rather than to the sails. */
   pumpEffort = 0.15;
+  /**
+   * How much of the ship's routine work the player does with his own hands.
+   * Changes nothing about the world — only who trims the yards and who decides
+   * when to shorten sail.
+   */
+  difficulty: Difficulty = 'watch';
+
+  /**
+   * The canvas the captain has ordered, as against the canvas actually set.
+   *
+   * On the relaxed setting the watch takes sail off her when it comes on to
+   * blow and makes it again afterwards, and they need to know what to make it
+   * back *to* — which is the last thing the captain asked for, not whatever
+   * happened to be set when the squall hit.
+   */
+  orderedCanvas = 0;
+
   /** True when the crew trim the sails without being told. */
   autoTrim = true;
   /**
@@ -174,6 +192,8 @@ export class Game {
   private lastLat = 0;
   private lastSurveyT = -1e9;
   private lastPortCheck = -1e9;
+  private lastCanvasWord = -1e9;
+  private lastManualTrim = -1e9;
   gameOverReason: string | null = null;
 
   constructor(seed = Math.floor(Math.random() * 1e9)) {
@@ -227,6 +247,10 @@ export class Game {
     return s;
   }
 
+  get rules(): DifficultyDef {
+    return difficultyDef(this.difficulty);
+  }
+
   get tuning(): ShipTuning {
     const eff = this.effectiveSkill;
     return {
@@ -235,6 +259,7 @@ export class Game {
       seamanship: skill(eff, 'marinharia'),
       keel: this.ship.effects.keel,
       integrity: this.ship.condition.hull,
+      sailHandling: this.rules.handRate,
     };
   }
 
@@ -385,7 +410,17 @@ export class Game {
     while (remaining > 0) {
       const dt = Math.min(step, remaining);
       if (this.holdCourse) this.steerToCourse(dt);
+      // On the relaxed setting a captain who reaches for the sheets gets them,
+      // and the watch quietly take them back a few minutes later. Otherwise one
+      // stray keypress silently switches the game into the hard mode and the
+      // player never finds out why she stopped sailing well.
+      if (!this.autoTrim && this.rules.autoTrim
+          && this.clock.t - this.lastManualTrim > 240) {
+        this.autoTrim = true;
+        this.pushAlert('The watch have the sheets again.', 'note');
+      }
       if (this.autoTrim) this.applyAutoTrim(dt);
+      if (this.rules.autoCanvas) this.applyAutoCanvas(dt);
       this.physics = this.runPhysics(dt);
       remaining -= dt;
     }
@@ -450,20 +485,75 @@ export class Game {
     const beta = this.physics?.beta ?? 0;
     const eff = this.effectiveSkill;
     const sk = skill(eff, 'marinharia');
-    const rate = dt * (0.4 + sk * 1.6) * clamp(crewFactor(this.crew, this.ship.baseHull.crewMin), 0.1, 1.4);
+    const rules = this.rules;
+    const rate = dt * (0.4 + sk * 1.6) * rules.trimRate
+      * clamp(crewFactor(this.crew, this.ship.baseHull.crewMin), 0.1, 1.4);
 
     for (let i = 0; i < this.ship.state.sails.length; i++) {
       const sail = this.ship.state.sails[i];
-      if (sail.shifting > 0) continue;
+      // A crew who are already handling the yard brace it round to where it
+      // wants to be on the way, so it draws the moment it is over. Otherwise
+      // the sail comes across and then a fresh minute of trimming begins, which
+      // is the part that actually feels like waiting.
+      if (sail.shifting > 0 && !rules.trimWhileShifting) continue;
       const profile = RIG_PROFILES[this.ship.hull.masts[i].rig];
       const want = optimalTrim(beta, profile, sail.trim);
-      // A less skilled crew settle for a rougher trim.
-      const slop = lerp(9, 1.2, sk);
+      // A less skilled crew settle for a rougher trim — and how rough anybody is
+      // willing to settle for is the difference between the two settings.
+      const slop = lerp(rules.slopWorst, rules.slopBest, sk);
       const target = want + (this.rng.next() - 0.5) * slop;
       const d = target - sail.trim;
       sail.trim = clamp(
         sail.trim + Math.sign(d) * Math.min(Math.abs(d), rate * 14),
         profile.minTrim, profile.maxTrim,
+      );
+    }
+  }
+
+  /**
+   * The watch shortens sail before she is over-pressed, and makes it again when
+   * the weather has gone through.
+   *
+   * This is the single thing that most often ends a voyage for a player who is
+   * not watching the anemometer: the wind gets up two points while he is in the
+   * chart room, and a mast goes over the side with all its gear. A real captain
+   * did not have to watch for it because twenty-four men were watching for it,
+   * and the boatswain would have the courses in before anyone came on deck to
+   * ask. On the relaxed setting they do.
+   *
+   * They never carry *more* than the captain ordered — asking for half canvas
+   * gets half canvas in any weather — so the decision to press her hard is
+   * still entirely his.
+   */
+  private applyAutoCanvas(dt: number): void {
+    const prudent = prudentCanvas(this.weatherNow.wind.speed);
+    const now = this.ship.canvasSet;
+
+    // Anything she is carrying that the weather allows is taken as the standing
+    // order, whoever set it. Without this the watch will strike sail she is
+    // safely carrying because some code path put canvas on her without going
+    // through setCanvas — and a ship that silently furls everything and lies
+    // there is the worst possible bug to hand a player who asked for less work.
+    if (now > this.orderedCanvas && now <= prudent + 0.001) this.orderedCanvas = now;
+
+    const want = Math.min(this.orderedCanvas, prudent);
+    if (Math.abs(want - now) < 0.004) return;
+
+    // Taking sail off is quick and getting it back on is not, which is both
+    // true and the right way round for the player: the protective move happens
+    // in time to matter, the recovery costs a little of the passage.
+    const rate = want < now ? 0.28 : 0.075;
+    const step = Math.sign(want - now) * Math.min(Math.abs(want - now), rate * dt);
+    this.ship.setAllCanvas(clamp(now + step, 0, 1));
+
+    // Say so once when they take a reef in, so the change is never silent.
+    if (want < now - 0.02 && this.clock.t - this.lastCanvasWord > 4 * 3600) {
+      this.lastCanvasWord = this.clock.t;
+      this.pushAlert(
+        prudent <= 0
+          ? 'The watch have taken everything off her and she lies to it under bare poles.'
+          : `The watch are shortening sail — ${(prudent * 100).toFixed(0)}% is all she will bear.`,
+        prudent <= 0.2 ? 'warning' : 'note',
       );
     }
   }
@@ -1048,12 +1138,14 @@ export class Game {
   }
 
   setCanvas(fraction: number): void {
+    this.orderedCanvas = fraction;
     this.ship.setAllCanvas(fraction);
     if (this.clock.scaleIndex > 3) this.clock.scaleIndex = 3;
   }
 
   adjustTrim(delta: number): void {
     this.autoTrim = false;
+    this.lastManualTrim = this.clock.t;
     for (let i = 0; i < this.ship.state.sails.length; i++) {
       const p = RIG_PROFILES[this.ship.hull.masts[i].rig];
       const s = this.ship.state.sails[i];
@@ -1066,7 +1158,9 @@ export class Game {
     if (this.sounding.aground) return 'She is aground, not anchored.';
     this.anchored = false;
     this.dockedAt = null;
-    this.ship.setAllCanvas(Math.min(0.6, prudentCanvas(this.weatherNow.wind.speed)));
+    // Making sail on weighing is an order, so the watch know what to make it
+    // back to after they have handed it in a squall.
+    this.setCanvas(Math.min(0.75, prudentCanvas(this.weatherNow.wind.speed)));
     this.logEvent('departure', `Weighed and made sail. Wind ${formatBearing(this.weatherNow.wind.from)}, ${this.weatherNow.wind.speed.toFixed(0)} knots.`);
     return 'Anchor aweigh.';
   }
@@ -1075,7 +1169,7 @@ export class Game {
     if (this.sounding.depth > 55) return 'No bottom here. You cannot anchor in this depth.';
     if (Math.abs(this.physics.speedKnots) > 3) return 'Too much way on. Take in sail first.';
     this.anchored = true;
-    this.ship.setAllCanvas(0);
+    this.setCanvas(0);
     const near = this.approachablePorts();
     if (near.length > 0) {
       this.enterPort(near[0].def);
@@ -1455,6 +1549,8 @@ export class Game {
       ration: this.ration,
       pumpEffort: this.pumpEffort,
       autoTrim: this.autoTrim,
+      difficulty: this.difficulty,
+      orderedCanvas: this.orderedCanvas,
       holdCourse: this.holdCourse,
       destination: this.destination,
       daysSincePort: this.daysSincePort,
@@ -1506,6 +1602,8 @@ export class Game {
     g.ration = d.ration ?? 1;
     g.pumpEffort = d.pumpEffort ?? 0.15;
     g.autoTrim = d.autoTrim ?? true;
+    g.difficulty = d.difficulty ?? 'captain';
+    g.orderedCanvas = d.orderedCanvas ?? g.ship.canvasSet;
     g.holdCourse = d.holdCourse ?? false;
     g.destination = d.destination ?? null;
     g.daysSincePort = d.daysSincePort ?? 0;

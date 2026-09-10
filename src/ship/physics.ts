@@ -83,6 +83,12 @@ export interface ShipTuning {
   keel: number;
   /** Overall hull integrity, 0-1. */
   integrity: number;
+  /**
+   * Multiplies how fast the sails come across on a tack. Above one is a crew
+   * who know their work — or a player who has asked not to be made to wait for
+   * them.
+   */
+  sailHandling?: number;
 }
 
 export interface StepResult {
@@ -146,7 +152,7 @@ export function stepShip(
   const beta = angleDelta(s.heading, apparentFrom);
 
   // --- Sail handling ------------------------------------------------------
-  const handRate = clamp(tune.crewFactor * (0.55 + 0.7 * tune.seamanship), 0.15, 1.8);
+  const handRate = sailHandRate(tune);
   const desiredSide = beta >= 0 ? -1 : 1;
 
   let drive = 0;
@@ -302,6 +308,18 @@ export function initialSails(hull: HullClass): SailState[] {
  * How much canvas she ought to be carrying for the wind that is blowing. Beyond
  * this the spars are at risk, and past twice this she will be dismasted.
  */
+/**
+ * How fast the hands get a sail across, as a multiple of the nominal time. The
+ * shift counter is in nominal seconds, so real seconds are counter / this — and
+ * anything reporting a countdown to the player has to divide.
+ */
+export function sailHandRate(tune: ShipTuning): number {
+  return clamp(
+    tune.crewFactor * (0.55 + 0.7 * tune.seamanship) * (tune.sailHandling ?? 1),
+    0.15, 9,
+  );
+}
+
 export function prudentCanvas(windKnots: number): number {
   if (windKnots < 17) return 1;
   if (windKnots < 24) return 0.85;

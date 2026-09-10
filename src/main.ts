@@ -2,6 +2,7 @@ import './style.css';
 
 import { DEG, clamp } from './core/math';
 import { Game } from './game/state';
+import type { Difficulty } from './game/difficulty';
 import { rollOfficerEvent } from './game/officerEvents';
 import { rollSeaEvent } from './game/seaEvents';
 import { KNOTS } from './ship/physics';
@@ -20,7 +21,7 @@ const input = new InputState();
 input.attach(canvas);
 
 const ui = new Ui(uiHost, {
-  onNewGame: () => startNew(),
+  onNewGame: (difficulty) => startNew(difficulty),
   onContinue: () => continueSaved(),
   onCycleCamera: () => {
     if (!renderer || !game) return;
@@ -33,8 +34,9 @@ const ui = new Ui(uiHost, {
   onVirtualKey: (key, down) => input.setVirtual(key, down),
 });
 
-function startNew(): void {
+function startNew(difficulty: Difficulty = 'watch'): void {
   game = new Game();
+  game.difficulty = difficulty;
   game.mode = 'sailing';
   ensureRenderer(game);
   ui.attach(game);
@@ -217,7 +219,7 @@ if (import.meta.env.DEV) {
         g.ship.state.heading = heading;
         g.nav.estimated = { lat, lon };
         g.clock.t = Math.floor(g.clock.t / 86400) * 86400 + hour * 3600;
-        g.ship.setAllCanvas(canvas);
+        g.setCanvas(canvas);
         g.anchored = false;
         g.dockedAt = null;
         g.refreshEnvironment();

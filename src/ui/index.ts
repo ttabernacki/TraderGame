@@ -1,4 +1,5 @@
 import { clamp } from '../core/math';
+import type { Difficulty } from '../game/difficulty';
 import type { Game, GameMode } from '../game/state';
 import { AudienceView } from './audienceView';
 import { ChartView } from './chartView';
@@ -18,7 +19,7 @@ import { TouchControls } from './touch';
 const SAVE_KEY = 'carreira-da-india:save';
 
 export interface UiCallbacks {
-  onNewGame: () => void;
+  onNewGame: (difficulty: Difficulty) => void;
   onContinue: () => void;
   onCycleCamera: () => void;
   /** Hold or release a virtual key, for the on-screen controls. */
@@ -138,10 +139,10 @@ export class Ui {
         this.orders.open(g);
         break;
       case 'epilogue':
-        this.overlay.append(new EpilogueView(g, this.cb.onNewGame).root);
+        this.overlay.append(new EpilogueView(g, () => this.cb.onNewGame(g.difficulty)).root);
         break;
       case 'gameover':
-        this.overlay.append(new GameOverView(g, g.gameOverReason ?? 'The ship was lost.', this.cb.onNewGame).root);
+        this.overlay.append(new GameOverView(g, g.gameOverReason ?? 'The ship was lost.', () => this.cb.onNewGame(g.difficulty)).root);
         break;
       case 'title':
         this.showTitle();

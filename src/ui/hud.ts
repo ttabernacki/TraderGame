@@ -125,23 +125,44 @@ export class Hud {
     // angle that would draw best. A single percentage score told the player his
     // trim was eighty-four per cent right, which is not something anyone can act
     // on; where the yard is and where it wants to be, he can.
-    const trimBars = el('div', { class: 'trim-stack' },
-      ...trim.masts.map((m) => trimBarFor(m)));
+    //
+    // When the watch have the sheets and are keeping them well, the bars are
+    // only telling the player about work he is not doing — so they go away, and
+    // come back the moment either of those stops being true.
+    const kept = g.autoTrim && !trim.shifting && trim.quality > 0.9;
+    const trimBars = kept
+      ? null
+      : el('div', { class: 'trim-stack' }, ...trim.masts.map((m) => trimBarFor(m)));
 
     const endurance = enduranceDays(g.crew, g.ration);
     append(this.ship,
       el('div', { class: 'hud-title' }, g.ship.name),
       el('div', { class: 'hud-row' },
         el('span', { class: 'k' }, `Canvas ${(r.canvas * 100).toFixed(0)}%`),
-        el('span', { class: 'v', style: { color: overCanvas ? '#d4553f' : '#efe4cc' } },
-          overCanvas ? 'MORE THAN SHE WILL BEAR' : `prudent to ${(r.prudent * 100).toFixed(0)}%`)),
+        el('span', {
+          class: 'v',
+          style: { color: overCanvas ? '#d4553f' : g.rules.autoCanvas ? '#8fbf7a' : '#efe4cc' },
+        }, overCanvas
+          ? 'MORE THAN SHE WILL BEAR'
+          : g.rules.autoCanvas
+            // The watch are handling it, so the number to watch is not the
+            // prudent limit — it is what the captain has asked for and has not
+            // got yet, which is the only part still up to him.
+            ? r.canvas < g.orderedCanvas - 0.03
+              ? `shortened from ${(g.orderedCanvas * 100).toFixed(0)}%`
+              : 'the watch have her'
+            : `prudent to ${(r.prudent * 100).toFixed(0)}%`)),
       trimBar,
       el('div', { class: 'hud-row' },
         el('span', { class: 'k' }, 'Trim'),
         el('span', {
           class: 'v',
-          style: { color: trim.quality > 0.94 ? '#8fbf7a' : '#e0b96a' },
-        }, g.autoTrim && !trim.shifting ? 'kept by the watch' : trim.advice)),
+          style: { color: kept ? '#8fbf7a' : trim.quality > 0.94 ? '#8fbf7a' : '#e0b96a' },
+        }, kept
+          ? 'kept by the watch'
+          : g.autoTrim && trim.shifting
+            ? 'sails coming across'
+            : trim.advice)),
       trimBars,
       el('div', { class: 'hud-row' },
         el('span', { class: 'k' }, 'Helm'),
