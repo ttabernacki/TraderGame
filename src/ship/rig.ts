@@ -144,17 +144,48 @@ export function sailForce(
  * Trim that extracts the most drive at the current apparent wind angle. Used by
  * the crew's automatic trim and to show the player how far off they are.
  */
-export function optimalTrim(beta: number, p: RigProfile): number {
+export function optimalTrim(beta: number, p: RigProfile, current?: number): number {
   const absBeta = Math.abs(beta);
+
   // Search rather than solve: the objective is not convex once the sail stalls.
+  //
+  // With the wind abaft the beam it has two competing maxima, and they are both
+  // real. Forward of the beam a sail drives by lift, and the best trim is the
+  // one that holds the angle of attack just short of the stall. Abaft it, the
+  // drag term changes sign and starts helping, so a sail stalled deliberately —
+  // squared off and simply blocking the wind — can beat an attached one. Running
+  // by drag is exactly what a square course does downwind.
+  //
+  // The trouble is the crossover. The two maxima swap places over a degree or so
+  // of heading, twenty degrees of trim apart, and a crew told to take whichever
+  // is momentarily higher will swing the yards right across the ship every time
+  // she yaws. When the two are within a whisker of each other the one nearer to
+  // where the yards already are is taken instead, which is both what a crew
+  // would do and what stops them hunting.
   let best = p.minTrim;
   let bestDrive = -Infinity;
   for (let t = p.minTrim; t <= p.maxTrim; t += 1) {
     const f = sailForce(10, absBeta, t, 100, p);
     if (f.drive > bestDrive) { bestDrive = f.drive; best = t; }
   }
+
+  if (current !== undefined && bestDrive > 0) {
+    // Anything within a couple of per cent of the best is, for a crew hauling on
+    // a rope in a seaway, the same trim.
+    const good = bestDrive * 0.975;
+    let nearest = best;
+    let nearestGap = Math.abs(best - current);
+    for (let t = p.minTrim; t <= p.maxTrim; t += 1) {
+      if (sailForce(10, absBeta, t, 100, p).drive < good) continue;
+      const gap = Math.abs(t - current);
+      if (gap < nearestGap) { nearestGap = gap; nearest = t; }
+    }
+    best = nearest;
+  }
+
   return clamp(best, p.minTrim, p.maxTrim);
 }
+
 
 const POINTS_OF_SAIL: { limit: number; name: string }[] = [
   { limit: 30, name: 'In irons' },
@@ -195,4 +226,41 @@ export function closestPointing(p: RigProfile): number {
     if (sailForce(10, beta, trim, 100, p).drive > 0) return beta;
   }
   return 90;
+}
+
+/**
+ * The best trim on this point of sail, and the range either side of it that is
+ * near enough to make no odds.
+ *
+ * Two numbers, not one, because "the optimum is sixty-eight degrees" is a lie
+ * about a curve with a flat top: anything within a couple of per cent of the
+ * best drive is, to a crew hauling on a rope in a seaway, the same trim. Showing
+ * the player the band as well as the peak is the difference between an
+ * instrument he can satisfy and one that nags at him for the last half degree.
+ */
+export function trimBand(beta: number, p: RigProfile): { best: number; lo: number; hi: number } {
+  const absBeta = Math.abs(beta);
+  let best = p.minTrim;
+  let bestDrive = -Infinity;
+  for (let t = p.minTrim; t <= p.maxTrim; t += 0.5) {
+    const d = sailForce(10, absBeta, t, 100, p).drive;
+    if (d > bestDrive) { bestDrive = d; best = t; }
+  }
+  if (bestDrive <= 0) return { best, lo: best, hi: best };
+
+  // The band is taken as the contiguous run about the peak, not every trim that
+  // happens to clear the threshold: with two competing maxima the far one is a
+  // different way of sailing, not a wider tolerance on this one.
+  const good = bestDrive * 0.975;
+  let lo = best;
+  let hi = best;
+  for (let t = best; t >= p.minTrim; t -= 0.5) {
+    if (sailForce(10, absBeta, t, 100, p).drive < good) break;
+    lo = t;
+  }
+  for (let t = best; t <= p.maxTrim; t += 0.5) {
+    if (sailForce(10, absBeta, t, 100, p).drive < good) break;
+    hi = t;
+  }
+  return { best, lo, hi };
 }

@@ -2,7 +2,7 @@ import { clamp, compassPoint, formatBearing, wrap360 } from '../core/math';
 import { beaufortName } from '../world/wind';
 import { moraleWord } from '../crew/crew';
 import { enduranceDays } from '../crew/crew';
-import type { Game } from '../game/state';
+import type { Game, MastTrim } from '../game/state';
 import { append, clear, el, hudRow, svg } from './dom';
 import { HeadingTape } from './headingTape';
 
@@ -119,15 +119,12 @@ export class Hud {
     );
 
     const trim = r.trim;
-    const trimBarQuality = el('div', { class: 'trim-bar', style: { marginTop: '2px' } },
-      el('div', {
-        class: 'trim-fill',
-        style: {
-          width: `${trim.quality * 100}%`,
-          background: trim.quality > 0.94 ? '#4d7a3e' : trim.quality > 0.7 ? '#c8a44e' : '#c47d2a',
-        },
-      }),
-    );
+    // One bar per mast, showing the angle the yard is braced to against the
+    // angle that would draw best. A single percentage score told the player his
+    // trim was eighty-four per cent right, which is not something anyone can act
+    // on; where the yard is and where it wants to be, he can.
+    const trimBars = el('div', { class: 'trim-stack' },
+      ...trim.masts.map((m) => trimBarFor(m)));
 
     const endurance = enduranceDays(g.crew, g.ration);
     append(this.ship,
@@ -143,7 +140,7 @@ export class Hud {
           class: 'v',
           style: { color: trim.quality > 0.94 ? '#8fbf7a' : '#e0b96a' },
         }, g.autoTrim && !trim.shifting ? 'kept by the watch' : trim.advice)),
-      trimBarQuality,
+      trimBars,
       el('div', { class: 'hud-row' },
         el('span', { class: 'k' }, 'Helm'),
         el('span', { class: 'v' },
@@ -353,4 +350,61 @@ function formatEta(hours: number): string {
   const days = hours / 24;
   if (days < 14) return `${days.toFixed(1)} days`;
   return `${(days / 7).toFixed(0)} weeks`;
+}
+
+/**
+ * The trim bar for one mast.
+ *
+ * The bar spans the whole arc the rig can actually be braced through — which is
+ * a very different arc for a lateen than for a square course — with the yard's
+ * present angle filled in and a mark where it would draw best. Closing the gap
+ * between the two is the whole of sail trimming, and drawing them on the same
+ * scale is what makes that visible at a glance.
+ */
+function trimBarFor(m: MastTrim): HTMLElement {
+  const span = Math.max(m.max - m.min, 1);
+  const norm = (deg: number) => clamp((deg - m.min) / span, 0, 1);
+  const at = norm(m.trim);
+  const want = norm(m.want);
+  const lo = norm(m.bandLo);
+  const hi = norm(m.bandHi);
+  const inBand = m.trim >= m.bandLo - 0.6 && m.trim <= m.bandHi + 0.6;
+  const good = m.quality > 0.975 || inBand;
+  const off = Math.abs(m.trim - m.want);
+
+  return el('div', { class: 'trim-mast' },
+    el('div', { class: 'trim-mast-head' },
+      el('span', { class: 'k' }, m.name),
+      el('span', {
+        class: 'v',
+        style: { color: !m.drawing ? '#c47d2a' : good ? '#8fbf7a' : '#e0b96a' },
+      }, !m.drawing
+        ? 'will not draw'
+        : good
+          ? `${m.trim.toFixed(0)}° — well set`
+          : `${m.trim.toFixed(0)}° → ${m.want.toFixed(0)}° (${
+              m.trim < m.want ? 'ease' : 'harden'} ${off.toFixed(0)}°)`),
+    ),
+    el('div', { class: 'trim-bar' },
+      el('div', {
+        class: 'trim-fill',
+        style: {
+          width: `${at * 100}%`,
+          background: !m.drawing ? '#8a5a2a' : good ? '#4d7a3e' : m.quality > 0.7 ? '#c8a44e' : '#c47d2a',
+        },
+      }),
+      // The band that draws well enough, then the peak within it. Both are
+      // drawn over the fill, so they read whether the yard is sheeted inside
+      // them or outside them.
+      m.drawing
+        ? el('div', {
+            class: 'trim-band',
+            style: { left: `${lo * 100}%`, width: `${Math.max(hi - lo, 0.004) * 100}%` },
+          })
+        : null,
+      m.drawing
+        ? el('div', { class: 'trim-want', style: { left: `${want * 100}%` } })
+        : null,
+    ),
+  );
 }

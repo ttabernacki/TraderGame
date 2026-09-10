@@ -15,7 +15,7 @@ import {
   KNOTS, prudentCanvas, stepShip, type Environment, type ShipTuning, type StepResult,
 } from '../ship/physics';
 import {
-  RIG_PROFILES, closestPointing, optimalTrim, pointOfSail, sailForce, tackName,
+  RIG_PROFILES, closestPointing, optimalTrim, pointOfSail, sailForce, tackName, trimBand,
 } from '../ship/rig';
 import { Navigator } from '../navigation/navigator';
 import { Chart, sightingRangeNm } from '../navigation/charts';
@@ -33,6 +33,31 @@ import { rollSeaEvent, type SeaEvent } from './seaEvents';
 export type GameMode =
   | 'sailing' | 'chart' | 'sight' | 'logbook' | 'crew' | 'port'
   | 'audience' | 'court' | 'shipyard' | 'menu' | 'title' | 'gameover';
+
+/** One mast's sails, as set against how they ought to be. */
+export interface MastTrim {
+  name: string;
+  /** Angle the yard is braced to, from the centreline. */
+  trim: number;
+  /** Angle that would draw best on this point of sail. */
+  want: number;
+  /** The run either side of it that is near enough to make no odds. */
+  bandLo: number;
+  bandHi: number;
+  /** The range the rig can actually be braced through. */
+  min: number;
+  max: number;
+  quality: number;
+  /** False when nothing in the rig's range would drive her on this heading. */
+  drawing: boolean;
+}
+
+export interface TrimReport {
+  quality: number;
+  advice: string;
+  shifting: boolean;
+  masts: MastTrim[];
+}
 
 export interface Sounding {
   depth: number;
@@ -386,7 +411,7 @@ export class Game {
       const sail = this.ship.state.sails[i];
       if (sail.shifting > 0) continue;
       const profile = RIG_PROFILES[this.ship.hull.masts[i].rig];
-      const want = optimalTrim(beta, profile);
+      const want = optimalTrim(beta, profile, sail.trim);
       // A less skilled crew settle for a rougher trim.
       const slop = lerp(9, 1.2, sk);
       const target = want + (this.rng.next() - 0.5) * slop;
@@ -864,38 +889,76 @@ export class Game {
    * sheets. Without this the player is trimming blind: the difference between a
    * good trim and a poor one is a knot and a half, and nothing on deck shows it.
    */
-  trimQuality(): { quality: number; advice: string; shifting: boolean } {
+  /**
+   * How the sails are set against how they ought to be, mast by mast.
+   *
+   * Reported as angles rather than as a single score, because "your trim is 84%
+   * right" tells a player nothing he can act on. The yards are at forty degrees
+   * and want to be at sixty is something he can do something about, and it is
+   * what the bar on the head-up display draws.
+   */
+  trimQuality(): TrimReport {
     const beta = this.physics?.beta ?? 0;
     let bestDrive = 0;
     let actualDrive = 0;
     let wantDelta = 0;
     let shifting = false;
+    const masts: MastTrim[] = [];
 
     for (let i = 0; i < this.ship.state.sails.length; i++) {
       const sail = this.ship.state.sails[i];
-      if (sail.set <= 0.02) continue;
+      const spec = this.ship.hull.masts[i];
+      const profile = RIG_PROFILES[spec.rig];
       if (sail.shifting > 0) shifting = true;
-      const profile = RIG_PROFILES[this.ship.hull.masts[i].rig];
-      const want = optimalTrim(beta, profile);
-      const area = this.ship.hull.masts[i].area * sail.set;
-      bestDrive += Math.max(sailForce(10, beta, want, area, profile).drive, 0);
-      actualDrive += Math.max(sailForce(10, beta, sail.trim, area, profile).drive, 0);
+      if (sail.set <= 0.02 || sail.condition <= 0.05) continue;
+
+      // The *true* best, not the nearest acceptable one: a marker that moves
+      // toward wherever the player has already put the yard is a marker chasing
+      // its own tail, and he can never tell whether he has arrived.
+      const band = trimBand(beta, profile);
+      const want = band.best;
+      const area = spec.area * sail.set;
+      const best = Math.max(sailForce(10, beta, want, area, profile).drive, 0);
+      const actual = Math.max(sailForce(10, beta, sail.trim, area, profile).drive, 0);
+      bestDrive += best;
+      actualDrive += actual;
       wantDelta += (want - sail.trim) * area;
+
+      masts.push({
+        name: spec.name,
+        trim: sail.trim,
+        want,
+        min: profile.minTrim,
+        max: profile.maxTrim,
+        bandLo: band.lo,
+        bandHi: band.hi,
+        // A mast that cannot draw at all on this heading is shown as such rather
+        // than as a mast trimmed badly; there is nothing to be done about it
+        // with the sheets, only with the helm.
+        quality: best > 1e-6 ? clamp(actual / best, 0, 1) : 0,
+        drawing: best > 1e-6,
+      });
     }
 
     if (bestDrive <= 1e-6) {
-      return { quality: 0, advice: this.ship.canvasSet < 0.02 ? 'No canvas set' : 'She will not draw on this heading', shifting };
+      return {
+        quality: 0, masts, shifting,
+        advice: this.ship.canvasSet < 0.02
+          ? 'No canvas set'
+          : 'She will not draw on this heading',
+      };
     }
     const quality = clamp(actualDrive / bestDrive, 0, 1);
     const advice = shifting
       ? 'Sails coming across'
-      : quality > 0.96
+      : quality > 0.975
         ? 'Drawing well'
         : wantDelta > 0
           ? 'Ease the sheets  (E)'
           : 'Harden in  (Q)';
-    return { quality, advice, shifting };
+    return { quality, advice, shifting, masts };
   }
+
 
   /** Bearing and distance to a charted port, as the pilot would work it out. */
   /**
