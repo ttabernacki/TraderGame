@@ -114,19 +114,23 @@ export class Hud {
 
     // --- Wind --------------------------------------------------------------
     const wx = g.weatherNow;
+    // The dial reads the shown wind, not the instantaneous one, so the needle
+    // and the sea it is describing never disagree — and so it does not spin
+    // through twenty-six degrees a frame when the clock is wound up.
+    const shown = g.displayWind;
     clear(this.wind);
     this.wind.append(
       el('div', { class: 'hud-title' }, 'Wind and sea'),
-      el('div', { class: 'hud-big' }, wx.wind.speed.toFixed(0),
-        el('span', { class: 'hud-unit' }, `kn from ${compassPoint(wx.wind.from)}`)),
+      el('div', { class: 'hud-big' }, shown.speed.toFixed(0),
+        el('span', { class: 'hud-unit' }, `kn from ${compassPoint(shown.from)}`)),
       this.windSvg,
       hudRow('Point of sail', r.inIrons ? 'IN IRONS' : `${r.pointOfSail}${r.tack ? ', ' + r.tack : ''}`),
       hudRow('Apparent', `${r.apparent.toFixed(0)} kn at ${Math.abs(r.beta).toFixed(0)}°`),
-      hudRow('Sea', `${wx.waveHeight.toFixed(1)} m — ${beaufortName(wx.wind.speed)}`),
+      hudRow('Sea', `${g.displayWave.toFixed(1)} m — ${beaufortName(shown.speed)}`),
       hudRow('Set', g.currentKnots > 0.15 ? `${g.currentKnots.toFixed(1)} kn ${compassPoint(g.currentToward)}` : 'none felt'),
       hudRow('Visibility', wx.visibility > 20 ? 'clear' : `${wx.visibility.toFixed(1)} miles`),
     );
-    this.windNeedle.setAttribute('transform', `rotate(${wx.wind.from} 44 44)`);
+    this.windNeedle.setAttribute('transform', `rotate(${shown.from} 44 44)`);
     this.windShip.setAttribute('transform', `rotate(${g.displayHeading} 44 44)`);
     if (g.currentKnots > 0.15) {
       this.windCurrent.setAttribute('transform', `rotate(${g.currentToward} 44 44)`);

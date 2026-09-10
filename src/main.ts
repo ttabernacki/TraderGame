@@ -214,14 +214,17 @@ function buildFrame(g: Game): RenderFrame {
     sails: g.ship.state.sails,
     trimSign: p.beta >= 0 ? -1 : 1,
     sailPressures: pressures,
-    apparentBeta: p.beta,
-    apparentKnots: p.apparentKnots,
+    // Shown, not instantaneous: the pennant and the telltales have to agree
+    // with the sea they are flying over.
+    apparentBeta: g.displayBeta,
+    apparentKnots: g.displayApparent,
     speedKnots: p.speedKnots,
     rudder: g.ship.state.rudder,
-    windFrom: g.weatherNow.wind.from,
-    windKnots: g.weatherNow.wind.speed,
-    waveHeight: g.weatherNow.waveHeight,
-    swellFrom: g.weatherNow.swellFrom,
+    // The shown weather, not the instantaneous one: see Game.displayWind.
+    windFrom: g.displayWind.from,
+    windKnots: g.displayWind.speed,
+    waveHeight: g.displayWave,
+    swellFrom: g.displaySwell,
     cloud: g.weatherNow.cloud,
     visibilityNm: g.weatherNow.visibility,
     dayFromEpoch: g.clock.day,

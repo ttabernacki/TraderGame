@@ -137,6 +137,31 @@ export class Game {
   displayHeading = 0;
   displayHeel = 0;
 
+  /**
+   * The weather as it is *shown*, which is the weather's trend rather than its
+   * instant.
+   *
+   * Measured at the half-day rate, every single rendered frame carries up to
+   * twenty-six degrees of wind shift, six knots of wind and a metre of sea —
+   * and the ocean is rebuilt from exactly those numbers, so the water reshuffles
+   * sixty times a second. None of that is a bug: thirty minutes really does
+   * pass per frame and the weather really does change that much in thirty
+   * minutes. But you cannot *see* a gust that lasted half an hour, and drawing
+   * one is not honesty, it is noise.
+   *
+   * So the sea and the dials follow a filter running on real seconds, the same
+   * one the heading and the heel use. At real time it is imperceptible — the
+   * lag is a fifth of a second. Wound up, the view becomes what it actually is,
+   * a time-lapse, in which the weather visibly builds and veers instead of
+   * flickering. The physics is untouched and still feels every gust.
+   */
+  displayWind = { from: 0, speed: 0 };
+  displayWave = 0;
+  displaySwell = 0;
+  /** Apparent wind as shown, which is what the pennant and the telltales fly by. */
+  displayBeta = 0;
+  displayApparent = 0;
+
   currentToward = 0;
   currentKnots = 0;
   currentName: string | null = null;
@@ -392,11 +417,43 @@ export class Game {
   /** Sample everything that depends on where and when the ship is. */
   /** Carry the shown heading and heel toward the simulated ones. */
   private smoothDisplay(realDt: number): void {
-    const k = 1 - Math.exp(-8 * clamp(realDt, 1 / 240, 0.25));
+    const dt = clamp(realDt, 1 / 240, 0.25);
+    const k = 1 - Math.exp(-8 * dt);
     this.displayHeading = wrap360(
       this.displayHeading + angleDelta(this.displayHeading, this.ship.state.heading) * k,
     );
     this.displayHeel += (this.ship.state.heel - this.displayHeel) * k;
+
+    // The weather is filtered harder than the ship, because it is what the
+    // whole sea is rebuilt from and because nobody expects the wind to answer
+    // as quickly as a rudder. A second and a half of real time.
+    const w = this.weatherNow;
+    if (this.displayWind.speed === 0 && this.displayWave === 0) {
+      this.displayWind = { from: w.wind.from, speed: w.wind.speed };
+      this.displayWave = w.waveHeight;
+      this.displaySwell = w.swellFrom;
+      return;
+    }
+    const kw = 1 - Math.exp(-0.7 * dt);
+    this.displayWind.from = wrap360(
+      this.displayWind.from + angleDelta(this.displayWind.from, w.wind.from) * kw,
+    );
+    this.displayWind.speed += (w.wind.speed - this.displayWind.speed) * kw;
+    this.displayWave += (w.waveHeight - this.displayWave) * kw;
+    this.displaySwell = wrap360(
+      this.displaySwell + angleDelta(this.displaySwell, w.swellFrom) * kw,
+    );
+
+    // And the apparent wind, which the pennant and the telltales stream by.
+    // Left raw they flick through tens of degrees a frame while the sea they
+    // are supposed to be describing moves smoothly, which reads worse than
+    // either on its own.
+    const p = this.physics;
+    if (p) {
+      const kb = 1 - Math.exp(-1.6 * dt);
+      this.displayBeta += (p.beta - this.displayBeta) * kb;
+      this.displayApparent += (p.apparentKnots - this.displayApparent) * kb;
+    }
   }
 
   refreshEnvironment(): void {
@@ -1805,6 +1862,11 @@ export class Game {
     if (last && last.text === text && this.clock.t - last.t < 7200) return;
     this.alerts.push({ id: this.nextAlertId++, text, severity, t: this.clock.t });
     if (this.alerts.length > 6) this.alerts.shift();
+    // Something wants the captain. Bring the clock down so he is on deck to see
+    // it, which is what every game that handles time compression well does: the
+    // fast rate is for the empty ocean, and the moment it stops being empty you
+    // are cut back to the close view at a pace you can act at.
+    if (severity !== 'note' && this.clock.scaleIndex > 4) this.clock.scaleIndex = 4;
   }
 
   private expireAlerts(): void {

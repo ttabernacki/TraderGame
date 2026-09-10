@@ -60,7 +60,8 @@ export class HeadingTape {
     // --- The water she cannot sail to --------------------------------------
     // Everything within the no-go angle either side of the wind's eye. Drawn
     // first and darkly, so the ticks and the marks sit on top of it.
-    const windEye = g.weatherNow.wind.from;
+    // The shown wind, so the barb on the tape and the sea in the view agree.
+    const windEye = g.displayWind.from;
     const noGo = g.noGoAngle;
     ctx.fillStyle = 'rgba(150, 44, 34, 0.30)';
     for (const side of [-1, 1]) {
@@ -98,7 +99,7 @@ export class HeadingTape {
     // --- The wind ----------------------------------------------------------
     // Where it is blowing from, which is the bearing a sailor names it by.
     const windX = x(windEye);
-    const windLabel = `${g.weatherNow.wind.speed.toFixed(0)} kn`;
+    const windLabel = `${g.displayWind.speed.toFixed(0)} kn`;
     if (onTape(windX)) {
       drawMark(ctx, windX, h, WIND_COLOUR, 'wind');
       ctx.fillStyle = WIND_COLOUR;
