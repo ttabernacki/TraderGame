@@ -14,7 +14,7 @@ import { hullClass } from '../ship/hull';
 import {
   KNOTS, prudentCanvas, stepShip, type Environment, type ShipTuning, type StepResult,
 } from '../ship/physics';
-import { RIG_PROFILES, optimalTrim, pointOfSail, tackName } from '../ship/rig';
+import { RIG_PROFILES, optimalTrim, pointOfSail, sailForce, tackName } from '../ship/rig';
 import { Navigator } from '../navigation/navigator';
 import { Chart, sightingRangeNm } from '../navigation/charts';
 import { magneticVariation } from '../navigation/celestial';
@@ -699,7 +699,47 @@ export class Game {
       canvas: this.ship.canvasSet,
       prudent: prudentCanvas(this.weatherNow.wind.speed),
       ableHands: ableHands(this.crew),
+      rudder: this.ship.state.rudder,
+      trim: this.trimQuality(),
     };
+  }
+
+  /**
+   * How well the sails are set for the wind she has, and which way to shift the
+   * sheets. Without this the player is trimming blind: the difference between a
+   * good trim and a poor one is a knot and a half, and nothing on deck shows it.
+   */
+  trimQuality(): { quality: number; advice: string; shifting: boolean } {
+    const beta = this.physics?.beta ?? 0;
+    let bestDrive = 0;
+    let actualDrive = 0;
+    let wantDelta = 0;
+    let shifting = false;
+
+    for (let i = 0; i < this.ship.state.sails.length; i++) {
+      const sail = this.ship.state.sails[i];
+      if (sail.set <= 0.02) continue;
+      if (sail.shifting > 0) shifting = true;
+      const profile = RIG_PROFILES[this.ship.hull.masts[i].rig];
+      const want = optimalTrim(beta, profile);
+      const area = this.ship.hull.masts[i].area * sail.set;
+      bestDrive += Math.max(sailForce(10, beta, want, area, profile).drive, 0);
+      actualDrive += Math.max(sailForce(10, beta, sail.trim, area, profile).drive, 0);
+      wantDelta += (want - sail.trim) * area;
+    }
+
+    if (bestDrive <= 1e-6) {
+      return { quality: 0, advice: this.ship.canvasSet < 0.02 ? 'No canvas set' : 'She will not draw on this heading', shifting };
+    }
+    const quality = clamp(actualDrive / bestDrive, 0, 1);
+    const advice = shifting
+      ? 'Sails coming across'
+      : quality > 0.96
+        ? 'Drawing well'
+        : wantDelta > 0
+          ? 'Ease the sheets  (E)'
+          : 'Harden in  (Q)';
+    return { quality, advice, shifting };
   }
 
   /** Bearing and distance to a charted port, as the pilot would work it out. */

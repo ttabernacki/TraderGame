@@ -142,7 +142,7 @@ export class Sky {
     const colors = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) {
       const m = STARS[i].mag;
-      sizes[i] = clamp(9 - m * 2.1, 1.6, 11);
+      sizes[i] = clamp(13 - m * 2.6, 2.6, 16);
       // Rough colour by magnitude class; the bright ones read as slightly warm.
       const c = new THREE.Color().setHSL(0.58 - clamp((2 - m) * 0.02, -0.05, 0.06), 0.25, 0.92);
       colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
@@ -258,7 +258,7 @@ export class Sky {
       clamp(smoothstep(-2, 4, moon.altitude) * (0.25 + moon.phase * 0.75) * (1 - overcast * 0.9), 0, 1);
 
     // --- Stars -------------------------------------------------------------
-    const starVisibility = clamp(night * 1.15 - overcast * 1.1, 0, 1);
+    const starVisibility = clamp(night * 1.35 - overcast * 1.1, 0, 1);
     this.starMaterial.uniforms.uOpacity.value = starVisibility;
     this.lineMaterial.opacity = starVisibility * 0.32;
 

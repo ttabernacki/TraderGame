@@ -3,21 +3,34 @@ import { DEG, clamp, lerp, smoothstep } from '../core/math';
 import type { HullClass, MastSpec } from '../ship/hull';
 import type { SailState } from '../ship/physics';
 
-const OAK = 0x8a6743;
-const DARK_OAK = 0x5f452b;
-const DECK = 0xa08258;
-const CANVAS = 0xece4d2;
+const OAK = new THREE.Color(0xa8814f);
+const OAK_DARK = new THREE.Color(0x6d5030);
+const WALE = new THREE.Color(0x4a3520);
+const BOTTOM = new THREE.Color(0x5b5046);
 const SPAR = 0x9a7a4e;
+const IRON = 0x2f2a24;
 
 /** Rake of a lateen yard from the vertical. */
 const LATEEN_RAKE = 42;
 
 /** Height of the sheer above the designed waterline, as a multiple of draft. */
-const FREEBOARD = 1.08;
+const FREEBOARD = 0.94;
+
+export interface RigView {
+  sails: SailState[];
+  /** Which side the sails are sheeted to: -1 port, +1 starboard. */
+  trimSign: number;
+  /** Normalised drawing force per sail, negative when taken aback. */
+  pressures: number[];
+  apparentBeta: number;
+  apparentKnots: number;
+  /** Helm setting, -1 to +1. */
+  rudder: number;
+  t: number;
+}
 
 interface SailBuild {
   geometry: THREE.BufferGeometry;
-  /** Undeformed vertex positions. */
   base: Float32Array;
   /** How much each vertex bellies out, peaking in the middle of the sail. */
   weight: Float32Array;
@@ -25,8 +38,10 @@ interface SailBuild {
   luff: Float32Array;
   /** Which local axis the sail bellies along: 0 for x, 2 for z. */
   axis: 0 | 2;
-  /** Overall size, used to scale the depth of the belly. */
   scale: number;
+  /** Where the cross sits in texture space, and the sail's aspect. */
+  crossAt: [number, number];
+  aspect: number;
 }
 
 interface MastParts {
@@ -34,18 +49,20 @@ interface MastParts {
   pivot: THREE.Group;
   yard: THREE.Mesh;
   sail: THREE.Mesh;
+  bundle: THREE.Mesh;
   build: SailBuild;
 }
 
 /**
  * A procedural caravel.
  *
- * The hull is lofted from parametric stations, which gives the right shape for
- * this kind of ship: fine forward, full amidships, a low waist and a raised
- * sterncastle. The sails are deformed every frame by the actual aerodynamic
- * force on them, so a sail that is drawing bellies out, a sail that is luffing
- * shakes along its leading edge, and a sail taken aback presses back against
- * the mast.
+ * The hull is lofted from parametric stations and coloured strake by strake, so
+ * the planking, the wale and the tallowed bottom all read at a distance. The
+ * sails are cut as real sails were — triangles laced to a raked yard for the
+ * lateens, a roached rectangle for a square course — and are deformed every
+ * frame by the actual aerodynamic force on them, so a sail that is drawing
+ * bellies out, one that is luffing shakes along its leading edge, and one taken
+ * aback presses back against the mast.
  */
 export class ShipMesh {
   group = new THREE.Group();
@@ -53,8 +70,8 @@ export class ShipMesh {
   private flag: THREE.Mesh;
   private flagGeo: THREE.PlaneGeometry;
   private flagBase: Float32Array;
-  private wakeMaterial: THREE.MeshBasicMaterial;
-  private wake: THREE.Mesh;
+  private rudder: THREE.Group;
+  private tiller: THREE.Mesh;
 
   constructor(hull: HullClass) {
     const L = hull.lwl;
@@ -66,14 +83,19 @@ export class ShipMesh {
     this.group.add(buildSterncastle(L, B, D));
     this.group.add(buildForecastle(L, B, D));
     this.group.add(buildRails(L, B, D));
+    this.group.add(buildDeckFittings(L, B, D));
 
-    const crossTexture = makeCrossTexture();
+    const steering = buildSteering(L, B, D);
+    this.rudder = steering.rudder;
+    this.tiller = steering.tiller;
+    this.group.add(this.rudder);
+    this.group.add(this.tiller);
+
     const mainIndex = hull.masts.reduce(
       (best, m, i) => (m.area > hull.masts[best].area ? i : best), 0,
     );
-
     for (let i = 0; i < hull.masts.length; i++) {
-      this.masts.push(this.buildMast(hull.masts[i], hull, i === mainIndex ? crossTexture : null));
+      this.masts.push(this.buildMast(hull.masts[i], hull, i === mainIndex));
     }
 
     // A banner at the main truck, which is also the best wind vane aboard.
@@ -81,27 +103,22 @@ export class ShipMesh {
     this.flagBase = new Float32Array(this.flagGeo.getAttribute('position').array);
     this.flag = new THREE.Mesh(
       this.flagGeo,
-      new THREE.MeshBasicMaterial({ color: 0xc8352c, side: THREE.DoubleSide }),
+      new THREE.MeshLambertMaterial({ color: 0xc8352c, side: THREE.DoubleSide }),
     );
     const tallest = hull.masts.reduce((a, b) => (a.ceHeight > b.ceHeight ? a : b));
-    this.flag.position.set(0, tallest.ceHeight * 1.72, tallest.station * L * 0.42);
+    this.flag.position.set(0, tallest.ceHeight * 1.74, tallest.station * L * 0.42);
     this.group.add(this.flag);
 
-    const wakeGeo = new THREE.PlaneGeometry(B * 2.4, L * 3.2, 1, 1);
-    this.wakeMaterial = new THREE.MeshBasicMaterial({
-      color: 0xdfe9ee, transparent: true, opacity: 0, depthWrite: false,
+    this.group.traverse((o: THREE.Object3D) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; }
     });
-    this.wake = new THREE.Mesh(wakeGeo, this.wakeMaterial);
-    this.wake.rotation.x = -Math.PI / 2;
-    this.wake.position.set(0, 0.12, -L * 1.5);
-    this.wake.renderOrder = 2;
-    this.group.add(this.wake);
   }
 
-  private buildMast(spec: MastSpec, hull: HullClass, texture: THREE.Texture | null): MastParts {
+  private buildMast(spec: MastSpec, hull: HullClass, isMain: boolean): MastParts {
     const L = hull.lwl;
     const D = hull.draft;
-    const mastHeight = spec.ceHeight * 1.72;
+    const mastHeight = spec.ceHeight * 1.74;
     const z = spec.station * L * 0.42;
     const deckY = sheerAt(0.5) * D * FREEBOARD;
 
@@ -110,7 +127,7 @@ export class ShipMesh {
     this.group.add(pivot);
 
     const mast = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.17, 0.3, mastHeight, 8),
+      new THREE.CylinderGeometry(0.16, 0.29, mastHeight, 10),
       new THREE.MeshLambertMaterial({ color: SPAR }),
     );
     mast.position.y = mastHeight / 2 + D * 0.15;
@@ -123,130 +140,154 @@ export class ShipMesh {
     const sail = new THREE.Mesh(
       build.geometry,
       new THREE.MeshLambertMaterial({
-        color: CANVAS,
         side: THREE.DoubleSide,
-        map: texture ?? undefined,
+        map: makeSailTexture(
+          build.aspect,
+          isMain ? build.crossAt : null,
+          spec.rig === 'lateen' ? 90 - LATEEN_RAKE : 0,
+        ),
         transparent: true,
         // Canvas is thin enough that the sun glows through it, so a backlit sail
-        // is never a black shape against the sky.
-        emissive: 0x2e2b24,
+        // is never just a black shape against the sky.
+        emissive: 0x333026,
       }),
     );
     pivot.add(sail);
 
-    // The yard is drawn along the sail's head, so the two always agree.
+    // The yard, drawn along the sail's head so the two always agree, and the
+    // bundle of furled canvas that appears along it as sail is taken in.
     const yardMat = new THREE.MeshLambertMaterial({ color: SPAR });
+    const bundleMat = new THREE.MeshLambertMaterial({ color: 0xd8cfba });
     let yard: THREE.Mesh;
+    let bundle: THREE.Mesh;
+
     if (spec.rig === 'lateen') {
       const s = lateenPoints(spec.area, deckY);
       const dir = new THREE.Vector3().subVectors(s.peak, s.tack);
       const len = dir.length();
-      yard = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.08, len * 1.06, 6), yardMat);
-      yard.position.copy(s.tack).addScaledVector(dir, 0.5);
-      yard.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+      const mid = s.tack.clone().addScaledVector(dir, 0.5);
+      const q = new THREE.Quaternion().setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0), dir.clone().normalize(),
+      );
+      yard = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.07, len * 1.06, 8), yardMat);
+      yard.position.copy(mid);
+      yard.quaternion.copy(q);
+
+      bundle = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.26, len * 0.9, 8), bundleMat);
+      bundle.position.copy(mid).add(new THREE.Vector3(0, -0.3, 0));
+      bundle.quaternion.copy(q);
     } else {
       const s = squarePoints(spec.area, spec.ceHeight * 1.42);
-      yard = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.09, s.width * 1.14, 6), yardMat);
+      yard = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.09, s.width * 1.14, 8), yardMat);
       yard.rotation.z = Math.PI / 2;
       yard.position.set(0, s.top, 0);
-    }
-    pivot.add(yard);
 
-    // Standing rigging down to the channels, and a stay forward.
-    const shroudMat = new THREE.LineBasicMaterial({ color: 0x3a2f22, transparent: true, opacity: 0.7 });
+      bundle = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.3, s.width * 0.94, 8), bundleMat);
+      bundle.rotation.z = Math.PI / 2;
+      bundle.position.set(0, s.top - 0.35, 0);
+    }
+    bundle.visible = false;
+    pivot.add(yard);
+    pivot.add(bundle);
+
+    // Standing rigging: shrouds to the channels, ratlines across them, a stay
+    // forward. Drawn as lines, which is what they look like at any real range.
+    const shroudMat = new THREE.LineBasicMaterial({ color: 0x2b2319, transparent: true, opacity: 0.85 });
     const pts: THREE.Vector3[] = [];
+    const head = new THREE.Vector3(0, mastHeight * 0.9, 0);
     for (const side of [-1, 1]) {
+      const feet: THREE.Vector3[] = [];
       for (let k = 0; k < 3; k++) {
-        pts.push(new THREE.Vector3(0, mastHeight * 0.9, 0));
-        pts.push(new THREE.Vector3(side * hull.beam * 0.46, deckY, (k - 1) * 1.6));
+        const foot = new THREE.Vector3(side * hull.beam * 0.46, deckY, (k - 1) * 1.7);
+        feet.push(foot);
+        pts.push(head.clone(), foot);
+      }
+      // Ratlines between the forward and after shroud of each side.
+      for (let r = 1; r <= 8; r++) {
+        const t = r / 9.5;
+        pts.push(
+          feet[0].clone().lerp(head, t),
+          feet[2].clone().lerp(head, t),
+        );
       }
     }
     pts.push(new THREE.Vector3(0, mastHeight * 0.88, 0));
     pts.push(new THREE.Vector3(0, deckY + D * 0.3, L * 0.46 - z));
     pivot.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), shroudMat));
 
-    return { spec, pivot, yard, sail, build };
+    return { spec, pivot, yard, sail, bundle, build };
   }
 
-  /**
-   * Set the rig to match the simulation. `trimSign` is the side the sails are
-   * sheeted to, and `pressures` is how hard each one is drawing, signed so that
-   * a negative value means the wind is on the wrong side of it.
-   */
-  update(
-    sails: SailState[],
-    trimSign: number,
-    pressures: number[],
-    apparentBeta: number,
-    apparentKnots: number,
-    speedKnots: number,
-    t: number,
-  ): void {
+  /** Set the rig and the steering to match the simulation. */
+  update(v: RigView): void {
     for (let i = 0; i < this.masts.length; i++) {
       const m = this.masts[i];
-      const s = sails[i];
+      const s = v.sails[i];
       if (!s) continue;
 
       // A lateen yard rests fore-and-aft and swings out; a square yard rests
-      // athwartships and braces round, so the two measure trim from opposite
-      // datums.
+      // athwartships and braces round, so they measure trim from opposite datums.
       const rest = m.spec.rig === 'square' ? 90 : 0;
-      const targetAngle = trimSign * (s.trim - rest) * DEG;
+      const targetAngle = v.trimSign * (s.trim - rest) * DEG;
       m.pivot.rotation.y += (targetAngle - m.pivot.rotation.y) * 0.08;
 
       const setAmount = s.set * s.condition;
-      m.sail.visible = setAmount > 0.02;
-      m.yard.visible = s.condition > 0.05;
+      const gone = s.condition <= 0.05;
+      m.yard.visible = !gone;
+      m.sail.visible = setAmount > 0.06 && !gone;
+      // Canvas taken in is gathered along the yard rather than shrunk away.
+      m.bundle.visible = !gone && setAmount < 0.94;
+      const bundleScale = clamp(1 - setAmount, 0.12, 1);
+      m.bundle.scale.set(bundleScale, 1, bundleScale);
+
       if (!m.sail.visible) continue;
 
       const mat = m.sail.material as THREE.MeshLambertMaterial;
-      mat.opacity = clamp(setAmount * 1.5, 0.2, 1);
+      mat.opacity = 1;
 
-      const furl = 1 - setAmount;
-      const pressure = clamp(pressures[i] ?? 0, -1, 1);
+      const pressure = clamp(v.pressures[i] ?? 0, -1, 1);
       const luffing = Math.abs(pressure) < 0.08;
-      const shake = luffing ? clamp(apparentKnots / 26, 0, 1) * 0.5 : 0;
+      const shake = luffing ? clamp(v.apparentKnots / 26, 0, 1) * 0.5 : 0;
 
       const b = m.build;
       const pos = b.geometry.getAttribute('position') as THREE.BufferAttribute;
-      const depth = pressure * b.scale * 0.16;
+      const depth = pressure * b.scale * 0.26;
 
-      for (let v = 0; v < pos.count; v++) {
-        const bx = b.base[v * 3];
-        const by = b.base[v * 3 + 1];
-        const bz = b.base[v * 3 + 2];
+      for (let k = 0; k < pos.count; k++) {
+        const bx = b.base[k * 3];
+        const by = b.base[k * 3 + 1];
+        const bz = b.base[k * 3 + 2];
 
-        // Furling gathers the sail up toward its head rather than shrinking it.
-        const gathered = furl * 0.75;
-        const belly = depth * b.weight[v] * (1 - gathered);
-        const flap = shake * b.scale * 0.07 * b.luff[v]
-          * Math.sin(t * 10 + v * 0.7 + bx * 0.3 + bz * 0.3);
-
+        const belly = depth * b.weight[k];
+        const flap = shake * b.scale * 0.07 * b.luff[k]
+          * Math.sin(v.t * 10 + k * 0.7 + bx * 0.3 + bz * 0.3);
         const offset = belly + flap;
-        if (b.axis === 0) {
-          pos.setXYZ(v, bx + offset, by, bz);
-        } else {
-          pos.setXYZ(v, bx, by, bz + offset);
-        }
+
+        if (b.axis === 0) pos.setXYZ(k, bx + offset, by, bz);
+        else pos.setXYZ(k, bx, by, bz + offset);
       }
       pos.needsUpdate = true;
       b.geometry.computeVertexNormals();
-      m.sail.scale.y = 1 - furl * 0.55;
+      // Reefed canvas is a shorter sail, hoisted from the same yard.
+      m.sail.scale.y = clamp(setAmount, 0.25, 1);
     }
+
+    // The rudder answers the helm, and the tiller swings the other way.
+    const rudderAngle = clamp(v.rudder, -1, 1) * 32 * DEG;
+    this.rudder.rotation.y += (rudderAngle - this.rudder.rotation.y) * 0.2;
+    this.tiller.rotation.y += (-rudderAngle * 1.1 - this.tiller.rotation.y) * 0.2;
 
     // The banner streams with the apparent wind.
-    this.flag.rotation.y = (apparentBeta + 180) * DEG;
+    this.flag.rotation.y = (v.apparentBeta + 180) * DEG;
     const fpos = this.flagGeo.getAttribute('position') as THREE.BufferAttribute;
-    for (let v = 0; v < fpos.count; v++) {
-      const bx = this.flagBase[v * 3];
-      const by = this.flagBase[v * 3 + 1];
+    for (let k = 0; k < fpos.count; k++) {
+      const bx = this.flagBase[k * 3];
+      const by = this.flagBase[k * 3 + 1];
       const u = bx / 3.2 + 0.5;
-      const flutter = Math.sin(t * 9 + u * 7) * u * clamp(apparentKnots / 22, 0.05, 1) * 0.4;
-      fpos.setXYZ(v, bx, by + flutter * 0.4, flutter);
+      const flutter = Math.sin(v.t * 9 + u * 7) * u * clamp(v.apparentKnots / 22, 0.05, 1) * 0.4;
+      fpos.setXYZ(k, bx, by + flutter * 0.4, flutter);
     }
     fpos.needsUpdate = true;
-
-    this.wakeMaterial.opacity = clamp(Math.abs(speedKnots) / 9, 0, 1) * 0.3;
   }
 
   setHeel(heelDeg: number, pitchDeg: number): void {
@@ -270,21 +311,20 @@ export class ShipMesh {
 // ---------------------------------------------------------------------------
 
 /**
- * Corners of a lateen sail, sized so the triangle's area matches the rig.
- * The tack is down and forward near the deck, the peak is high and aft at the
- * masthead, and the clew is aft at the level of the rail: the enormous raked
- * yard that let these ships lie closer to the wind than anything else afloat.
+ * Corners of a lateen sail, sized so the triangle's area matches the rig. The
+ * tack is down and forward near the deck, the peak high and aft at the masthead,
+ * and the clew aft at the level of the rail: the enormous raked yard that let
+ * these ships lie closer to the wind than anything else afloat.
  */
 function lateenPoints(area: number, deckY: number): { tack: THREE.Vector3; peak: THREE.Vector3; clew: THREE.Vector3 } {
   const dirY = Math.cos(LATEEN_RAKE * DEG);
   const dirZ = -Math.sin(LATEEN_RAKE * DEG);
-  // Unit shape, then scaled so the area comes out right.
   const clewY = 0.10;
   const clewZ = -0.75;
   const unitArea = 0.5 * Math.abs(dirY * clewZ - dirZ * clewY);
   const s = Math.sqrt(area / unitArea);
 
-  const tack = new THREE.Vector3(0, deckY, s * 0.16);
+  const tack = new THREE.Vector3(0, deckY + 0.9, s * 0.16);
   return {
     tack,
     peak: new THREE.Vector3(tack.x, tack.y + dirY * s, tack.z + dirZ * s),
@@ -294,7 +334,26 @@ function lateenPoints(area: number, deckY: number): { tack: THREE.Vector3; peak:
 
 function buildLateenSail(area: number, deckY: number): SailBuild {
   const { tack, peak, clew } = lateenPoints(area, deckY);
-  const N = 9;
+  const N = 10;
+
+  // The cloth is mapped on the ship's own axes — fore-and-aft across the sail,
+  // vertical up it — so the cross of the Order of Christ stands upright as it was
+  // painted, rather than leaning over with the rake of the yard. The seams are
+  // drawn into the texture at the yard's angle instead, which is where they
+  // actually ran.
+  const corners = [tack, peak, clew];
+  const zMin = Math.min(...corners.map((c) => c.z)), zMax = Math.max(...corners.map((c) => c.z));
+  const yMin = Math.min(...corners.map((c) => c.y)), yMax = Math.max(...corners.map((c) => c.y));
+  const uSpan = Math.max(zMax - zMin, 0.01);
+  const vSpan = Math.max(yMax - yMin, 0.01);
+
+  const toUv = (c: THREE.Vector3): [number, number] =>
+    [(zMax - c.z) / uSpan, (c.y - yMin) / vSpan];
+  const cornerUv = corners.map(toUv);
+  const crossAt: [number, number] = [
+    (cornerUv[0][0] + cornerUv[1][0] + cornerUv[2][0]) / 3,
+    (cornerUv[0][1] + cornerUv[1][1] + cornerUv[2][1]) / 3,
+  ];
 
   const positions: number[] = [];
   const weight: number[] = [];
@@ -307,28 +366,19 @@ function buildLateenSail(area: number, deckY: number): SailBuild {
   for (let i = 0; i <= N; i++) { offsets.push(running); running += N - i + 1; }
   const idx = (i: number, j: number) => offsets[i] + j;
 
-  // Texture mapping is done from the vertex's real position in the sail's plane
-  // rather than barycentrically, so the cross of the Order of Christ stays square
-  // and upright instead of being sheared across the triangle. The texture border
-  // is plain canvas, so anything falling outside simply clamps to cloth.
-  const cz = (peak.z + clew.z + tack.z) / 3;
-  const cy = (peak.y + clew.y + tack.y) / 3;
-  const extentZ = Math.max(peak.z, clew.z, tack.z) - Math.min(peak.z, clew.z, tack.z);
-  const extentY = Math.max(peak.y, clew.y, tack.y) - Math.min(peak.y, clew.y, tack.y);
-  const uvScale = Math.min(extentZ, extentY) * 0.85;
-
+  const p = new THREE.Vector3();
   for (let i = 0; i <= N; i++) {
     for (let j = 0; j <= N - i; j++) {
       const k = N - i - j;
       const a = i / N, b = j / N, c = k / N;
-      positions.push(
+      p.set(
         peak.x * a + clew.x * b + tack.x * c,
         peak.y * a + clew.y * b + tack.y * c,
         peak.z * a + clew.z * b + tack.z * c,
       );
-      const vz = peak.z * a + clew.z * b + tack.z * c;
-      const vy = peak.y * a + clew.y * b + tack.y * c;
-      uv.push(0.5 - (vz - cz) / uvScale, 0.5 + (vy - cy) / uvScale);
+      positions.push(p.x, p.y, p.z);
+      const t = toUv(p);
+      uv.push(t[0], t[1]);
       // Peaks at the centroid and falls to nothing at every edge.
       weight.push(27 * a * b * c);
       // The luff is the edge from tack to peak, the one laced to the yard.
@@ -345,8 +395,8 @@ function buildLateenSail(area: number, deckY: number): SailBuild {
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geometry.setIndex(indices);
   geometry.computeVertexNormals();
 
   return {
@@ -356,23 +406,25 @@ function buildLateenSail(area: number, deckY: number): SailBuild {
     luff: new Float32Array(luff),
     axis: 0,
     scale: Math.sqrt(area),
+    crossAt,
+    aspect: uSpan / vSpan,
   };
 }
 
 function squarePoints(area: number, yardY: number): { width: number; height: number; top: number } {
-  // A square course is wide and shallow.
   const width = Math.sqrt(area * 1.75);
   return { width, height: area / width, top: yardY };
 }
 
 function buildSquareSail(area: number, yardY: number): SailBuild {
   const { width, height, top } = squarePoints(area, yardY);
-  const nx = 10;
-  const ny = 8;
+  const nx = 12;
+  const ny = 9;
 
   const positions: number[] = [];
   const weight: number[] = [];
   const luff: number[] = [];
+  const uv: number[] = [];
   const indices: number[] = [];
 
   for (let j = 0; j <= ny; j++) {
@@ -382,6 +434,7 @@ function buildSquareSail(area: number, yardY: number): SailBuild {
       // The foot of a square sail is cut with a slight roach.
       const foot = 1 - Math.sin(Math.PI * u) * 0.07;
       positions.push((u - 0.5) * width, top - v * height * foot, 0);
+      uv.push(u, 1 - v);
       weight.push(Math.sin(Math.PI * u) * Math.sin(Math.PI * clamp(v * 1.05, 0, 1)));
       luff.push(Math.sin(Math.PI * u) * v);
     }
@@ -397,12 +450,8 @@ function buildSquareSail(area: number, yardY: number): SailBuild {
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setIndex(indices);
-  const uv: number[] = [];
-  for (let j = 0; j <= ny; j++) {
-    for (let i = 0; i <= nx; i++) uv.push(i / nx, 1 - j / ny);
-  }
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geometry.setIndex(indices);
   geometry.computeVertexNormals();
 
   return {
@@ -412,6 +461,8 @@ function buildSquareSail(area: number, yardY: number): SailBuild {
     luff: new Float32Array(luff),
     axis: 2,
     scale: Math.sqrt(area),
+    crossAt: [0.5, 0.52],
+    aspect: width / height,
   };
 }
 
@@ -419,7 +470,6 @@ function buildSquareSail(area: number, yardY: number): SailBuild {
 // Hull construction
 // ---------------------------------------------------------------------------
 
-/** Half-beam as a fraction of maximum, along the length. */
 function beamAt(t: number): number {
   if (t < 0.12) return lerp(0.34, 0.66, t / 0.12);
   if (t < 0.45) return lerp(0.66, 1.0, smoothstep(0.12, 0.45, t));
@@ -427,11 +477,10 @@ function beamAt(t: number): number {
   return lerp(0.62, 0.07, smoothstep(0.78, 1.0, t));
 }
 
-/** Height of the sheer line above the waterline, as a fraction of draft. */
 function sheerAt(t: number): number {
   const mid = 0.52;
   const d = Math.abs(t - mid) / mid;
-  return lerp(0.95, 1.95, Math.pow(d, 1.7));
+  return lerp(1.05, 1.44, Math.pow(d, 1.9));
 }
 
 function keelAt(t: number): number {
@@ -442,33 +491,53 @@ function keelAt(t: number): number {
 
 function sectionWidth(v: number, t: number): number {
   const rise = Math.pow(clamp(v, 0, 1), 0.52);
-  const tumble = 1 - Math.pow(clamp(v, 0, 1), 5) * 0.22;
+  const tumble = 1 - Math.pow(clamp(v, 0, 1), 2.4) * 0.28;
   const fineness = lerp(1, 0.72, smoothstep(0.7, 1, t));
   return rise * tumble * fineness;
 }
 
+/**
+ * The hull, lofted station by station and coloured strake by strake: tallowed
+ * below the waterline, planked oak above it, and a heavy wale running the length
+ * at the turn of the topsides.
+ */
 function buildHull(L: number, B: number, D: number): THREE.Mesh {
-  const stations = 34;
-  const rows = 14;
+  const stations = 44;
+  const rows = 22;
   const positions: number[] = [];
+  const colors: number[] = [];
   const indices: number[] = [];
   const halfB = B / 2;
+  const c = new THREE.Color();
 
-  for (let i = 0; i < stations; i++) {
-    const t = i / (stations - 1);
+  const addVertex = (t: number, v: number, side: number) => {
     const z = (t - 0.5) * L;
     const bw = beamAt(t) * halfB;
     const keel = -keelAt(t) * D;
     const sheer = sheerAt(t) * D * FREEBOARD;
+    const y = lerp(keel, sheer, v);
+    // The wale is a heavier strake, standing slightly proud of the planking.
+    const waleness = Math.exp(-Math.pow((v - 0.74) / 0.055, 2));
+    const w = sectionWidth(v, t) * bw * (1 + waleness * 0.085);
+    positions.push(side * w, y, z);
 
-    for (let j = 0; j < rows; j++) {
-      const v = j / (rows - 1);
-      positions.push(-sectionWidth(v, t) * bw, lerp(keel, sheer, v), z);
+    if (y < 0.02) {
+      // Tallow and pitch, fouling darker as it goes deeper.
+      c.copy(BOTTOM).lerp(OAK_DARK, clamp(y / (D * 0.4) + 1, 0, 1) * 0.35);
+    } else {
+      // Alternating strakes, with a little variation along the length so the
+      // planking does not read as a machine-cut stripe.
+      const strake = Math.sin(v * rows * Math.PI * 0.92) * 0.5 + 0.5;
+      c.copy(OAK).lerp(OAK_DARK, strake * 0.5 + Math.sin(t * 37) * 0.07 + 0.06);
     }
-    for (let j = rows - 1; j >= 0; j--) {
-      const v = j / (rows - 1);
-      positions.push(sectionWidth(v, t) * bw, lerp(keel, sheer, v), z);
-    }
+    c.lerp(WALE, waleness * 0.9);
+    colors.push(c.r, c.g, c.b);
+  };
+
+  for (let i = 0; i < stations; i++) {
+    const t = i / (stations - 1);
+    for (let j = 0; j < rows; j++) addVertex(t, j / (rows - 1), -1);
+    for (let j = rows - 1; j >= 0; j--) addVertex(t, j / (rows - 1), 1);
   }
 
   const perStation = rows * 2;
@@ -482,86 +551,118 @@ function buildHull(L: number, B: number, D: number): THREE.Mesh {
 
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   g.setIndex(indices);
   g.computeVertexNormals();
-  return new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: OAK, side: THREE.DoubleSide }));
+  return new THREE.Mesh(g, new THREE.MeshLambertMaterial({
+    vertexColors: true, side: THREE.DoubleSide,
+  }));
 }
 
 function buildDeck(L: number, B: number, D: number): THREE.Mesh {
-  const stations = 26;
+  const stations = 30;
+  const across = 7;
   const positions: number[] = [];
+  const colors: number[] = [];
   const indices: number[] = [];
   const halfB = B / 2;
+  const c = new THREE.Color();
+  const deckLight = new THREE.Color(0xb59468);
+  const deckDark = new THREE.Color(0x8a6c46);
 
   for (let i = 0; i < stations; i++) {
     const t = i / (stations - 1);
     const z = (t - 0.5) * L;
     const bw = beamAt(t) * halfB * 0.93;
     const y = sheerAt(t) * D * FREEBOARD;
-    positions.push(-bw, y, z);
-    positions.push(bw, y, z);
+    for (let k = 0; k < across; k++) {
+      const u = k / (across - 1);
+      positions.push((u - 0.5) * 2 * bw, y, z);
+      // Deck planks run fore and aft, so the caulking lines run athwartships.
+      c.copy(deckLight).lerp(deckDark, (Math.sin(u * across * Math.PI) * 0.5 + 0.5) * 0.45);
+      colors.push(c.r, c.g, c.b);
+    }
   }
   for (let i = 0; i < stations - 1; i++) {
-    const a = i * 2;
-    indices.push(a, a + 2, a + 1);
-    indices.push(a + 1, a + 2, a + 3);
+    for (let k = 0; k < across - 1; k++) {
+      const a = i * across + k;
+      indices.push(a, a + across, a + 1);
+      indices.push(a + 1, a + across, a + across + 1);
+    }
   }
 
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
   g.setIndex(indices);
   g.computeVertexNormals();
-  return new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: DECK, side: THREE.DoubleSide }));
+  return new THREE.Mesh(g, new THREE.MeshLambertMaterial({
+    vertexColors: true, side: THREE.DoubleSide,
+  }));
 }
 
 function buildSterncastle(L: number, B: number, D: number): THREE.Group {
   const g = new THREE.Group();
-  const w = B * 0.66;
-  const h = D * 0.85;
+  const w = beamAt(0.14) * B * 0.94;
+  const h = D * 0.72;
   const len = L * 0.2;
+  const deck = sheerAt(0.14) * D * FREEBOARD;
 
-  const box = new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, len),
-    new THREE.MeshLambertMaterial({ color: DARK_OAK }),
-  );
-  box.position.set(0, sheerAt(0.12) * D * FREEBOARD + h / 2 - 0.2, -L * 0.5 + len * 0.66);
+  const oak = new THREE.MeshLambertMaterial({ color: 0x6b4e30 });
+  const trim = new THREE.MeshLambertMaterial({ color: 0x4a3520 });
+
+  const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, len), oak);
+  box.position.set(0, deck + h / 2 - 0.2, -L * 0.5 + len * 0.66);
   g.add(box);
 
-  const rail = new THREE.Mesh(
-    new THREE.BoxGeometry(w * 1.05, 0.3, len * 1.03),
-    new THREE.MeshLambertMaterial({ color: OAK }),
-  );
-  rail.position.set(0, box.position.y + h / 2 + 0.35, box.position.z);
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(w * 1.06, 0.28, len * 1.04), trim);
+  rail.position.set(0, box.position.y + h / 2 + 0.32, box.position.z);
   g.add(rail);
+
+  // Transom across the stern, raked aft and cut to the hull's after sections.
+  const sternBeam = beamAt(0.03) * B * 1.9;
+  const transom = new THREE.Mesh(new THREE.BoxGeometry(sternBeam, h * 1.3, 0.2), trim);
+  transom.position.set(0, deck + h * 0.25, -L * 0.485);
+  transom.rotation.x = -0.16;
+  g.add(transom);
+
+  // Quarter windows, which catch the light and give the stern a face.
+  const glass = new THREE.MeshLambertMaterial({ color: 0x2a2a24, emissive: 0x141008 });
+  for (const side of [-1, 1]) {
+    const win = new THREE.Mesh(new THREE.BoxGeometry(sternBeam * 0.22, h * 0.26, 0.09), glass);
+    win.position.set(side * sternBeam * 0.26, deck + h * 0.42, -L * 0.478);
+    win.rotation.x = -0.16;
+    g.add(win);
+  }
   return g;
 }
 
 function buildForecastle(L: number, B: number, D: number): THREE.Group {
   const g = new THREE.Group();
-  const w = B * 0.46;
-  const h = D * 0.5;
+  const w = beamAt(0.9) * B * 0.94;
+  const h = D * 0.42;
   const len = L * 0.12;
-  const box = new THREE.Mesh(
-    new THREE.BoxGeometry(w, h, len),
-    new THREE.MeshLambertMaterial({ color: DARK_OAK }),
-  );
-  box.position.set(0, sheerAt(0.9) * D * FREEBOARD + h / 2 - 0.2, L * 0.5 - len * 0.95);
+  const deck = sheerAt(0.9) * D * FREEBOARD;
+  const oak = new THREE.MeshLambertMaterial({ color: 0x6b4e30 });
+
+  const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, len), oak);
+  box.position.set(0, deck + h / 2 - 0.2, L * 0.5 - len * 0.95);
   g.add(box);
 
   const sprit = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.12, 0.19, L * 0.3, 6),
+    new THREE.CylinderGeometry(0.11, 0.18, L * 0.32, 8),
     new THREE.MeshLambertMaterial({ color: SPAR }),
   );
   sprit.rotation.x = Math.PI / 2 - 22 * DEG;
-  sprit.position.set(0, box.position.y + h * 0.3, L * 0.56);
+  sprit.position.set(0, box.position.y + h * 0.3, L * 0.57);
   g.add(sprit);
   return g;
 }
 
 function buildRails(L: number, B: number, D: number): THREE.Group {
   const g = new THREE.Group();
-  const mat = new THREE.MeshLambertMaterial({ color: DARK_OAK, side: THREE.DoubleSide });
-  const stations = 22;
+  const mat = new THREE.MeshLambertMaterial({ color: 0x5c4229, side: THREE.DoubleSide });
+  const stations = 26;
 
   for (const side of [-1, 1]) {
     const positions: number[] = [];
@@ -569,10 +670,10 @@ function buildRails(L: number, B: number, D: number): THREE.Group {
     for (let i = 0; i < stations; i++) {
       const t = 0.08 + (i / (stations - 1)) * 0.84;
       const z = (t - 0.5) * L;
-      const bw = beamAt(t) * (B / 2) * 0.95;
+      const bw = beamAt(t) * (B / 2) * 0.96;
       const y = sheerAt(t) * D * FREEBOARD;
       positions.push(side * bw, y, z);
-      positions.push(side * bw * 0.97, y + D * 0.3, z);
+      positions.push(side * bw * 0.97, y + D * 0.32, z);
     }
     for (let i = 0; i < stations - 1; i++) {
       const a = i * 2;
@@ -588,32 +689,153 @@ function buildRails(L: number, B: number, D: number): THREE.Group {
   return g;
 }
 
-/** The cross of the Order of Christ, which these ships carried on their sails. */
-function makeCrossTexture(): THREE.Texture {
-  const size = 256;
+/** Hatch, capstan, and the ship's boat stowed amidships. */
+function buildDeckFittings(L: number, B: number, D: number): THREE.Group {
+  const g = new THREE.Group();
+  const deck = sheerAt(0.5) * D * FREEBOARD;
+  const oak = new THREE.MeshLambertMaterial({ color: 0x6b4e30 });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x3a2b1a });
+
+  const hatch = new THREE.Mesh(new THREE.BoxGeometry(B * 0.34, 0.34, L * 0.13), oak);
+  hatch.position.set(0, deck + 0.17, -L * 0.1);
+  g.add(hatch);
+  const grating = new THREE.Mesh(new THREE.BoxGeometry(B * 0.3, 0.08, L * 0.11), dark);
+  grating.position.set(0, deck + 0.36, -L * 0.1);
+  g.add(grating);
+
+  const capstan = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.3, 0.38, 0.9, 10), oak,
+  );
+  capstan.position.set(0, deck + 0.45, -L * 0.26);
+  g.add(capstan);
+
+  // The boat, without which no landing party gets ashore through surf.
+  const boat = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), oak);
+  boat.scale.set(B * 0.16, 0.5, L * 0.11);
+  boat.rotation.x = Math.PI;
+  boat.position.set(0, deck + 0.55, L * 0.08);
+  g.add(boat);
+
+  const bowStation = 0.9;
+  const bowHalfBeam = beamAt(bowStation) * B * 0.5;
+  const bowDeck = sheerAt(bowStation) * D * FREEBOARD;
+  for (const side of [-1, 1]) {
+    const anchor = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.3, 0.45), dark);
+    anchor.position.set(side * bowHalfBeam * 0.94, bowDeck - 0.35, (bowStation - 0.5) * L);
+    anchor.rotation.z = side * 0.22;
+    g.add(anchor);
+  }
+  return g;
+}
+
+/** Rudder hung on the sternpost, with the tiller coming inboard over it. */
+function buildSteering(L: number, _B: number, D: number): { rudder: THREE.Group; tiller: THREE.Mesh } {
+  const oak = new THREE.MeshLambertMaterial({ color: 0x5c4229 });
+  const iron = new THREE.MeshLambertMaterial({ color: IRON });
+
+  const rudder = new THREE.Group();
+  rudder.position.set(0, 0, -L * 0.455);
+
+  const blade = new THREE.Mesh(new THREE.BoxGeometry(0.16, D * 1.55, L * 0.075), oak);
+  blade.position.set(0, -D * 0.62, -L * 0.03);
+  rudder.add(blade);
+
+  const stock = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, D * 1.9, 8), oak);
+  stock.position.set(0, -D * 0.42, 0);
+  rudder.add(stock);
+
+  for (const y of [-D * 1.1, -D * 0.5, D * 0.05]) {
+    const pintle = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.13, L * 0.035), iron);
+    pintle.position.set(0, y, -L * 0.012);
+    rudder.add(pintle);
+  }
+
+  const tiller = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.13, L * 0.2, 8), oak);
+  tiller.geometry.translate(0, L * 0.1, 0);
+  tiller.rotation.x = Math.PI / 2;
+  tiller.position.set(0, sheerAt(0.12) * D * FREEBOARD + 0.35, -L * 0.47);
+  return { rudder, tiller };
+}
+
+// ---------------------------------------------------------------------------
+// Canvas
+// ---------------------------------------------------------------------------
+
+/**
+ * Sailcloth: narrow cloths seamed together, a bolt rope round the edge, and for
+ * the mainsail the cross of the Order of Christ. The cross is drawn stretched by
+ * the inverse of the sail's aspect so that it comes out square once the texture
+ * is mapped onto the cut of the sail.
+ */
+function makeSailTexture(
+  aspect: number, crossAt: [number, number] | null, seamAngleDeg: number,
+): THREE.Texture {
+  const size = 512;
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#ece4d2';
+
+  ctx.fillStyle = '#e6ddc8';
   ctx.fillRect(0, 0, size, size);
 
-  const cx = size / 2;
-  const cy = size * 0.5;
-  const arm = size * 0.28;
-  const thick = size * 0.10;
-  const flare = size * 0.072;
-
-  ctx.fillStyle = '#b8322a';
-  for (const rot of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
-    drawCrossArm(ctx, cx, cy, arm, thick, flare, rot);
+  // Cloth seams: narrow widths of canvas sewn edge to edge, running square to
+  // the yard.
+  ctx.save();
+  ctx.translate(size / 2, size / 2);
+  ctx.rotate(seamAngleDeg * DEG);
+  ctx.strokeStyle = 'rgba(150, 138, 112, 0.5)';
+  ctx.lineWidth = 2;
+  const cloths = 13;
+  for (let i = -cloths; i <= cloths; i++) {
+    const y = (i / cloths) * size;
+    ctx.beginPath();
+    ctx.moveTo(-size, y);
+    ctx.lineTo(size, y);
+    ctx.stroke();
   }
-  ctx.fillStyle = '#ece4d2';
-  for (const rot of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
-    drawCrossArm(ctx, cx, cy, arm * 0.6, thick * 0.38, flare * 0.32, rot);
+  ctx.restore();
+
+  // A little soiling so the canvas is not flat white.
+  for (let i = 0; i < 90; i++) {
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const r = 18 + Math.random() * 55;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(150, 138, 110, 0.07)');
+    g.addColorStop(1, 'rgba(150, 138, 110, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Bolt rope.
+  ctx.strokeStyle = 'rgba(120, 104, 76, 0.55)';
+  ctx.lineWidth = 7;
+  ctx.strokeRect(4, 4, size - 8, size - 8);
+
+  if (crossAt) {
+    const cx = crossAt[0] * size;
+    const cy = (1 - crossAt[1]) * size;
+    // Squash horizontally by the aspect so it maps back to a square cross.
+    const arm = size * 0.15;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(1 / Math.max(aspect, 0.05), 1);
+    ctx.fillStyle = '#a8302a';
+    for (const rot of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      drawCrossArm(ctx, 0, 0, arm, size * 0.056, size * 0.04, rot);
+    }
+    ctx.fillStyle = '#e6ddc8';
+    for (const rot of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      drawCrossArm(ctx, 0, 0, arm * 0.6, size * 0.022, size * 0.018, rot);
+    }
+    ctx.restore();
   }
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
   return tex;
 }
 

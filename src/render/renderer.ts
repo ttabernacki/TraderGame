@@ -4,6 +4,7 @@ import { Land } from './land';
 import { Ocean } from './ocean';
 import { Sky, type SkyLighting } from './sky';
 import { ShipMesh } from './shipMesh';
+import { Spray } from './spray';
 import type { HullClass } from '../ship/hull';
 import type { SailState } from '../ship/physics';
 
@@ -22,6 +23,8 @@ export interface RenderFrame {
   apparentBeta: number;
   apparentKnots: number;
   speedKnots: number;
+  /** Helm setting, -1 to +1, for the rudder. */
+  rudder: number;
   windFrom: number;
   windKnots: number;
   waveHeight: number;
@@ -45,6 +48,7 @@ export class Renderer {
   ocean = new Ocean();
   sky = new Sky();
   land = new Land();
+  spray = new Spray();
   ship: ShipMesh;
 
   cameraMode: CameraMode = 'chase';
@@ -60,6 +64,8 @@ export class Renderer {
   private hullClass: HullClass;
   private shipPitch = 0;
   private shipRoll = 0;
+  private chaseYaw = 0;
+  private fov = 58;
 
   constructor(canvas: HTMLCanvasElement, hull: HullClass) {
     this.renderer = new THREE.WebGLRenderer({
@@ -70,7 +76,9 @@ export class Renderer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.camera = new THREE.PerspectiveCamera(58, 1, 0.5, 30000);
     this.camera.position.set(0, 22, -55);
@@ -82,9 +90,23 @@ export class Renderer {
     this.scene.add(this.ocean.mesh);
     this.scene.add(this.land.group);
     this.scene.add(this.ship.group);
+    this.scene.add(this.spray.points);
     this.scene.add(this.sun);
+    this.scene.add(this.sun.target);
     this.scene.add(this.ambient);
     this.sun.position.set(0, 1000, 0);
+
+    // The shadow frustum is kept tight around the ship, which is the only thing
+    // in the scene that casts anything worth seeing.
+    this.sun.castShadow = true;
+    const span = Math.max(hull.lwl, 30) * 1.6;
+    const cam = this.sun.shadow.camera;
+    cam.left = -span; cam.right = span;
+    cam.top = span; cam.bottom = -span;
+    cam.near = 1; cam.far = span * 6;
+    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.bias = -0.0009;
+    this.sun.shadow.normalBias = 0.06;
 
     this.resize();
   }
@@ -111,22 +133,39 @@ export class Renderer {
     // floating-point precision perfect across a twelve-thousand-mile voyage.
     this.waveOriginE += f.velocityE * simDt;
     this.waveOriginN += f.velocityN * simDt;
+    // The wake is laid down against her track, so it needs real elapsed time
+    // rather than compressed simulation time or it streams away at sixty knots.
+    this.ocean.updateTrack(f.velocityE, f.velocityN, Math.min(simDt, realDt * 4));
 
+    // Position and time first: setSea folds them into the wrapped wave phases.
     const waveTime = f.simTime * 0.35;
+    this.ocean.setOrigin(this.waveOriginE, this.waveOriginN);
+    this.ocean.setTime(waveTime);
     this.ocean.setSea({
       windFrom: f.windFrom,
       windKnots: f.windKnots,
       waveHeight: f.waveHeight,
       swellFrom: f.swellFrom,
     });
-    this.ocean.setOrigin(this.waveOriginE, this.waveOriginN);
-    this.ocean.setTime(waveTime);
 
+    // The ship pushes the water aside: a bow wave forward and a spreading wake
+    // astern, both keyed to how hard she is driving.
     const lighting = this.sky.update(
       f.pos.lat, f.pos.lon, f.dayFromEpoch, f.hourLocal,
       f.dayOfYear, f.year, f.cloud, f.simTime,
     );
     this.applyLighting(lighting, f.visibilityNm);
+
+    const wakeHdg = f.heading * DEG;
+    this.ocean.setWake({
+      dirX: Math.sin(wakeHdg),
+      dirZ: -Math.cos(wakeHdg),
+      strength: clamp(Math.abs(f.speedKnots) / 7, 0, 1),
+      halfBeam: this.hullClass.beam * 0.5,
+      halfLength: this.hullClass.lwl * 0.5,
+      rigHeight: this.hullClass.masts.reduce((a, m) => Math.max(a, m.ceHeight), 0) * 1.1,
+      shadow: clamp(lighting.intensity * 1.3, 0, 1),
+    });
 
     // --- Ship motion in the water ------------------------------------------
     const L = this.hullClass.lwl;
@@ -135,17 +174,19 @@ export class Renderer {
     const fwdX = Math.sin(hdg), fwdZ = -Math.cos(hdg);
     const stbX = Math.cos(hdg), stbZ = Math.sin(hdg);
 
-    const centre = this.ocean.sample(0, 0, this.waveOriginE, this.waveOriginN, waveTime);
-    const bow = this.ocean.sample(fwdX * L * 0.42, fwdZ * L * 0.42, this.waveOriginE, this.waveOriginN, waveTime);
-    const stern = this.ocean.sample(-fwdX * L * 0.42, -fwdZ * L * 0.42, this.waveOriginE, this.waveOriginN, waveTime);
-    const port = this.ocean.sample(-stbX * B * 0.5, -stbZ * B * 0.5, this.waveOriginE, this.waveOriginN, waveTime);
-    const stbd = this.ocean.sample(stbX * B * 0.5, stbZ * B * 0.5, this.waveOriginE, this.waveOriginN, waveTime);
+    const centre = this.ocean.sample(0, 0);
+    const bow = this.ocean.sample(fwdX * L * 0.42, fwdZ * L * 0.42);
+    const stern = this.ocean.sample(-fwdX * L * 0.42, -fwdZ * L * 0.42);
+    const port = this.ocean.sample(-stbX * B * 0.5, -stbZ * B * 0.5);
+    const stbd = this.ocean.sample(stbX * B * 0.5, stbZ * B * 0.5);
 
     const targetPitch = Math.atan2(bow.height - stern.height, L * 0.84) / DEG;
     const targetRoll = Math.atan2(stbd.height - port.height, B) / DEG;
     const k = clamp(realDt * 3.2, 0, 1);
+    const prevPitch = this.shipPitch;
     this.shipPitch = lerp(this.shipPitch, targetPitch, k);
     this.shipRoll = lerp(this.shipRoll, targetRoll, k);
+    const pitchRate = realDt > 0 ? (this.shipPitch - prevPitch) / realDt : 0;
 
     // The hull model's own origin is its designed waterline, so she floats there.
     this.ship.group.position.y = centre.height;
@@ -153,9 +194,26 @@ export class Renderer {
     this.ship.group.rotation.y = Math.PI - hdg;
     this.ship.setHeel(f.heel + this.shipRoll * 0.75, this.shipPitch);
 
-    this.ship.update(
-      f.sails, f.trimSign, f.sailPressures,
-      f.apparentBeta, f.apparentKnots, f.speedKnots, f.simTime,
+    this.ship.update({
+      sails: f.sails,
+      trimSign: f.trimSign,
+      pressures: f.sailPressures,
+      apparentBeta: f.apparentBeta,
+      apparentKnots: f.apparentKnots,
+      rudder: f.rudder,
+      t: f.simTime,
+    });
+
+    // --- Spray at the bow ---------------------------------------------------
+    this.spray.setLight(lighting.sunColor, lighting.night);
+    this.spray.update(
+      realDt,
+      new THREE.Vector3(fwdX * L * 0.46, centre.height + 0.4, fwdZ * L * 0.46),
+      new THREE.Vector3(fwdX, 0, fwdZ),
+      Math.abs(f.speedKnots) * 0.5144,
+      f.waveHeight,
+      f.windKnots,
+      pitchRate,
     );
 
     // --- Land ---------------------------------------------------------------
@@ -165,18 +223,26 @@ export class Renderer {
     }
     this.land.setFog(lighting.horizon, clamp(1 - f.visibilityNm / 24, 0, 0.7));
 
-    this.updateCamera(f, realDt, centre.height);
+    this.updateCamera(f, realDt, centre.height, f.waveHeight);
+    this.applyCameraFeel(f, realDt);
     this.renderer.render(this.scene, this.camera);
   }
 
   private applyLighting(l: SkyLighting, visibilityNm: number): void {
-    this.sun.position.copy(l.sunDir).multiplyScalar(4000);
+    // The light itself is placed just clear of the ship rather than at the real
+    // distance of the sun, so the shadow frustum stays tight enough to be sharp.
+    const span = Math.max(this.hullClass.lwl, 30) * 1.6;
+    this.sun.position.copy(l.sunDir).multiplyScalar(span * 2.5);
+    this.sun.target.position.set(0, 0, 0);
     this.sun.color.copy(l.sunColor);
-    this.sun.intensity = l.intensity * 1.55;
+    this.sun.intensity = l.intensity * 1.35;
+    // Shadows are meaningless once the sun is on the horizon, and the long
+    // stretched maps they produce are worse than none.
+    this.sun.castShadow = l.sunDir.y > 0.12;
 
-    this.ambient.color.copy(l.zenith).multiplyScalar(1.5);
+    this.ambient.color.copy(l.zenith).multiplyScalar(2.1);
     this.ambient.groundColor.copy(l.horizon).multiplyScalar(0.35);
-    this.ambient.intensity = lerp(0.85, 0.22, l.night);
+    this.ambient.intensity = lerp(1.25, 0.28, l.night);
 
     // Visibility drives atmospheric extinction, so fog thickens in haze and rain.
     const visM = Math.max(visibilityNm, 0.15) * 1852;
@@ -185,9 +251,12 @@ export class Renderer {
     this.scene.fog = new THREE.FogExp2(l.horizon.getHex(), fogDensity * 0.85);
   }
 
-  private updateCamera(f: RenderFrame, dt: number, seaHeight: number): void {
+  private updateCamera(f: RenderFrame, dt: number, seaHeight: number, waveHeight: number): void {
     const hdg = f.heading * DEG;
     const k = clamp(dt * 4, 0, 1);
+    // In a big sea the camera must ride above the wave tops or it spends half
+    // the time looking at the back of a swell.
+    const lift = waveHeight * 0.85;
 
     const target = new THREE.Vector3();
     const desired = new THREE.Vector3();
@@ -232,19 +301,23 @@ export class Renderer {
         const az = hdg + 90 * DEG + this.lookYaw * DEG;
         desired.set(
           Math.sin(az) * this.distance,
-          this.hullClass.lwl * 0.28 + seaHeight,
+          this.hullClass.lwl * 0.28 + seaHeight + lift,
           -Math.cos(az) * this.distance,
         );
         break;
       }
       case 'chase':
       default: {
-        const az = hdg + Math.PI + this.lookYaw * DEG;
+        // The camera trails the heading rather than snapping to it, so putting
+        // the helm over swings her visibly across the frame before the view
+        // settles in behind her again. Without the lag a turn is invisible.
+        this.chaseYaw = wrapAngle(this.chaseYaw + wrapAngle(hdg - this.chaseYaw) * clamp(dt * 1.6, 0, 1));
+        const az = this.chaseYaw + Math.PI + this.lookYaw * DEG;
         const pitch = clamp(this.lookPitch, -45, 40) * DEG;
         const horizontal = Math.cos(pitch) * this.distance;
         desired.set(
           Math.sin(az) * horizontal,
-          Math.max(-Math.sin(pitch) * this.distance, 3) + this.hullClass.lwl * 0.18 + seaHeight,
+          Math.max(-Math.sin(pitch) * this.distance, 3) + this.hullClass.lwl * 0.18 + seaHeight + lift,
           -Math.cos(az) * horizontal,
         );
         break;
@@ -254,6 +327,29 @@ export class Renderer {
     this.camera.position.lerp(desired, k);
     const look = this.ship.group.position.clone().add(new THREE.Vector3(0, this.hullClass.lwl * 0.14, 0));
     this.camera.lookAt(look);
+  }
+
+  /**
+   * Speed is hard to feel without a reference. Widening the field of view as she
+   * works up gives the sensation of the water rushing past, and a little motion
+   * in a seaway keeps the frame alive.
+   */
+  private applyCameraFeel(f: RenderFrame, dt: number): void {
+    const speed = Math.abs(f.speedKnots);
+    const targetFov = 56 + clamp(speed / 11, 0, 1) * 11;
+    this.fov = lerp(this.fov, targetFov, clamp(dt * 1.5, 0, 1));
+    if (Math.abs(this.camera.fov - this.fov) > 0.01) {
+      this.camera.fov = this.fov;
+      this.camera.updateProjectionMatrix();
+    }
+
+    if (this.cameraMode === 'deck' || this.cameraMode === 'masthead') return;
+    const shake = clamp(f.waveHeight / 5, 0, 1) * clamp(0.3 + speed / 9, 0, 1.2);
+    if (shake < 0.01) return;
+    const t = f.simTime;
+    this.camera.position.x += Math.sin(t * 1.9) * shake * 0.32;
+    this.camera.position.y += Math.sin(t * 2.7 + 1.1) * shake * 0.26;
+    this.camera.position.z += Math.cos(t * 1.6 + 0.4) * shake * 0.32;
   }
 
   cycleCamera(): CameraMode {
@@ -270,4 +366,10 @@ export class Renderer {
     this.ship.dispose();
     this.renderer.dispose();
   }
+}
+
+/** Wrap an angle in radians to (-pi, pi]. */
+function wrapAngle(a: number): number {
+  const t = (a + Math.PI) % (Math.PI * 2);
+  return (t < 0 ? t + Math.PI * 2 : t) - Math.PI;
 }

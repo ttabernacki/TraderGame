@@ -41,9 +41,9 @@ export class Hud {
 
     this.root.append(this.nav, this.wind, this.time, this.ship, this.alerts, this.hint);
     this.hint.innerHTML =
-      '<b>A</b>/<b>D</b> helm &nbsp; <b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
-      '<b>C</b> chart &nbsp; <b>N</b> take a sight &nbsp; <b>L</b> log &nbsp; <b>K</b> crew &nbsp; ' +
-      '<b>V</b> view &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
+      '<b>A</b>/<b>D</b> helm &nbsp; <b>X</b> midships &nbsp; <b>W</b>/<b>S</b> canvas &nbsp; ' +
+      '<b>Q</b>/<b>E</b> trim &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
+      '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
   }
 
   update(g: Game): void {
@@ -97,6 +97,30 @@ export class Hud {
       el('div', { class: `trim-fill${overCanvas ? ' over' : ''}`, style: { width: `${r.canvas * 100}%` } }),
       el('div', { class: 'trim-mark', style: { left: `${r.prudent * 100}%` } }),
     );
+    // Helm: which way the rudder is over, and how far.
+    const helmBar = el('div', { class: 'trim-bar', style: { marginTop: '2px' } },
+      el('div', {
+        class: 'trim-fill',
+        style: {
+          left: r.rudder >= 0 ? '50%' : `${50 + r.rudder * 50}%`,
+          width: `${Math.abs(r.rudder) * 50}%`,
+          background: '#7fa8c8',
+        },
+      }),
+      el('div', { class: 'trim-mark', style: { left: '50%' } }),
+    );
+
+    const trim = r.trim;
+    const trimBarQuality = el('div', { class: 'trim-bar', style: { marginTop: '2px' } },
+      el('div', {
+        class: 'trim-fill',
+        style: {
+          width: `${trim.quality * 100}%`,
+          background: trim.quality > 0.94 ? '#4d7a3e' : trim.quality > 0.7 ? '#c8a44e' : '#c47d2a',
+        },
+      }),
+    );
+
     const endurance = enduranceDays(g.crew, g.ration);
     append(this.ship,
       el('div', { class: 'hud-title' }, g.ship.name),
@@ -105,6 +129,20 @@ export class Hud {
         el('span', { class: 'v', style: { color: overCanvas ? '#d4553f' : '#efe4cc' } },
           overCanvas ? 'MORE THAN SHE WILL BEAR' : `prudent to ${(r.prudent * 100).toFixed(0)}%`)),
       trimBar,
+      el('div', { class: 'hud-row' },
+        el('span', { class: 'k' }, 'Trim'),
+        el('span', {
+          class: 'v',
+          style: { color: trim.quality > 0.94 ? '#8fbf7a' : '#e0b96a' },
+        }, g.autoTrim && !trim.shifting ? 'kept by the watch' : trim.advice)),
+      trimBarQuality,
+      el('div', { class: 'hud-row' },
+        el('span', { class: 'k' }, 'Helm'),
+        el('span', { class: 'v' },
+          Math.abs(r.rudder) < 0.04
+            ? 'amidships'
+            : `${(Math.abs(r.rudder) * 100).toFixed(0)}% to ${r.rudder > 0 ? 'starboard' : 'port'}`)),
+      helmBar,
       hudRow('Heel', `${Math.abs(g.ship.state.heel).toFixed(0)}° to ${g.ship.state.heel >= 0 ? 'starboard' : 'port'}`),
       hudRow('Leeway', `${Math.abs(r.leeway).toFixed(1)}°`),
       hudRow('Hands', `${r.ableHands} of ${g.crew.count} able`),

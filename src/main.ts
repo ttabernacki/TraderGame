@@ -80,12 +80,14 @@ window.addEventListener('resize', () => {
 function applyContinuousInput(g: Game, dt: number): void {
   if (g.mode !== 'sailing') return;
 
+  // The helm holds where it is put, as a tiller does when the helmsman is told
+  // to keep her so. Letting it spring back to amidships makes a sustained turn
+  // impossible without holding a key down for a minute.
   const helm = input.helmAxis();
   if (helm !== 0) {
-    g.setHelm(clamp(g.ship.state.rudder + helm * dt * 1.8, -1, 1));
-  } else {
-    // The helmsman lets her come back toward amidships when nobody is pulling.
-    g.ship.state.rudder *= Math.max(0, 1 - dt * 2.2);
+    g.setHelm(clamp(g.ship.state.rudder + helm * dt * 1.6, -1, 1));
+  } else if (input.isDown('x')) {
+    g.setHelm(clamp(g.ship.state.rudder * Math.max(0, 1 - dt * 5), -1, 1));
   }
 
   const canvasAxis = input.canvasAxis();
@@ -163,6 +165,7 @@ function buildFrame(g: Game): RenderFrame {
     apparentBeta: p.beta,
     apparentKnots: p.apparentKnots,
     speedKnots: p.speedKnots,
+    rudder: g.ship.state.rudder,
     windFrom: g.weatherNow.wind.from,
     windKnots: g.weatherNow.wind.speed,
     waveHeight: g.weatherNow.waveHeight,
@@ -188,6 +191,43 @@ window.addEventListener('beforeunload', () => {
     try { localStorage.setItem('carreira-da-india:save', game.serialize()); } catch { /* ignore */ }
   }
 });
+
+// A handle on the running simulation, for driving the renderer into particular
+// conditions while working on it. Stripped from production builds.
+if (import.meta.env.DEV) {
+  Object.defineProperty(window, 'dev', {
+    get: () => ({
+      game,
+      renderer,
+      /** Put the ship somewhere, at a time of day, sailing at a steady state. */
+      place(lat: number, lon: number, hour: number, heading: number, canvas = 1) {
+        if (!game) return;
+        const g = game;
+        g.ship.state.pos = { lat, lon };
+        g.ship.state.heading = heading;
+        g.nav.estimated = { lat, lon };
+        g.clock.t = Math.floor(g.clock.t / 86400) * 86400 + hour * 3600;
+        g.ship.setAllCanvas(canvas);
+        g.anchored = false;
+        g.dockedAt = null;
+        g.refreshEnvironment();
+
+        // Run the ship forward until she has way on and the sails have settled,
+        // holding the heading so she does not wander off the test course.
+        for (const s of g.ship.state.sails) {
+          s.side = g.physics.beta >= 0 ? -1 : 1;
+          s.shifting = 0;
+        }
+        for (let i = 0; i < 900; i++) {
+          g.ship.state.heading = heading;
+          g.ship.state.yawRate = 0;
+          g.update(1 / 30);
+        }
+        g.ship.state.heading = heading;
+      },
+    }),
+  });
+}
 
 ui.showTitle();
 requestAnimationFrame(frame);

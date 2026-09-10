@@ -303,11 +303,11 @@ export function initialSails(hull: HullClass): SailState[] {
  * this the spars are at risk, and past twice this she will be dismasted.
  */
 export function prudentCanvas(windKnots: number): number {
-  if (windKnots < 12) return 1;
-  if (windKnots < 20) return 0.85;
-  if (windKnots < 28) return 0.6;
-  if (windKnots < 36) return 0.35;
-  if (windKnots < 45) return 0.15;
+  if (windKnots < 17) return 1;
+  if (windKnots < 24) return 0.85;
+  if (windKnots < 31) return 0.6;
+  if (windKnots < 39) return 0.35;
+  if (windKnots < 48) return 0.15;
   return 0;
 }
 
