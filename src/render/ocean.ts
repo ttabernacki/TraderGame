@@ -89,8 +89,9 @@ uniform int uTrackCount;
  * eye actually reads as a wake long after the foam itself has gone.
  */
 vec3 wakeAt(vec2 rel) {
-  if (uWakeStrength < 0.002) return vec3(0.0);
   // Everything past this is open water: skip the whole track search for it.
+  // A ship lying to her anchor still wets her own waterline, so the test is on
+  // range and not on whether she is moving.
   if (dot(rel, rel) > 260.0 * 260.0) return vec3(0.0);
 
   // Nearest point on the track: how far off it we are, how far astern along it,
@@ -142,8 +143,17 @@ vec3 wakeAt(vec2 rel) {
   float bowSpread = max(uShipHalfBeam * uShipHalfBeam * 1.4, 1.0);
   float bow = exp(-(bowAlong * bowAlong) / 6.0) * exp(-(across * across) / bowSpread);
 
-  float foam = clamp((trail * froth * 0.85 + cusps * 0.10 + bow * 0.8) * uWakeStrength,
-                     0.0, 1.0);
+  // Where the planking meets the water she wets the surface all round herself: a
+  // thin line of disturbed water along the whole waterline. It is a small thing
+  // and it does most of the work of making a hull sit in the sea rather than
+  // stand on it like a model on a mirror.
+  vec2 hull = vec2(along / max(uShipHalfLength, 0.5),
+                   across / max(uShipHalfBeam * 0.94, 0.3));
+  float edge = (length(hull) - 1.0) / 0.10;
+  float wetting = exp(-edge * edge) * (0.3 + 0.7 * uWakeStrength);
+
+  float foam = clamp((trail * froth * 0.85 + cusps * 0.10 + bow * 0.8) * uWakeStrength
+                     + wetting * 0.3, 0.0, 1.0);
 
   // She piles water up at the bow, leaves a trough in the trail astern of it,
   // and raises the two cusp lines either side.
@@ -384,41 +394,45 @@ void main() {
   // patches and downwind streaks rather than a covering of white, so the crest
   // test is broken up by a moving noise field.
   float crest = vCrest / max(uCrestMax, 0.001);
-  // Broken up across four scales. A single low-frequency pair of sines picks out
-  // patches thirty metres across, and at gale strength a whole wave face crosses
-  // the threshold at once and goes solid white; whitecaps are metres wide, not
-  // tens of metres, and they tear rather than fade.
-  // Drifting downwind, because whitecaps do: the patch that is breaking now was
-  // being blown to leeward a moment ago.
-  vec2 drift = uChopDir * uNoiseTime * 0.8;
-  float mottle = 0.55 + 0.92 * fbm((vSurface + drift) * 0.09);
-  // A short ramp, so a crest breaks rather than dissolving.
-  float breaking = smoothstep(uFoamThreshold, uFoamThreshold + 0.06, crest * mottle);
-  // Foam sits on the crest and streams down its back, never in the troughs.
-  breaking *= smoothstep(0.02, 0.42, n.y * 0.25 + vWorld.y / max(uCrestMax, 0.3));
-  breaking *= 1.0 - smoothstep(2500.0, 14000.0, vDist);
+  float breaking = 0.0;
+  // The noise field is four octaves of hashing and costs more than the rest of
+  // the shading put together, so it is only sampled where a crest could possibly
+  // break. Most of the sea, most of the time, is nowhere near.
+  if (crest > uFoamThreshold * 0.42 && vDist < 14000.0) {
+    // Broken up across four scales, and drifting downwind, because whitecaps do:
+    // the patch that is breaking now was being blown to leeward a moment ago.
+    vec2 drift = uChopDir * uNoiseTime * 0.8;
+    float mottle = 0.55 + 0.92 * fbm((vSurface + drift) * 0.09);
+    // A short ramp, so a crest breaks rather than dissolving.
+    breaking = smoothstep(uFoamThreshold, uFoamThreshold + 0.06, crest * mottle);
+    // Foam sits on the crest and streams down its back, never in the troughs.
+    breaking *= smoothstep(0.02, 0.42, n.y * 0.25 + vWorld.y / max(uCrestMax, 0.3));
+    breaking *= 1.0 - smoothstep(2500.0, 14000.0, vDist);
+  }
 
   // Wake and bow foam, textured so it reads as bubbles rather than paint. The
   // fine grain is dropped with distance: a two-metre pattern seen from eighty
   // metres away falls below one sample per pixel and beats against the pixel
   // grid, which is what turns a wake into broad diagonal moire bands.
-  float grain = 1.0 - smoothstep(30.0, 170.0, vDist);
-  // Warp the sampling point before texturing it, so the froth breaks into
-  // irregular patches and streaks instead of an even wash. A wake that is not
-  // broken up reads as a ribbon of white paint laid on the sea.
-  // Sampled squashed along the ship's heading, so the patches come out drawn
-  // into streaks in the direction the water was dragged rather than round blobs.
-  vec2 w = vec2(dot(vSurface, uWakeDir) * 0.34,
-                dot(vSurface, vec2(uWakeDir.y, -uWakeDir.x)));
-  float bubbles = 0.28 + 1.5 * fbm(w * 0.42 + uNoiseTime * 0.11)
-                + 0.35 * (vnoise(w * 2.6 - uNoiseTime * 0.6, 512.0) - 0.5) * grain;
-  // A soft threshold, so froth either covers a patch of water or it does not —
-  // except close under the counter, where the water she is actually shouldering
-  // aside is solid white however the noise happens to fall.
-  float broken = smoothstep(0.30, 0.95, wk.x * max(bubbles, 0.0) + wk.x * 0.4);
-  float wake = clamp(max(broken, wk.x * wk.x * 0.95), 0.0, 1.0);
+  // Only where there is actually froth: the great majority of the sea is not
+  // within two hundred metres of the ship and need not pay for this at all.
+  float wake = 0.0;
+  if (wk.x > 0.002) {
+    float grain = 1.0 - smoothstep(30.0, 170.0, vDist);
+    // Sampled squashed along the ship's heading, so the patches come out drawn
+    // into streaks in the direction the water was dragged, not round blobs.
+    vec2 w = vec2(dot(vSurface, uWakeDir) * 0.34,
+                  dot(vSurface, vec2(uWakeDir.y, -uWakeDir.x)));
+    float bubbles = 0.28 + 1.5 * fbm(w * 0.42 + uNoiseTime * 0.11)
+                  + 0.35 * (vnoise(w * 2.6 - uNoiseTime * 0.6, 512.0) - 0.5) * grain;
+    // A soft threshold, so froth either covers a patch of water or it does not —
+    // except close under the counter, where the water she is actually
+    // shouldering aside is solid white however the noise happens to fall.
+    float broken = smoothstep(0.30, 0.95, wk.x * max(bubbles, 0.0) + wk.x * 0.4);
+    wake = clamp(max(broken, wk.x * wk.x * 0.95), 0.0, 1.0);
+  }
 
-  float foam = clamp(breaking * 0.72 + wake, 0.0, 1.0);
+  float foam = clamp(breaking * 0.72 + wake * 0.85, 0.0, 1.0);
   vec3 foamColor = vec3(0.93, 0.96, 0.98) * (1.0 - uNight * 0.82);
   // Foam is aerated water, not paint: even a hard-driven wake leaves the sea
   // showing through it.

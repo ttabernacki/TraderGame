@@ -150,6 +150,14 @@ export class ShipMesh {
       const m = o as THREE.Mesh;
       if (m.isMesh) { m.castShadow = true; m.receiveShadow = true; }
     });
+    // Canvas is a single sheet with no thickness, and it moves and re-normals
+    // every frame. Letting it receive shadows only lets it shadow itself, which
+    // turns a sail seen from above into a solid brown triangle.
+    for (const m of this.masts) {
+      m.sail.receiveShadow = false;
+      m.bundle.receiveShadow = false;
+    }
+    this.flag.receiveShadow = false;
   }
 
   private buildMast(spec: MastSpec, hull: HullClass, isMain: boolean): MastParts {
@@ -687,21 +695,17 @@ function buildDeck(L: number, B: number, D: number): THREE.Mesh {
 
 function buildSterncastle(L: number, B: number, D: number): THREE.Group {
   const g = new THREE.Group();
-  const w = railHalfBeam(0.14, B) * 1.88;
   const h = D * 0.72;
-  const len = L * 0.2;
   const deck = sheerAt(0.14) * D * FREEBOARD;
 
   const oak = new THREE.MeshLambertMaterial({ color: 0x6b4e30 });
   const trim = new THREE.MeshLambertMaterial({ color: 0x4a3520 });
 
-  const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, len), oak);
-  box.position.set(0, deck + h / 2 - 0.2, -L * 0.5 + len * 0.66);
-  g.add(box);
-
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(w * 1.06, 0.28, len * 1.04), trim);
-  rail.position.set(0, box.position.y + h / 2 + 0.32, box.position.z);
-  g.add(rail);
+  // The quarterdeck: a raised deck following the ship's own plan, with bulwarks
+  // up either side and a bulkhead closing it at the break. Built as a box, as it
+  // was, it reads as a shed nailed to the stern — a castle aft is part of the
+  // hull's shape and has to be lofted from the same stations.
+  g.add(buildRaisedDeck(L, B, D, 0.0, 0.26, h, oak, trim));
 
   // The transom, planked across the stern and raked aft. It is lofted rather
   // than boxed: a slab of BoxGeometry here shows the player one enormous
@@ -717,6 +721,83 @@ function buildSterncastle(L: number, B: number, D: number): THREE.Group {
     win.position.set(side * sternBeam * 0.42, deck + h * 0.34, -L * 0.474);
     win.rotation.x = -0.2;
     g.add(win);
+  }
+  return g;
+}
+
+/**
+ * A raised deck at one end of the ship — the quarterdeck aft, the forecastle
+ * forward — lofted from the hull's own stations so it carries her sheer and her
+ * plan shape, with bulwarks up either side and a bulkhead across the break.
+ */
+function buildRaisedDeck(
+  L: number, B: number, D: number,
+  fromT: number, toT: number, rise: number,
+  oak: THREE.Material, trim: THREE.Material,
+): THREE.Group {
+  const g = new THREE.Group();
+  const steps = 12;
+  const bulwark = D * 0.34;
+  const level = (t: number) => sheerAt(t) * D * FREEBOARD + rise;
+  const zAt = (t: number) => (t - 0.5) * L + rakeAt(t, L);
+
+  // The deck itself.
+  const deckPos: number[] = [];
+  const deckIdx: number[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = lerp(fromT, toT, i / steps);
+    const bw = railHalfBeam(t, B) * 0.94;
+    deckPos.push(-bw, level(t), zAt(t), bw, level(t), zAt(t));
+  }
+  for (let i = 0; i < steps; i++) {
+    const a = i * 2;
+    deckIdx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+  }
+  const deckGeo = new THREE.BufferGeometry();
+  deckGeo.setAttribute('position', new THREE.Float32BufferAttribute(deckPos, 3));
+  deckGeo.setIndex(deckIdx);
+  deckGeo.computeVertexNormals();
+  g.add(new THREE.Mesh(deckGeo, oak));
+
+  // Bulwarks either side, and a capping rail along the top of each.
+  for (const side of [-1, 1]) {
+    const pos: number[] = [];
+    const idx: number[] = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = lerp(fromT, toT, i / steps);
+      const bw = railHalfBeam(t, B) * 0.96;
+      pos.push(side * bw, level(t) - 0.15, zAt(t));
+      pos.push(side * bw * 0.97, level(t) + bulwark, zAt(t));
+    }
+    for (let i = 0; i < steps; i++) {
+      const a = i * 2;
+      idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, trim);
+    (mesh.material as THREE.MeshLambertMaterial).side = THREE.DoubleSide;
+    g.add(mesh);
+  }
+
+  // The bulkhead across the break, which is the face the rest of the deck sees.
+  const breakT = fromT < toT && fromT === 0 ? toT : fromT;
+  const bw = railHalfBeam(breakT, B) * 0.94;
+  const face = new THREE.Mesh(new THREE.BoxGeometry(bw * 2, rise + 0.3, 0.16), trim);
+  face.position.set(0, level(breakT) - rise / 2, zAt(breakT));
+  g.add(face);
+
+  // A ladder up to it.
+  for (let s = 0; s < 4; s++) {
+    const step = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.07, 0.16), oak);
+    step.position.set(
+      bw * 0.45,
+      level(breakT) - rise + (s + 0.6) * (rise / 4),
+      zAt(breakT) + (fromT === 0 ? 0.5 : -0.5) * (1 - s * 0.12),
+    );
+    g.add(step);
   }
   return g;
 }
@@ -780,22 +861,20 @@ function buildTransom(
 
 function buildForecastle(L: number, B: number, D: number): THREE.Group {
   const g = new THREE.Group();
-  const w = railHalfBeam(0.9, B) * 1.88;
   const h = D * 0.42;
-  const len = L * 0.12;
-  const deck = sheerAt(0.9) * D * FREEBOARD;
+  const deck = sheerAt(0.88) * D * FREEBOARD;
   const oak = new THREE.MeshLambertMaterial({ color: 0x6b4e30 });
+  const trim = new THREE.MeshLambertMaterial({ color: 0x4a3520 });
 
-  const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, len), oak);
-  box.position.set(0, deck + h / 2 - 0.2, L * 0.5 - len * 0.95);
-  g.add(box);
+  g.add(buildRaisedDeck(L, B, D, 0.84, 0.995, h, oak, trim));
 
+  // The bowsprit, stepped through the forecastle and steeved up over the stem.
   const sprit = new THREE.Mesh(
     new THREE.CylinderGeometry(0.11, 0.18, L * 0.32, 8),
     new THREE.MeshLambertMaterial({ color: SPAR }),
   );
   sprit.rotation.x = Math.PI / 2 - 22 * DEG;
-  sprit.position.set(0, box.position.y + h * 0.3, L * 0.57);
+  sprit.position.set(0, deck + h * 0.7, L * 0.57);
   g.add(sprit);
 
   // The stem: the timber the planking is rabbeted into, following the same raked

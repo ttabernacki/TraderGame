@@ -295,7 +295,10 @@ export class Renderer {
         const stb = new THREE.Vector3(Math.cos(hdg), 0, Math.sin(hdg));
         const eye = this.ship.group.position.clone()
           .add(fwd.clone().multiplyScalar(-this.hullClass.lwl * 0.3))
-          .add(stb.clone().multiplyScalar(this.hullClass.beam * 0.26))
+          // On the weather side, where the officer of the watch stands and where
+          // the sail is not directly in front of his face. A lateen yard sweeps
+          // the whole deck, so standing to leeward of it is standing in canvas.
+          .add(stb.clone().multiplyScalar(this.hullClass.beam * 0.3 * -f.trimSign))
           .add(new THREE.Vector3(0, this.hullClass.draft * 1.6 + 2.4, 0));
         this.camera.position.copy(eye);
         const yaw = hdg + this.lookYaw * DEG;
@@ -309,7 +312,9 @@ export class Renderer {
         return;
       }
       case 'masthead': {
-        const h = this.hullClass.masts.reduce((a, m) => Math.max(a, m.ceHeight), 0) * 1.6;
+        // At the hounds, not above the truck: the lookout wants his own deck in
+        // sight below him as well as the sea ahead.
+        const h = this.hullClass.masts.reduce((a, m) => Math.max(a, m.ceHeight), 0) * 1.28;
         const eye = this.ship.group.position.clone().add(new THREE.Vector3(0, h, 0));
         this.camera.position.copy(eye);
         const yaw = hdg + this.lookYaw * DEG;
