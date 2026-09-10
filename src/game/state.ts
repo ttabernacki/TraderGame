@@ -14,7 +14,9 @@ import { hullClass } from '../ship/hull';
 import {
   KNOTS, prudentCanvas, stepShip, type Environment, type ShipTuning, type StepResult,
 } from '../ship/physics';
-import { RIG_PROFILES, optimalTrim, pointOfSail, sailForce, tackName } from '../ship/rig';
+import {
+  RIG_PROFILES, closestPointing, optimalTrim, pointOfSail, sailForce, tackName,
+} from '../ship/rig';
 import { Navigator } from '../navigation/navigator';
 import { Chart, sightingRangeNm } from '../navigation/charts';
 import { magneticVariation } from '../navigation/celestial';
@@ -110,6 +112,16 @@ export class Game {
   pumpEffort = 0.15;
   /** True when the crew trim the sails without being told. */
   autoTrim = true;
+  /**
+   * True when the quartermaster is keeping her on the laid-off course.
+   *
+   * A three-month passage cannot be steered by hand, and a player holding a key
+   * down for an hour to make a two-degree correction is not being challenged, he
+   * is being punished. What the game is actually about is deciding *which*
+   * course to steer and what canvas to carry — so once the course is decided,
+   * the helm can be given to the watch, as it always was aboard.
+   */
+  holdCourse = false;
 
   private accumDays = 0;
   private lastLat = 0;
@@ -302,10 +314,65 @@ export class Game {
 
     while (remaining > 0) {
       const dt = Math.min(step, remaining);
+      if (this.holdCourse) this.steerToCourse(dt);
       if (this.autoTrim) this.applyAutoTrim(dt);
       this.physics = this.runPhysics(dt);
       remaining -= dt;
     }
+  }
+
+  /**
+   * The quartermaster keeps her on the course laid off, within the limits of
+   * what she will actually do.
+   *
+   * He will not steer her inside the no-go: if the mark lies to windward the
+   * best he can do is lie as close as she will point, on whichever tack is
+   * making the most ground toward it, and it is then the captain's business to
+   * decide when to go about. That is the one piece of judgement this does not
+   * take away, because it is the interesting one.
+   */
+  private steerToCourse(dt: number): void {
+    const dest = this.courseToDestination();
+    if (!dest) return;
+
+    const windEye = this.weatherNow.wind.from;
+    const noGo = this.noGoAngle;
+    const heading = this.ship.state.heading;
+    let want = dest.bearing;
+
+    // Dead to windward: lie as close as she will on the tack already set, so she
+    // holds a board instead of hunting across the wind's eye. When to go about
+    // is then the captain's business, which is the interesting decision and the
+    // one this deliberately does not take away.
+    if (Math.abs(angleDelta(windEye, want)) < noGo) {
+      const side = Math.sign(angleDelta(windEye, heading)) || 1;
+      want = wrap360(windEye + side * noGo);
+    }
+
+    // Which way round to bring her head.
+    //
+    // Not simply the shorter way. A helmsman who takes the short way whenever it
+    // is short will sooner or later steer her straight into the wind's eye,
+    // where the sails go aback, the way comes off her, the rudder loses its flow
+    // and she stops dead — caught in stays, and it can take twenty minutes and
+    // every hand aboard to get her out of it. She is therefore wound round the
+    // other way instead, through the stern: wearing ship costs distance and
+    // costs nothing else, which is exactly the trade a quartermaster makes.
+    const short = angleDelta(heading, want);
+    let dir: number = short >= 0 ? 1 : -1;
+    if (sweepEntersEye(heading, Math.abs(short), dir, windEye, noGo)) dir = -dir;
+
+    // Signed sweep in the chosen direction, which may be the long way round.
+    const sweep = dir > 0 ? wrap360(want - heading) : -wrap360(heading - want);
+
+    // He anticipates: he checks the swing before she reaches the course, or she
+    // wanders either side of it for the whole watch.
+    const demand = clamp(sweep * 0.05 - this.ship.state.yawRate * 0.85, -1, 1);
+    const rate = 0.9 + skill(this.effectiveSkill, 'marinharia') * 1.2;
+    this.ship.state.rudder = clamp(
+      this.ship.state.rudder + clamp(demand - this.ship.state.rudder, -1, 1) * dt * rate,
+      -1, 1,
+    );
   }
 
   /** The crew keep the sails drawing without being told, imperfectly. */
@@ -562,6 +629,7 @@ export class Game {
     const trueDist = haversine(this.ship.state.pos, { lat: d.lat, lon: d.lon }) / NM;
     if (trueDist > 6) return;
     this.destination = null;
+    this.holdCourse = false;
     this.pushAlert(`Up with ${d.name}.`, 'note');
     this.logEvent('note', `Made ${d.name} by the reckoning, and there it was.`, true);
   }
@@ -855,12 +923,14 @@ export class Game {
   /** Lay off a course for somewhere, or clear the one that is set. */
   setDestination(name: string, lat: number, lon: number): void {
     this.destination = { name, lat, lon };
+    this.holdCourse = true;
     this.logEvent('note', `Laid off a course for ${name}.`);
     this.pushAlert(`Course laid off for ${name}.`, 'note');
   }
 
   clearDestination(): void {
     this.destination = null;
+    this.holdCourse = false;
   }
 
   /**
@@ -888,6 +958,22 @@ export class Game {
       hours: closing > 0.15 ? distNm / closing : Infinity,
       off: angleDelta(this.ship.state.heading, bearing),
     };
+  }
+
+  /**
+   * How close to the wind she will lie, in degrees, including the leeway the
+   * hull makes. Anything inside this of the true wind is water she cannot get
+   * to without tacking, and the player has to be able to see where that is.
+   */
+  get noGoAngle(): number {
+    let best = 90;
+    for (const m of this.ship.hull.masts) {
+      const sail = this.ship.state.sails[this.ship.hull.masts.indexOf(m)];
+      if (sail && sail.condition <= 0.05) continue;
+      best = Math.min(best, closestPointing(RIG_PROFILES[m.rig]));
+    }
+    // She also crabs sideways, so her course made good is worse than she points.
+    return clamp(best + 7, 20, 88);
   }
 
   courseTo(portId: string): { bearing: number; distNm: number } | null {
@@ -958,6 +1044,7 @@ export class Game {
       ration: this.ration,
       pumpEffort: this.pumpEffort,
       autoTrim: this.autoTrim,
+      holdCourse: this.holdCourse,
       destination: this.destination,
       daysSincePort: this.daysSincePort,
     });
@@ -997,6 +1084,7 @@ export class Game {
     g.ration = d.ration ?? 1;
     g.pumpEffort = d.pumpEffort ?? 0.15;
     g.autoTrim = d.autoTrim ?? true;
+    g.holdCourse = d.holdCourse ?? false;
     g.destination = d.destination ?? null;
     g.daysSincePort = d.daysSincePort ?? 0;
     g.mode = 'sailing';
@@ -1007,3 +1095,20 @@ export class Game {
 }
 
 export { KNOTS, portName };
+
+/**
+ * Whether swinging her head `sweep` degrees in `dir` would carry it into the
+ * sector either side of the wind's eye that she cannot sail in.
+ *
+ * A ship already inside that sector is not "entering" it — she is in it, and the
+ * only thing to do is bear away, which is the turn that gets her out soonest.
+ */
+function sweepEntersEye(
+  heading: number, sweep: number, dir: number, windEye: number, noGo: number,
+): boolean {
+  if (Math.abs(angleDelta(windEye, heading)) < noGo) return false;
+  // Degrees of turn, in this direction, before her head reaches the near edge.
+  const edge = wrap360(windEye - dir * noGo);
+  const toEdge = dir > 0 ? wrap360(edge - heading) : wrap360(heading - edge);
+  return toEdge < sweep - 0.5;
+}

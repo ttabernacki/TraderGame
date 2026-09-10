@@ -215,6 +215,20 @@ export class Ui {
       }
       case '[': g.clock.cycleScale(-1); return true;
       case ']': g.clock.cycleScale(1); return true;
+      case 'h': {
+        if (!g.destination) {
+          g.pushAlert('No course laid off. Open the chart and steer for a place.', 'warning');
+          return true;
+        }
+        g.holdCourse = !g.holdCourse;
+        g.pushAlert(
+          g.holdCourse
+            ? `The watch will keep her for ${g.destination.name}.`
+            : 'You have the helm.',
+          'note',
+        );
+        return true;
+      }
       case 't': g.autoTrim = !g.autoTrim;
         g.pushAlert(g.autoTrim ? 'The watch will keep her trimmed.' : 'You have the sheets yourself.', 'note');
         return true;

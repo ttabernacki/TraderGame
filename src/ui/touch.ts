@@ -50,6 +50,7 @@ export class TouchControls {
     const helm = this.pad('touch-helm', [
       { label: '❮', key: 'a', hold: true, hint: 'Port' },
       { label: '■', key: 'x', hold: true, hint: 'Midships' },
+      { label: 'Hold', key: 'h', hint: 'Give the helm to the watch' },
       { label: '❯', key: 'd', hold: true, hint: 'Starboard' },
     ]);
 

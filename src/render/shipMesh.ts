@@ -64,6 +64,15 @@ interface Rope {
   fixed: THREE.Vector3;
 }
 
+/** A ribbon seized in the rigging that lies along the wind. */
+interface Telltale {
+  mesh: THREE.Mesh;
+  geo: THREE.PlaneGeometry;
+  base: Float32Array;
+  length: number;
+  phase: number;
+}
+
 interface MastParts {
   spec: MastSpec;
   pivot: THREE.Group;
@@ -91,6 +100,7 @@ export class ShipMesh {
   private flag: THREE.Mesh;
   private flagGeo: THREE.PlaneGeometry;
   private flagBase: Float32Array;
+  private telltales: Telltale[] = [];
   private rudder: THREE.Group;
   private tiller: THREE.Mesh;
   private runningRig!: THREE.LineSegments;
@@ -135,16 +145,29 @@ export class ShipMesh {
     this.runningRig.frustumCulled = false;
     this.group.add(this.runningRig);
 
-    // A banner at the main truck, which is also the best wind vane aboard.
-    this.flagGeo = new THREE.PlaneGeometry(3.2, 1.9, 10, 5);
+    // The banner at the main truck. It is the best wind vane aboard and the
+    // player's most immediate reading of where the wind is, so it is cut long
+    // and narrow — a streaming pennant rather than a square flag — because a
+    // long one lies along the wind and points, and a square one only flutters.
+    const tallest = hull.masts.reduce((a, b) => (a.ceHeight > b.ceHeight ? a : b));
+    this.flagGeo = new THREE.PlaneGeometry(6.4, 1.15, 22, 3);
+    // Hung from its own luff, so it streams away from the masthead instead of
+    // pivoting about the middle of itself.
+    this.flagGeo.translate(3.2, 0, 0);
     this.flagBase = new Float32Array(this.flagGeo.getAttribute('position').array);
     this.flag = new THREE.Mesh(
       this.flagGeo,
-      new THREE.MeshLambertMaterial({ color: 0xc8352c, side: THREE.DoubleSide }),
+      new THREE.MeshLambertMaterial({
+        color: 0xc8352c, side: THREE.DoubleSide, emissive: 0x2a0d0a,
+      }),
     );
-    const tallest = hull.masts.reduce((a, b) => (a.ceHeight > b.ceHeight ? a : b));
-    this.flag.position.set(0, tallest.ceHeight * 1.74, tallest.station * L * 0.42);
+    this.flag.position.set(0, tallest.ceHeight * 1.74 - 0.4, tallest.station * L * 0.42);
     this.group.add(this.flag);
+
+    // Telltales in the weather rigging: light ribbons seized to the shrouds,
+    // which is how the watch reads the wind on deck without looking aloft.
+    this.telltales = buildTelltales(hull);
+    for (const t of this.telltales) this.group.add(t.mesh);
 
     this.group.traverse((o: THREE.Object3D) => {
       const m = o as THREE.Mesh;
@@ -317,17 +340,40 @@ export class ShipMesh {
     this.rudder.rotation.y += (rudderAngle - this.rudder.rotation.y) * 0.2;
     this.tiller.rotation.y += (-rudderAngle * 1.1 - this.tiller.rotation.y) * 0.2;
 
-    // The banner streams with the apparent wind.
-    this.flag.rotation.y = (v.apparentBeta + 180) * DEG;
+    // The banner streams away from the masthead, downwind. `apparentBeta` is the
+    // angle of the wind off her bow, so the pennant lies along the reciprocal:
+    // it points where the wind is *going*, which is what a flag does.
+    const stream = (v.apparentBeta + 180) * DEG;
+    this.flag.rotation.y = stream;
+    const gust = clamp(v.apparentKnots / 20, 0.06, 1);
     const fpos = this.flagGeo.getAttribute('position') as THREE.BufferAttribute;
     for (let k = 0; k < fpos.count; k++) {
       const bx = this.flagBase[k * 3];
       const by = this.flagBase[k * 3 + 1];
-      const u = bx / 3.2 + 0.5;
-      const flutter = Math.sin(v.t * 9 + u * 7) * u * clamp(v.apparentKnots / 22, 0.05, 1) * 0.4;
-      fpos.setXYZ(k, bx, by + flutter * 0.4, flutter);
+      // Nothing at the luff, everything at the fly: a pennant is held at one end
+      // and the whip travels down it.
+      const u = clamp(bx / 6.4, 0, 1);
+      const whip = Math.sin(v.t * (5 + gust * 7) - u * 5.5) * u * u * gust;
+      // In a light air it hangs; in a breeze it stands out straight.
+      const droop = (1 - gust) * u * u * 1.5;
+      fpos.setXYZ(k, bx, by + whip * 0.45 - droop, whip * 1.1);
     }
     fpos.needsUpdate = true;
+
+    // The telltales lie along the wind too, and stream harder as it freshens.
+    for (const t of this.telltales) {
+      t.mesh.rotation.y = stream;
+      const tp = t.geo.getAttribute('position') as THREE.BufferAttribute;
+      for (let k = 0; k < tp.count; k++) {
+        const bx = t.base[k * 3];
+        const by = t.base[k * 3 + 1];
+        const u = clamp(bx / t.length, 0, 1);
+        const whip = Math.sin(v.t * (7 + gust * 9) - u * 6 + t.phase) * u * gust;
+        fpos.needsUpdate = true;
+        tp.setXYZ(k, bx, by + whip * 0.22 - (1 - gust) * u * u * 0.5, whip * 0.5);
+      }
+      tp.needsUpdate = true;
+    }
   }
 
   setHeel(heelDeg: number, pitchDeg: number): void {
@@ -1207,6 +1253,63 @@ function buildRunningRigging(
     }
   }
   return ropes;
+}
+
+/**
+ * Telltales: short light ribbons seized in the weather rigging and at the ends
+ * of the yards.
+ *
+ * They exist for one reason, which is that the player has to be able to see the
+ * wind. A masthead pennant is twenty metres up and easy to miss; a ribbon at eye
+ * level beside the rail is not, and a real ship carried both for exactly that
+ * reason.
+ */
+function buildTelltales(hull: HullClass): Telltale[] {
+  const L = hull.lwl;
+  const B = hull.beam;
+  const D = hull.draft;
+  const out: Telltale[] = [];
+  // Bright, and lit from within: a telltale is only worth carrying if it can be
+  // read at a glance from anywhere on deck, and a dull ribbon against dull
+  // rigging is worth nothing at all.
+  const mat = new THREE.MeshLambertMaterial({
+    color: 0xf2e4b8, side: THREE.DoubleSide, emissive: 0x6a5c38,
+  });
+
+  const spots: { x: number; y: number; z: number; len: number }[] = [];
+  for (const m of hull.masts) {
+    const z = m.station * L * 0.42;
+    // One in the rigging either side, at head height above the rail.
+    for (const side of [-1, 1]) {
+      spots.push({
+        x: side * railHalfBeam(clamp(z / L + 0.5, 0, 1), B) * 0.98,
+        y: sheerAt(clamp(z / L + 0.5, 0, 1)) * D * FREEBOARD + D * 1.1,
+        z,
+        len: 2.4,
+      });
+    }
+    // And two up the mast, where they can be seen from anywhere on deck and
+    // from any camera the player is likely to be using.
+    spots.push({ x: 0.24, y: m.ceHeight * 0.95, z, len: 3.0 });
+    spots.push({ x: -0.24, y: m.ceHeight * 1.45, z, len: 3.0 });
+  }
+
+  for (let i = 0; i < spots.length; i++) {
+    const s = spots[i];
+    const geo = new THREE.PlaneGeometry(s.len, 0.28, 8, 1);
+    geo.translate(s.len / 2, 0, 0);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(s.x, s.y, s.z);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    out.push({
+      mesh, geo,
+      base: new Float32Array(geo.getAttribute('position').array),
+      length: s.len,
+      phase: i * 1.7,
+    });
+  }
+  return out;
 }
 
 /** Rudder hung on the sternpost, with the tiller coming inboard over it. */

@@ -4,6 +4,7 @@ import { moraleWord } from '../crew/crew';
 import { enduranceDays } from '../crew/crew';
 import type { Game } from '../game/state';
 import { append, clear, el, hudRow, svg } from './dom';
+import { HeadingTape } from './headingTape';
 
 /**
  * The sailing head-up display: everything a captain would have in front of him
@@ -18,6 +19,7 @@ export class Hud {
   private ship = el('div', { class: 'hud-panel', id: 'hud-ship' });
   private alerts = el('div', { class: 'hud-panel', id: 'hud-alerts' });
   private course = el('div', { class: 'hud-panel', id: 'hud-course' });
+  tape = new HeadingTape();
   private hint = el('div', { class: 'hint' });
 
   private compassSvg: SVGElement;
@@ -40,14 +42,19 @@ export class Hud {
     this.windShip = w.ship;
     this.windCurrent = w.current;
 
-    this.root.append(this.nav, this.wind, this.time, this.ship, this.course, this.alerts, this.hint);
+    this.root.append(
+      this.tape.root, this.nav, this.wind, this.time, this.ship,
+      this.course, this.alerts, this.hint,
+    );
     this.hint.innerHTML =
       '<b>A</b>/<b>D</b> helm &nbsp; <b>X</b> midships &nbsp; <b>W</b>/<b>S</b> canvas &nbsp; ' +
       '<b>Q</b>/<b>E</b> trim &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
-      '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
+      '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>H</b> hold course &nbsp; ' +
+      '<b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
   }
 
   update(g: Game): void {
+    this.tape.update(g);
     const r = g.helmReport();
     const p = g.positionText();
 
@@ -195,6 +202,12 @@ export class Hud {
           ? 'less than a mile'
           : `${dest.distNm.toFixed(0)} miles`),
         hudRow('At this rate', formatEta(dest.hours)),
+        el('div', { class: 'hud-row' },
+          el('span', { class: 'k' }, 'The helm'),
+          el('span', {
+            class: 'v',
+            style: { color: g.holdCourse ? '#7fa86a' : '#c8a44e' },
+          }, g.holdCourse ? 'kept by the watch' : 'yours (H to hand over)')),
       );
     }
 

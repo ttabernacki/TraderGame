@@ -731,3 +731,34 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   #hud-course .hud-big { font-size: 14px; }
   #hud-course .hud-row:nth-of-type(n + 4) { display: none; }
 }
+
+/* --------------------------------------------------------------------------
+   The heading tape
+   Heading, wind, the water she cannot sail to and the course she is trying to
+   make, all on one compass scale across the top of the view. Three bearings
+   read off three separate dials means doing the arithmetic in your head; put on
+   one scale they answer the question directly.
+   -------------------------------------------------------------------------- */
+
+#heading-tape {
+  position: absolute;
+  top: 62px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(760px, calc(100vw - 32px));
+  height: 46px;
+  background: linear-gradient(
+    to right,
+    rgba(15, 11, 7, 0) 0%,
+    rgba(15, 11, 7, 0.72) 12%,
+    rgba(15, 11, 7, 0.72) 88%,
+    rgba(15, 11, 7, 0) 100%);
+  pointer-events: none;
+}
+
+@media (max-width: 860px) {
+  #heading-tape { top: 56px; height: 40px; width: calc(100vw - 16px); }
+  /* The panels drop below it. */
+  #hud-nav, #hud-wind { top: 104px; }
+  #hud-course { bottom: 176px; }
+}

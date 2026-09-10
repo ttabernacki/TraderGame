@@ -86,6 +86,13 @@ function applyContinuousInput(g: Game, dt: number): void {
   // impossible without holding a key down for a minute.
   const helm = input.helmAxis();
   if (helm !== 0) {
+    // Touching the wheel takes the ship back off the watch. Anything else means
+    // the player pulls the helm over, the quartermaster quietly pulls it back,
+    // and the ship appears to ignore him.
+    if (g.holdCourse) {
+      g.holdCourse = false;
+      g.pushAlert('You have the helm.', 'note');
+    }
     g.setHelm(clamp(g.ship.state.rudder + helm * dt * 1.6, -1, 1));
   } else if (input.isDown('x')) {
     g.setHelm(clamp(g.ship.state.rudder * Math.max(0, 1 - dt * 5), -1, 1));

@@ -175,3 +175,24 @@ export function tackName(beta: number): string {
   if (Math.abs(beta) < 5) return '';
   return beta > 0 ? 'starboard tack' : 'port tack';
 }
+
+/**
+ * The closest to the wind this rig will drive the ship, in degrees off the true
+ * wind, found by sweeping rather than assumed.
+ *
+ * There is no constant for this anywhere in the model — how close a ship lies is
+ * an emergent property of the sail's lift curve, its minimum trim and its drag,
+ * and the honest way to find it is to ask the same function that decides whether
+ * she moves. A lateen comes out around thirty degrees, a square course nearer
+ * sixty-five, which is exactly the difference that made the caravel worth
+ * building.
+ */
+export function closestPointing(p: RigProfile): number {
+  for (let beta = 5; beta <= 90; beta += 1) {
+    const trim = optimalTrim(beta, p);
+    // Ten knots of apparent wind over a hundred square metres: the absolute
+    // figure does not matter, only the angle at which drive turns positive.
+    if (sailForce(10, beta, trim, 100, p).drive > 0) return beta;
+  }
+  return 90;
+}
