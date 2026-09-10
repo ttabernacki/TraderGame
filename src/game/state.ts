@@ -92,6 +92,16 @@ export class Game {
   recentEvents: string[] = [];
   /** Simulated days since she last lay in a port. */
   daysSincePort = 0;
+
+  /**
+   * Where she is trying to get to.
+   *
+   * Held in *charted* coordinates, not true ones. Steering for a place you have
+   * marked on your own chart means steering for where you believe it to be, and
+   * if your reckoning has drifted the course you lay off is wrong in exactly the
+   * way the reckoning is wrong. That is the whole game.
+   */
+  destination: { name: string; lat: number; lon: number } | null = null;
   private eventCooldown = 0;
 
   /** Fraction of the standard ration being issued. */
@@ -524,6 +534,8 @@ export class Game {
     this.eventCooldown = Math.max(0, this.eventCooldown - days);
     if (this.eventCooldown > 0) return;
 
+    this.checkArrival();
+
     const event = rollSeaEvent(this, days);
     if (!event) return;
 
@@ -537,6 +549,21 @@ export class Game {
     }
     this.pushAlert(event.text, event.severity);
     this.logEvent(event.severity === 'note' ? 'note' : 'peril', event.text, event.severity !== 'note');
+  }
+
+  /**
+   * Up with the mark she was steering for. Judged on the true position rather
+   * than the reckoned one — she has either arrived or she has not, whatever the
+   * navigator believes — and the course is struck once she has.
+   */
+  private checkArrival(): void {
+    const d = this.destination;
+    if (!d) return;
+    const trueDist = haversine(this.ship.state.pos, { lat: d.lat, lon: d.lon }) / NM;
+    if (trueDist > 6) return;
+    this.destination = null;
+    this.pushAlert(`Up with ${d.name}.`, 'note');
+    this.logEvent('note', `Made ${d.name} by the reckoning, and there it was.`, true);
   }
 
   /** Take one of the courses offered by the outstanding decision. */
@@ -803,6 +830,66 @@ export class Game {
   }
 
   /** Bearing and distance to a charted port, as the pilot would work it out. */
+  /**
+   * Lay off a course for the first place a new commission sends her.
+   *
+   * Accepting orders and then having to go and find the place on the chart
+   * yourself before you can steer for it is a step nobody enjoys twice. If the
+   * King has named a port, the course to it is on the board before you leave
+   * the room.
+   */
+  layCourseForCommission(): void {
+    const patent = this.crown.patent;
+    if (!patent) return;
+    for (const o of patent.objectives) {
+      if (o.complete || o.kind === 'return' || !o.target) continue;
+      const def = PORTS.find((x) => x.id === o.target);
+      if (!def) continue;
+      const charted = this.chart.ports.get(def.id);
+      const at = charted ?? { lat: def.lat, lon: def.lon };
+      this.setDestination(def.name, at.lat, at.lon);
+      return;
+    }
+  }
+
+  /** Lay off a course for somewhere, or clear the one that is set. */
+  setDestination(name: string, lat: number, lon: number): void {
+    this.destination = { name, lat, lon };
+    this.logEvent('note', `Laid off a course for ${name}.`);
+    this.pushAlert(`Course laid off for ${name}.`, 'note');
+  }
+
+  clearDestination(): void {
+    this.destination = null;
+  }
+
+  /**
+   * Bearing, distance and time to the place she is steering for, all reckoned
+   * from where the navigator believes she is rather than from where she is.
+   */
+  courseToDestination(): {
+    name: string; bearing: number; distNm: number; hours: number; off: number;
+  } | null {
+    const d = this.destination;
+    if (!d) return null;
+    const from = this.nav.estimated;
+    const dLat = d.lat - from.lat;
+    const dLon = angleDelta(from.lon, d.lon) * cosd(from.lat);
+    const bearing = wrap360((Math.atan2(dLon, dLat) * 180) / Math.PI);
+    const distNm = haversine(from, { lat: d.lat, lon: d.lon }) / NM;
+    // Speed made good toward the mark, which is what actually decides when she
+    // arrives: five knots at ninety degrees to the course is five knots wasted.
+    const toward = Math.cos((bearing - this.physics.courseOverGround) * Math.PI / 180);
+    const closing = this.physics.groundKnots * toward;
+    return {
+      name: d.name,
+      bearing,
+      distNm,
+      hours: closing > 0.15 ? distNm / closing : Infinity,
+      off: angleDelta(this.ship.state.heading, bearing),
+    };
+  }
+
   courseTo(portId: string): { bearing: number; distNm: number } | null {
     const charted = this.chart.ports.get(portId);
     if (!charted) return null;
@@ -871,6 +958,8 @@ export class Game {
       ration: this.ration,
       pumpEffort: this.pumpEffort,
       autoTrim: this.autoTrim,
+      destination: this.destination,
+      daysSincePort: this.daysSincePort,
     });
   }
 
@@ -908,6 +997,8 @@ export class Game {
     g.ration = d.ration ?? 1;
     g.pumpEffort = d.pumpEffort ?? 0.15;
     g.autoTrim = d.autoTrim ?? true;
+    g.destination = d.destination ?? null;
+    g.daysSincePort = d.daysSincePort ?? 0;
     g.mode = 'sailing';
     g.lastLat = g.ship.state.pos.lat;
     g.refreshEnvironment();

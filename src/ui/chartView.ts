@@ -2,7 +2,7 @@ import { clamp, compassPoint, cosd, formatLat, formatLon, wrap180 } from '../cor
 import { LANDMASSES } from '../world/landmass';
 import { portDef } from '../world/ports';
 import type { Game } from '../game/state';
-import { button, clear, el } from './dom';
+import { append, button, clear, el } from './dom';
 
 /**
  * The chart table.
@@ -72,7 +72,7 @@ export class ChartView {
 
   private buildTools(): void {
     clear(this.tools);
-    this.tools.append(
+    append(this.tools,
       button('Centre on the reckoning', () => {
         if (this.game) this.centre = { ...this.game.nav.estimated };
         this.draw();
@@ -83,11 +83,40 @@ export class ChartView {
       button(this.showPlaces ? 'Hide names' : 'Show names', () => {
         this.showPlaces = !this.showPlaces; this.buildTools(); this.draw();
       }),
+      button(
+        this.selectedPort ? `Steer for ${portDef(this.selectedPort).name}` : 'Steer for this spot',
+        () => this.steerForSelection(),
+        { primary: true },
+      ),
+      this.game?.destination
+        ? button('Cancel the course', () => { this.game?.clearDestination(); this.buildTools(); this.draw(); })
+        : null,
       button('Name this place', () => this.namePlace()),
       button(this.showTrue ? 'Hide the true coast' : 'Compare with the truth', () => {
         this.showTrue = !this.showTrue; this.buildTools(); this.draw();
       }, { title: 'A modern overlay showing where the land actually is. No pilot of this century had this.' }),
     );
+  }
+
+  /**
+   * Lay off a course for the selected port, or for the middle of the chart if
+   * nothing is selected — which is how a pilot marks a spot he means to make
+   * for and has no name for yet.
+   */
+  private steerForSelection(): void {
+    const g = this.game;
+    if (!g) return;
+    if (this.selectedPort) {
+      const charted = g.chart.ports.get(this.selectedPort);
+      const def = portDef(this.selectedPort);
+      // Steer for where it is on *your* chart, not where it truly is.
+      const at = charted ?? { lat: def.lat, lon: def.lon };
+      g.setDestination(def.name, at.lat, at.lon);
+    } else {
+      g.setDestination('the marked spot', this.centre.lat, this.centre.lon);
+    }
+    this.buildTools();
+    this.draw();
   }
 
   private namePlace(): void {
@@ -230,6 +259,7 @@ export class ChartView {
     if (this.showTrack) this.drawTrack(ctx, g);
     this.drawPorts(ctx, g);
     if (this.showPlaces) this.drawPlaces(ctx, g);
+    this.drawCourse(ctx, g);
     this.drawReckoning(ctx, g);
     this.drawScaleBar(ctx, rect);
   }
@@ -454,6 +484,45 @@ export class ChartView {
   }
 
   /** The reckoned position and the circle of doubt around it. */
+  /**
+   * The course laid off to the mark she is bound for: a ruled line from the
+   * reckoning to the place, and the mark itself. Drawn from the reckoned
+   * position, because that is the line the pilot would actually rule on his own
+   * chart, and it is wrong in exactly the way his reckoning is wrong.
+   */
+  private drawCourse(ctx: CanvasRenderingContext2D, g: Game): void {
+    const d = g.destination;
+    if (!d) return;
+    const from = this.toScreen(g.nav.estimated.lat, g.nav.estimated.lon);
+    const to = this.toScreen(d.lat, d.lon);
+
+    ctx.save();
+    ctx.strokeStyle = 'rgba(140, 60, 40, 0.75)';
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash([7, 5]);
+    ctx.beginPath();
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // The mark: a ruled cross, as a pilot pricks off a place he means to make.
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(to.x - 7, to.y); ctx.lineTo(to.x + 7, to.y);
+    ctx.moveTo(to.x, to.y - 7); ctx.lineTo(to.x, to.y + 7);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(to.x, to.y, 9, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(140, 60, 40, 0.9)';
+    ctx.font = 'italic 12px Georgia, serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(d.name, to.x + 13, to.y - 9);
+    ctx.restore();
+  }
+
   private drawReckoning(ctx: CanvasRenderingContext2D, g: Game): void {
     const e = g.nav.estimated;
     const s = this.toScreen(e.lat, e.lon);

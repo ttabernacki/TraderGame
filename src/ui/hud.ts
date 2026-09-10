@@ -17,6 +17,7 @@ export class Hud {
   private time = el('div', { class: 'hud-panel', id: 'hud-time' });
   private ship = el('div', { class: 'hud-panel', id: 'hud-ship' });
   private alerts = el('div', { class: 'hud-panel', id: 'hud-alerts' });
+  private course = el('div', { class: 'hud-panel', id: 'hud-course' });
   private hint = el('div', { class: 'hint' });
 
   private compassSvg: SVGElement;
@@ -39,7 +40,7 @@ export class Hud {
     this.windShip = w.ship;
     this.windCurrent = w.current;
 
-    this.root.append(this.nav, this.wind, this.time, this.ship, this.alerts, this.hint);
+    this.root.append(this.nav, this.wind, this.time, this.ship, this.course, this.alerts, this.hint);
     this.hint.innerHTML =
       '<b>A</b>/<b>D</b> helm &nbsp; <b>X</b> midships &nbsp; <b>W</b>/<b>S</b> canvas &nbsp; ' +
       '<b>Q</b>/<b>E</b> trim &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
@@ -165,6 +166,37 @@ export class Hud {
       hudRow('Days out', `${g.crew.daysSinceLandfall.toFixed(0)}`),
       g.crown.patent ? hudRow('Commission', g.crown.patent.title) : null,
     );
+
+    // --- The course she is steering -----------------------------------------
+    // Only shown when there is somewhere to steer for. A passage with a mark on
+    // the end of it is a passage; without one it is an afternoon on the water.
+    const dest = g.courseToDestination();
+    clear(this.course);
+    this.course.style.display = dest ? '' : 'none';
+    if (dest) {
+      const off = dest.off;
+      const near = dest.distNm < 3;
+      const helm = near
+        ? 'you are up with it'
+        : Math.abs(off) < 2.5
+          ? 'steady as she goes'
+          : `${Math.abs(off).toFixed(0)}° to ${off > 0 ? 'starboard' : 'larboard'}`;
+      append(this.course,
+        el('div', { class: 'hud-title' }, 'Bound for'),
+        el('div', { class: 'hud-big' }, dest.name),
+        hudRow('Course to steer', `${dest.bearing.toFixed(0).padStart(3, '0')}° ${compassPoint(dest.bearing)}`),
+        el('div', { class: 'hud-row' },
+          el('span', { class: 'k' }, 'Put the helm'),
+          el('span', {
+            class: 'v',
+            style: { color: Math.abs(off) < 2.5 ? '#7fa86a' : '#c8a44e' },
+          }, helm)),
+        hudRow('Distance', dest.distNm < 1
+          ? 'less than a mile'
+          : `${dest.distNm.toFixed(0)} miles`),
+        hudRow('At this rate', formatEta(dest.hours)),
+      );
+    }
 
     // --- Alerts ------------------------------------------------------------
     clear(this.alerts);
@@ -295,3 +327,17 @@ function polar(cx: number, cy: number, r: number, deg: number): { x: number; y: 
 }
 
 export { formatBearing };
+
+/**
+ * How long until she is up with the mark, in the words a log would use. An
+ * infinite figure means she is not closing it at all — hove to, becalmed, or
+ * standing the wrong way entirely — and saying so is more use than a number.
+ */
+function formatEta(hours: number): string {
+  if (!Number.isFinite(hours)) return 'not closing';
+  if (hours < 1) return 'within the hour';
+  if (hours < 36) return `${hours.toFixed(0)} hours`;
+  const days = hours / 24;
+  if (days < 14) return `${days.toFixed(1)} days`;
+  return `${(days / 7).toFixed(0)} weeks`;
+}

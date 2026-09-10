@@ -113,6 +113,7 @@ export class CourtView {
               `${p.advance} in advance · ${p.reward} on completion · ${p.standingReward} renown`),
             button('Take it', () => {
               g.crown.accept(p, g.clock.t);
+              g.layCourseForCommission();
               g.crown.hasKingsLetter = true;
               g.logEvent('crown',
                 `Received the King's commission: "${p.title}". ${p.advance} cruzados advanced, and a sealed letter for any Christian prince who may be found.`, true);

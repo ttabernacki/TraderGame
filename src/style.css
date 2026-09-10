@@ -715,3 +715,19 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   .chart-legend em, .chart-legend i + span { flex-basis: 100%; }
   .chart-overlay { top: 52px; left: 8px; max-width: calc(100% - 16px); }
 }
+
+/* Where she is bound, and what to do with the helm about it. Shown only when a
+   course is laid off, so an aimless afternoon on the water stays uncluttered. */
+#hud-course {
+  top: 300px;
+  left: 14px;
+  min-width: 224px;
+  border-left: 2px solid var(--gold);
+}
+#hud-course .hud-big { font-size: 19px; }
+
+@media (max-width: 860px) {
+  #hud-course { top: auto; bottom: 180px; left: 8px; max-width: 44vw; font-size: 11px; }
+  #hud-course .hud-big { font-size: 14px; }
+  #hud-course .hud-row:nth-of-type(n + 4) { display: none; }
+}
