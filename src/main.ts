@@ -28,6 +28,7 @@ const ui = new Ui(uiHost, {
       'note',
     );
   },
+  onVirtualKey: (key, down) => input.setVirtual(key, down),
 });
 
 function startNew(): void {

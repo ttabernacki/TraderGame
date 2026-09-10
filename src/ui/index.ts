@@ -10,6 +10,7 @@ import { LogbookView } from './logbookView';
 import { PortView } from './portView';
 import { SightView } from './sightView';
 import { GameOverView, TitleView } from './titleView';
+import { TouchControls } from './touch';
 
 const SAVE_KEY = 'carreira-da-india:save';
 
@@ -17,6 +18,8 @@ export interface UiCallbacks {
   onNewGame: () => void;
   onContinue: () => void;
   onCycleCamera: () => void;
+  /** Hold or release a virtual key, for the on-screen controls. */
+  onVirtualKey: (key: string, down: boolean) => void;
 }
 
 /**
@@ -36,12 +39,20 @@ export class Ui {
   private audience: AudienceView;
   private court: CourtView;
   private overlay = el('div', { id: 'overlay' });
+  private touch: TouchControls;
   private game: Game | null = null;
   private cb: UiCallbacks;
 
   constructor(host: HTMLElement, cb: UiCallbacks) {
     this.root = host;
     this.cb = cb;
+    this.touch = new TouchControls({
+      setKey: (k, down) => cb.onVirtualKey(k, down),
+      tapKey: (k) => {
+        const g = this.game;
+        if (g) this.handleKey({ key: k, preventDefault() {} } as KeyboardEvent, g);
+      },
+    });
 
     const back = () => this.setMode('sailing');
     this.chart = new ChartView(back);
@@ -52,7 +63,7 @@ export class Ui {
     this.audience = new AudienceView(() => this.setMode('port'));
     this.court = new CourtView(() => this.setMode('port'));
 
-    host.append(this.hud.root, this.overlay);
+    host.append(this.hud.root, this.touch.root, this.overlay);
     this.hud.setVisible(false);
   }
 
@@ -64,6 +75,7 @@ export class Ui {
   showTitle(): void {
     this.game = null;
     this.hud.setVisible(false);
+    this.touch.setVisible(false);
     clear(this.overlay);
     const hasSave = !!localStorage.getItem(SAVE_KEY);
     const t = new TitleView(this.cb.onNewGame, this.cb.onContinue, hasSave);
@@ -78,6 +90,7 @@ export class Ui {
 
     clear(this.overlay);
     this.hud.setVisible(mode === 'sailing');
+    this.touch.setVisible(mode === 'sailing');
 
     switch (mode) {
       case 'sailing':
@@ -128,7 +141,10 @@ export class Ui {
       this.setMode('gameover');
       return;
     }
-    if (g.mode === 'sailing') this.hud.update(g);
+    if (g.mode === 'sailing') {
+      this.hud.update(g);
+      this.touch.setRate(g.clock.scaleLabel);
+    }
   }
 
   resize(): void {
@@ -254,6 +270,18 @@ export class InputState {
 
   isDown(k: string): boolean {
     return this.down.has(k);
+  }
+
+  /**
+   * Hold or release a key from something other than the keyboard.
+   *
+   * The on-screen controls come in here rather than having a path of their own,
+   * so a thumb on the helm and a finger on the A key are, from everything
+   * downstream, the same event.
+   */
+  setVirtual(k: string, down: boolean): void {
+    if (down) this.down.add(k);
+    else this.down.delete(k);
   }
 
   /** Helm demand from the keys, -1 to 1. */

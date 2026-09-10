@@ -265,6 +265,7 @@ uniform float uFoamThreshold;
 uniform float uNight;
 uniform float uFogDensity;
 uniform vec3 uFogColor;
+uniform vec3 uSeaFar;
 uniform float uNoiseTime;
 uniform vec2 uChopDir;
 uniform float uChop;
@@ -349,16 +350,21 @@ void main() {
   float o1 = 1.0 - smoothstep(60.0, 900.0, vDist);
   float o2 = 1.0 - smoothstep(260.0, 3400.0, vDist);
   float o3 = 1.0 - smoothstep(1100.0, 13000.0, vDist);
+  // The coarsest octave is deliberately strong and never fades. Without slope in
+  // the far field the water there has one uniform normal, the Fresnel term
+  // snaps from body colour to sky colour over a couple of degrees of elevation,
+  // and that snap lands on screen as a flat pale strip ruled under the horizon.
   vec2 detail =
       chopNormal(vSurface, uNoiseTime) * o1
     + chopNormal(vSurface * 0.26 + 41.0, uNoiseTime * 0.52) * (o2 * 0.78)
-    + chopNormal(vSurface * 0.068 + 91.0, uNoiseTime * 0.27) * (o3 * 0.52)
-    + chopNormal(vSurface * 0.018 + 137.0, uNoiseTime * 0.14) * 0.34;
+    + chopNormal(vSurface * 0.068 + 91.0, uNoiseTime * 0.27) * (o3 * 0.62)
+    + chopNormal(vSurface * 0.017 + 137.0, uNoiseTime * 0.13) * 0.85
+    + chopNormal(vSurface * 0.0042 + 211.0, uNoiseTime * 0.06) * 0.9;
   // The slick astern flattens the ripple as well as the swell, which is what
   // makes a wake visible on a calm day when there is no foam left in it at all.
   float smoothed = 1.0 - wk.z * 0.78;
   n = normalize(n + vec3(detail.x, 0.0, detail.y)
-                * 0.13 * clamp(uChop, 0.12, 1.1) * smoothed);
+                * 0.115 * clamp(uChop + 0.35, 0.3, 1.4) * smoothed);
   n = normalize(mix(n, vec3(0.0, 1.0, 0.0), wk.z * 0.35));
 
   float ndv = max(dot(n, viewDir), 0.0);
@@ -476,8 +482,12 @@ void main() {
   // it in a visible pale seam right along the horizon. The last of the haze is
   // therefore forced home well inside the rim of the mesh, so the sea arrives at
   // exactly the sky's own horizon colour and the join disappears.
-  fog = max(fog, smoothstep(6000.0, 32000.0, vDist));
-  col = mix(col, uFogColor, clamp(fog, 0.0, 1.0));
+  fog = max(fog, smoothstep(9000.0, 34000.0, vDist));
+  // Toward the sea's own distant colour, not the sky's. Fogging water to the
+  // exact colour of the sky above it both erases the horizon line — which is
+  // the one thing a navigator looks at all day — and washes the last few miles
+  // of sea out into a pale band that reads as a blurred strip across the view.
+  col = mix(col, uSeaFar, clamp(fog, 0.0, 1.0));
 
   gl_FragColor = vec4(col, 1.0);
 }
@@ -541,6 +551,7 @@ export class Ocean {
         uNight: { value: 0 },
         uFogDensity: { value: 0.00006 },
         uFogColor: { value: new THREE.Color(0.6, 0.72, 0.85) },
+        uSeaFar: { value: new THREE.Color(0.3, 0.42, 0.55) },
         uChopDir: { value: new THREE.Vector2(1, 0) },
         uChop: { value: 0.5 },
         uWakeDir: { value: new THREE.Vector2(0, -1) },
@@ -760,6 +771,10 @@ export class Ocean {
     (this.material.uniforms.uSkyColor.value as THREE.Color).copy(sky);
     (this.material.uniforms.uHorizonColor.value as THREE.Color).copy(horizon);
     (this.material.uniforms.uFogColor.value as THREE.Color).copy(horizon);
+    // The sea's distant colour: the horizon haze pulled well down toward deep
+    // water, which is what puts a hard dark line under the sky where it belongs.
+    (this.material.uniforms.uSeaFar.value as THREE.Color)
+      .copy(horizon).lerp(new THREE.Color(0.05, 0.12, 0.20), 0.42);
     this.material.uniforms.uNight.value = night;
     this.material.uniforms.uFogDensity.value = fogDensity;
 

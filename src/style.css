@@ -414,3 +414,167 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   .move-grid { grid-template-columns: 1fr; }
   #hud-ship, #hud-nav, #hud-wind, #hud-time { font-size: 12px; min-width: 0; }
 }
+
+/* --------------------------------------------------------------------------
+   On-screen controls
+   Sized for thumbs and kept clear of the head-up display. Every one of them
+   drives the same virtual key the keyboard would, so the two can never drift
+   apart.
+   -------------------------------------------------------------------------- */
+
+.touch {
+  position: absolute;
+  inset: 0;
+  display: none;
+  pointer-events: none;
+  z-index: 6;
+  /* A dragged thumb must move the helm, never scroll or select the page. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.touch.on { display: block; }
+
+.touch-pad {
+  position: absolute;
+  display: flex;
+  gap: 10px;
+  pointer-events: auto;
+}
+
+.touch-btn {
+  min-width: 60px;
+  height: 60px;
+  padding: 0 14px;
+  border-radius: 9px;
+  border: 1px solid var(--deck-edge);
+  background: rgba(20, 15, 10, 0.55);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  color: var(--cream);
+  font-family: var(--serif);
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 90ms linear, transform 90ms linear;
+  touch-action: none;
+}
+.touch-btn.wide { min-width: 92px; }
+.touch-btn.held {
+  background: rgba(200, 164, 78, 0.42);
+  border-color: var(--gold);
+  transform: scale(0.95);
+}
+.touch-btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* The helm under the left thumb, the rig under the right. */
+.touch-helm { left: 18px; bottom: 18px; }
+.touch-rig { right: 18px; bottom: 18px; }
+
+/* The clock and the ship's business along the top, where nothing is steering. */
+.touch-top {
+  left: 50%;
+  transform: translateX(-50%);
+  top: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: min(760px, calc(100vw - 24px));
+  gap: 8px;
+}
+.touch-top .touch-btn {
+  height: 42px;
+  min-width: 48px;
+  font-size: 14px;
+  padding: 0 11px;
+}
+
+/* On a phone the head-up panels and the controls are fighting for the same
+   corners, so the panels give way and the buttons grow. */
+@media (pointer: coarse) {
+  .touch-helm, .touch-rig { bottom: 14px; }
+  .touch-btn { min-width: 64px; height: 64px; }
+}
+
+/* On a phone there is no room for four panels of instruments and a set of
+   controls at once. The controls win — they are what the player's thumbs are
+   for — so the panels shed their dials, drop to the essentials and take a
+   quarter of the screen between them instead of all of it. The top row of
+   controls stops wrapping and scrolls sideways in a single line. */
+@media (max-width: 860px) {
+  #hud-nav, #hud-wind, #hud-ship, #hud-time {
+    font-size: 11px;
+    min-width: 0;
+    max-width: 44vw;
+    padding: 7px 9px;
+  }
+  #hud-nav, #hud-wind { top: 58px; }
+  #hud-ship, #hud-time { bottom: 88px; }
+  .hud-big { font-size: 19px; }
+  .hud-unit { font-size: 10px; }
+  .hud-panel .dial { display: none; }
+  /* Only the rows that decide what to do next survive the cut. */
+  #hud-nav .hud-row:nth-of-type(n + 3),
+  #hud-wind .hud-row:nth-of-type(n + 4),
+  #hud-ship .hud-row:nth-of-type(n + 5),
+  #hud-time .hud-row:nth-of-type(n + 3) { display: none; }
+  #hud-alerts { width: min(92vw, 480px); }
+  .hint { display: none; }
+
+  .touch-top {
+    left: 0;
+    right: 0;
+    transform: none;
+    max-width: none;
+    padding: 0 10px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    justify-content: flex-start;
+  }
+  .touch-top::-webkit-scrollbar { display: none; }
+  .touch-top .touch-btn { flex: 0 0 auto; }
+}
+
+@media (max-width: 560px) {
+  #hud-nav, #hud-wind, #hud-ship, #hud-time { max-width: 42vw; }
+  #hud-ship, #hud-time { bottom: 84px; }
+  .touch-pad { gap: 8px; }
+  .touch-helm, .touch-rig { bottom: 12px; }
+  .touch-helm { left: 10px; }
+  .touch-rig { right: 10px; }
+  .touch-btn { min-width: 56px; height: 56px; font-size: 18px; }
+  .touch-top .touch-btn { height: 36px; min-width: 42px; font-size: 12px; padding: 0 8px; }
+}
+
+/* Landscape on a phone: almost no height, so the panels go to the sides and
+   the top row shares the strip above the horizon with them. */
+@media (max-height: 500px) and (pointer: coarse) {
+  #hud-nav, #hud-wind { top: 52px; }
+  #hud-ship, #hud-time { bottom: 8px; max-width: 30vw; }
+  #hud-ship { left: 96px; }
+  #hud-time { right: 96px; }
+  .touch-btn { min-width: 54px; height: 54px; }
+  .touch-helm, .touch-rig { bottom: 8px; }
+}
+
+/* The clock's current rate, between the two buttons that change it. */
+.touch-rate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 62px;
+  height: 42px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid rgba(200, 164, 78, 0.34);
+  background: rgba(20, 15, 10, 0.42);
+  color: var(--gold);
+  font-family: var(--serif);
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+@media (max-width: 560px) {
+  .touch-rate { height: 36px; min-width: 54px; font-size: 12px; padding: 0 7px; }
+}
