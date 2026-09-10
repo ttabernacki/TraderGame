@@ -86,8 +86,23 @@ export class Hud {
       hudRow('Made good', `${r.groundSpeed.toFixed(1)} kn ${compassPoint(r.cog)}`),
       hudRow('Latitude', p.lat),
       hudRow('Longitude', p.lon),
+      // When the last observation was. Without this the player has no way to
+      // know the reckoning is going stale except by reading a sigma he does not
+      // understand, and the whole sextant is content nobody opens.
+      hudRow('Last observed', lastObserved(g)),
+      // Colour it, because the whole point of this line is that the player
+      // should notice when it changes.
       el('div', { class: 'hud-row', style: { marginTop: '3px' } },
-        el('span', { class: 'k', style: { fontSize: '11px', fontStyle: 'italic' } }, p.certainty)),
+        el('span', {
+          class: 'k',
+          style: {
+            fontSize: '11px',
+            fontStyle: 'italic',
+            lineHeight: '1.4',
+            whiteSpace: 'normal',
+            color: p.doubt > 26 ? '#d4553f' : p.doubt > 12 ? '#e0b96a' : '#8a7a63',
+          },
+        }, p.certainty)),
     );
     this.compassCard.setAttribute('transform', `rotate(${-r.compass} 44 44)`);
     this.compassShip.setAttribute('transform', `rotate(${wrap360(r.cog - r.heading)} 44 44)`);
@@ -209,6 +224,13 @@ export class Hud {
       // Miles behind her. A ship held at the origin gives the eye nothing to
       // measure headway by; this is what a navigator used instead.
       hudRow('Run', `${g.groundRun.toFixed(0)} miles`),
+      // The other thing the voyage is for. Charting is done quietly by the
+      // escrivão every quarter of an hour and used to leave no trace on the
+      // screen at all, which made the game's own title an activity the player
+      // never saw happen.
+      g.chartedThisPassage > 0
+        ? hudRow('Coast drawn', `${g.chartedThisPassage.toFixed(0)} miles`)
+        : null,
       g.dayRuns.length > 0
         ? hudRow(g.dayRuns[0].hours < 20 ? 'Since sailing' : 'Last day\u2019s run',
             `${g.dayRuns[0].nm.toFixed(0)} miles`)
@@ -381,6 +403,16 @@ function progressBar(fraction: number): HTMLElement {
     el('i', { style: { width: `${pct}%` } }),
     el('span', {}, `${pct.toFixed(0)}% of the passage run`),
   );
+}
+
+/** How long since anything corrected the reckoning, in a pilot's words. */
+function lastObserved(g: Game): string {
+  const days = (g.clock.t - g.nav.lastFixT) / 86400;
+  if (g.nav.lastFixT <= 0 || days > 3000) return 'never';
+  if (days < 0.4) return 'this watch';
+  if (days < 1.4) return 'yesterday';
+  if (days < 14) return `${days.toFixed(0)} days ago`;
+  return `${(days / 7).toFixed(0)} weeks ago`;
 }
 
 function kindShort(kind: string): string {

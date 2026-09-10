@@ -55,6 +55,11 @@ export class Navigator {
   sigmaLat = 2;
   sigmaLon = 2;
 
+  /** Miles run since anything corrected the reckoning. */
+  milesSinceFix = 0;
+  /** Simulated seconds of the last observation or landfall. */
+  lastFixT = 0;
+
   traverse: TraverseEntry[] = [];
   fixes: Fix[] = [];
 
@@ -136,9 +141,23 @@ export class Navigator {
     // Uncertainty grows with distance run. Longitude grows faster because it is
     // never corrected, and because an unknown current is mostly an east-west
     // error on the classic Atlantic tracks.
+    //
+    // Accumulated as *variance per mile run*, not as the sum of squares of each
+    // step's contribution. Those are only the same thing when the step is the
+    // whole run. This is called every physics step, a step is a thousandth of a
+    // mile, and hypot(2, 0.000035) is 2 — so written the other way the doubt
+    // never grew at all. Measured before the change: twenty days out, the pilot
+    // was a hundred and thirty miles wrong and the display still read plus or
+    // minus two minutes. The entire reason to take a sight had been quietly
+    // switched off.
+    //
+    // Variance growing linearly with distance is also the correct model: this is
+    // a random walk in the errors of the log, the compass and the helmsman, and
+    // a random walk's variance goes as its length.
     const runNm = distM / NM;
-    this.sigmaLat = Math.hypot(this.sigmaLat, runNm * 0.035);
-    this.sigmaLon = Math.hypot(this.sigmaLon, runNm * 0.062);
+    this.sigmaLat = Math.sqrt(this.sigmaLat * this.sigmaLat + runNm * LAT_DRIFT);
+    this.sigmaLon = Math.sqrt(this.sigmaLon * this.sigmaLon + runNm * LON_DRIFT);
+    this.milesSinceFix += runNm;
 
     this.accumCourse += reckonedCourse * runNm;
     this.accumDist += runNm;
@@ -171,6 +190,13 @@ export class Navigator {
 
     this.estimated.lat = blended;
     this.sigmaLat = Math.sqrt(1 / (wObs + wDr));
+    // An observed latitude also settles the longitude a little, because half of
+    // what makes the reckoning wrong — a bad log line, a wandering helmsman —
+    // puts her out in both at once, and finding one out tells the pilot
+    // something about the other. Only a little: this is not a longitude.
+    this.sigmaLon = Math.max(this.sigmaLon * 0.88, 1.2);
+    this.lastFixT = t;
+    this.milesSinceFix = 0;
     this.fixes.push({ t, latitude: lat, method, sigma: sigmaDeg, body });
     if (this.fixes.length > 200) this.fixes.shift();
   }
@@ -180,6 +206,8 @@ export class Navigator {
     this.estimated = { ...known };
     this.sigmaLat = 0.6;
     this.sigmaLon = 1.2;
+    this.lastFixT = t;
+    this.milesSinceFix = 0;
     this.fixes.push({ t, latitude: known.lat, method: 'Landfall', sigma: 0.02, body: 'the land' });
   }
 
@@ -190,6 +218,27 @@ export class Navigator {
     return { lat: dLat, lon: dLon, total: Math.hypot(dLat, dLon) };
   }
 }
+
+/**
+ * Variance added per mile run, in square nautical miles.
+ *
+ * Tuned against the error the simulation actually produces, not guessed: a
+ * hundred-mile day takes the pilot from two miles of doubt to seventeen, a week
+ * puts him at forty-six and a fortnight at sixty-five, against a true error
+ * measured over the same passages of sixty to a hundred. He stays a little more
+ * confident than he has any right to be, which is correct — every pilot on this
+ * route was — but no longer by the factor of three that made the figure
+ * meaningless.
+ *
+ * It also has to sit in the right place against the instruments, or the whole
+ * loop dies. A quadrant and the rule of the Guards are worth about sixty miles
+ * on a moving deck; the reckoning passes that in the second week, which is when
+ * the pilot starts asking for the pole star. A better instrument and better
+ * tables each move that day earlier, and they multiply, so both are worth
+ * buying and neither is sufficient alone.
+ */
+const LAT_DRIFT = 3.0;
+const LON_DRIFT = 5.5;
 
 export type SightBody = 'sun' | 'polaris' | 'cruzeiro' | 'star';
 
@@ -355,6 +404,15 @@ export function takeSight(
   const southern = truePos.lat < 0;
 
   if (opportunity.body === 'sun') {
+    if (alm.solarError === null) {
+      return {
+        ok: false,
+        message:
+          'You have the altitude and it tells you nothing. The Regimento do Norte is a rule for '
+          + 'the pole star; there is no declination of the sun in it for this day or any other. '
+          + 'You want the solar tables, and they are sold at Lisbon.',
+      };
+    }
     if (southern && !alm.southern) {
       return {
         ok: false,
@@ -363,10 +421,10 @@ export function takeSight(
       };
     }
     const trueDec = solarDeclination(dayOfYear);
-    const tableDec = trueDec + rng.normal(0, alm.declinationError);
+    const tableDec = trueDec + rng.normal(0, alm.solarError);
     const sunBoreSouth = opportunity.azimuth > 90 && opportunity.azimuth < 270;
     const lat = latitudeFromNoonSun(observed, tableDec, sunBoreSouth);
-    const sigma = Math.hypot(instSigma, alm.declinationError, Math.abs(aimError) * 0.5);
+    const sigma = Math.hypot(instSigma, alm.solarError, Math.abs(aimError) * 0.5);
     nav.applyLatitude(lat, sigma, 'Meridian sun', 'the sun', t);
     return {
       ok: true, latitude: lat, sigma, measured: observed, method: 'Meridian sun',
@@ -376,15 +434,19 @@ export function takeSight(
 
   if (opportunity.body === 'polaris') {
     const pole = polarisSight(truePos.lat, truePos.lon, dayFromEpoch, hourLocal, year);
-    // Applying the Regimento's correction for the Guards needs the tables and
-    // the skill to read them. Without both, the three and a half degree circle
-    // of the pole star goes straight into the answer.
-    const canCorrect = alm.declinationError < 2 && skill > 0.25;
+    // Applying the Regimento's correction for the Guards needs the book. It does
+    // not need to be a great pilot: the whole purpose of that book was that an
+    // ordinary man could use it, which is why every ship on the Guinea run
+    // carried one. Gating it behind a skill the player does not start with made
+    // the starting almanac decorative — he was handed a rule he could not read.
+    // Skill now decides how *well* he reads it, not whether he can.
+    const canCorrect = alm.declinationError < 2;
+    const readError = alm.declinationError * (1.6 - skill * 0.8);
     const correction = canCorrect
-      ? pole.correction + rng.normal(0, alm.declinationError * 0.6)
+      ? pole.correction + rng.normal(0, readError)
       : rng.normal(0, 0.4);
     const lat = observed + correction;
-    const sigma = Math.hypot(instSigma, canCorrect ? alm.declinationError * 0.6 : 2.4, Math.abs(aimError) * 0.5);
+    const sigma = Math.hypot(instSigma, canCorrect ? readError : 2.4, Math.abs(aimError) * 0.5);
     nav.applyLatitude(lat, sigma, 'North Star', 'the pole star', t);
     return {
       ok: true, latitude: lat, sigma, measured: observed, method: 'North Star',

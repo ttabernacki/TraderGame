@@ -5,6 +5,7 @@ import { Game } from './game/state';
 import type { Difficulty } from './game/difficulty';
 import { rollOfficerEvent } from './game/officerEvents';
 import { rollSeaEvent } from './game/seaEvents';
+import { sightOpportunities, takeSight } from './navigation/navigator';
 import { KNOTS } from './ship/physics';
 import { sightingRangeNm } from './navigation/charts';
 import { Renderer, type RenderFrame } from './render/renderer';
@@ -262,6 +263,8 @@ if (import.meta.env.DEV) {
       },
       rollOfficerEvent,
       rollSeaEvent,
+      sightOpportunities,
+      takeSight,
     }),
   });
 }

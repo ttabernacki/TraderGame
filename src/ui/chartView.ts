@@ -354,12 +354,21 @@ export class ChartView {
   private drawChartedCoast(ctx: CanvasRenderingContext2D, g: Game): void {
     // Group the charted points by landmass and by ring order, then stroke runs
     // of consecutive vertices so the coast reads as a line rather than dots.
-    const byLand = new Map<number, { index: number; lat: number; lon: number }[]>();
+    // Two passes, and the split is the whole point of the screen.
+    //
+    // Coast you have run yourself is drawn firm. Coast you inherited from the
+    // Casa's chart — which for everything south of Morocco is a long way from
+    // where the land really is — is drawn faint and broken, the way a
+    // cartographer draws a coast he has only been told about. It is the same
+    // ink either way, so the player can see at a glance which part of his own
+    // chart he would stake the ship on, and that turns running a known coast
+    // from scenery into work worth doing.
+    const byLand = new Map<number, { index: number; lat: number; lon: number; sure: boolean }[]>();
     for (const p of g.chart.points.values()) {
       const idx = Number(p.key.split(':')[1]);
       let arr = byLand.get(p.land);
       if (!arr) byLand.set(p.land, (arr = []));
-      arr.push({ index: idx, lat: p.lat, lon: p.lon });
+      arr.push({ index: idx, lat: p.lat, lon: p.lon, sure: p.errorNm <= 20 });
     }
 
     ctx.lineWidth = 1.6;
@@ -369,17 +378,24 @@ export class ChartView {
     for (const [land, pts] of byLand) {
       pts.sort((a, b) => a.index - b.index);
       const ringLength = LANDMASSES[land].ring.length / 2;
-      let run: { index: number; lat: number; lon: number }[] = [];
+      let run: { index: number; lat: number; lon: number; sure: boolean }[] = [];
 
       const flush = () => {
         if (run.length < 2) {
           if (run.length === 1) {
             const s = this.toScreen(run[0].lat, run[0].lon);
-            ctx.fillStyle = '#4a3520';
+            ctx.fillStyle = run[0].sure ? '#4a3520' : 'rgba(74, 53, 32, 0.4)';
             ctx.beginPath(); ctx.arc(s.x, s.y, 1.4, 0, Math.PI * 2); ctx.fill();
           }
           run = [];
           return;
+        }
+        const sure = run[0].sure;
+        ctx.save();
+        if (!sure) {
+          ctx.strokeStyle = 'rgba(74, 53, 32, 0.42)';
+          ctx.setLineDash([6, 5]);
+          ctx.lineWidth = 1.3;
         }
         ctx.beginPath();
         for (let i = 0; i < run.length; i++) {
@@ -388,11 +404,13 @@ export class ChartView {
         }
         ctx.stroke();
 
-        // A little hachuring on the landward side, portolan fashion.
-        ctx.save();
-        ctx.globalAlpha = 0.2;
-        ctx.lineWidth = 3.5;
-        ctx.stroke();
+        // A little hachuring on the landward side, portolan fashion. Only on
+        // coast somebody has actually seen.
+        if (sure) {
+          ctx.globalAlpha = 0.2;
+          ctx.lineWidth = 3.5;
+          ctx.stroke();
+        }
         ctx.restore();
         run = [];
       };
@@ -401,7 +419,11 @@ export class ChartView {
         if (run.length === 0) { run.push(p); continue; }
         const prev = run[run.length - 1];
         const gap = p.index - prev.index;
-        if (gap === 1 || (prev.index === ringLength - 1 && p.index === 0)) run.push(p);
+        const joined = gap === 1 || (prev.index === ringLength - 1 && p.index === 0);
+        // A run is broken where the coast stops being consecutive *or* where it
+        // changes from surveyed to hearsay, so the two are never stroked as one
+        // line in one style.
+        if (joined && p.sure === prev.sure) run.push(p);
         else { flush(); run.push(p); }
       }
       flush();
@@ -685,9 +707,9 @@ function buildLegend(): HTMLElement {
   const item = (color: string, label: string) =>
     el('div', {}, el('i', { style: { background: color } }), el('span', {}, label));
   return el('div', { class: 'chart-legend' },
+    item('#4a3520', 'Coast you have run yourself'),
+    item('rgba(74,53,32,0.42)', 'On the Casa\u2019s chart, position doubtful'),
     item('#a83228', 'Portuguese factory'),
-    item('#4a3520', 'Visited'),
-    item('rgba(74,53,32,0.42)', 'Sighted only'),
     item('#3c5a8a', 'A padrão of yours'),
     item('rgba(170,130,70,0.55)', 'Where a rumour points'),
     item('rgba(110,34,92,0.6)', 'How far the other man has got'),

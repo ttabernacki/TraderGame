@@ -18,7 +18,8 @@ import {
   RIG_PROFILES, closestPointing, optimalTrim, pointOfSail, sailForce, tackName, trimBand,
 } from '../ship/rig';
 import { Navigator } from '../navigation/navigator';
-import { Chart, sightingRangeNm } from '../navigation/charts';
+import { Chart, sightingRangeNm, type SurveyResult } from '../navigation/charts';
+import { sightOpportunities, type SightBody } from '../navigation/navigator';
 import { magneticVariation } from '../navigation/celestial';
 import {
   ableHands, crewFactor, newCrew, officerBonus, updateCrew, type CrewState,
@@ -243,6 +244,12 @@ export class Game {
   private deepestSouth = 90;
   private lastLat = 0;
   private lastSurveyT = -1e9;
+  /** Miles of coast drawn or corrected since she last lay in a port. */
+  chartedThisPassage = 0;
+  /** Total error taken out of the inherited chart, in miles. */
+  correctedNm = 0;
+  private lastSurveyWord = -1e9;
+  private lastSightWord = -1e9;
   private lastPortCheck = -1e9;
   private lastCanvasWord = -1e9;
   private lastManualTrim = -1e9;
@@ -277,6 +284,9 @@ export class Game {
     this.visitedPorts.add('lisboa');
     this.lastLat = start.lat;
     this.displayHeading = this.ship.state.heading;
+    // She lies in the Tagus with her position known to the yard of the quay, so
+    // the reckoning starts fresh rather than nineteen thousand days stale.
+    this.nav.lastFixT = this.clock.t;
     this.refreshPortBusiness(portDef('lisboa'));
     this.startT = this.clock.t;
 
@@ -737,17 +747,22 @@ export class Game {
       this.lastSurveyT = this.clock.t;
       const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
       if (this.sounding.shoreDistNm < range) {
-        const before = this.chart.points.size;
-        const newly = this.chart.survey(
+        const result = this.chart.survey(
           pos, this.nav.estimated, range, this.clock.t, skill(eff, 'cartografia'),
         );
-        const added = this.chart.points.size - before;
-        if (newly.length > 0) {
-          const nm = added * 6;
-          this.crown.chartedSincePatent += nm;
-          this.crown.progressObjective('chart', undefined, nm);
-          train(this.skills, 'cartografia', added * 0.14);
-          train(this.skills, 'navegacao', added * 0.04);
+        const worked = result.fresh.length + result.corrected;
+        if (worked > 0) {
+          // Coast drawn for the first time and coast put right both count. The
+          // Casa da Guiné paid for corrections — a stretch of Africa that is on
+          // the chart eighty miles from where it really is has cost ships, and
+          // a pilot who fixes it has done the Crown a service.
+          this.crown.chartedSincePatent += result.milesTaken;
+          this.crown.progressObjective('chart', undefined, result.milesTaken);
+          train(this.skills, 'cartografia', worked * 0.14);
+          train(this.skills, 'navegacao', worked * 0.04);
+          this.chartedThisPassage += result.milesTaken;
+          this.correctedNm += result.improvedNm ?? 0;
+          this.announceSurvey(result);
         }
       }
     }
@@ -804,6 +819,98 @@ export class Game {
       `Noon. ${nm.toFixed(0)} miles made good in ${period}, `
       + `latitude ${formatLat(lat)} by the reckoning.${verdict}${remaining}`);
     this.pushAlert(`Noon — ${nm.toFixed(0)} miles run.${remaining}`, 'note');
+
+    // And the other half of noon: the sun is on the meridian, which is the one
+    // moment in the day the latitude can be had. The pilot asks for it, because
+    // a player who is never told his reckoning has gone stale will never think
+    // to open the quadrant, and the whole of this game is supposed to be about
+    // not knowing where you are.
+    this.offerSight();
+  }
+
+  /**
+   * Whether anything can be brought down right now, and whether it is worth the
+   * trouble.
+   *
+   * Offers whichever body is actually available rather than always the sun: in
+   * the north the pilot's method is the pole star and his book is the rule of
+   * the Guards, and the sun only becomes the method once he has solar tables and
+   * has run the pole star under the horizon. Nagging every day would train the
+   * player to ignore it, so he only speaks up once the reckoning has gone soft.
+   */
+  private offerSight(): void {
+    if (this.nav.sigmaLat < 9) return;
+    if (this.clock.t - this.lastSightWord < 20 * 3600) return;
+
+    const opps = sightOpportunities(
+      this.ship.state.pos, this.clock.day, this.clock.hour,
+      this.clock.dayOfYear, this.clock.date.year,
+      this.weatherNow.cloud, this.weatherNow.visibility,
+    );
+    // Only bodies this pilot can actually work into a latitude with the books
+    // he has aboard. Being offered a sight that turns out to be useless is
+    // worse than not being offered one.
+    const usable = opps.filter((o) => o.available && this.canWork(o.body));
+    const grave = this.nav.sigmaLat > 24;
+
+    if (usable.length === 0) {
+      if (!grave) return;
+      const sun = opps.find((o) => o.body === 'sun');
+      const why = opps.find((o) => o.available && !this.canWork(o.body))
+        ? 'and no tables aboard to work it by'
+        : (sun?.reason ?? 'nothing to be had').toLowerCase();
+      this.lastSightWord = this.clock.t;
+      this.pushAlert(`No latitude again today — ${why}.`, 'warning');
+      return;
+    }
+
+    this.lastSightWord = this.clock.t;
+    const best = usable[0];
+    const days = (this.clock.t - this.nav.lastFixT) / 86400;
+    this.pushAlert(
+      `${best.label} may be had. `
+      + `${days > 2 ? `Nothing observed for ${days.toFixed(0)} days. ` : ''}Press N.`,
+      grave ? 'warning' : 'note',
+    );
+  }
+
+  /** Whether the books aboard can turn an altitude of this body into a latitude. */
+  private canWork(body: SightBody): boolean {
+    const alm = this.nav.almanac;
+    const southern = this.ship.state.pos.lat < 0;
+    if (body === 'sun') return alm.solarError !== null && (!southern || alm.southern);
+    if (body === 'polaris') return true;
+    return alm.southern;
+  }
+
+  /**
+   * Tell the player the chart is being worked on.
+   *
+   * Surveying happens silently every quarter of an hour and is the single
+   * activity the whole game is named after, so it needs to say so — especially
+   * the first time a stretch of inherited coast turns out to be a long way from
+   * where Lisbon thinks it is, which is the moment the mapmaking becomes real.
+   */
+  private announceSurvey(result: SurveyResult): void {
+    if (this.clock.t - this.lastSurveyWord < 6 * 3600) return;
+    this.lastSurveyWord = this.clock.t;
+    const improved = result.improvedNm ?? 0;
+    if (result.fresh.length > 0 && result.corrected === 0) {
+      this.pushAlert(
+        `The escrivão is drawing coast nobody has drawn before — ${result.milesTaken} miles of it.`,
+        'note');
+      return;
+    }
+    if (improved > 40) {
+      this.pushAlert(
+        'This coast is not where the Lisbon chart puts it. The pilot is redrawing it.',
+        'note');
+      this.logEvent('navigation',
+        'Ran the coast in sight all forenoon and it does not agree with the chart we were given: '
+        + `${(improved / Math.max(result.corrected, 1)).toFixed(0)} miles out, and every league of `
+        + 'it the same way. Somebody laid off a bad day\u2019s run down here a long time ago and '
+        + 'every pilot since has copied him.');
+    }
   }
 
   private updateCrewAndShip(simDt: number): void {
@@ -1405,6 +1512,9 @@ export class Game {
     // first noon at sea has something to report.
     const day = Math.floor(this.clock.t / 86400);
     this.lastNoonDay = this.clock.hour < 12 ? day - 1 : day;
+    // Weighing from a known anchorage is itself a fix.
+    this.nav.lastFixT = this.clock.t;
+    this.nav.milesSinceFix = 0;
     this.runSinceNoon = 0;
     this.noonAt = this.clock.t;
     // Making sail on weighing is an order, so the watch know what to make it
@@ -1746,16 +1856,30 @@ export class Game {
     };
   }
 
-  positionText(): { lat: string; lon: string; certainty: string } {
+  positionText(): { lat: string; lon: string; certainty: string; doubt: number } {
     const e = this.nav.estimated;
-    const lonCertain = this.nav.sigmaLon < 25;
-    return {
-      lat: formatLat(e.lat),
-      lon: formatLon(e.lon),
-      certainty: lonCertain
-        ? `± ${this.nav.sigmaLat.toFixed(0)}′ lat, ± ${this.nav.sigmaLon.toFixed(0)}′ lon`
-        : `± ${this.nav.sigmaLat.toFixed(0)}′ lat; longitude is a guess`,
-    };
+    const sLat = this.nav.sigmaLat;
+    const sLon = this.nav.sigmaLon;
+    const days = (this.clock.t - this.nav.lastFixT) / 86400;
+
+    // Said the way the pilot would say it, and escalating, because a number that
+    // creeps from 2 to 34 over a fortnight is not something anyone notices — and
+    // noticing is the entire point. This is the line that has to make the player
+    // reach for the quadrant.
+    let certainty: string;
+    if (sLat < 4) {
+      certainty = `± ${sLat.toFixed(0)}′ lat, ± ${sLon.toFixed(0)}′ lon — the reckoning is fresh`;
+    } else if (sLat < 12) {
+      certainty = `± ${sLat.toFixed(0)}′ lat, ± ${sLon.toFixed(0)}′ lon`;
+    } else if (sLat < 26) {
+      certainty = `± ${sLat.toFixed(0)}′ lat — the pilot wants an observation`;
+    } else if (sLat < 55) {
+      certainty = `± ${sLat.toFixed(0)}′ lat; longitude is a guess. `
+        + `${days < 1 || days > 3000 ? 'No sight taken' : `Nothing observed for ${days.toFixed(0)} days`}.`;
+    } else {
+      certainty = 'Nobody aboard can say where she is within a day\u2019s sail.';
+    }
+    return { lat: formatLat(e.lat), lon: formatLon(e.lon), certainty, doubt: sLat };
   }
 
   // -------------------------------------------------------------------------
@@ -1811,6 +1935,7 @@ export class Game {
       destination: this.destination,
       daysSincePort: this.daysSincePort,
       distanceRun: this.distanceRun,
+      correctedNm: this.correctedNm,
       groundRun: this.groundRun,
       dayRuns: this.dayRuns,
       markLaidAt: this.markLaidAt,
@@ -1870,6 +1995,7 @@ export class Game {
     g.destination = d.destination ?? null;
     g.daysSincePort = d.daysSincePort ?? 0;
     g.distanceRun = d.distanceRun ?? 0;
+    g.correctedNm = d.correctedNm ?? 0;
     g.groundRun = d.groundRun ?? 0;
     g.dayRuns = d.dayRuns ?? [];
     g.markLaidAt = d.markLaidAt ?? null;

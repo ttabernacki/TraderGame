@@ -3,6 +3,7 @@ import { Rng } from '../core/rng';
 import {
   sightOpportunities, takeSight, type SightOpportunity, type SightOutcome,
 } from '../navigation/navigator';
+import { sightError } from '../navigation/instruments';
 import { skill } from '../crew/skills';
 import type { Game } from '../game/state';
 import { button, card, clear, el, kv } from './dom';
@@ -166,8 +167,33 @@ export class SightView {
         'Watch the body rise and fall with the ship. Set the index where it stands when she is on an even keel, then mark. The swing is the whole difficulty: a quadrant on a pitching deck is a guess with a brass instrument attached to it.'),
     );
 
+    // Why this is worth doing right now, in miles rather than in sigmas.
+    //
+    // A pilot knows perfectly well whether his reckoning is fresher than his
+    // quadrant. The player has no way to know unless he is told, and without
+    // being told he cannot tell a sight that is worth an hour from one that
+    // will make his position worse — which is a real decision and the reason
+    // this screen exists.
+    const drift = g.nav.sigmaLat;
+    const daysSince = (g.clock.t - g.nav.lastFixT) / 86400;
+    const expected = sightError(inst, g.weatherNow.waveHeight,
+      g.skills.navegacao / 100, opp?.body === 'sun') * 60;
+    const worth = expected < drift * 0.85;
+
     const right = el('div', {});
     right.append(
+      card('Is it worth the trouble?',
+        kv('The reckoning is good to', `± ${drift.toFixed(0)} miles`),
+        kv('Last observation', g.nav.lastFixT > 0
+          ? `${daysSince < 1 ? 'today' : `${daysSince.toFixed(0)} days ago`}`
+          : 'none this voyage'),
+        kv('This instrument, this sea', `± ${expected.toFixed(0)} miles`),
+        el('p', { class: worth ? 'good' : '' },
+          worth
+            ? 'The observation is better than the reckoning. Take it.'
+            : 'Your reckoning is fresher than anything this instrument will give '
+              + 'you in this sea. Sail on, or wait for a smoother day.'),
+      ),
       card('What can be shot',
         ...this.opportunities.map((o, i) => this.renderOpportunity(o, i)),
       ),

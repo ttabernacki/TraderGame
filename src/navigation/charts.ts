@@ -1,5 +1,5 @@
 import { NM, cosd, wrap180, type LatLon } from '../core/math';
-import { LANDMASSES, coastVerticesNear, type CoastVertex } from '../world/landmass';
+import { coastVertexKeysInBox, coastVerticesNear, type CoastVertex } from '../world/landmass';
 import { PORTS, anchorageOf, type PortDef } from '../world/ports';
 
 export interface ChartedPoint {
@@ -32,6 +32,18 @@ export interface Placename {
   t: number;
 }
 
+/** What one survey pass added to the chart. */
+export interface SurveyResult {
+  /** Coast nobody had drawn before. */
+  fresh: CoastVertex[];
+  /** Coast that was drawn wrong and is now drawn better. */
+  corrected: number;
+  /** Nautical miles of coastline this pass accounts for. */
+  milesTaken: number;
+  /** Total error taken out of the chart, in miles. */
+  improvedNm?: number;
+}
+
 export interface TrackPoint {
   lat: number;
   lon: number;
@@ -61,10 +73,27 @@ export class Chart {
     this.seedKnownWorld();
   }
 
-  /** What a Portuguese pilot already has on his chart at the start of the campaign. */
+  /**
+   * What a Portuguese pilot already has on his chart at the start of the
+   * campaign — and, much more importantly, how wrong it is.
+   *
+   * The coast from Flanders to the Gulf of Guinea had been sailed for sixty
+   * years by 1482, so it is on the chart. But it is on the chart the way a
+   * chart of 1482 actually had it: the *latitudes* are good, because every
+   * pilot on that coast carried a quadrant and the regimento, and the
+   * *longitudes* are badly out, because nobody on earth could measure one. Real
+   * charts of the period stretch Africa east-west by tens of leagues, and the
+   * further from Lisbon the worse it gets, because the error is cumulative down
+   * the coast.
+   *
+   * This is not decoration. Drawing the known world accurately meant there was
+   * nothing for a surveyor to do until he passed the equator — a fortnight of
+   * sailing before the game's central activity started. Drawing it the way it
+   * really was gives the player work from the first morning: the coast he can
+   * see is not where his chart says it is, and every landfall he makes on a
+   * place he knows lets him put a piece of it right.
+   */
   private seedKnownWorld(): void {
-    // The coast from Flanders to the Gulf of Guinea was well known by 1482, so it
-    // is charted accurately. Everything beyond is blank paper.
     const seedBoxes = [
       { latMin: 30, latMax: 56, lonMin: -32, lonMax: 5 },
       { latMin: 3, latMax: 32, lonMin: -30, lonMax: 12 },
@@ -77,25 +106,24 @@ export class Chart {
           for (const v of coastVerticesNear({ lat, lon }, 70)) {
             const key = `${v.land}:${v.index}`;
             if (this.points.has(key)) continue;
-            // Even the well-charted parts carry the errors of earlier pilots.
-            const err = 0.06;
-            this.points.set(key, {
-              key,
-              lat: v.lat + (hash(key) - 0.5) * err,
-              lon: v.lon + (hash(key + 'x') - 0.5) * err * 2.2,
-              errorNm: err * 60,
-              land: v.land,
-              t: 0,
-            });
+            this.points.set(key, seededPoint(key, v));
           }
         }
       }
     }
 
+    // The ports carry the same distortion as the coast they sit on: a place
+    // you have heard of is not a place whose position you know.
     for (const p of PORTS) {
       if (!p.known) continue;
       const at = anchorageOf(p);
-      this.ports.set(p.id, { id: p.id, lat: at.lat, lon: at.lon, visited: false, traded: false, t: 0 });
+      const d = seededError(at.lat, at.lon);
+      this.ports.set(p.id, {
+        id: p.id,
+        lat: at.lat + d.dLat,
+        lon: at.lon + d.dLon,
+        visited: false, traded: false, t: 0,
+      });
     }
   }
 
@@ -109,10 +137,12 @@ export class Chart {
     rangeNm: number,
     t: number,
     cartography: number,
-  ): CoastVertex[] {
-    if (rangeNm <= 0) return [];
+  ): SurveyResult {
+    if (rangeNm <= 0) return { fresh: [], corrected: 0, milesTaken: 0 };
     const seen = coastVerticesNear(truePos, rangeNm);
     const newly: CoastVertex[] = [];
+    let corrected = 0;
+    let improvedNm = 0;
 
     const dLat = reckoned.lat - truePos.lat;
     const dLon = wrap180(reckoned.lon - truePos.lon);
@@ -138,10 +168,25 @@ export class Chart {
 
       // Only redraw if this pass is a better survey than the last one.
       if (existing && existing.errorNm <= errNm) continue;
-      if (!existing) newly.push(v);
+      if (!existing) {
+        newly.push(v);
+      } else if (existing.errorNm - errNm > 3) {
+        // Coast that was on the chart in the wrong place and is now in the
+        // right one. This is most of what a pilot on this route actually did,
+        // and it has to be worth something or the inherited chart is scenery.
+        corrected++;
+        improvedNm += existing.errorNm - errNm;
+      }
       this.points.set(key, { key, lat: plottedLat, lon: plottedLon, errorNm: errNm, land: v.land, t });
     }
-    return newly;
+    return {
+      fresh: newly,
+      corrected,
+      // Roughly how much coast this pass accounts for. Six miles a vertex is
+      // the spacing of the ring data.
+      milesTaken: (newly.length + corrected) * 6,
+      improvedNm,
+    };
   }
 
   /** Note the ship's position on the chart, as the pilot reckons it. */
@@ -183,9 +228,36 @@ export class Chart {
     this.places = this.places.filter((p) => p.id !== id);
   }
 
-  /** Proportion of the world's coastline this chart covers. */
+  /**
+   * How much of the *route* is drawn, and drawn well.
+   *
+   * Measured against the coast between Portugal and India rather than against
+   * every vertex on the globe — a figure that read forty-nine per cent before
+   * the player had left the Tagus, because Europe is half the world's coastline
+   * and none of it is what this voyage is about. A point only counts once it is
+   * drawn within twenty miles of where it really is, so inheriting somebody
+   * else's stretched chart is not the same as having surveyed it.
+   */
   coverage(): number {
-    return TOTAL_COAST_VERTICES > 0 ? this.points.size / TOTAL_COAST_VERTICES : 0;
+    if (ROUTE_VERTICES === 0) return 0;
+    let good = 0;
+    for (const p of this.points.values()) {
+      if (!isRouteVertex(p.key)) continue;
+      if (p.errorNm <= 20) good++;
+    }
+    return good / ROUTE_VERTICES;
+  }
+
+  /** Vertices drawn at all, whether well or badly. */
+  drawn(): number {
+    return this.points.size;
+  }
+
+  /** How well one stretch of coast is drawn, for the chart's own shading. */
+  qualityAt(key: string): number {
+    const p = this.points.get(key);
+    if (!p) return 0;
+    return Math.max(0, 1 - p.errorNm / 90);
   }
 
   /** Mean drawing error across the chart, in nautical miles. */
@@ -217,7 +289,61 @@ export class Chart {
   }
 }
 
-const TOTAL_COAST_VERTICES = LANDMASSES.reduce((s, l) => s + l.ring.length / 2, 0);
+/**
+ * The distortion in an inherited chart at a given place.
+ *
+ * Latitude is nearly right — a quadrant and the regimento do that. Longitude is
+ * out by an amount that grows with the distance from Lisbon down the coast,
+ * because every pilot's error was added to the last man's and nobody could ever
+ * check one. At Cape Verde that is a few leagues; at the Gulf of Guinea it is
+ * the better part of a degree and a half, which is what actually happened.
+ */
+function seededError(lat: number, lon: number): { dLat: number; dLon: number } {
+  const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+
+  // A cumulative westward drift, growing with the distance south of Lisbon.
+  //
+  // This is the shape a real error of this kind has. Nobody measured a
+  // longitude; each pilot laid off his day's run from the last man's position,
+  // and every mile of error he made stayed in the chart for the man after him.
+  // So the further down the coast you go the further the paper is from the
+  // world, and it goes *one way* — the whole of Guinea slid west together —
+  // rather than scattering. Near Lisbon it is a mile or two; at Mina it is the
+  // better part of a degree and a half, which is what the charts of the period
+  // actually show.
+  const south = Math.min(Math.max((38.7 - lat) / 36, 0), 1.35);
+  const drift = -south * 1.35;
+  const wobble = (hash(key + 'x') - 0.5) * (0.16 + south * 0.34);
+  return {
+    // Latitude is nearly right: every pilot on that coast carried a quadrant.
+    dLat: (hash(key) - 0.5) * 0.09,
+    dLon: drift + wobble,
+  };
+}
+
+function seededPoint(key: string, v: CoastVertex): ChartedPoint {
+  const d = seededError(v.lat, v.lon);
+  const lat = v.lat + d.dLat;
+  const lon = v.lon + d.dLon;
+  return {
+    key, lat, lon,
+    errorNm: Math.hypot(d.dLat * 60, d.dLon * 60 * cosd(v.lat)),
+    land: v.land,
+    t: 0,
+  };
+}
+
+/**
+ * The coast the carreira actually runs along: the western and eastern shores of
+ * Africa, Arabia and India. Iberia, the Baltic and the Americas are not what
+ * this voyage is measured by.
+ */
+const ROUTE_VERTEX_KEYS = coastVertexKeysInBox(-40, 40, -30, 100);
+const ROUTE_VERTICES = ROUTE_VERTEX_KEYS.size;
+
+function isRouteVertex(key: string): boolean {
+  return ROUTE_VERTEX_KEYS.has(key);
+}
 
 /**
  * How far the lookout can see land, allowing for the height of the masthead and

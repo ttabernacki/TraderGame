@@ -16,22 +16,22 @@ export interface AltitudeInstrument {
 export const ALTITUDE_INSTRUMENTS: AltitudeInstrument[] = [
   {
     id: 'quadrante', name: 'Quadrante', english: 'Mariner\'s quadrant',
-    baseError: 1.1, motionSensitivity: 0.95, solarSafe: false, cost: 0, standing: 0,
+    baseError: 0.45, motionSensitivity: 0.95, solarSafe: false, cost: 0, standing: 0,
     blurb: 'A quarter circle with a plumb line. On land it is accurate to a fraction of a degree; on a pitching deck the plumb bob swings and you are guessing.',
   },
   {
     id: 'astrolabio', name: 'Astrolábio náutico', english: 'Mariner\'s astrolabe',
-    baseError: 0.85, motionSensitivity: 0.7, solarSafe: true, cost: 90, standing: 10,
+    baseError: 0.36, motionSensitivity: 0.7, solarSafe: true, cost: 90, standing: 10,
     blurb: 'A heavy brass ring cut away to spill the wind, hung from the thumb. Three men are wanted: one to hold, one to sight, one to read.',
   },
   {
     id: 'balestilha', name: 'Balestilha', english: 'Cross-staff',
-    baseError: 0.5, motionSensitivity: 0.5, solarSafe: false, cost: 140, standing: 40,
+    baseError: 0.24, motionSensitivity: 0.5, solarSafe: false, cost: 140, standing: 40,
     blurb: 'Slide the cross until it spans horizon and star together. Quick, accurate, and it will ruin your eyes if you point it at the sun for twenty years.',
   },
   {
     id: 'balestilha-sombra', name: 'Balestilha de sombra', english: 'Back-staff',
-    baseError: 0.26, motionSensitivity: 0.38, solarSafe: true, cost: 340, standing: 120,
+    baseError: 0.15, motionSensitivity: 0.38, solarSafe: true, cost: 340, standing: 120,
     blurb: 'You stand with your back to the sun and bring its shadow down to the horizon. Safe for the eyes and steadier in a seaway.',
   },
   {
@@ -77,8 +77,24 @@ export const SPEED_BY_ID = new Map(SPEED_INSTRUMENTS.map((i) => [i.id, i]));
 export interface Almanac {
   id: string;
   name: string;
-  /** Residual error in the declination tables, degrees. */
+  /**
+   * Residual error in the rule for the Guards, degrees — how well this book
+   * lets a pilot turn an altitude of the pole star into a latitude.
+   */
   declinationError: number;
+  /**
+   * Residual error in the *solar* declination tables, degrees, or null when the
+   * book has none at all.
+   *
+   * These are two entirely different things and were two different books. The
+   * Regimento do Norte is a rule for the pole star and contains no solar
+   * declination whatever; a pilot carrying only that one can find his latitude
+   * beautifully by night in the northern hemisphere and cannot find it from the
+   * sun at all. Collapsing both into one number made the starting almanac
+   * mediocre at both, which meant an observation was worse than a fortnight-old
+   * reckoning and the player was right never to take one.
+   */
+  solarError: number | null;
   /** Whether the tables extend south of the equator. */
   southern: boolean;
   cost: number;
@@ -93,22 +109,23 @@ export interface Almanac {
  */
 export const ALMANACS: Almanac[] = [
   {
-    id: 'nenhum', name: 'No tables', declinationError: 3.5, southern: false, cost: 0, standing: 0,
+    id: 'nenhum', name: 'No tables', declinationError: 3.5, solarError: null,
+    southern: false, cost: 0, standing: 0,
     blurb: 'You are working from memory and the rule of thumb. It shows.',
   },
   {
-    id: 'regimento-norte', name: 'Regimento do Norte', declinationError: 1.1, southern: false,
-    cost: 40, standing: 0,
-    blurb: 'The rule of the North Star, with the corrections for the Guards. Useless once the pole star sets.',
+    id: 'regimento-norte', name: 'Regimento do Norte', declinationError: 0.4, solarError: null,
+    southern: false, cost: 40, standing: 0,
+    blurb: 'The rule of the North Star, with the corrections for the Guards — and nothing else. It will give you a good latitude by night, all the way to the Guinea coast, and it will give you nothing at all once the pole star has gone under the horizon astern of you.',
   },
   {
     id: 'regimento-sol', name: 'Regimento do Astrolábio e do Quadrante', declinationError: 0.3,
-    southern: true, cost: 220, standing: 60,
+    solarError: 0.35, southern: true, cost: 220, standing: 60,
     blurb: 'Declination tables for every day of the year, computed at Lisbon. The single most valuable object aboard, and it must never leave the ship.',
   },
   {
-    id: 'almanach', name: 'Almanach Perpetuum', declinationError: 0.1, southern: true,
-    cost: 600, standing: 200,
+    id: 'almanach', name: 'Almanach Perpetuum', declinationError: 0.1, solarError: 0.12,
+    southern: true, cost: 600, standing: 200,
     blurb: 'Zacuto\'s tables, corrected and extended. Good to a tenth of a degree, which is ten miles of latitude.',
   },
 ];
@@ -147,8 +164,14 @@ export function sightError(
   skill: number,
   isSun: boolean,
 ): number {
+  // Three penalties multiplying on top of an already pessimistic base put the
+  // starting quadrant at better than two degrees of error — a hundred and forty
+  // miles, which is worse than a fortnight of dead reckoning. A player who
+  // worked that out would correctly never take a sight again, and the whole
+  // point of the game would be switched off. A quadrant on the Guinea run gave
+  // a usable latitude; that is why anybody carried one.
   const motion = 1 + inst.motionSensitivity * Math.min(waveHeight, 8) * 0.30;
-  const hand = 1.35 - skill * 0.6;
+  const hand = 1.25 - skill * 0.45;
   const glare = isSun && !inst.solarSafe ? 1.25 : 1;
   return inst.baseError * motion * hand * glare;
 }

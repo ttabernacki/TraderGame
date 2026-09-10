@@ -239,6 +239,30 @@ export function coastVerticesNear(p: LatLon, nm: number): CoastVertex[] {
   return out;
 }
 
+/**
+ * Every coast vertex inside a lat/lon box, keyed the way the chart keys them.
+ *
+ * Used to measure how much of a *route* has been charted rather than how much
+ * of the globe — the carreira runs along the shores of Africa, Arabia and
+ * India, and a chart of the Baltic says nothing about how the voyage is going.
+ */
+export function coastVertexKeysInBox(
+  latMin: number, latMax: number, lonMin: number, lonMax: number,
+): Set<string> {
+  build();
+  const out = new Set<string>();
+  for (let li = 0; li < prepared.length; li++) {
+    const r = prepared[li].ring;
+    for (let i = 0; i < r.length; i += 2) {
+      const lat = r[i];
+      const lon = r[i + 1];
+      if (lat < latMin || lat > latMax || lon < lonMin || lon > lonMax) continue;
+      out.add(`${li}:${i / 2}`);
+    }
+  }
+  return out;
+}
+
 /** Name of a landmass by index. */
 export function landName(index: number): string {
   return LANDMASSES[index]?.name ?? 'Unknown land';
