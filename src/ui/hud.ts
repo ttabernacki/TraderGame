@@ -92,7 +92,7 @@ export class Hud {
       hudRow('Visibility', wx.visibility > 20 ? 'clear' : `${wx.visibility.toFixed(1)} miles`),
     );
     this.windNeedle.setAttribute('transform', `rotate(${wx.wind.from} 44 44)`);
-    this.windShip.setAttribute('transform', `rotate(${g.ship.state.heading} 44 44)`);
+    this.windShip.setAttribute('transform', `rotate(${g.displayHeading} 44 44)`);
     if (g.currentKnots > 0.15) {
       this.windCurrent.setAttribute('transform', `rotate(${g.currentToward} 44 44)`);
       this.windCurrent.setAttribute('opacity', String(clamp(g.currentKnots / 2, 0.2, 0.9)));
@@ -171,7 +171,7 @@ export class Hud {
             ? 'amidships'
             : `${(Math.abs(r.rudder) * 100).toFixed(0)}% to ${r.rudder > 0 ? 'starboard' : 'port'}`)),
       helmBar,
-      hudRow('Heel', `${Math.abs(g.ship.state.heel).toFixed(0)}° to ${g.ship.state.heel >= 0 ? 'starboard' : 'port'}`),
+      hudRow('Heel', `${Math.abs(g.displayHeel).toFixed(0)}° to ${g.displayHeel >= 0 ? 'starboard' : 'port'}`),
       hudRow('Leeway', `${Math.abs(r.leeway).toFixed(1)}°`),
       hudRow('Hands', `${r.ableHands} of ${g.crew.count} able`),
       hudRow('Crew', moraleWord(g.crew.morale)),

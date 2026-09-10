@@ -220,7 +220,18 @@ export function stepShip(
 
   const mass = hull.displacement * 1.12; // includes added mass of entrained water
   const surgeAccel = (drive - Math.sign(s.surge || 1) * resistance * seaPenalty) / mass;
-  s.surge += surgeAccel * dt;
+
+  // Semi-implicit, not plain Euler.
+  //
+  // Resistance goes as the square of the speed, so a plain forward step of any
+  // size overshoots: at 1800x the clock hands this function steps of several
+  // seconds, the drive and the resistance take it in turns to win, and she
+  // surges back and forth by four knots while apparently sailing straight. The
+  // slope of the resistance curve at the present speed is used to damp the step
+  // instead, which is exact for a linear system and unconditionally stable for
+  // this one at any step size.
+  const dResistance = 2 * 0.5 * WATER_DENSITY * d.wetted * ct * v * waveMaking;
+  s.surge += (surgeAccel * dt) / (1 + (dResistance * seaPenalty / mass) * dt);
   // Small ships cannot be driven backwards faster than a walk.
   s.surge = clamp(s.surge, -1.6, d.hullSpeed * 1.35);
 
@@ -239,7 +250,7 @@ export function stepShip(
   const leewayRad = Math.asin(sinLeeway);
   const targetSway = Math.tan(leewayRad) * Math.abs(s.surge);
   // Lag it so the ship settles into her leeway rather than snapping to it.
-  s.sway += (clamp(targetSway, -3, 3) - s.sway) * clamp(dt * 0.35, 0, 1);
+  s.sway += (clamp(targetSway, -3, 3) - s.sway) * approach(0.35, dt);
 
   // --- Yaw ----------------------------------------------------------------
   // A rudder is useless without water flowing past it, which is what makes
@@ -250,18 +261,38 @@ export function stepShip(
   const rudderTorque = rudderForce * hull.lwl * 0.45;
 
   const yawDamp = hull.displacement * hull.lwl * 0.19 / clamp(hull.handiness, 0.2, 1);
-  const yawRateRad = s.yawRate * DEG;
-  const dampTorque = -yawDamp * yawRateRad * (Math.abs(s.surge) + 1.0);
 
-  const yawAccel = (rudderTorque + yawMoment + dampTorque) / d.yawInertia;
-  s.yawRate += yawAccel * RAD * dt;
+  // Yaw is a first-order lag: a forcing torque against a damping proportional to
+  // the rate. Written that way it has an exact solution, and using it instead of
+  // a forward step is the difference between a ship that holds her course at
+  // every clock rate and one that saws thirty degrees either side of it above
+  // x300 — where the step grows past the point at which the damping term can
+  // reverse the rate in a single step, and the integration oscillates by itself
+  // with the helm amidships.
+  //
+  //   dw/dt = f - k w   =>   w(t) = f/k + (w0 - f/k) e^(-kt)
+  //
+  // and the heading is the integral of that, which is also exact.
+  const k = (yawDamp * (Math.abs(s.surge) + 1.0)) / d.yawInertia;
+  const forcing = ((rudderTorque + yawMoment) / d.yawInertia) * RAD;
+  const w0 = s.yawRate;
+  let dHeading: number;
+  if (k * dt < 1e-6) {
+    s.yawRate = w0 + forcing * dt;
+    dHeading = (w0 + s.yawRate) * 0.5 * dt;
+  } else {
+    const steady = forcing / k;
+    const decay = Math.exp(-k * dt);
+    s.yawRate = steady + (w0 - steady) * decay;
+    dHeading = steady * dt + ((w0 - steady) * (1 - decay)) / k;
+  }
   s.yawRate = clamp(s.yawRate, -6, 6);
-  s.heading = wrap360(s.heading + s.yawRate * dt);
+  s.heading = wrap360(s.heading + dHeading);
 
   // --- Heel ---------------------------------------------------------------
   const righting = hull.displacement * G * d.gm;
   const heelTarget = clamp((heelMoment / righting) * RAD, -55, 55);
-  s.heel += (heelTarget - s.heel) * clamp(dt * 0.8, 0, 1);
+  s.heel += (heelTarget - s.heel) * approach(0.8, dt);
 
   // --- Motion over the ground --------------------------------------------
   const groundE = boatE + Math.sin(env.currentToward * DEG) * env.currentKnots * KNOTS;
@@ -318,6 +349,16 @@ export function sailHandRate(tune: ShipTuning): number {
     tune.crewFactor * (0.55 + 0.7 * tune.seamanship) * (tune.sailHandling ?? 1),
     0.15, 9,
   );
+}
+
+/**
+ * The fraction of the way to a target a first-order lag covers in `dt` at rate
+ * `k`. `clamp(k * dt, 0, 1)` is the same thing for small steps and saturates
+ * hard for large ones, which makes anything using it snap rather than settle
+ * when the clock is running fast.
+ */
+function approach(k: number, dt: number): number {
+  return 1 - Math.exp(-k * dt);
 }
 
 export function prudentCanvas(windKnots: number): number {

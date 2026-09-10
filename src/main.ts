@@ -167,8 +167,9 @@ function buildFrame(g: Game): RenderFrame {
 
   return {
     pos: g.ship.state.pos,
-    heading: g.ship.state.heading,
-    heel: g.ship.state.heel,
+    // The shown attitude, not the simulated one: see Game.displayHeading.
+    heading: g.displayHeading,
+    heel: g.displayHeel,
     velocityE: Math.sin(cogRad) * ground,
     velocityN: Math.cos(cogRad) * ground,
     sails: g.ship.state.sails,
@@ -239,6 +240,7 @@ if (import.meta.env.DEV) {
           g.update(1 / 30);
         }
         g.ship.state.heading = heading;
+        g.displayHeading = heading;
       },
       rollOfficerEvent,
       rollSeaEvent,

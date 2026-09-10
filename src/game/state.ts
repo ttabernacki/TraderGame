@@ -120,6 +120,22 @@ export class Game {
   weatherNow!: WeatherSample;
   physics!: StepResult;
   sounding: Sounding = { depth: 4000, shoreDistNm: 999, shoreBearing: 0, aground: false, shoaling: false };
+  /**
+   * The heading and heel as they are *shown* — on the compass, on the tape, and
+   * in the 3D view — which are the simulated ones through a short real-time
+   * filter.
+   *
+   * At the fast clock rates a single rendered frame covers minutes of sailing,
+   * so the simulated heel can legitimately move several degrees between two
+   * frames and the heading a degree or two. Drawn literally that is a lurch,
+   * not a roll, and a compass card that jumps is the thing that reads as being
+   * out of control. The filter runs on real seconds with a time constant of
+   * about an eighth of one: far too short to feel at the helm, long enough that
+   * a frame covering a quarter of an hour is drawn as motion.
+   */
+  displayHeading = 0;
+  displayHeel = 0;
+
   currentToward = 0;
   currentKnots = 0;
   currentName: string | null = null;
@@ -224,6 +240,7 @@ export class Game {
     this.anchored = true;
     this.visitedPorts.add('lisboa');
     this.lastLat = start.lat;
+    this.displayHeading = this.ship.state.heading;
     this.refreshPortBusiness(portDef('lisboa'));
     this.startT = this.clock.t;
 
@@ -314,6 +331,15 @@ export class Game {
   // -------------------------------------------------------------------------
 
   /** Sample everything that depends on where and when the ship is. */
+  /** Carry the shown heading and heel toward the simulated ones. */
+  private smoothDisplay(realDt: number): void {
+    const k = 1 - Math.exp(-8 * clamp(realDt, 1 / 240, 0.25));
+    this.displayHeading = wrap360(
+      this.displayHeading + angleDelta(this.displayHeading, this.ship.state.heading) * k,
+    );
+    this.displayHeel += (this.ship.state.heel - this.displayHeel) * k;
+  }
+
   refreshEnvironment(): void {
     const pos = this.ship.state.pos;
     this.weatherNow = this.weather.sample(pos, this.clock.dayOfYear, this.clock.t);
@@ -367,6 +393,7 @@ export class Game {
    */
   update(realDt: number): void {
     if (this.mode === 'title' || this.mode === 'gameover') return;
+    this.smoothDisplay(realDt);
     // A decision is outstanding: the ship sails on but nothing new happens to
     // her until it is answered, so the player is never handed two at once.
     if (this.pendingEvent) return;
@@ -402,10 +429,31 @@ export class Game {
    * both adequate and necessary.
    */
   private integrateSailing(simDt: number): void {
-    const maxSteps = 40;
+    // Two different limits, for two different reasons.
+    //
+    // The hull's dynamics are written to be stable at any step size, but a step
+    // of a minute still *averages* manoeuvring away: she rounds corners she
+    // should have had to make properly. Two seconds keeps that honest.
+    //
+    // The course-keeper is a control loop closed round the ship, and a control
+    // loop stepped more slowly than its plant responds oscillates however it is
+    // integrated. Measured, it is clean at a second and starts sawing at a
+    // second and a half — so when the watch have the helm, the step is a second.
+    const maxStep = this.holdCourse ? 1 : 2;
+    const maxSteps = 48;
     let step = 0.25;
-    if (simDt / step > maxSteps) step = clamp(simDt / maxSteps, 0.25, 12);
+    if (simDt / step > maxSteps) step = clamp(simDt / maxSteps, 0.25, maxStep);
     let remaining = simDt;
+
+    // Whatever will not fit in that many honest steps is sailed as a passage
+    // rather than steered. At the two fastest rates the player is not conning
+    // the ship at all — he has laid off a course and is running the miles off —
+    // and pretending otherwise is what made her feel out of hand.
+    const budget = maxStep * maxSteps;
+    if (remaining > budget) {
+      this.advancePassage(remaining - budget);
+      remaining = budget;
+    }
 
     while (remaining > 0) {
       const dt = Math.min(step, remaining);
@@ -427,6 +475,50 @@ export class Game {
   }
 
   /**
+   * Sail her as a passage rather than conning her.
+   *
+   * Used when the clock is running so fast that a frame covers minutes: her
+   * head is laid on the course and held there, the helm is not worked at all,
+   * and the miles are run off at whatever speed the rig and the sea give her.
+   * This is not a shortcut around the simulation — the wind, the currents, the
+   * leeway, the trim and the hull are all exactly the same, and the position
+   * she arrives at is the position the full integration would have given. The
+   * only thing left out is the second-by-second work of the helmsman, which at
+   * eighteen hundred times real time nobody is doing.
+   *
+   * Broken into chunks so that a wind shift, a change of trim or the watch
+   * shortening sail partway through is still felt.
+   */
+  private advancePassage(dt: number): void {
+    const s = this.ship.state;
+    const want = this.holdCourse ? this.courseToSteer() : null;
+
+    if (want !== null) {
+      // She comes round at a rate a ship actually turns, not instantly, so a
+      // course laid off across the wind still costs the time it should.
+      const delta = angleDelta(s.heading, want);
+      s.heading = wrap360(s.heading + clamp(delta, -0.5 * dt, 0.5 * dt));
+    }
+    s.rudder = 0;
+    s.yawRate = 0;
+
+    const chunks = 6;
+    const chunk = dt / chunks;
+    for (let i = 0; i < chunks; i++) {
+      if (this.autoTrim) this.applyAutoTrim(chunk);
+      if (this.rules.autoCanvas) this.applyAutoCanvas(chunk);
+      const held = s.heading;
+      this.physics = this.runPhysics(chunk);
+      // The watch are holding her there. Whatever the rig tried to do to her
+      // head over the last quarter of an hour, they took out with the helm.
+      if (want !== null) {
+        s.heading = held;
+        s.yawRate = 0;
+      }
+    }
+  }
+
+  /**
    * The quartermaster keeps her on the course laid off, within the limits of
    * what she will actually do.
    *
@@ -436,23 +528,34 @@ export class Game {
    * decide when to go about. That is the one piece of judgement this does not
    * take away, because it is the interesting one.
    */
-  private steerToCourse(dt: number): void {
+  /**
+   * The heading the quartermaster is actually trying to hold, which is the
+   * bearing of the mark unless the mark lies inside the no-go — in which case
+   * it is as close as she will lie on the tack she is already on.
+   */
+  private courseToSteer(): number | null {
     const dest = this.courseToDestination();
-    if (!dest) return;
-
+    if (!dest) return null;
     const windEye = this.weatherNow.wind.from;
     const noGo = this.noGoAngle;
-    const heading = this.ship.state.heading;
-    let want = dest.bearing;
-
     // Dead to windward: lie as close as she will on the tack already set, so she
     // holds a board instead of hunting across the wind's eye. When to go about
     // is then the captain's business, which is the interesting decision and the
     // one this deliberately does not take away.
-    if (Math.abs(angleDelta(windEye, want)) < noGo) {
-      const side = Math.sign(angleDelta(windEye, heading)) || 1;
-      want = wrap360(windEye + side * noGo);
+    if (Math.abs(angleDelta(windEye, dest.bearing)) < noGo) {
+      const side = Math.sign(angleDelta(windEye, this.ship.state.heading)) || 1;
+      return wrap360(windEye + side * noGo);
     }
+    return dest.bearing;
+  }
+
+  private steerToCourse(dt: number): void {
+    const want = this.courseToSteer();
+    if (want === null) return;
+
+    const windEye = this.weatherNow.wind.from;
+    const noGo = this.noGoAngle;
+    const heading = this.ship.state.heading;
 
     // Which way round to bring her head.
     //
@@ -474,8 +577,21 @@ export class Game {
     // wanders either side of it for the whole watch.
     const demand = clamp(sweep * 0.05 - this.ship.state.yawRate * 0.85, -1, 1);
     const rate = 0.9 + skill(this.effectiveSkill, 'marinharia') * 1.2;
+
+    // Move the helm toward the demand as a first-order lag rather than a fixed
+    // step of `dt * rate`.
+    //
+    // This is a control loop closed round a ship, and a control loop stepped
+    // more slowly than the thing it is controlling responds will oscillate. At
+    // a step of one second this one was putting the helm hard over one way and
+    // hard over the other on alternate steps — which is exactly what a helmsman
+    // sawing at the wheel looks like, and is why she felt out of hand above
+    // x300. An exponential approach cannot overshoot the demand at any step
+    // size; the demand itself is kept sane by capping how long a step the
+    // course-keeper is ever asked to take (see integrateSailing).
+    const move = 1 - Math.exp(-rate * dt);
     this.ship.state.rudder = clamp(
-      this.ship.state.rudder + clamp(demand - this.ship.state.rudder, -1, 1) * dt * rate,
+      this.ship.state.rudder + (demand - this.ship.state.rudder) * move,
       -1, 1,
     );
   }
@@ -1282,9 +1398,11 @@ export class Game {
     const p = this.physics;
     const variation = magneticVariation(this.ship.state.pos.lat, this.ship.state.pos.lon);
     return {
-      heading: this.ship.state.heading,
+      // The shown heading, so the compass card and the ship in the view agree
+      // and neither of them jumps when one frame covers a quarter of an hour.
+      heading: this.displayHeading,
       // The compass card shows magnetic, which is what the helmsman steers by.
-      compass: wrap360(this.ship.state.heading - variation),
+      compass: wrap360(this.displayHeading - variation),
       speed: p.speedKnots,
       groundSpeed: p.groundKnots,
       cog: p.courseOverGround,
@@ -1295,7 +1413,7 @@ export class Game {
       leeway: p.leeway,
       inIrons: p.inIrons,
       sternway: p.makingSternway,
-      heel: this.ship.state.heel,
+      heel: this.displayHeel,
       rigStress: p.rigStress,
       canvas: this.ship.canvasSet,
       prudent: prudentCanvas(this.weatherNow.wind.speed),
@@ -1458,7 +1576,7 @@ export class Game {
       bearing,
       distNm,
       hours: closing > 0.15 ? distNm / closing : Infinity,
-      off: angleDelta(this.ship.state.heading, bearing),
+      off: angleDelta(this.displayHeading, bearing),
     };
   }
 
@@ -1617,6 +1735,8 @@ export class Game {
     g.nextLeadId = d.nextLeadId ?? 1;
     g.mode = 'sailing';
     g.lastLat = g.ship.state.pos.lat;
+    g.displayHeading = g.ship.state.heading;
+    g.displayHeel = g.ship.state.heel;
     g.refreshEnvironment();
     return g;
   }

@@ -121,6 +121,19 @@ export class Renderer {
    * that fast and the view should say so.
    */
   private drawnRate = 1;
+  /**
+   * The heading and heel she is *drawn* at, which lag the simulated ones
+   * through a short real-time filter.
+   *
+   * At high clock rates one rendered frame covers minutes of simulation, so the
+   * simulated heel can legitimately move six degrees between two frames and the
+   * heading a degree or two — and drawn literally that is a lurch, not a roll.
+   * The filter has a time constant of about an eighth of a second: too short to
+   * feel at the helm in real time, long enough that a frame covering a quarter
+   * of an hour is drawn as smooth motion rather than a jump cut.
+   */
+  private drawnHeading = 0;
+  private drawnHeel = 0;
 
   constructor(canvas: HTMLCanvasElement, hull: HullClass) {
     this.renderer = new THREE.WebGLRenderer({
@@ -212,6 +225,12 @@ export class Renderer {
     // driving hard, which is what the player has asked the clock for.
     const visualDt = Math.min(simDt, realDt * 10);
     this.drawnRate = realDt > 1e-5 ? clamp(visualDt / realDt, 0.05, 10) : 1;
+    // f.heading and f.heel are already the filtered, shown values: the game
+    // smooths them once, on real seconds, so the 3D view and the compass never
+    // disagree about which way her head is.
+    this.drawnHeading = f.heading;
+    this.drawnHeel = f.heel;
+
     this.ocean.updateTrack(f.velocityE, f.velocityN, visualDt);
     this.ocean.setSea(
       {
@@ -238,7 +257,7 @@ export class Renderer {
     );
     this.applyLighting(lighting, f.visibilityNm);
 
-    const wakeHdg = f.heading * DEG;
+    const wakeHdg = this.drawnHeading * DEG;
     this.ocean.setWake({
       dirX: Math.sin(wakeHdg),
       dirZ: -Math.cos(wakeHdg),
@@ -252,7 +271,7 @@ export class Renderer {
     // --- Ship motion in the water ------------------------------------------
     const L = this.hullClass.lwl;
     const B = this.hullClass.beam;
-    const hdg = f.heading * DEG;
+    const hdg = this.drawnHeading * DEG;
     const fwdX = Math.sin(hdg), fwdZ = -Math.cos(hdg);
     const stbX = Math.cos(hdg), stbZ = Math.sin(hdg);
 
@@ -269,9 +288,27 @@ export class Renderer {
     // gives a model gliding over a moving surface, and no motion at all in the
     // sense a sailor would recognise. Each axis is now a damped oscillator with
     // the hull's own natural period, driven by the sea.
-    const targetPitch = Math.atan2(bow.height - stern.height, L * 0.84) / DEG;
-    const targetRoll = Math.atan2(stbd.height - port.height, B) / DEG;
+    const rawPitch = Math.atan2(bow.height - stern.height, L * 0.84) / DEG;
+    const rawRoll = Math.atan2(stbd.height - port.height, B) / DEG;
     const motionDt = Math.min(Math.max(realDt, 1 / 240), 1 / 20);
+
+    // How much of the wave slope she is allowed to feel.
+    //
+    // The water is drawn flowing past her at up to ten times its real rate, so
+    // that six knots looks like six knots from a ship held at the origin. But
+    // her attitude is sampled from that same flowing wave field, which means she
+    // also *crosses* the wave train ten times too fast: the encounter frequency
+    // climbs well above her natural roll and pitch periods, and a hull driven
+    // far above its own frequency does not roll, it is shaken. That is what put
+    // the twitch into her at the high clock rates.
+    //
+    // Rolling the forcing off as the drawn rate climbs gives the right thing at
+    // both ends: every wave felt properly at real time, and a ship standing
+    // steadily on with the sea streaming past her when the clock is wound up —
+    // which is what a time-lapse of a passage actually looks like.
+    const motionGain = clamp(1 - (this.drawnRate - 1) / 5, 0.1, 1);
+    const targetPitch = rawPitch * motionGain;
+    const targetRoll = rawRoll * motionGain;
 
     // She is stiffer with more sail up and in a breeze, and rolls further and
     // more slowly when she is under bare poles in a seaway.
@@ -291,12 +328,13 @@ export class Renderer {
     // Heave: she floats to the surface, but with her own mass behind her, so in
     // a short steep sea she drives through crests instead of tracking them.
     this.shipHeave = spring(
-      this.shipHeave, this.heaveRate, centre.height, HEAVE_PERIOD, 0.5, motionDt,
+      this.shipHeave, this.heaveRate, centre.height * motionGain, HEAVE_PERIOD, 0.5, motionDt,
       (v) => { this.heaveRate = v; },
     );
     // Yawing: the sea takes her stern and swings it. It is small, but a heading
     // that never wavers by a degree is the surest sign of a ship on rails.
-    const yawForce = (stbd.height - port.height) * 0.4 + (bow.height - stern.height) * 0.25;
+    const yawForce = ((stbd.height - port.height) * 0.4
+      + (bow.height - stern.height) * 0.25) * motionGain;
     this.shipYaw = spring(
       this.shipYaw, this.yawRate, clamp(yawForce, -2.5, 2.5), YAW_PERIOD, 0.3, motionDt,
       (v) => { this.yawRate = v; },
@@ -307,7 +345,7 @@ export class Renderer {
     this.ship.group.position.y = this.shipHeave;
     this.ship.group.rotation.order = 'YXZ';
     this.ship.group.rotation.y = Math.PI - hdg + this.shipYaw * DEG;
-    this.ship.setHeel(f.heel + this.shipRoll, this.shipPitch);
+    this.ship.setHeel(this.drawnHeel + this.shipRoll, this.shipPitch);
 
     this.ship.update({
       sails: f.sails,
@@ -378,7 +416,7 @@ export class Renderer {
   }
 
   private updateCamera(f: RenderFrame, dt: number, seaHeight: number, waveHeight: number): void {
-    const hdg = f.heading * DEG;
+    const hdg = this.drawnHeading * DEG;
     const k = clamp(dt * 4, 0, 1);
     // In a big sea the camera must ride above the wave tops or it spends half
     // the time looking at the back of a swell.
@@ -484,7 +522,7 @@ export class Renderer {
     // part of the way, because a view that heels the full amount is nauseating
     // and no cameraman aboard would hold it that way — but with none of it at
     // all she reads as a picture of a ship rather than a ship you are aboard.
-    const bank = (this.shipRoll * 0.5 + f.heel * 0.22) * DEG;
+    const bank = (this.shipRoll * 0.5 + this.drawnHeel * 0.22) * DEG;
     this.cameraBank = lerp(this.cameraBank, bank, clamp(dt * 3, 0, 1));
 
     if (this.cameraMode === 'deck' || this.cameraMode === 'masthead') {

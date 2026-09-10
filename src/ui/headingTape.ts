@@ -51,7 +51,7 @@ export class HeadingTape {
     const h = this.height;
     ctx.clearRect(0, 0, w, h);
 
-    const heading = g.ship.state.heading;
+    const heading = g.displayHeading;
     const perDeg = w / this.span;
     /** Where a compass bearing falls on the strip, or null when it is off it. */
     const x = (bearing: number): number => w / 2 + angleDelta(heading, bearing) * perDeg;
