@@ -2,6 +2,8 @@ import './style.css';
 
 import { DEG, clamp } from './core/math';
 import { Game } from './game/state';
+import { rollOfficerEvent } from './game/officerEvents';
+import { rollSeaEvent } from './game/seaEvents';
 import { KNOTS } from './ship/physics';
 import { sightingRangeNm } from './navigation/charts';
 import { Renderer, type RenderFrame } from './render/renderer';
@@ -236,6 +238,8 @@ if (import.meta.env.DEV) {
         }
         g.ship.state.heading = heading;
       },
+      rollOfficerEvent,
+      rollSeaEvent,
     }),
   });
 }

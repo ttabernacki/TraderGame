@@ -39,6 +39,10 @@ export interface Officer {
   ashoreAt?: string;
   ashoreSince?: number;
   wage: number;
+  /** Character: see progression/officers. Moves numbers and gives him opinions. */
+  trait?: string;
+  /** Things the captain has done that this man remembers, newest first. */
+  memory?: string[];
 }
 
 export interface Provisions {
@@ -171,6 +175,12 @@ export interface CrewUpdateContext {
   beyondTheKnown: boolean;
   gold: number;
   rng: Rng;
+  /** Daily morale added by the character of the officers aft. */
+  wardroomMorale?: number;
+  /** Multiplies unrest accumulation. */
+  wardroomUnrest?: number;
+  /** Multiplies the dread of unsailed water. */
+  wardroomFear?: number;
 }
 
 /**
@@ -317,18 +327,20 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
     // The fear of unknown water was not a metaphor. Crews genuinely believed the
     // sea south of Cape Bojador boiled, and turned back twelve times before Gil
     // Eanes finally sailed past it in 1434.
-    moraleDelta -= d * 0.014 * clamp(1 - ctx.leadership, 0.15, 1);
+    moraleDelta -= d * 0.014 * clamp(1 - ctx.leadership, 0.15, 1) * (ctx.wardroomFear ?? 1);
   }
   if (ctx.ashore) moraleDelta += d * 0.05;
   if (p.wine > 0) moraleDelta += d * 0.004;
   if (p.fresh > 0) moraleDelta += d * 0.006;
+  moraleDelta += d * (ctx.wardroomMorale ?? 0);
 
   crew.morale = clamp(crew.morale + moraleDelta, 0, 1);
 
   // --- Unrest -------------------------------------------------------------
   if (crew.morale < 0.3) {
     crew.unrest = clamp(
-      crew.unrest + d * (0.3 - crew.morale) * 0.42 * clamp(1.3 - ctx.leadership, 0.2, 1.3),
+      crew.unrest + d * (0.3 - crew.morale) * 0.42 * clamp(1.3 - ctx.leadership, 0.2, 1.3)
+        * (ctx.wardroomUnrest ?? 1),
       0, 2,
     );
     if (crew.unrest > 0.45 && crew.unrest - d * 0.2 <= 0.45) {

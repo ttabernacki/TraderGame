@@ -2,6 +2,7 @@ import { clamp, compassPoint, formatBearing, wrap360 } from '../core/math';
 import { beaufortName } from '../world/wind';
 import { moraleWord } from '../crew/crew';
 import { enduranceDays } from '../crew/crew';
+import { daysLeft } from '../progression/ventures';
 import type { Game, MastTrim } from '../game/state';
 import { append, clear, el, hudRow, svg } from './dom';
 import { HeadingTape } from './headingTape';
@@ -19,6 +20,7 @@ export class Hud {
   private ship = el('div', { class: 'hud-panel', id: 'hud-ship' });
   private alerts = el('div', { class: 'hud-panel', id: 'hud-alerts' });
   private course = el('div', { class: 'hud-panel', id: 'hud-course' });
+  private orders = el('div', { class: 'hud-panel', id: 'hud-orders' });
   tape = new HeadingTape();
   private hint = el('div', { class: 'hint' });
 
@@ -44,13 +46,13 @@ export class Hud {
 
     this.root.append(
       this.tape.root, this.nav, this.wind, this.time, this.ship,
-      this.course, this.alerts, this.hint,
+      this.course, this.orders, this.alerts, this.hint,
     );
     this.hint.innerHTML =
       '<b>A</b>/<b>D</b> helm &nbsp; <b>X</b> midships &nbsp; <b>W</b>/<b>S</b> canvas &nbsp; ' +
       '<b>Q</b>/<b>E</b> trim &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
       '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>H</b> hold course &nbsp; ' +
-      '<b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
+      '<b>O</b> orders &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
   }
 
   update(g: Game): void {
@@ -208,6 +210,12 @@ export class Hud {
       );
     }
 
+    // --- What she is at sea for --------------------------------------------
+    // The single most important thing on the screen on the fortieth day of a
+    // passage, when the sailing has become automatic and the reason for it has
+    // not been in front of the player for a week.
+    this.renderOrders(g);
+
     // --- Alerts ------------------------------------------------------------
     clear(this.alerts);
     for (const a of g.alerts.slice(-3)) {
@@ -226,13 +234,86 @@ export class Hud {
     } else {
       this.hint.innerHTML =
         '<b>A</b>/<b>D</b> helm &nbsp; <b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
-        '<b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; <b>K</b> crew &nbsp; ' +
-        '<b>V</b> view &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
+        '<b>O</b> orders &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
+        '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
     }
+  }
+
+  /**
+   * A short standing list of what the ship owes: the next unfinished article of
+   * the commission, the charter nearest its date, and the freshest rumour. Not
+   * the whole of any of them — that is what the orders screen is for — but
+   * enough that the reason for the passage is never more than a glance away.
+   */
+  private renderOrders(g: Game): void {
+    const lines: { k: string; v: string; urgent?: boolean }[] = [];
+
+    const patent = g.crown.patent;
+    if (patent) {
+      const next = patent.objectives.find((o) => !o.complete && o.kind !== 'return')
+        ?? patent.objectives.find((o) => !o.complete);
+      if (next) {
+        const want = next.amount ?? 1;
+        lines.push({
+          k: 'The King',
+          v: want > 1
+            ? `${next.description} (${Math.min(next.progress, want)}/${want})`
+            : next.description,
+        });
+      } else {
+        lines.push({ k: 'The King', v: 'Discharged. Bring her home.' });
+      }
+    }
+
+    const soonest = g.activeVentures
+      .slice()
+      .sort((a, b) => a.dueBy - b.dueBy)[0];
+    if (soonest) {
+      const left = daysLeft(soonest, g.clock.t);
+      lines.push({
+        k: 'Freight',
+        v: left < 0
+          ? `${soonest.patron} — ${Math.abs(left).toFixed(0)} days overdue`
+          : `${soonest.patron} — ${left.toFixed(0)} days`,
+        urgent: left < 14,
+      });
+    }
+
+    const lead = g.openLeads[g.openLeads.length - 1];
+    if (lead) lines.push({ k: 'Hearsay', v: kindShort(lead.kind) });
+
+    const padrao = g.padraoCheck();
+    if (padrao.ok) {
+      lines.push({ k: 'Ashore', v: 'A pillar may be landed here — U' });
+    }
+
+    clear(this.orders);
+    this.orders.style.display = lines.length > 0 ? '' : 'none';
+    if (lines.length === 0) return;
+
+    append(this.orders,
+      el('div', { class: 'hud-title' }, 'Under orders'),
+      ...lines.map(({ k, v, urgent }) => el('div', { class: 'hud-row' },
+        el('span', { class: 'k' }, k),
+        el('span', { class: 'v', style: urgent ? { color: '#d4553f' } : {} }, v))),
+      el('div', { class: 'hud-row', style: { marginTop: '3px' } },
+        el('span', { class: 'k', style: { fontSize: '11px', fontStyle: 'italic' } },
+          'O for the full orders')),
+    );
   }
 
   setVisible(v: boolean): void {
     this.root.style.display = v ? '' : 'none';
+  }
+}
+
+function kindShort(kind: string): string {
+  switch (kind) {
+    case 'goods': return 'a place that trades, to the south';
+    case 'water': return 'a bay with good water';
+    case 'passage': return 'a way through';
+    case 'peril': return 'a warning worth heeding';
+    default: return 'a town nobody has charted';
   }
 }
 

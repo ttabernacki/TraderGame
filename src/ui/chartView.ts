@@ -259,6 +259,9 @@ export class ChartView {
     if (this.showTrack) this.drawTrack(ctx, g);
     this.drawPorts(ctx, g);
     if (this.showPlaces) this.drawPlaces(ctx, g);
+    this.drawLeads(ctx, g);
+    this.drawPadroes(ctx, g);
+    this.drawRivalFrontier(ctx, g, rect);
     this.drawCourse(ctx, g);
     this.drawReckoning(ctx, g);
     this.drawScaleBar(ctx, rect);
@@ -470,6 +473,94 @@ export class ChartView {
     }
   }
 
+  /**
+   * Hearsay, pricked off.
+   *
+   * Drawn as a circle rather than a point, because that is what a rumour
+   * actually is: somewhere in there, probably, according to a man in a wine
+   * shop. The circle is the error the teller is worth, and a wide one is the
+   * game telling the player exactly how much water he will have to search.
+   */
+  private drawLeads(ctx: CanvasRenderingContext2D, g: Game): void {
+    for (const l of g.openLeads) {
+      const s = this.toScreen(l.lat, l.lon);
+      // The error circle, in the chart's own scale.
+      const edge = this.toScreen(l.lat + l.errorNm / 60, l.lon);
+      const r = Math.max(Math.abs(edge.y - s.y), 4);
+      ctx.save();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = 'rgba(120, 74, 40, 0.55)';
+      ctx.fillStyle = 'rgba(170, 130, 70, 0.10)';
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      // A query mark at the centre: the cartographer's own admission.
+      ctx.fillStyle = '#7a4a20';
+      ctx.font = 'italic bold 13px serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('?', s.x, s.y + 4.5);
+      ctx.textAlign = 'left';
+      ctx.font = 'italic 10.5px serif';
+      ctx.fillStyle = 'rgba(122, 74, 32, 0.9)';
+      ctx.fillText(shortSource(l.source), s.x + r + 4, s.y + 3.5);
+    }
+  }
+
+  /** Pillars standing. The only mark on this chart that is not an opinion. */
+  private drawPadroes(ctx: CanvasRenderingContext2D, g: Game): void {
+    for (const p of g.crown.padraoSites) {
+      const s = this.toScreen(p.lat, p.lon);
+      ctx.save();
+      ctx.strokeStyle = '#3c5a8a';
+      ctx.fillStyle = '#3c5a8a';
+      ctx.lineWidth = 1.7;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y + 5);
+      ctx.lineTo(s.x, s.y - 7);
+      ctx.stroke();
+      // The cross on top of it.
+      ctx.beginPath();
+      ctx.moveTo(s.x - 3.5, s.y - 5);
+      ctx.lineTo(s.x + 3.5, s.y - 5);
+      ctx.stroke();
+      ctx.font = '10px serif';
+      ctx.fillText(p.name, s.x + 6, s.y + 14);
+      ctx.restore();
+    }
+  }
+
+  /**
+   * How far the other man has got.
+   *
+   * A line across the chart with his name on it, and everything below it is
+   * still there to be found. It is the single most motivating object on the
+   * screen, which is why it is drawn in a colour that does not belong on a
+   * chart of your own making.
+   */
+  private drawRivalFrontier(ctx: CanvasRenderingContext2D, g: Game, rect: DOMRect): void {
+    const r = g.rival;
+    if (r.eclipsed) return;
+    const y = this.toScreen(r.frontierLat, this.centre.lon).y;
+    if (y < -20 || y > rect.height + 20) return;
+    ctx.save();
+    ctx.setLineDash([9, 6]);
+    ctx.strokeStyle = 'rgba(120, 40, 100, 0.5)';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(rect.width, y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(110, 34, 92, 0.85)';
+    ctx.font = 'italic 11px serif';
+    ctx.fillText(`${r.name} is reported this far`, 12, y - 5);
+    ctx.restore();
+  }
+
   private drawPlaces(ctx: CanvasRenderingContext2D, g: Game): void {
     ctx.font = 'italic 11px serif';
     ctx.fillStyle = '#5a4a37';
@@ -597,7 +688,16 @@ function buildLegend(): HTMLElement {
     item('#a83228', 'Portuguese factory'),
     item('#4a3520', 'Visited'),
     item('rgba(74,53,32,0.42)', 'Sighted only'),
+    item('#3c5a8a', 'A padrão of yours'),
+    item('rgba(170,130,70,0.55)', 'Where a rumour points'),
+    item('rgba(110,34,92,0.6)', 'How far the other man has got'),
     el('div', { style: { marginTop: '5px', fontStyle: 'italic', opacity: '0.7', maxWidth: '190px', lineHeight: '1.4' } },
       el('span', {}, 'The dotted ellipse is the doubt in your own position, not a margin on the chart.')),
   );
+}
+
+/** "a pilot at Malindi" → "a pilot", for a label with no room. */
+function shortSource(source: string): string {
+  const at = source.lastIndexOf(' at ');
+  return at > 0 ? source.slice(0, at) : source;
 }

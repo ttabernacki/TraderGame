@@ -8,10 +8,12 @@ import { Ship } from '../ship/ship';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
 import { makeOfficer, OFFICER_ROLES, type OfficerRole } from '../crew/crew';
 import { skill, train } from '../crew/skills';
+import { assignTrait, loyaltyWord, officerTitle, traitDef } from '../progression/officers';
+import { daysLeft, ventureLine, ventureTons } from '../progression/ventures';
 import type { Game } from '../game/state';
 import { append, button, card, clear, el, kv } from './dom';
 
-type Tab = 'town' | 'market' | 'stores' | 'yard' | 'hands';
+type Tab = 'town' | 'market' | 'freight' | 'stores' | 'yard' | 'hands';
 
 /** Everything that happens at anchor: the market, the yard, and the crimp house. */
 export class PortView {
@@ -20,6 +22,8 @@ export class PortView {
   private head = el('div', { class: 'screen-head' });
   private foot = el('div', { class: 'screen-foot' });
   private tab: Tab = 'town';
+  /** Goods the player has been warned about selling out from under a charter. */
+  private confirmSale: string | null = null;
   private game: Game | null = null;
   private quantities = new Map<string, number>();
   private notice: { text: string; grave?: boolean } | null = null;
@@ -72,6 +76,7 @@ export class PortView {
     const tabs: [Tab, string][] = [
       ['town', 'The place'],
       ['market', 'Market'],
+      ['freight', g.ventureOffers.length > 0 ? `Freight (${g.ventureOffers.length})` : 'Freight'],
       ['stores', 'Water and stores'],
       ['yard', 'Shipwrights'],
       ['hands', 'Hands and officers'],
@@ -79,7 +84,7 @@ export class PortView {
     this.body.append(el('div', { class: 'tabs' },
       ...tabs.map(([t, label]) => el('button', {
         class: this.tab === t ? 'active' : '',
-        onclick: () => { this.tab = t; this.notice = null; this.render(); },
+        onclick: () => { this.tab = t; this.notice = null; this.confirmSale = null; this.render(); },
       }, label)),
     ));
 
@@ -91,6 +96,7 @@ export class PortView {
     switch (this.tab) {
       case 'town': this.renderTown(inner, g, rel); break;
       case 'market': this.renderMarket(inner, g, rel); break;
+      case 'freight': this.renderFreight(inner, g, rel); break;
       case 'stores': this.renderStores(inner, g); break;
       case 'yard': this.renderYard(inner, g); break;
       case 'hands': this.renderHands(inner, g); break;
@@ -182,7 +188,12 @@ export class PortView {
         el('td', { class: 'num', style: { color: margin > 3 ? 'var(--green)' : 'inherit' } },
           gd.lisbon.toFixed(0)),
         el('td', { class: 'num' }, l.stock > 0 ? l.stock.toFixed(0) : '—'),
-        el('td', { class: 'num' }, held > 0 ? held.toFixed(0) : '—'),
+        el('td', { class: 'num', title: consignedOf(g, l.goodId) > 0 ? 'Part of this is on charter' : undefined },
+          held > 0
+            ? consignedOf(g, l.goodId) > 0
+              ? `${held.toFixed(0)} (${consignedOf(g, l.goodId)} on charter)`
+              : held.toFixed(0)
+            : '—'),
         el('td', {},
           el('div', { style: { display: 'flex', gap: '4px', alignItems: 'center' } },
             el('input', {
@@ -246,6 +257,27 @@ export class PortView {
     const take = Math.min(qty, held, l.appetite);
     if (take <= 0) { this.notice = { text: 'They will not take any more of that.', grave: true }; this.render(); return; }
 
+    // Cargo signed for on charter is somebody else's. Selling it out from under
+    // a merchant is a real option — it is money now against a forfeit later —
+    // but it must never happen because the player did not know it was aboard.
+    const consigned = g.activeVentures
+      .filter((v) => v.loaded && v.goodId === l.goodId)
+      .reduce((sum, v) => sum + v.quantity, 0);
+    if (consigned > 0 && held - take < consigned - 0.01) {
+      const short = Math.ceil(consigned - (held - take));
+      if (!this.confirmSale) {
+        this.confirmSale = l.goodId;
+        this.notice = {
+          text: `${short} of that is consigned on charter. Sell it and the charter is broken, `
+            + 'the advance is forfeit and the penalty falls due. Press Sell again to do it.',
+          grave: true,
+        };
+        this.render();
+        return;
+      }
+    }
+    this.confirmSale = null;
+
     const lot = g.ship.cargo.find((c) => c.goodId === l.goodId);
     const paid = lot ? lot.cost : 0;
     const revenue = take * l.bid;
@@ -263,6 +295,74 @@ export class PortView {
       text: `Sold for ${revenue.toFixed(0)} cruzados` + (paid > 0 ? ` — ${profit >= 0 ? 'profit' : 'loss'} ${Math.abs(profit).toFixed(0)}.` : '.'),
     };
     this.render();
+  }
+
+  /**
+   * The counting house.
+   *
+   * Charters on offer here, and the hearsay of the waterfront. The two belong
+   * together because they are the same thing from the captain's side: the
+   * reasons to go somewhere that are not the King's orders.
+   */
+  private renderFreight(host: HTMLElement, g: Game, rel: ReturnType<Game['relationsFor']>): void {
+    const left = el('div', {});
+    const right = el('div', {});
+
+    if (!rel.mayTrade) {
+      left.append(el('div', { class: 'notice' },
+        'No merchant here will sign anything with a man who has no leave to trade.'));
+    } else if (g.ventureOffers.length === 0) {
+      left.append(card('No freight offering',
+        el('p', {}, 'Nothing is waiting for a bottom. Come back when the market has turned over, '
+          + 'or when there is a ship expected that does not arrive.')));
+    } else {
+      for (const v of g.ventureOffers) {
+        const days = Math.round(daysLeft(v, g.clock.t));
+        // The hold is measured in tons, not in casks: room is what the cargo
+        // stows, not how many of it there are.
+        const tons = ventureTons(v);
+        const room = g.ship.holdFree >= tons - 0.01;
+        left.append(card(v.patron,
+          el('p', { class: 'flavour' }, ventureLine(v)),
+          kv('Freight paid on delivery', `${v.fee} cruzados`),
+          kv('Advance in hand', `${v.advance} cruzados`),
+          kv('Time allowed', `${days} days`),
+          kv('Forfeit if she is late', `${v.penalty} cruzados`),
+          kv('It will stow', `${tons.toFixed(1)} tons of ${g.ship.holdFree.toFixed(1)} free`,
+            room ? '' : 'bad'),
+          el('div', { class: 'row' },
+            button('Sign for it', () => {
+              this.notice = { text: g.acceptVenture(v.id) };
+              this.render();
+            }, { primary: true, disabled: !room }),
+          ),
+        ));
+      }
+    }
+
+    const active = g.activeVentures;
+    right.append(card('Carried on your own account',
+      active.length === 0
+        ? el('p', {}, 'Nothing consigned.')
+        : el('div', {}, ...active.map((v) => {
+            const left2 = Math.round(daysLeft(v, g.clock.t));
+            return el('p', { class: left2 < 10 ? 'bad' : '' },
+              `${ventureLine(v)} for ${v.patron} — ${left2 < 0 ? `${-left2} days overdue` : `${left2} days`}.`);
+          })),
+    ));
+
+    const heard = g.openLeads;
+    right.append(card('What the waterfront says',
+      heard.length === 0
+        ? el('p', {}, 'Nothing you have not heard before. Buy a pilot a drink and wait.')
+        : el('div', {}, ...heard.slice(0, 4).map((l) =>
+            el('p', { class: 'flavour', style: { marginBottom: '9px' } }, l.text))),
+      el('p', { style: { fontSize: '13px', opacity: '0.75' } },
+        'Every one of these is a man\u2019s word, and a man\u2019s word is worth what the man is worth. '
+        + 'The chart will show you where they point, which is not the same as where the thing is.'),
+    ));
+
+    host.append(el('div', { class: 'cols two' }, left, right));
   }
 
   private renderStores(host: HTMLElement, g: Game): void {
@@ -409,6 +509,9 @@ export class PortView {
     } else {
       g.ship.upgrades.push(id);
     }
+    // Pillars are consumed. Fitting them again re-stocks the hold, which is what
+    // a captain came back to Lisbon for between voyages.
+    if (id === 'padroes') g.crown.padraoStock += 6;
     g.ship.applyRigConversion();
     g.ship.refreshDerived();
     g.waitDays(u.days);
@@ -458,6 +561,39 @@ export class PortView {
               this.render();
             }, { primary: true, disabled: g.crown.gold < cost }))
         : el('p', {}, 'She is fully manned.'),
+    ));
+
+    // Who you already have, and what they are. A captain knows his own officers.
+    const aboard = g.crew.officers.filter((o) => o.alive && !o.ashoreAt);
+    left.append(card('Your officers',
+      ...aboard.map((o) => {
+        const t = traitDef(o.trait);
+        return el('div', { style: { marginBottom: '9px' } },
+          el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px' } },
+            el('span', {}, `${o.name} — ${officerTitle(o).toLowerCase()}`),
+            el('span', { style: { color: 'var(--ink-soft)', fontSize: '12.5px' } }, loyaltyWord(o.loyalty)),
+          ),
+          t
+            ? el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', lineHeight: '1.5' } }, t.blurb)
+            : null,
+        );
+      }),
+      el('div', { style: { marginTop: '8px' } },
+        button('Pay the wardroom a month\u2019s wages', () => {
+          const owed = aboard.reduce((sum, o) => sum + o.wage, 0);
+          if (g.crown.gold < owed) {
+            this.notice = { text: 'Not enough in the purse. They will remember it.', grave: true };
+            for (const o of aboard) o.loyalty = clamp(o.loyalty - 0.06, 0, 1);
+            this.render();
+            return;
+          }
+          g.crown.gold -= owed;
+          for (const o of aboard) o.loyalty = clamp(o.loyalty + 0.07, 0, 1);
+          g.logEvent('crew', `Paid the officers ${owed} cruzados at ${def.name}, in coin, on the table.`);
+          this.notice = { text: `${owed} cruzados paid out. Money on the table aft is worth more than a speech.` };
+          this.render();
+        }, { disabled: aboard.length === 0 }),
+      ),
     ));
 
     const right = el('div', {});
@@ -525,12 +661,27 @@ export class PortView {
     g.crown.gold -= price;
     const languages = role === 'lingua' ? [pe.language] : [];
     const o = makeOfficer(role, g.rng, undefined, languages);
+    // What sort of man he turns out to be is not on the quay to be inspected.
+    // You engage him on a recommendation and find out at sea, which is exactly
+    // how it worked and is the only reason the choice is interesting.
+    assignTrait(o, g.rng);
     g.crew.officers.push(o);
     const title = OFFICER_ROLES.find((r) => r.role === role)!.title;
+    const t = traitDef(o.trait);
     g.logEvent('crew', `Shipped ${o.name} as ${title.toLowerCase()} at ${def.name}.`);
-    this.notice = { text: `${o.name} has joined as your ${title.toLowerCase()}.` };
+    this.notice = {
+      text: `${o.name} has joined as your ${title.toLowerCase()}.`
+        + (t ? ` They say of him: ${t.blurb.toLowerCase()}` : ''),
+    };
     this.render();
   }
+}
+
+/** How much of a good in the hold belongs to a merchant rather than to you. */
+function consignedOf(g: Game, goodId: string): number {
+  return g.activeVentures
+    .filter((v) => v.loaded && v.goodId === goodId)
+    .reduce((sum, v) => sum + v.quantity, 0);
 }
 
 function officerCost(role: OfficerRole, wealth: number): number {

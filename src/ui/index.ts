@@ -8,6 +8,8 @@ import { clear, el } from './dom';
 import { EventView } from './eventView';
 import { Hud } from './hud';
 import { LogbookView } from './logbookView';
+import { EpilogueView } from './epilogueView';
+import { OrdersView } from './ordersView';
 import { PortView } from './portView';
 import { SightView } from './sightView';
 import { GameOverView, TitleView } from './titleView';
@@ -39,6 +41,7 @@ export class Ui {
   private port: PortView;
   private audience: AudienceView;
   private court: CourtView;
+  private orders: OrdersView;
   private overlay = el('div', { id: 'overlay' });
   private touch: TouchControls;
   private events: EventView;
@@ -66,6 +69,7 @@ export class Ui {
     this.port = new PortView(back, () => this.setMode('audience'), () => this.setMode('court'));
     this.audience = new AudienceView(() => this.setMode('port'));
     this.court = new CourtView(() => this.setMode('port'));
+    this.orders = new OrdersView(back, () => this.setMode('chart'));
 
     host.append(this.hud.root, this.touch.root, this.events.root, this.overlay);
     this.hud.setVisible(false);
@@ -129,6 +133,13 @@ export class Ui {
         this.overlay.append(this.court.root);
         this.court.open(g);
         break;
+      case 'orders':
+        this.overlay.append(this.orders.root);
+        this.orders.open(g);
+        break;
+      case 'epilogue':
+        this.overlay.append(new EpilogueView(g, this.cb.onNewGame).root);
+        break;
       case 'gameover':
         this.overlay.append(new GameOverView(g, g.gameOverReason ?? 'The ship was lost.', this.cb.onNewGame).root);
         break;
@@ -143,6 +154,11 @@ export class Ui {
   update(g: Game): void {
     if (g.mode === 'gameover' && !this.overlay.querySelector('.screen')) {
       this.setMode('gameover');
+      return;
+    }
+    // The route is open. Everything after this belongs to somebody else.
+    if (g.crown.routeOpened && g.mode !== 'epilogue' && g.mode !== 'title') {
+      this.setMode('epilogue');
       return;
     }
     if (g.mode === 'sailing') {
@@ -186,7 +202,7 @@ export class Ui {
 
     if (g.mode !== 'sailing') {
       // Toggling the same panel closes it.
-      const toggles: Record<string, GameMode> = { c: 'chart', n: 'sight', l: 'logbook', k: 'crew', p: 'port' };
+      const toggles: Record<string, GameMode> = { c: 'chart', n: 'sight', l: 'logbook', k: 'crew', p: 'port', o: 'orders' };
       if (toggles[k] === g.mode) { this.setMode('sailing'); return true; }
       return false;
     }
@@ -196,10 +212,18 @@ export class Ui {
       case 'n': this.setMode('sight'); return true;
       case 'l': this.setMode('logbook'); return true;
       case 'k': this.setMode('crew'); return true;
+      case 'o': this.setMode('orders'); return true;
       case 'p':
         if (g.dockedAt) { this.setMode('port'); return true; }
         return false;
       case 'v': this.cb.onCycleCamera(); return true;
+      case 'u': {
+        // Land a pillar. The one act in the game that leaves something behind.
+        const check = g.padraoCheck();
+        if (!check.ok) { g.pushAlert(check.reason, 'warning'); return true; }
+        g.pushAlert(g.raisePadrao(), 'note');
+        return true;
+      }
       case 'r':
         if (g.sounding.aground) {
           g.pushAlert(g.tryRefloat(), 'note');

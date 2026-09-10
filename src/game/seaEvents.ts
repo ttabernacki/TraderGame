@@ -310,6 +310,56 @@ const EVENTS: SeaEventDef[] = [
       text: `Timber going past on the ${signBearing(c)} beam — a whole section of deck with the fastenings still in it, and after it a spar, and a hatch cover. Whatever she was, she has been down some days.`,
     }),
   },
+  // --- Another ship --------------------------------------------------------
+  {
+    id: 'strangesail',
+    everyDays: 34,
+    gate: (c) => c.shoreNm < 200 && day(c) && c.absLat < 34,
+    build: (c) => ({
+      id: 'strangesail', severity: 'note',
+      title: 'A sail on the horizon',
+      text: `A sail ${signBearing(c)} — lateen, low in the water, working up along the coast. `
+        + 'She has seen you and has not run, which means either that she is friendly or that '
+        + 'she does not think you are worth running from.',
+      choices: [
+        {
+          label: 'Close her and speak her',
+          detail: 'A stranger who has sailed this coast knows things you do not.',
+          resolve: (g) => {
+            g.clock.t += 4 * 3600;
+            const lead = g.hearFromStranger();
+            if (lead) {
+              return 'Hove to within hail for the better part of an afternoon, and between the '
+                + `pilot's Arabic and your interpreter's guesswork got something out of her `
+                + 'master worth writing in the book. It is in the log.';
+            }
+            g.crew.morale = clamp(g.crew.morale + 0.02, 0, 1);
+            return 'Spoke her for an hour. Salt fish, a little water, and nothing said that you '
+              + 'did not already know. The hands enjoyed seeing another ship, which is worth '
+              + 'something on its own.';
+          },
+        },
+        {
+          label: 'Show her your guns and stand on',
+          detail: 'Costs nothing. Teaches nothing.',
+          resolve: (g) => {
+            g.crew.morale = clamp(g.crew.morale + 0.01, 0, 1);
+            return 'Ran out the two bombards for form\u2019s sake and stood on. She altered away '
+              + 'and was hull down inside the hour.';
+          },
+        },
+        {
+          label: 'Avoid her entirely',
+          detail: 'Loses a few hours to weather. Nobody knows you were here.',
+          resolve: (g) => {
+            g.clock.t += 2 * 3600;
+            return 'Hauled off to windward until she was out of sight. Whoever she was, she has '
+              + 'nothing to report about a Portuguese ship in this water.';
+          },
+        },
+      ],
+    }),
+  },
   {
     id: 'soldiersWind',
     everyDays: 7,

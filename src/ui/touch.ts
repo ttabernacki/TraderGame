@@ -66,10 +66,12 @@ export class TouchControls {
       { label: '››', key: ']', hint: 'Faster' },
       { label: '', key: '', hint: 'Rate' },
       { label: 'Cam', key: 'v', hint: 'View' },
+      { label: 'Orders', key: 'o', hint: 'What the ship is bound to' },
       { label: 'Chart', key: 'c', hint: 'Chart' },
       { label: 'Sight', key: 'n', hint: 'Sextant' },
       { label: 'Log', key: 'l', hint: 'Logbook' },
       { label: 'Crew', key: 'k', hint: 'Crew' },
+      { label: 'Padrão', key: 'u', hint: 'Land a pillar and claim the place' },
       { label: 'Anchor', key: ' ', hint: 'Anchor', wide: true },
     ]);
 

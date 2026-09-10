@@ -185,6 +185,12 @@ export interface Patent {
   narrative: string;
   complete: boolean;
   failed: boolean;
+  /**
+   * True for the commission that opens the route. Discharging it is the end of
+   * the game — everything after India is a different story, told by different
+   * people, in armed carracks.
+   */
+  final?: boolean;
 }
 
 const PATENT_TEMPLATES: {
@@ -238,6 +244,7 @@ const PATENT_TEMPLATES: {
     minStanding: 320,
     build: () => ({
       title: 'The road to the Indies',
+      final: true,
       advance: 1400, reward: 4200, standingReward: 520, returnTo: 'lisboa',
       narrative:
         'Everything since 1415 has been preparation for this. You are to pass the Cape, sail up the eastern side of Africa until you find pilots who know the crossing, and go to India. You will carry a letter for any Christian prince you find. You will bring back pepper. The King has been advised that you will probably not return, and has decided that the attempt is worth making regardless.',
@@ -254,6 +261,7 @@ const PATENT_TEMPLATES: {
     minStanding: 800,
     build: () => ({
       title: 'The pepper fleet',
+      final: true,
       advance: 3000, reward: 9000, standingReward: 700, returnTo: 'lisboa',
       narrative:
         'The route is known and the Crown now wants volume. Load until she is down to her marks, establish a factory where you can, and understand that the Zamorin\'s Muslim merchants have had several years to think about what your arrival means for them.',
@@ -278,6 +286,12 @@ export class Crown {
   completedPatents: string[] = [];
   hasKingsLetter = false;
   padroesRaised = 0;
+  /** Set the day the India commission is discharged at Lisbon. The end. */
+  routeOpened = false;
+  /** Pillars still in the hold. Shipped at Lisbon and not replaceable at sea. */
+  padraoStock = 0;
+  /** Where the pillars stand, which outlives the voyage that set them. */
+  padraoSites: { name: string; lat: number; lon: number; t: number }[] = [];
   /** Coastline charted since the current patent was issued, nautical miles. */
   chartedSincePatent = 0;
 
@@ -286,6 +300,13 @@ export class Crown {
 
   constructor(seed: number) {
     this.rng = new Rng(seed ^ 0xc0de);
+  }
+
+  /** True when one of your own pillars already stands within sight of here. */
+  padraoNear(at: LatLon, withinNm = 60): boolean {
+    return this.padraoSites.some(
+      (p) => haversine(at, { lat: p.lat, lon: p.lon }) / 1852 < withinNm,
+    );
   }
 
   get title(): Title {
@@ -400,6 +421,7 @@ export class Crown {
       standing += this.patent.standingReward;
       lines.push(`Commission "${this.patent.title}" discharged. ${this.patent.reward} cruzados, ${this.patent.standingReward} renown.`);
       this.completedPatents.push(this.patent.id);
+      if (this.patent.final) this.routeOpened = true;
       this.patent = null;
     }
 

@@ -29,10 +29,16 @@ import { Crown, portName } from '../progression/crown';
 import { newRelations, type Relations } from '../diplomacy/contact';
 import { Logbook, type LogKind } from './log';
 import { rollSeaEvent, type SeaEvent } from './seaEvents';
+import { rollOfficerEvent } from './officerEvents';
+import { checkLead, hearRumour, type Lead } from '../progression/leads';
+import { daysLeft, offerVentures, ventureLine, type Venture } from '../progression/ventures';
+import { advanceRival, newRival, type RivalState } from '../progression/rival';
+import { assignTraits, wardroom, type TraitEffects } from '../progression/officers';
+import { good } from '../economy/goods';
 
 export type GameMode =
   | 'sailing' | 'chart' | 'sight' | 'logbook' | 'crew' | 'port'
-  | 'audience' | 'court' | 'shipyard' | 'menu' | 'title' | 'gameover';
+  | 'audience' | 'court' | 'shipyard' | 'menu' | 'title' | 'gameover' | 'orders' | 'epilogue';
 
 /** One mast's sails, as set against how they ought to be. */
 export interface MastTrim {
@@ -93,6 +99,17 @@ export class Game {
   /** Ports the player has actually entered. */
   visitedPorts = new Set<string>();
 
+  /** Rumours picked up in port, and the ones already run down. */
+  leads: Lead[] = [];
+  /** Merchants' charters taken on the captain's own account. */
+  ventures: Venture[] = [];
+  /** Charters on offer where she now lies, refreshed with the market. */
+  ventureOffers: Venture[] = [];
+  /** The other captain, working his way down the coast while you refit. */
+  rival: RivalState;
+  private nextVentureId = 1;
+  private nextLeadId = 1;
+
   mode: GameMode = 'title';
   /** Set while at anchor in a port. */
   dockedAt: string | null = null;
@@ -148,7 +165,12 @@ export class Game {
    */
   holdCourse = false;
 
+  /** Simulated seconds when she dropped down the Tagus, for the epilogue. */
+  startT = 0;
+
   private accumDays = 0;
+  /** Furthest south she has ever been, which is how a captain is measured. */
+  private deepestSouth = 90;
   private lastLat = 0;
   private lastSurveyT = -1e9;
   private lastPortCheck = -1e9;
@@ -168,6 +190,8 @@ export class Game {
     this.crown = new Crown(seed);
     this.markets = new Markets(seed);
     this.skills = newSkills();
+    this.rival = newRival(this.rng);
+    assignTraits(this.crew, this.rng);
 
     for (const p of PORTS) {
       const pe = people(p.people);
@@ -180,6 +204,8 @@ export class Game {
     this.anchored = true;
     this.visitedPorts.add('lisboa');
     this.lastLat = start.lat;
+    this.refreshPortBusiness(portDef('lisboa'));
+    this.startT = this.clock.t;
 
     this.refreshEnvironment();
     this.log.add({
@@ -205,11 +231,30 @@ export class Game {
     const eff = this.effectiveSkill;
     return {
       fouling: 1 + this.ship.condition.fouling * 0.85,
-      crewFactor: crewFactor(this.crew, this.ship.baseHull.crewMin),
+      crewFactor: crewFactor(this.crew, this.ship.baseHull.crewMin) * this.wardroom.handling,
       seamanship: skill(eff, 'marinharia'),
       keel: this.ship.effects.keel,
       integrity: this.ship.condition.hull,
     };
+  }
+
+  /**
+   * The officers' combined effect on the ship, recomputed only when the
+   * wardroom actually changes — it is read every physics step and walking the
+   * officer list at sixty hertz is waste.
+   */
+  private wardroomCache: TraitEffects | null = null;
+  private wardroomStamp = '';
+
+  get wardroom(): TraitEffects {
+    const stamp = this.crew.officers
+      .map((o) => `${o.id}${o.alive ? 1 : 0}${o.ashoreAt ?? ''}${o.loyalty.toFixed(2)}`)
+      .join('|');
+    if (!this.wardroomCache || stamp !== this.wardroomStamp) {
+      this.wardroomCache = wardroom(this.crew);
+      this.wardroomStamp = stamp;
+    }
+    return this.wardroomCache;
   }
 
   /** True where no Portuguese ship has been, which the crew feel keenly. */
@@ -471,22 +516,41 @@ export class Game {
       0, 1,
     );
 
+    const w = this.wardroom;
     const events = updateCrew(this.crew, {
       days,
       ashore: this.anchored && this.dockedAt !== null,
       ration: this.ration,
       leadership: skill(eff, 'lideranca'),
-      surgeonQuality: surgeon ? surgeon.ability : 0,
+      surgeonQuality: (surgeon ? surgeon.ability : 0) + w.physic,
       exertion,
       beyondTheKnown: this.beyondTheKnown,
       gold: this.crown.gold,
       rng: this.rng,
+      wardroomMorale: w.morale,
+      wardroomUnrest: w.unrest,
+      wardroomFear: w.fear,
     });
 
     for (const e of events) {
       this.pushAlert(e.message, e.severity);
       this.logEvent('crew', e.message, e.severity === 'grave');
       if (e.kind === 'mutiny') this.handleMutiny();
+    }
+
+    // A ship is not lost when the last man dies; she is lost when there are not
+    // enough left to work her, and she drifts until she goes ashore or is found
+    // empty. Gama burned the São Rafael for exactly this reason.
+    if (!this.anchored && ableHands(this.crew) < Math.max(4, this.ship.baseHull.crewMin * 0.28)) {
+      this.endGame(
+        this.crew.count === 0
+          ? 'There is nobody left alive aboard. She will be found some months from now, or she '
+            + 'will not be found.'
+          : `There are ${ableHands(this.crew)} men able to stand a watch, and she wants at least `
+            + `${Math.round(this.ship.baseHull.crewMin * 0.28)} to be worked at all. She lies to `
+            + 'the sea with her yards braced any way the wind left them.',
+      );
+      return;
     }
 
     // Water temperature drives fouling: the worm is far worse in the tropics.
@@ -584,6 +648,7 @@ export class Game {
     // Landmarks of the route.
     const landmarks = this.crown.checkLandmarks(pos, this.lastLat);
     this.lastLat = pos.lat;
+    if (pos.lat < this.deepestSouth) this.deepestSouth = pos.lat;
     for (const l of landmarks) {
       this.crown.record('coast', l.name, this.nav.estimated, l.value, this.clock.t);
       this.logEvent('discovery', l.announce, true);
@@ -627,8 +692,13 @@ export class Game {
     if (this.eventCooldown > 0) return;
 
     this.checkArrival();
+    this.checkLeads();
+    this.checkVentures(days);
+    this.advanceRival(days);
 
-    const event = rollSeaEvent(this, days);
+    // The quarterdeck first: a man asking for a judgement outranks a shoal of
+    // fish, and the two must never arrive in the same breath.
+    const event = rollOfficerEvent(this, days) ?? rollSeaEvent(this, days);
     if (!event) return;
 
     this.eventCooldown = event.choices ? 1.6 : 0.55;
@@ -657,6 +727,254 @@ export class Game {
     this.holdCourse = false;
     this.pushAlert(`Up with ${d.name}.`, 'note');
     this.logEvent('note', `Made ${d.name} by the reckoning, and there it was.`, true);
+  }
+
+  /**
+   * The business waiting in a port: charters on offer, and whatever the
+   * waterfront is saying.
+   */
+  refreshPortBusiness(def: PortDef): void {
+    const known = new Set(this.chart.ports.keys());
+    this.ventureOffers = offerVentures(
+      def, this.clock.t, this.rng, known, () => `v${this.nextVentureId++}`,
+    );
+
+    // A port gives up one rumour per visit at most, and only when there is
+    // something there worth hearing. Sitting in the same harbour listening for a
+    // week does not produce a second one.
+    const rel = this.relationsFor(def.id);
+    if (!this.rng.chance(rel.met ? 0.75 : 0.35)) return;
+    const lead = hearRumour(
+      def, known, this.rng, this.clock.t, () => `l${this.nextLeadId++}`,
+    );
+    if (!lead) return;
+    if (this.leads.some((x) => x.targetPort && x.targetPort === lead.targetPort)) return;
+    this.leads.push(lead);
+    this.logEvent('note', lead.text, true);
+    this.pushAlert('You have heard something worth writing down.', 'note');
+  }
+
+  /**
+   * Something learnt from a stranger at sea.
+   *
+   * The rumour system's other door. A pilot met on the water knows the coast
+   * ahead the way a pilot met in a harbour knows it, and speaking a strange
+   * sail is the single most historically loaded thing a caravel could do — half
+   * of what Portugal knew about the Indian Ocean before Gama came out of
+   * conversations exactly like this one.
+   */
+  hearFromStranger(): boolean {
+    const known = new Set(this.chart.ports.keys());
+    // Told from wherever she is, by the nearest port's reckoning of the world.
+    const near = portsNear(this.ship.state.pos, 900)[0];
+    if (!near) return false;
+    const lead = hearRumour(
+      near.def, known, this.rng, this.clock.t, () => `l${this.nextLeadId++}`,
+    );
+    if (!lead) return false;
+    if (this.leads.some((x) => x.targetPort && x.targetPort === lead.targetPort)) return false;
+    lead.source = `the master of a strange sail off ${near.def.name}`;
+    this.leads.push(lead);
+    this.logEvent('note', lead.text, true);
+    this.pushAlert('You have heard something worth writing down.', 'note');
+    train(this.skills, 'diplomacia', 0.6);
+    return true;
+  }
+
+  /** Take a merchant's charter, on your own account and at your own risk. */
+  acceptVenture(id: string): string {
+    const v = this.ventureOffers.find((x) => x.id === id);
+    if (!v || v.taken) return 'That charter is no longer on offer.';
+    const taken = this.ship.addCargo(v.goodId, v.quantity, 0);
+    if (taken < v.quantity - 0.01) {
+      // Put back whatever went in: a part cargo discharges no charter.
+      if (taken > 0) this.ship.removeCargo(v.goodId, taken);
+      return 'She has not the room for it.';
+    }
+    v.taken = true;
+    v.loaded = true;
+    this.crown.gold += v.advance;
+    this.ventures.push(v);
+    this.ventureOffers = this.ventureOffers.filter((x) => x.id !== id);
+    this.logEvent('trade',
+      `Signed for ${v.patron}: ${ventureLine(v)}, ${v.fee} cruzados on delivery and `
+      + `${v.advance} in hand. ${Math.round(daysLeft(v, this.clock.t))} days allowed.`, true);
+    return `Loaded. ${v.advance} cruzados in hand.`;
+  }
+
+  /** Anything consigned here is landed and paid for on arrival. */
+  private deliverVentures(def: PortDef): void {
+    for (const v of this.ventures) {
+      if (v.delivered || v.failed || v.toPort !== def.id) continue;
+      if (this.ship.quantityOf(v.goodId) < v.quantity - 0.01) {
+        v.failed = true;
+        this.crown.gold -= v.penalty;
+        this.logEvent('trade',
+          `${v.patron}\u2019s factor here asked for his ${good(v.goodId).name} and it was not `
+          + 'aboard. The matter will be raised in Lisbon.', true);
+        continue;
+      }
+      this.ship.removeCargo(v.goodId, v.quantity);
+      v.delivered = true;
+      v.loaded = false;
+      this.crown.gold += v.fee;
+      const renown = Math.max(1, Math.round(v.fee / 90));
+      this.crown.standing += renown;
+      this.crown.lifetimeStanding += renown;
+      train(this.skills, 'comercio', 0.9);
+      this.crew.morale = clamp(this.crew.morale + 0.04, 0, 1);
+      this.pushAlert(`Charter discharged. ${v.fee} cruzados.`, 'note');
+      this.logEvent('trade',
+        `Landed ${ventureLine(v)} for ${v.patron}, within his time, and was paid ${v.fee} `
+        + 'cruzados on the quay without argument.', true);
+    }
+  }
+
+  /** Charters still running, for the orders panel. */
+  get activeVentures(): Venture[] {
+    return this.ventures.filter((v) => !v.delivered && !v.failed);
+  }
+
+  /** Rumours heard and not yet run down. */
+  get openLeads(): Lead[] {
+    return this.leads.filter((l) => !l.followed);
+  }
+
+  /**
+   * Rumours run down.
+   *
+   * A lead is confirmed by finding the thing, not by arriving at the position
+   * the rumour named — and arriving at that position and finding open water is
+   * a real outcome, worth saying so, because it is what happened to everybody
+   * who ever followed one.
+   */
+  private checkLeads(): void {
+    const pos = this.ship.state.pos;
+    for (const lead of this.leads) {
+      const result = checkLead(lead, pos);
+      if (!result) continue;
+      lead.followed = true;
+      if (result === 'found') {
+        lead.false = false;
+        this.crown.standing += lead.value;
+        this.crown.lifetimeStanding += lead.value;
+        this.pushAlert(`The rumour was true. ${lead.value} renown.`, 'note');
+        this.logEvent('discovery',
+          `Ran down the report we had from ${lead.source}, and it was where he said it was, `
+          + 'or near enough that a seaman would call it the same place.', true);
+        train(this.skills, 'cartografia', lead.value * 0.05);
+        this.crew.morale = clamp(this.crew.morale + 0.06, 0, 1);
+      } else {
+        lead.false = true;
+        this.crew.morale = clamp(this.crew.morale - 0.05, 0, 1);
+        this.pushAlert('Nothing here. The report was wrong.', 'warning');
+        this.logEvent('note',
+          `Made the position we had from ${lead.source} and there is nothing in it but water. `
+          + 'The hands have opinions about the man who told us.', true);
+      }
+    }
+  }
+
+  /** Charters delivered, and charters run out of time. */
+  private checkVentures(days: number): void {
+    void days;
+    for (const v of this.ventures) {
+      if (v.delivered || v.failed) continue;
+      if (this.clock.t > v.dueBy) {
+        v.failed = true;
+        this.crown.standing = Math.max(0, this.crown.standing - v.penalty * 0.1);
+        this.crown.gold -= v.penalty;
+        this.pushAlert(`${v.patron}\u2019s charter is out of time.`, 'warning');
+        this.logEvent('trade',
+          `The charter for ${ventureLine(v)} is void. ${v.patron} has been repaid his advance `
+          + `and ${v.penalty} cruzados besides, and will tell the Rua Nova about it.`, true);
+      }
+    }
+  }
+
+  /** The other captain works his way down the coast whether you sail or not. */
+  private advanceRival(days: number): void {
+    const news = advanceRival(
+      this.rival, days, this.ship.state.pos.lat, this.crown.lifetimeStanding, this.rng,
+    );
+    if (!news) return;
+    this.pushAlert(`${this.rival.name} has been before you.`, 'warning');
+    this.logEvent('note', news.text, true);
+    this.crew.morale = clamp(this.crew.morale - 0.04, 0, 1);
+  }
+
+  // -------------------------------------------------------------------------
+  // Raising a padrão
+  // -------------------------------------------------------------------------
+
+  /**
+   * Whether a stone pillar can be put up where she now lies.
+   *
+   * The padrão was the physical act of claiming: a carved limestone pillar with
+   * the arms of Portugal and the date, landed by boat and set on a headland
+   * where the next ship down the coast would see it. Cão carried them on his
+   * voyages and two of his are still standing. It costs a day, it needs the
+   * boat and calm enough water to use it, and it is the only thing in the game
+   * that leaves a mark on the world that outlasts the voyage.
+   */
+  padraoCheck(): { ok: boolean; reason: string; name: string } {
+    // Named for the saint whose day it is, which is how half the coast of Africa
+    // came by the names it still has.
+    const name = `${this.ship.state.pos.lat >= 0 ? 'Cabo' : 'Ponta'} de ${saintOfDay(this.clock)}`;
+    if (!this.ship.upgrades.includes('padroes') || this.crown.padraoStock <= 0) {
+      return {
+        ok: false,
+        name,
+        reason: this.ship.upgrades.includes('padroes')
+          ? 'The last of the pillars is ashore already.'
+          : 'There are no pillars aboard. They are cut and shipped at Lisbon.',
+      };
+    }
+    if (this.sounding.shoreDistNm > 4) {
+      return { ok: false, reason: 'Too far off the land to send a boat in.', name };
+    }
+    if (this.weatherNow.waveHeight > 2.2 || this.weatherNow.wind.speed > 22) {
+      return { ok: false, reason: 'No boat could land on that beach today.', name };
+    }
+    if (this.crown.padraoNear(this.ship.state.pos)) {
+      return { ok: false, reason: 'A pillar of yours already stands within sight of this one.', name };
+    }
+    if (!this.beyondTheKnown) {
+      return { ok: false, reason: 'This coast is charted already. A pillar here claims nothing.', name };
+    }
+    if (ableHands(this.crew) < 10) {
+      return { ok: false, reason: 'There are not enough men fit to pull a boat ashore.', name };
+    }
+    return { ok: true, reason: 'The boat can be hoisted out and the pillar landed.', name };
+  }
+
+  /** Put a pillar ashore. Costs a day and the boat's crew a hard morning. */
+  raisePadrao(name?: string): string {
+    const check = this.padraoCheck();
+    if (!check.ok) return check.reason;
+    const given = (name ?? check.name).trim() || check.name;
+
+    this.clock.t += 9 * 3600;
+    this.crown.padroesRaised += 1;
+    this.crown.padraoStock -= 1;
+    this.crown.progressObjective('padrao', undefined, 1);
+    this.crown.record('padrao', given, this.nav.estimated, 22, this.clock.t);
+    this.crown.padraoSites.push({
+      name: given, lat: this.nav.estimated.lat, lon: this.nav.estimated.lon, t: this.clock.t,
+    });
+    this.crew.morale = clamp(this.crew.morale + 0.07, 0, 1);
+    this.crew.fatigue = clamp(this.crew.fatigue + 0.06, 0, 1);
+    train(this.skills, 'cartografia', 1.2);
+    for (const o of this.crew.officers) {
+      if (o.alive && !o.ashoreAt) o.loyalty = clamp(o.loyalty + 0.03, 0, 1);
+    }
+    this.logEvent('discovery',
+      `Hoisted out the boat and landed the pillar on the headland, which is entered as ${given}. `
+      + 'The arms of Portugal and the date cut into the stone, the cross set on top of it, and '
+      + 'the whole ship\u2019s company that could be spared standing round it bareheaded while '
+      + 'the office was read. It will be there when everyone who saw it is dead.', true);
+    this.pushAlert(`${given} claimed for the Crown.`, 'note');
+    return `The pillar is standing. This place is ${given} from today.`;
   }
 
   /** Take one of the courses offered by the outstanding decision. */
@@ -773,6 +1091,8 @@ export class Game {
     this.daysSincePort = 0;
     this.recentEvents = [];
     this.markets.refresh(def.id, this.clock.t);
+    this.refreshPortBusiness(def);
+    this.deliverVentures(def);
 
     const first = !this.visitedPorts.has(def.id);
     this.visitedPorts.add(def.id);
@@ -822,6 +1142,13 @@ export class Game {
       this.refreshEnvironment();
       this.updateCrewAndShip(step * 86400);
       if (this.mode === 'gameover') return;
+    }
+    // A week at anchor is a week of ships arriving and merchants changing their
+    // minds. The business waiting on the quay is not the same business.
+    const here = this.portHere;
+    if (here && days >= 3) {
+      this.markets.refresh(here.id, this.clock.t);
+      this.refreshPortBusiness(here);
     }
   }
 
@@ -983,6 +1310,24 @@ export class Game {
     }
   }
 
+  /**
+   * Lay off a course for a port by id, using the charted position if the player
+   * has one — steering for where you believe a place to be is the whole game,
+   * and the belief is what is written on your own chart.
+   */
+  setDestinationPort(portId: string): void {
+    const def = PORTS.find((x) => x.id === portId);
+    if (!def) return;
+    const charted = this.chart.ports.get(def.id);
+    const at = charted ?? { lat: def.lat, lon: def.lon };
+    this.setDestination(def.name, at.lat, at.lon);
+  }
+
+  /** The furthest south she has ever been, by the reckoning. */
+  get furthestSouth(): number {
+    return this.deepestSouth;
+  }
+
   /** Lay off a course for somewhere, or clear the one that is set. */
   setDestination(name: string, lat: number, lon: number): void {
     this.destination = { name, lat, lon };
@@ -1096,6 +1441,9 @@ export class Game {
         completedPatents: this.crown.completedPatents,
         hasKingsLetter: this.crown.hasKingsLetter,
         padroesRaised: this.crown.padroesRaised,
+        padraoStock: this.crown.padraoStock,
+        routeOpened: this.crown.routeOpened,
+        padraoSites: this.crown.padraoSites,
         chartedSincePatent: this.crown.chartedSincePatent,
       },
       markets: this.markets.serialize(),
@@ -1110,6 +1458,14 @@ export class Game {
       holdCourse: this.holdCourse,
       destination: this.destination,
       daysSincePort: this.daysSincePort,
+      deepestSouth: this.deepestSouth,
+      startT: this.startT,
+      leads: this.leads,
+      ventures: this.ventures,
+      ventureOffers: this.ventureOffers,
+      rival: this.rival,
+      nextVentureId: this.nextVentureId,
+      nextLeadId: this.nextLeadId,
     });
   }
 
@@ -1137,6 +1493,9 @@ export class Game {
     g.crown.completedPatents = d.crown.completedPatents ?? [];
     g.crown.hasKingsLetter = d.crown.hasKingsLetter ?? false;
     g.crown.padroesRaised = d.crown.padroesRaised ?? 0;
+    g.crown.padraoStock = d.crown.padraoStock ?? 0;
+    g.crown.routeOpened = d.crown.routeOpened ?? false;
+    g.crown.padraoSites = d.crown.padraoSites ?? [];
     g.crown.chartedSincePatent = d.crown.chartedSincePatent ?? 0;
     g.markets.restore(d.markets);
     g.relations = new Map(d.relations);
@@ -1150,6 +1509,14 @@ export class Game {
     g.holdCourse = d.holdCourse ?? false;
     g.destination = d.destination ?? null;
     g.daysSincePort = d.daysSincePort ?? 0;
+    g.deepestSouth = d.deepestSouth ?? 90;
+    g.startT = d.startT ?? 0;
+    g.leads = d.leads ?? [];
+    g.ventures = d.ventures ?? [];
+    g.ventureOffers = d.ventureOffers ?? [];
+    if (d.rival) g.rival = d.rival;
+    g.nextVentureId = d.nextVentureId ?? 1;
+    g.nextLeadId = d.nextLeadId ?? 1;
     g.mode = 'sailing';
     g.lastLat = g.ship.state.pos.lat;
     g.refreshEnvironment();
@@ -1158,6 +1525,33 @@ export class Game {
 }
 
 export { KNOTS, portName };
+
+/**
+ * The saint whose day it is.
+ *
+ * Not decoration: this is how the coast of Africa was named. Cabo de Santa
+ * Maria, Rio de São Domingos, the Cape of St Blaise — a ship made a landfall,
+ * the chaplain said whose feast it was, and the name went on the chart and
+ * stayed there for five hundred years.
+ */
+function saintOfDay(clock: Clock): string {
+  return SAINTS[clock.dayOfYear % SAINTS.length];
+}
+
+const SAINTS = [
+  'Santo Antão', 'São Sebastião', 'São Vicente', 'São Brás', 'Santa Águeda',
+  'São Matias', 'São Casimiro', 'São João de Deus', 'São José', 'São Bento',
+  'São Gabriel', 'São Jorge', 'São Marcos', 'São Filipe', 'Santa Cruz',
+  'Santo Isidoro', 'São Brandão', 'São Bernardino', 'Santa Joana', 'São Fernando',
+  'São Barnabé', 'Santo António', 'São João Baptista', 'São Pedro', 'São Paulo',
+  'Santa Isabel', 'São Bento de Nursia', 'Santa Maria Madalena', 'São Tiago',
+  'Sant\u2019Ana', 'São Pantaleão', 'Santo Inácio', 'São Domingos', 'São Lourenço',
+  'Santa Clara', 'Santa Maria', 'São Bartolomeu', 'Santo Agostinho', 'São Rafael',
+  'São Gonçalo', 'São Nicolau', 'São Miguel', 'São Jerónimo', 'São Francisco',
+  'São Dinis', 'São Lucas', 'São Simão', 'Todos os Santos', 'São Martinho',
+  'Santa Catarina', 'Santo André', 'São Nicolau de Mira', 'Santa Luzia',
+  'São Tomé', 'Santo Estêvão', 'São João Evangelista', 'São Silvestre',
+];
 
 /**
  * Whether swinging her head `sweep` degrees in `dir` would carry it into the
