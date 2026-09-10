@@ -117,7 +117,23 @@ export class HeadingTape {
       ctx.fillText(`${right ? '' : '◄ '}${windLabel}${right ? ' ►' : ''}`, edge, h - 6);
     }
 
-    // --- The course she is trying to make ----------------------------------
+    // --- The course she is being steered -----------------------------------
+    // The course the watch are actually holding, which is not the bearing of
+    // the mark when the captain has ordered a course of his own or when the
+    // mark lies inside the no-go.
+    const steer = g.courseToSteer();
+    if (steer !== null && g.helmOrder !== null) {
+      const px = x(steer);
+      if (onTape(px)) {
+        drawMark(ctx, px, h, '#8fbf7a', 'course');
+        ctx.fillStyle = '#8fbf7a';
+        ctx.font = '11px Georgia, serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${steer.toFixed(0).padStart(3, '0')}°`, px, 12);
+      }
+    }
+
+    // --- The mark she is trying to make ------------------------------------
     const dest = g.courseToDestination();
     if (dest) {
       const px = x(dest.bearing);

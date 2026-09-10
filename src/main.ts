@@ -88,18 +88,36 @@ function applyContinuousInput(g: Game, dt: number): void {
   // The helm holds where it is put, as a tiller does when the helmsman is told
   // to keep her so. Letting it spring back to amidships makes a sustained turn
   // impossible without holding a key down for a minute.
+  // Two ways of steering the same ship, and which one you get depends on how
+  // fast the clock is running.
+  //
+  // Below about a quarter of an hour to the second the wheel is a wheel: the
+  // helm goes over and stays where it is put. Above that, holding a rudder over
+  // is meaningless — a frame covers minutes, she would be round and round
+  // before the player let go — but *conning* her is not. The same keys then
+  // give the order a captain actually gave: so many degrees to starboard, which
+  // the quartermaster puts on and holds. She answers at once, she stays where
+  // she is put, and the clock does not have to stop for it.
+  const conning = g.clock.scaleIndex > 3;
   const helm = input.helmAxis();
   if (helm !== 0) {
-    // Touching the wheel takes the ship back off the watch. Anything else means
-    // the player pulls the helm over, the quartermaster quietly pulls it back,
-    // and the ship appears to ignore him.
-    if (g.holdCourse) {
-      g.holdCourse = false;
-      g.pushAlert('You have the helm.', 'note');
+    if (conning) {
+      // Degrees a second of real time, so a press is a nudge and a hold is a
+      // deliberate alteration.
+      g.alterCourse(helm * dt * 26);
+    } else {
+      // Touching the wheel takes the ship back off the watch. Anything else
+      // means the player pulls the helm over, the quartermaster quietly pulls
+      // it back, and the ship appears to ignore him.
+      if (g.holdCourse) {
+        g.holdCourse = false;
+        g.pushAlert('You have the helm.', 'note');
+      }
+      g.setHelm(clamp(g.ship.state.rudder + helm * dt * 1.6, -1, 1));
     }
-    g.setHelm(clamp(g.ship.state.rudder + helm * dt * 1.6, -1, 1));
   } else if (input.isDown('x')) {
-    g.setHelm(clamp(g.ship.state.rudder * Math.max(0, 1 - dt * 5), -1, 1));
+    if (conning) g.steadyAsSheGoes();
+    else g.setHelm(clamp(g.ship.state.rudder * Math.max(0, 1 - dt * 5), -1, 1));
   }
 
   const canvasAxis = input.canvasAxis();

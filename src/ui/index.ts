@@ -241,14 +241,27 @@ export class Ui {
       case '[': g.clock.cycleScale(-1); return true;
       case ']': g.clock.cycleScale(1); return true;
       case 'h': {
-        if (!g.destination) {
-          g.pushAlert('No course laid off. Open the chart and steer for a place.', 'warning');
+        // Three states, in the order a captain would want them: give her back to
+        // the mark if you have wandered off it, otherwise hand the helm over or
+        // take it back.
+        if (g.helmOrder !== null && g.destination) {
+          g.resumeCourseForMark();
+          g.pushAlert(`The watch will keep her for ${g.destination.name}.`, 'note');
+          return true;
+        }
+        if (!g.destination && g.helmOrder === null) {
+          g.steadyAsSheGoes();
+          g.pushAlert(
+            `The watch will hold her at ${g.helmOrder!.toFixed(0).padStart(3, '0')}°.`, 'note');
           return true;
         }
         g.holdCourse = !g.holdCourse;
+        if (!g.holdCourse) g.helmOrder = null;
         g.pushAlert(
           g.holdCourse
-            ? `The watch will keep her for ${g.destination.name}.`
+            ? g.destination
+              ? `The watch will keep her for ${g.destination.name}.`
+              : 'The watch have the course.'
             : 'You have the helm.',
           'note',
         );

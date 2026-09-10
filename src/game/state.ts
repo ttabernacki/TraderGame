@@ -163,6 +163,42 @@ export class Game {
    * way the reckoning is wrong. That is the whole game.
    */
   destination: { name: string; lat: number; lon: number } | null = null;
+
+  /**
+   * A compass course the watch are told to hold, when the captain is conning
+   * her by course rather than by mark.
+   *
+   * A ship is not steered at eighteen hundred times real time by holding a
+   * rudder over — but she is very much *conned*: "two points to starboard" is
+   * an order, the quartermaster puts her there, and she stays there. That is
+   * what the helm does once the clock is up, and it is why touching it no
+   * longer has to stop the clock. Takes precedence over the mark while it is
+   * set; the mark stays on the chart and the tape so the captain can see how
+   * far his own course is taking him off it.
+   */
+  helmOrder: number | null = null;
+
+  /**
+   * How far she has actually come.
+   *
+   * A ship held at the origin with the sea streaming past her gives the eye
+   * almost nothing to measure progress by, and at the fast clock rates that
+   * reads — correctly — as making no headway at all. These are the figures a
+   * navigator kept for exactly the same reason: the day's run written in the
+   * log at noon is how anybody knew whether a passage was going well.
+   */
+  /** Nautical miles logged through the water since she sailed. */
+  distanceRun = 0;
+  /** Miles made good over the ground, which is the one that gets you there. */
+  groundRun = 0;
+  /** Miles over the ground since the last noon, and the last few days' runs. */
+  private runSinceNoon = 0;
+  private noonAt = -1;
+  dayRuns: { date: string; nm: number; lat: number; hours: number }[] = [];
+  private lastNoonDay = -1;
+  /** Where the present course was laid off from, and how far it was then. */
+  markLaidAt: { lat: number; lon: number } | null = null;
+  markDistNm = 0;
   private eventCooldown = 0;
 
   /** Fraction of the standard ration being issued. */
@@ -418,6 +454,7 @@ export class Game {
 
     this.updateNavigation(simDt);
     this.updateCrewAndShip(simDt);
+    this.checkNoon();
     this.checkWorldEvents();
     this.rollIncidents(simDt);
     this.expireAlerts();
@@ -533,20 +570,21 @@ export class Game {
    * bearing of the mark unless the mark lies inside the no-go — in which case
    * it is as close as she will lie on the tack she is already on.
    */
-  private courseToSteer(): number | null {
+  courseToSteer(): number | null {
     const dest = this.courseToDestination();
-    if (!dest) return null;
+    const wanted = this.helmOrder ?? dest?.bearing ?? null;
+    if (wanted === null) return null;
     const windEye = this.weatherNow.wind.from;
     const noGo = this.noGoAngle;
     // Dead to windward: lie as close as she will on the tack already set, so she
     // holds a board instead of hunting across the wind's eye. When to go about
     // is then the captain's business, which is the interesting decision and the
     // one this deliberately does not take away.
-    if (Math.abs(angleDelta(windEye, dest.bearing)) < noGo) {
+    if (Math.abs(angleDelta(windEye, wanted)) < noGo) {
       const side = Math.sign(angleDelta(windEye, this.ship.state.heading)) || 1;
       return wrap360(windEye + side * noGo);
     }
-    return dest.bearing;
+    return wanted;
   }
 
   private steerToCourse(dt: number): void {
@@ -680,6 +718,12 @@ export class Game {
     const navSkill = skill(eff, 'navegacao');
     this.nav.leewayAllowance = this.skills.navegacao >= 15 ? 0.85 : 0;
 
+    const hours = simDt / 3600;
+    this.distanceRun += Math.abs(this.physics.speedKnots) * hours;
+    const overGround = this.physics.groundKnots * hours;
+    this.groundRun += overGround;
+    this.runSinceNoon += overGround;
+
     this.nav.integrate(
       simDt, pos, this.ship.state.heading, this.physics.speedKnots,
       this.physics.leeway, this.weatherNow.wind.from, this.weatherNow.wind.speed,
@@ -707,6 +751,59 @@ export class Game {
         }
       }
     }
+  }
+
+  /**
+   * Noon.
+   *
+   * The one fixed point in a ship's day: the sun is observed, the latitude
+   * worked, the day's run entered in the log, and everybody finds out whether
+   * the last twenty-four hours were any good. It is also the thing a passage
+   * needs most — a rhythm. Without it a month at sea at a high clock rate is
+   * one undifferentiated afternoon, which is exactly what "no progress" feels
+   * like; with it there is a report every forty-eight seconds at the Watch rate
+   * saying how many miles have gone under her.
+   */
+  private checkNoon(): void {
+    const day = Math.floor(this.clock.t / 86400);
+    // Local apparent noon, near enough: the hour hand at twelve.
+    if (this.clock.hour < 12) return;
+    if (day === this.lastNoonDay) return;
+    this.lastNoonDay = day;
+
+    const nm = this.runSinceNoon;
+    const hours = this.noonAt > 0 ? (this.clock.t - this.noonAt) / 3600 : 24;
+    this.runSinceNoon = 0;
+    this.noonAt = this.clock.t;
+    if (this.anchored || this.dockedAt) return;
+
+    const lat = this.nav.estimated.lat;
+    this.dayRuns.unshift({ date: this.clock.formatDate(), nm, lat, hours });
+    if (this.dayRuns.length > 60) this.dayRuns.pop();
+
+    // A short first watch since sailing is not a day's run and must not be
+    // judged as one — a captain who weighed at eleven has not had a bad day.
+    const partial = hours < 20;
+    const period = partial
+      ? `the ${hours.toFixed(0)} hours since she sailed`
+      : 'the twenty-four hours';
+    const rate = nm / Math.max(hours, 1) * 24;
+    const verdict = partial ? ''
+      : rate > 150 ? ' A very good day\u2019s run.'
+        : rate > 110 ? ' A fair day\u2019s work.'
+          : rate > 60 ? ' Ordinary enough.'
+            : rate > 20 ? ' Poor. The hands have noticed.'
+              : ' Next to nothing. She has been going nowhere all day.';
+
+    const dest = this.courseToDestination();
+    const remaining = dest
+      ? ` ${dest.distNm.toFixed(0)} miles still to run for ${dest.name}.`
+      : '';
+
+    this.logEvent('navigation',
+      `Noon. ${nm.toFixed(0)} miles made good in ${period}, `
+      + `latitude ${formatLat(lat)} by the reckoning.${verdict}${remaining}`);
+    this.pushAlert(`Noon — ${nm.toFixed(0)} miles run.${remaining}`, 'note');
   }
 
   private updateCrewAndShip(simDt: number): void {
@@ -1247,16 +1344,46 @@ export class Game {
   // Player actions
   // -------------------------------------------------------------------------
 
+  /** Put the wheel over yourself. Only meaningful at the slower clock rates. */
   setHelm(v: number): void {
     this.ship.state.rudder = clamp(v, -1, 1);
-    // You cannot steer a ship at two hours to the second.
-    if (this.clock.scaleIndex > 2) this.clock.scaleIndex = 2;
+    this.helmOrder = null;
   }
 
+  /**
+   * Con her by course: "so many degrees to starboard", which the watch then
+   * hold. Works at any clock rate and does not stop the clock, because giving
+   * an order is not the same as standing at the wheel.
+   */
+  alterCourse(deg: number): void {
+    const from = this.helmOrder ?? this.courseToSteer() ?? this.ship.state.heading;
+    this.helmOrder = wrap360(from + deg);
+    this.holdCourse = true;
+  }
+
+  /** Steady on the course she is heading now. */
+  steadyAsSheGoes(): void {
+    this.helmOrder = wrap360(this.ship.state.heading);
+    this.holdCourse = true;
+    this.ship.state.rudder = 0;
+  }
+
+  /** Give up your own course and steer for the mark again. */
+  resumeCourseForMark(): boolean {
+    if (!this.destination) return false;
+    this.helmOrder = null;
+    this.holdCourse = true;
+    return true;
+  }
+
+  /**
+   * Order a quantity of canvas. Making and shortening sail is an order given
+   * from the quarterdeck, not something the captain does with his own hands, so
+   * it does not stop the clock.
+   */
   setCanvas(fraction: number): void {
     this.orderedCanvas = fraction;
     this.ship.setAllCanvas(fraction);
-    if (this.clock.scaleIndex > 3) this.clock.scaleIndex = 3;
   }
 
   adjustTrim(delta: number): void {
@@ -1274,6 +1401,12 @@ export class Game {
     if (this.sounding.aground) return 'She is aground, not anchored.';
     this.anchored = false;
     this.dockedAt = null;
+    // Start the day's run from the moment she drops down the river, so the
+    // first noon at sea has something to report.
+    const day = Math.floor(this.clock.t / 86400);
+    this.lastNoonDay = this.clock.hour < 12 ? day - 1 : day;
+    this.runSinceNoon = 0;
+    this.noonAt = this.clock.t;
     // Making sail on weighing is an order, so the watch know what to make it
     // back to after they have handed it in a squall.
     this.setCanvas(Math.min(0.75, prudentCanvas(this.weatherNow.wind.speed)));
@@ -1544,6 +1677,9 @@ export class Game {
   setDestination(name: string, lat: number, lon: number): void {
     this.destination = { name, lat, lon };
     this.holdCourse = true;
+    this.helmOrder = null;
+    this.markLaidAt = { ...this.nav.estimated };
+    this.markDistNm = haversine(this.nav.estimated, { lat, lon }) / NM;
     this.logEvent('note', `Laid off a course for ${name}.`);
     this.pushAlert(`Course laid off for ${name}.`, 'note');
   }
@@ -1551,6 +1687,7 @@ export class Game {
   clearDestination(): void {
     this.destination = null;
     this.holdCourse = false;
+    this.markLaidAt = null;
   }
 
   /**
@@ -1670,8 +1807,14 @@ export class Game {
       difficulty: this.difficulty,
       orderedCanvas: this.orderedCanvas,
       holdCourse: this.holdCourse,
+      helmOrder: this.helmOrder,
       destination: this.destination,
       daysSincePort: this.daysSincePort,
+      distanceRun: this.distanceRun,
+      groundRun: this.groundRun,
+      dayRuns: this.dayRuns,
+      markLaidAt: this.markLaidAt,
+      markDistNm: this.markDistNm,
       deepestSouth: this.deepestSouth,
       startT: this.startT,
       leads: this.leads,
@@ -1723,8 +1866,14 @@ export class Game {
     g.difficulty = d.difficulty ?? 'captain';
     g.orderedCanvas = d.orderedCanvas ?? g.ship.canvasSet;
     g.holdCourse = d.holdCourse ?? false;
+    g.helmOrder = d.helmOrder ?? null;
     g.destination = d.destination ?? null;
     g.daysSincePort = d.daysSincePort ?? 0;
+    g.distanceRun = d.distanceRun ?? 0;
+    g.groundRun = d.groundRun ?? 0;
+    g.dayRuns = d.dayRuns ?? [];
+    g.markLaidAt = d.markLaidAt ?? null;
+    g.markDistNm = d.markDistNm ?? 0;
     g.deepestSouth = d.deepestSouth ?? 90;
     g.startT = d.startT ?? 0;
     g.leads = d.leads ?? [];

@@ -1,4 +1,4 @@
-import { clamp, compassPoint, formatBearing, wrap360 } from '../core/math';
+import { angleDelta, clamp, compassPoint, formatBearing, wrap360 } from '../core/math';
 import { beaufortName } from '../world/wind';
 import { moraleWord } from '../crew/crew';
 import { enduranceDays } from '../crew/crew';
@@ -44,12 +44,27 @@ export class Hud {
     this.windShip = w.ship;
     this.windCurrent = w.current;
 
-    this.root.append(
-      this.tape.root, this.nav, this.wind, this.time, this.ship,
-      this.course, this.orders, this.alerts, this.hint,
-    );
+    // One flowing column down each side, rather than six panels pinned to fixed
+    // offsets from the top and the bottom.
+    //
+    // Half of these appear and disappear with the situation — the course panel
+    // only when a course is laid off, the orders panel only when the ship owes
+    // somebody something — so anything anchored at a fixed distance down the
+    // screen eventually lands on top of something else, which it did on any
+    // window shorter than about seven hundred pixels. Anchored at the top and
+    // allowed to flow, a panel appearing pushes the ones below it instead, and
+    // the whole side clips cleanly when the screen genuinely runs out. It also
+    // leaves the bottom corners entirely to the thumb controls.
+    //
+    // Ordered by what a captain looks at first, because that is the order they
+    // survive being clipped in.
+    const left = el('div', { class: 'hud-col', id: 'hud-left' },
+      this.nav, this.course, this.ship);
+    const right = el('div', { class: 'hud-col', id: 'hud-right' },
+      this.wind, this.orders, this.time);
+    this.root.append(this.tape.root, left, right, this.alerts, this.hint);
     this.hint.innerHTML =
-      '<b>A</b>/<b>D</b> helm &nbsp; <b>X</b> midships &nbsp; <b>W</b>/<b>S</b> canvas &nbsp; ' +
+      '<b>A</b>/<b>D</b> helm (alter course above x15) &nbsp; <b>X</b> steady &nbsp; <b>W</b>/<b>S</b> canvas &nbsp; ' +
       '<b>Q</b>/<b>E</b> trim &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
       '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>H</b> hold course &nbsp; ' +
       '<b>O</b> orders &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
@@ -191,37 +206,62 @@ export class Hud {
       hudRow('Rate', g.clock.scaleLabel),
       hudRow('Weather', wx.description),
       hudRow('Days out', `${g.crew.daysSinceLandfall.toFixed(0)}`),
+      // Miles behind her. A ship held at the origin gives the eye nothing to
+      // measure headway by; this is what a navigator used instead.
+      hudRow('Run', `${g.groundRun.toFixed(0)} miles`),
+      g.dayRuns.length > 0
+        ? hudRow(g.dayRuns[0].hours < 20 ? 'Since sailing' : 'Last day\u2019s run',
+            `${g.dayRuns[0].nm.toFixed(0)} miles`)
+        : null,
       g.crown.patent ? hudRow('Commission', g.crown.patent.title) : null,
     );
 
     // --- The course she is steering -----------------------------------------
-    // Only shown when there is somewhere to steer for. A passage with a mark on
-    // the end of it is a passage; without one it is an afternoon on the water.
+    // Shown whenever she is being steered for something: a mark, or a course
+    // the captain has ordered. A passage with a mark on the end of it is a
+    // passage; without one it is an afternoon on the water.
     const dest = g.courseToDestination();
+    const steer = g.courseToSteer();
     clear(this.course);
-    this.course.style.display = dest ? '' : 'none';
-    if (dest) {
-      const off = dest.off;
-      const near = dest.distNm < 3;
+    this.course.style.display = dest || steer !== null ? '' : 'none';
+    if (dest || steer !== null) {
+      const off = dest ? dest.off : steer !== null ? angleDelta(g.displayHeading, steer) : 0;
+      const near = dest ? dest.distNm < 3 : false;
       const helm = near
         ? 'you are up with it'
         : Math.abs(off) < 2.5
           ? 'steady as she goes'
           : `${Math.abs(off).toFixed(0)}° to ${off > 0 ? 'starboard' : 'larboard'}`;
+
       append(this.course,
-        el('div', { class: 'hud-title' }, 'Bound for'),
-        el('div', { class: 'hud-big' }, dest.name),
-        hudRow('Course to steer', `${dest.bearing.toFixed(0).padStart(3, '0')}° ${compassPoint(dest.bearing)}`),
+        el('div', { class: 'hud-title' },
+          g.helmOrder !== null ? 'Course ordered' : 'Bound for'),
+        el('div', { class: 'hud-big' },
+          g.helmOrder !== null
+            ? `${g.helmOrder.toFixed(0).padStart(3, '0')}°`
+            : dest!.name),
+        // Where she is actually being steered, which is not the bearing of the
+        // mark when the mark lies inside the no-go.
+        steer !== null
+          ? hudRow('Steering', `${steer.toFixed(0).padStart(3, '0')}° ${compassPoint(steer)}`)
+          : null,
+        g.helmOrder !== null && dest
+          ? hudRow('The mark bears', `${dest.bearing.toFixed(0).padStart(3, '0')}° — H to resume`)
+          : null,
         el('div', { class: 'hud-row' },
           el('span', { class: 'k' }, 'Put the helm'),
           el('span', {
             class: 'v',
             style: { color: Math.abs(off) < 2.5 ? '#7fa86a' : '#c8a44e' },
           }, helm)),
-        hudRow('Distance', dest.distNm < 1
+        dest ? hudRow('Distance', dest.distNm < 1
           ? 'less than a mile'
-          : `${dest.distNm.toFixed(0)} miles`),
-        hudRow('At this rate', formatEta(dest.hours)),
+          : `${dest.distNm.toFixed(0)} miles`) : null,
+        dest ? hudRow('At this rate', formatEta(dest.hours)) : null,
+        // How much of the passage is behind her. This is the single readout
+        // that answers "am I getting anywhere", and at the fast clock rates it
+        // is the only one that visibly moves.
+        dest && g.markDistNm > 1 ? progressBar(1 - dest.distNm / g.markDistNm) : null,
         el('div', { class: 'hud-row' },
           el('span', { class: 'k' }, 'The helm'),
           el('span', {
@@ -254,7 +294,8 @@ export class Hud {
       this.hint.innerHTML = `At anchor off <b>${g.portHere?.name}</b>. Press <b>P</b> to go ashore, <b>Space</b> to weigh.`;
     } else {
       this.hint.innerHTML =
-        '<b>A</b>/<b>D</b> helm &nbsp; <b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
+        '<b>A</b>/<b>D</b> helm — alter course when the clock is up &nbsp; ' +
+        '<b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
         '<b>O</b> orders &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
         '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
     }
@@ -326,6 +367,20 @@ export class Hud {
   setVisible(v: boolean): void {
     this.root.style.display = v ? '' : 'none';
   }
+}
+
+/**
+ * How much of the passage is behind her, as a bar.
+ *
+ * The one readout that visibly moves at the high clock rates, which is exactly
+ * when the player most needs to be told he is getting somewhere.
+ */
+function progressBar(fraction: number): HTMLElement {
+  const pct = clamp(fraction, 0, 1) * 100;
+  return el('div', { class: 'run-bar' },
+    el('i', { style: { width: `${pct}%` } }),
+    el('span', {}, `${pct.toFixed(0)}% of the passage run`),
+  );
 }
 
 function kindShort(kind: string): string {
