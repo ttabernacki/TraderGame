@@ -5,6 +5,7 @@ import { ChartView } from './chartView';
 import { CourtView } from './courtView';
 import { CrewView } from './crewView';
 import { clear, el } from './dom';
+import { EventView } from './eventView';
 import { Hud } from './hud';
 import { LogbookView } from './logbookView';
 import { PortView } from './portView';
@@ -40,6 +41,7 @@ export class Ui {
   private court: CourtView;
   private overlay = el('div', { id: 'overlay' });
   private touch: TouchControls;
+  private events: EventView;
   private game: Game | null = null;
   private cb: UiCallbacks;
 
@@ -54,6 +56,8 @@ export class Ui {
       },
     });
 
+    this.events = new EventView((i) => this.game?.resolveEvent(i));
+
     const back = () => this.setMode('sailing');
     this.chart = new ChartView(back);
     this.sight = new SightView(back);
@@ -63,7 +67,7 @@ export class Ui {
     this.audience = new AudienceView(() => this.setMode('port'));
     this.court = new CourtView(() => this.setMode('port'));
 
-    host.append(this.hud.root, this.touch.root, this.overlay);
+    host.append(this.hud.root, this.touch.root, this.events.root, this.overlay);
     this.hud.setVisible(false);
   }
 
@@ -144,6 +148,12 @@ export class Ui {
     if (g.mode === 'sailing') {
       this.hud.update(g);
       this.touch.setRate(g.clock.scaleLabel);
+      this.events.show(g.pendingEvent);
+      // The controls go quiet while a decision is outstanding: pressing the
+      // helm against a ship whose clock is stopped only reads as a bug.
+      this.touch.setVisible(!g.pendingEvent);
+    } else {
+      this.events.show(null);
     }
   }
 
@@ -154,6 +164,11 @@ export class Ui {
   /** Returns true when the key was consumed. */
   handleKey(e: KeyboardEvent, g: Game): boolean {
     const k = e.key.toLowerCase();
+
+    // A decision on deck takes precedence over everything else aboard.
+    if (g.pendingEvent?.choices) {
+      return this.events.handleKey(e, g.pendingEvent.choices.length);
+    }
 
     if (k === 'escape') {
       if (g.mode === 'audience') { this.setMode('port'); return true; }

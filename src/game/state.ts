@@ -26,6 +26,7 @@ import { Markets } from '../economy/market';
 import { Crown, portName } from '../progression/crown';
 import { newRelations, type Relations } from '../diplomacy/contact';
 import { Logbook, type LogKind } from './log';
+import { rollSeaEvent, type SeaEvent } from './seaEvents';
 
 export type GameMode =
   | 'sailing' | 'chart' | 'sight' | 'logbook' | 'crew' | 'port'
@@ -80,6 +81,18 @@ export class Game {
 
   alerts: Alert[] = [];
   private nextAlertId = 1;
+
+  /**
+   * An event waiting on the captain's decision. While one is set the clock is
+   * held and the sailing view puts it in front of him; nothing else fires until
+   * it is answered.
+   */
+  pendingEvent: SeaEvent | null = null;
+  /** The last few event ids, so the same thing does not happen twice running. */
+  recentEvents: string[] = [];
+  /** Simulated days since she last lay in a port. */
+  daysSincePort = 0;
+  private eventCooldown = 0;
 
   /** Fraction of the standard ration being issued. */
   ration = 1;
@@ -237,6 +250,9 @@ export class Game {
    */
   update(realDt: number): void {
     if (this.mode === 'title' || this.mode === 'gameover') return;
+    // A decision is outstanding: the ship sails on but nothing new happens to
+    // her until it is answered, so the player is never handed two at once.
+    if (this.pendingEvent) return;
 
     const simDt = this.clock.advance(Math.min(realDt, 0.25));
     if (simDt <= 0) {
@@ -259,6 +275,7 @@ export class Game {
     this.updateNavigation(simDt);
     this.updateCrewAndShip(simDt);
     this.checkWorldEvents();
+    this.rollIncidents(simDt);
     this.expireAlerts();
   }
 
@@ -494,6 +511,47 @@ export class Game {
     }
   }
 
+  /**
+   * Whatever the passage threw up in the last step.
+   *
+   * The cooling-off period is in simulated days rather than in events, so a
+   * player running the clock at a watch a second is not buried in them, and a
+   * player sailing in real time is not left with nothing for an hour.
+   */
+  private rollIncidents(simDt: number): void {
+    const days = simDt / 86400;
+    this.daysSincePort += days;
+    this.eventCooldown = Math.max(0, this.eventCooldown - days);
+    if (this.eventCooldown > 0) return;
+
+    const event = rollSeaEvent(this, days);
+    if (!event) return;
+
+    this.eventCooldown = event.choices ? 1.6 : 0.55;
+    this.recentEvents.unshift(event.id);
+    if (this.recentEvents.length > 4) this.recentEvents.pop();
+
+    if (event.choices && event.choices.length > 0) {
+      this.pendingEvent = event;
+      return;
+    }
+    this.pushAlert(event.text, event.severity);
+    this.logEvent(event.severity === 'note' ? 'note' : 'peril', event.text, event.severity !== 'note');
+  }
+
+  /** Take one of the courses offered by the outstanding decision. */
+  resolveEvent(index: number): void {
+    const event = this.pendingEvent;
+    if (!event || !event.choices) return;
+    const choice = event.choices[index];
+    this.pendingEvent = null;
+    if (!choice) return;
+    const outcome = choice.resolve(this);
+    this.logEvent('peril', outcome, true);
+    this.pushAlert(outcome, event.severity);
+    this.refreshEnvironment();
+  }
+
   private runAground(): void {
     const speed = Math.abs(this.physics.speedKnots);
     const severity = clamp(speed / 7, 0.06, 1);
@@ -592,6 +650,8 @@ export class Game {
   enterPort(def: PortDef): void {
     this.dockedAt = def.id;
     this.anchored = true;
+    this.daysSincePort = 0;
+    this.recentEvents = [];
     this.markets.refresh(def.id, this.clock.t);
 
     const first = !this.visitedPorts.has(def.id);

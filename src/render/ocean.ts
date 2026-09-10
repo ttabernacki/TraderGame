@@ -14,6 +14,14 @@ const TRACK_POINTS = 20;
 /** Spacing between track points, metres. Twenty of them give ~180m of wake. */
 const TRACK_STEP = 9;
 
+/**
+ * How fast the radial grid's ring spacing grows with distance, as a fraction of
+ * the radius. The vertex shader needs it to know which waves the mesh can still
+ * resolve where it is standing, so it is derived from the grid's own numbers
+ * rather than written down twice.
+ */
+const GRID_GROWTH = 0.0505;
+
 /** Half-angle of the Kelvin cusp line, the same for every displacement hull. */
 const KELVIN_TAN = 0.3541;
 
@@ -118,14 +126,14 @@ vec3 wakeAt(vec2 rel) {
   // sooner, which is why a wake is white for a ship's length or two and then a
   // smooth glassy road for a mile.
   float pattern = exp(-bestRun / (uShipHalfLength * 26.0));
-  float froth = exp(-bestAge / (14.0 + uWakeStrength * 20.0))
-              * exp(-bestRun / (uShipHalfLength * 9.0));
+  float froth = exp(-bestAge / (11.0 + uWakeStrength * 15.0))
+              * exp(-bestRun / (uShipHalfLength * 5.5));
 
   // The band of broken water directly astern, about the ship's beam at the
   // transom and opening only slowly.
-  float halfWidth = uShipHalfBeam * (0.9 + bestRun * 0.0045);
+  float halfWidth = uShipHalfBeam * (1.05 + bestRun * 0.008);
   float q = bestD / max(halfWidth, 0.4);
-  float trail = exp(-q * q * 1.6);
+  float trail = exp(-q * q * 1.25);
 
   // The Kelvin cusps: two lines of steeper water running out at a fixed angle
   // either side of the track, whatever the ship's speed. They are a pattern in
@@ -198,18 +206,25 @@ void main() {
 
   float d = length(pos.xz);
 
+  // How far apart this ring's vertices are. The grid is dense under the ship and
+  // opens out geometrically toward the horizon, so a wave the mesh can carry
+  // easily at a hundred metres has barely a vertex per crest at five kilometres.
+  float spacing = max(d * ${(GRID_GROWTH).toFixed(4)}, ${(1.9).toFixed(1)});
+
   for (int i = 0; i < ${WAVE_COUNT}; i++) {
     float k = 6.28318530718 / uLen[i];
     vec2 dir = uDir[i];
     float f = k * dot(dir, p) + uPhase[i];
 
-    // A wave is dropped once the mesh can no longer carry it, which happens at a
-    // distance set by its own wavelength rather than by one shared cutoff. Every
-    // fade therefore starts and ends somewhere different, and the sea thins out
-    // gradually instead of stepping down all at once and drawing a band across
-    // the middle of the view.
-    float reach = uLen[i] * 190.0;
-    float a = uAmp[i] * (1.0 - smoothstep(reach, reach * 7.0, d));
+    // A wave is faded out where the mesh can no longer resolve it — under about
+    // five vertices to a wavelength — rather than at some fixed distance. Left
+    // in past that point it is not drawn, it is *sampled*: the crests land
+    // between vertices, beat against the grid, and crawl and sparkle as the ship
+    // moves. That beating is most of the shimmer on a distant sea. What it costs
+    // is geometry in the far field, and the fragment stage pays that back with
+    // filtered slope, which can be resolved per pixel however far off it is.
+    float carry = 1.0 - smoothstep(uLen[i] * 0.30, uLen[i] * 0.85, spacing);
+    float a = uAmp[i] * carry;
     float s = uSteep[i];
 
     float sinf = sin(f);
@@ -231,7 +246,10 @@ void main() {
       -dir.y * dir.y * (s * wa) * sinf
     );
 
-    crest += max(0.0, sinf) * a;
+    // The crest test drives the whitecaps, and it is taken from the unfaded
+    // amplitude: where a wave is breaking does not stop being true because the
+    // mesh out there is too coarse to draw its shape.
+    crest += max(0.0, sinf) * uAmp[i];
   }
 
   // Only the displacement is taken per-vertex. The foam is evaluated per-pixel
@@ -322,6 +340,19 @@ float fbm(vec2 p) {
   return v;
 }
 
+/**
+ * How much of a feature of the given size survives at this pixel footprint.
+ *
+ * One at a comfortable several pixels across, nothing once it is down to about
+ * two, and a smooth ramp between. This is the whole of the anti-aliasing: a
+ * pattern finer than the pixel grid does not average out on its own, it beats
+ * against the grid, and on a sea that beating crawls and glitters with every
+ * metre the ship makes.
+ */
+float resolvable(float featureSize, float px) {
+  return 1.0 - smoothstep(featureSize * 0.22, featureSize * 0.65, px);
+}
+
 // Ripple detail finer than the mesh can carry, as a normal perturbation.
 vec2 chopNormal(vec2 q, float t) {
   vec2 n = vec2(0.0);
@@ -347,24 +378,52 @@ void main() {
   // as the fine texture drops out the next scale up is already carrying the
   // surface. The coarsest never fades at all: without it the water beyond a few
   // hundred metres goes glassy and a flat strip appears across the view.
-  float o1 = 1.0 - smoothstep(60.0, 900.0, vDist);
-  float o2 = 1.0 - smoothstep(260.0, 3400.0, vDist);
-  float o3 = 1.0 - smoothstep(1100.0, 13000.0, vDist);
-  // The coarsest octave is deliberately strong and never fades. Without slope in
-  // the far field the water there has one uniform normal, the Fresnel term
-  // snaps from body colour to sky colour over a couple of degrees of elevation,
-  // and that snap lands on screen as a flat pale strip ruled under the horizon.
+  // How much of the surface one pixel covers, in metres. Everything below is
+  // filtered against this rather than against distance: an octave is kept while
+  // the screen can resolve it and faded out as it approaches the pixel grid,
+  // whatever the camera height, the field of view or the display's resolution.
+  // Fading by distance instead is only ever a guess at the same quantity, and it
+  // guesses wrong the moment the player zooms, looks down, or opens the game on
+  // a screen with twice the pixels.
+  float px = max(length(fwidth(vSurface)), 1.0e-4);
+
+  // Looking along the surface rather than down onto it, one pixel spans a huge
+  // patch of water and what reaches the eye is the average of a great many wave
+  // faces, not any one of them. Perturbing the normal by its full amount there
+  // swings the reflected ray wildly for a fraction of a degree of elevation, and
+  // the horizon comes apart into a ragged dark fringe.
+  float graze = mix(0.12, 1.0, smoothstep(0.012, 0.26, abs(viewDir.y)));
+
+  // Each octave's finest feature is about a fifth of its own scale. Held above
+  // roughly two pixels, so nothing is drawn that the display cannot separate.
+  float o1 = resolvable(3.6, px);
+  float o2 = resolvable(13.8, px);
+  float o3 = resolvable(53.0, px);
+  float o4 = resolvable(212.0, px);
+  // The coarse octaves are deliberately strong. Without slope in the far field
+  // the water there has one uniform normal, the Fresnel term snaps from body
+  // colour to sky colour over a couple of degrees of elevation, and that snap
+  // lands on screen as a flat pale strip ruled under the horizon.
   vec2 detail =
       chopNormal(vSurface, uNoiseTime) * o1
-    + chopNormal(vSurface * 0.26 + 41.0, uNoiseTime * 0.52) * (o2 * 0.78)
-    + chopNormal(vSurface * 0.068 + 91.0, uNoiseTime * 0.27) * (o3 * 0.62)
-    + chopNormal(vSurface * 0.017 + 137.0, uNoiseTime * 0.13) * 0.85
-    + chopNormal(vSurface * 0.0042 + 211.0, uNoiseTime * 0.06) * 0.9;
+    + chopNormal(vSurface * 0.26 + 41.0, uNoiseTime * 0.52) * (o2 * 0.82)
+    + chopNormal(vSurface * 0.068 + 91.0, uNoiseTime * 0.27) * (o3 * 0.70)
+    + chopNormal(vSurface * 0.017 + 137.0, uNoiseTime * 0.13) * (o4 * 0.95)
+    + chopNormal(vSurface * 0.0042 + 211.0, uNoiseTime * 0.06) * 1.05;
+
+  // What was filtered away is not simply lost. Slope that can no longer be
+  // resolved still scatters light within the pixel, so it is carried forward as
+  // roughness and used to widen the sun's reflection instead — which is what
+  // stops a distant sea from breaking into a field of hard white sparks.
+  float lost = (1.0 - o1) * 0.55 + (1.0 - o2) * 0.3 + (1.0 - o3) * 0.15;
+
   // The slick astern flattens the ripple as well as the swell, which is what
   // makes a wake visible on a calm day when there is no foam left in it at all.
   float smoothed = 1.0 - wk.z * 0.78;
-  n = normalize(n + vec3(detail.x, 0.0, detail.y)
-                * 0.115 * clamp(uChop + 0.35, 0.3, 1.4) * smoothed);
+  // Scaled by the sea that is actually running: the same ripple field on a
+  // glassy calm and in a full gale is the surest way to make neither look right.
+  float roughness = clamp(uChop + 0.22, 0.22, 1.5);
+  n = normalize(n + vec3(detail.x, 0.0, detail.y) * 0.125 * roughness * smoothed * graze);
   n = normalize(mix(n, vec3(0.0, 1.0, 0.0), wk.z * 0.35));
 
   float ndv = max(dot(n, viewDir), 0.0);
@@ -379,9 +438,23 @@ void main() {
 
   // Sun glitter: a scattered track of individual reflections, not a mirror disc.
   float sunDot = max(dot(reflDir, uSunDir), 0.0);
-  float sparkle = 0.55 + 0.45 * sin(vSurface.x * 3.1 + uNoiseTime * 4.3)
-                              * sin(vSurface.y * 2.7 - uNoiseTime * 3.7);
-  float spec = pow(sunDot, 110.0) * 0.85 * mix(0.35, sparkle, clamp(uChop, 0.0, 1.0));
+  // Glitter is a two-metre pattern, so it is filtered like everything else: past
+  // the range where a pixel can hold it, it flattens to its own average rather
+  // than being sampled at random.
+  float glint = resolvable(2.1, px);
+  float sparkle = 0.55 + 0.45 * glint * sin(vSurface.x * 3.1 + uNoiseTime * 4.3)
+                                      * sin(vSurface.y * 2.7 - uNoiseTime * 3.7);
+  // The slope the pixel could not resolve becomes roughness: a narrow, bright
+  // highlight is spread into a wide, dim one of the same total energy. Leaving
+  // the highlight narrow instead is what makes a distant sea flash and crawl —
+  // a mirror-sharp reflection sampled once per pixel either hits the sun or
+  // misses it entirely, and which of the two changes with every step the ship
+  // takes. Spreading it is both physically right and the cure.
+  float rough = clamp(lost, 0.0, 1.0);
+  float tight = mix(110.0, 9.0, rough);
+  float gain = mix(0.85, 0.16, rough);
+  float spec = pow(sunDot, tight) * gain
+             * mix(0.35, sparkle, clamp(uChop, 0.0, 1.0) * (1.0 - rough * 0.8));
   // The broad sheen either side of the sun's track is what blows out to a white
   // sheet if it is let run: it is held down hard and narrowed.
   float sheen = pow(sunDot, 24.0) * 0.09;
@@ -438,7 +511,7 @@ void main() {
     wake = clamp(max(broken, wk.x * wk.x * 0.95), 0.0, 1.0);
   }
 
-  float foam = clamp(breaking * 0.72 + wake * 0.85, 0.0, 1.0);
+  float foam = clamp(breaking * 0.72 + wake * 0.7, 0.0, 1.0);
   vec3 foamColor = vec3(0.93, 0.96, 0.98) * (1.0 - uNight * 0.82);
   // Foam is aerated water, not paint: even a hard-driven wake leaves the sea
   // showing through it.
