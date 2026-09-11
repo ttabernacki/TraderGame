@@ -156,7 +156,8 @@ export const LANDMARKS: Landmark[] = [
 // Patents
 // ---------------------------------------------------------------------------
 
-export type ObjectiveKind = 'reach' | 'chart' | 'contact' | 'cargo' | 'padrao' | 'return';
+export type ObjectiveKind =
+  | 'reach' | 'chart' | 'contact' | 'cargo' | 'padrao' | 'name' | 'return';
 
 export interface Objective {
   kind: ObjectiveKind;
@@ -224,7 +225,12 @@ const PATENT_TEMPLATES: {
         'The Crown has a great many reports of the Guinea coast and no two of them agree about where anything is. Pilots are working from a chart that puts Cape Verde a hundred miles from where it stands. You are not asked to bring back anything. You are asked to sail that coast with the lead going and the quadrant out, set a pillar where the land is worth naming, and come home with the truth about it. It pays badly. It is how a man becomes a pilot rather than a carrier.',
       objectives: [
         { kind: 'chart', description: 'Survey 300 miles of coast', amount: 300, progress: 0, complete: false },
-        { kind: 'padrao', description: 'Raise a padrão on a headland', amount: 1, progress: 0, complete: false },
+        // Not a padrão. The pillars are cut at Lisbon, cost ninety cruzados and
+        // twenty renown to have aboard at all, and may only be set up beyond
+        // the charted world — which is two thousand miles further on than this
+        // commission sends anybody. Naming what you survey is the thing a
+        // surveyor actually does, and the chart table already has the tool.
+        { kind: 'name', description: 'Put two headlands on the chart by name', amount: 2, progress: 0, complete: false },
         { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },
       ],
     }),

@@ -31,6 +31,8 @@ export class ChartView {
   private showPlaces = true;
   private showTrue = false;
   private selectedPort: string | null = null;
+  /** The last thing the chart table said back, shown until something else happens. */
+  private notice: string | null = null;
   private game: Game | null = null;
   private onClose: () => void;
 
@@ -197,11 +199,12 @@ export class ChartView {
     const g = this.game;
     if (!g) return;
     const name = window.prompt('What will you call this place?', 'Cabo de ');
-    if (!name) return;
-    const place = g.chart.addPlace(name, 'cape', g.nav.estimated, g.clock.t);
-    g.crown.record('coast', name, g.nav.estimated, 8, g.clock.t);
-    g.logEvent('discovery', `Named this place ${name}, at ${formatLat(place.lat)}, ${formatLon(place.lon)} by the reckoning.`);
+    if (name === null) return;
+    const r = g.namePlace(name);
+    this.notice = r.message;
+    this.buildVoyage();
     this.draw();
+    this.updateOverlay(g.nav.estimated);
   }
 
   private bindPointer(): void {
@@ -271,6 +274,7 @@ export class ChartView {
       if (d < bestD) { bestD = d; best = cp.id; }
     }
     this.selectedPort = best;
+    this.notice = null;
     this.draw();
     this.updateOverlay(this.toGeo(mx, my));
   }
@@ -281,6 +285,9 @@ export class ChartView {
     clear(this.overlay);
 
     const nodes: (Node | string)[] = [
+      this.notice
+        ? el('div', { class: 'chart-notice' }, this.notice)
+        : '',
       el('div', { style: { fontWeight: '600', marginBottom: '4px' } }, 'Cursor'),
       el('div', {}, `${formatLat(p.lat)}`),
       el('div', { style: { marginBottom: '7px' } }, `${formatLon(p.lon)}`),

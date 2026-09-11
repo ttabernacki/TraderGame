@@ -1708,6 +1708,52 @@ export class Game {
   // -------------------------------------------------------------------------
 
   /**
+   * Put a name on the chart.
+   *
+   * The chart table has had a "Name this place" button since the beginning and
+   * nothing has ever depended on pressing it, so nobody did. It is now what the
+   * survey commission asks for — which is right, because naming what you have
+   * run along is the other half of surveying it, and it is how half the coast
+   * of Africa came by the names it still has.
+   *
+   * It needs a place. A pilot in the middle of the Atlantic naming the water he
+   * is floating over is not doing cartography, so the land has to be in sight,
+   * and a name has to be his own rather than one already on the sheet.
+   */
+  namePlace(name: string): { ok: boolean; message: string } {
+    const given = name.trim();
+    if (given.length < 3) {
+      return { ok: false, message: 'A place wants a name, not a mark.' };
+    }
+    const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
+    if (this.sounding.shoreDistNm > range) {
+      return {
+        ok: false,
+        message: 'There is nothing in sight to name. Stand in until the land is up.',
+      };
+    }
+    const near = this.chart.places.find(
+      (p) => haversine({ lat: p.lat, lon: p.lon }, this.nav.estimated) / NM < 12,
+    );
+    if (near) {
+      return { ok: false, message: `You have already called this place ${near.name}.` };
+    }
+
+    const place = this.chart.addPlace(given, 'cape', this.nav.estimated, this.clock.t);
+    const fresh = this.crown.record('coast', given, this.nav.estimated, 8, this.clock.t);
+    this.crown.progressObjective('name', undefined, 1);
+    this.logEvent('discovery',
+      `Named this place ${given}, at ${formatLat(place.lat)}, ${formatLon(place.lon)} by the reckoning.`);
+    train(this.skills, 'cartografia', 0.12);
+    return {
+      ok: true,
+      message: fresh
+        ? `${given}. It is on the chart under your hand and nobody else's.`
+        : `${given}, again. The register already carries that name.`,
+    };
+  }
+
+  /**
    * Whether a stone pillar can be put up where she now lies.
    *
    * The padrão was the physical act of claiming: a carved limestone pillar with

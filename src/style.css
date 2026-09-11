@@ -430,6 +430,17 @@ table.ledger tr:hover td { background: rgba(255, 252, 240, 0.5); }
   line-height: 1.5;
   max-width: 270px;
 }
+/* What the chart table just said back — a refusal to name open water, or the
+   name that went on the sheet. */
+.chart-notice {
+  margin: -2px -4px 8px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--gold);
+  background: rgba(200, 164, 78, 0.16);
+  border-radius: 2px;
+  line-height: 1.5;
+}
+
 .chart-tools {
   position: absolute;
   top: 14px; right: 14px;
