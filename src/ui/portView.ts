@@ -133,6 +133,19 @@ export class PortView {
 
     left.append(card('', el('p', { style: { fontSize: '15px', lineHeight: '1.7' } }, def.blurb)));
 
+    // Voyages are lost in port, a fortnight before anybody notices. Every one
+    // of these numbers already existed; every one was on a different screen.
+    const checks = g.readiness();
+    const bad = checks.filter((c) => c.state === 'bad').length;
+    left.append(card(bad > 0 ? 'Before you sail — she is not ready' : 'Before you sail',
+      ...checks.map((c) => el('div', { class: `ready-row ${c.state}` },
+        el('div', { class: 'ready-line' },
+          el('span', {}, c.label),
+          el('em', {}, c.value)),
+        c.note ? el('div', { class: 'ready-note' }, c.note) : null,
+      )),
+    ));
+
     if (g.portGossip) {
       left.append(card('What they say ashore',
         el('p', { style: { fontStyle: 'italic', lineHeight: '1.7' } }, g.portGossip)));

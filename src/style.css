@@ -328,6 +328,38 @@ table.ledger tr:hover td { background: rgba(255, 252, 240, 0.5); }
 .tabs button { font-size: 13px; padding: 5px 13px; border-radius: 2px 2px 0 0; }
 .tabs button.active { background: rgba(42, 31, 20, 0.86); color: var(--cream); border-color: var(--ink); }
 
+/* The readiness list on the quay. The state is carried by a stripe down the
+   left rather than by colouring the text, so the list stays a list and the one
+   row that is wrong is the one your eye lands on. */
+.ready-row {
+  border-left: 3px solid var(--green);
+  padding: 3px 0 3px 10px;
+  margin-bottom: 6px;
+}
+.ready-row.warn { border-left-color: var(--warn); }
+.ready-row.bad { border-left-color: var(--red); }
+.ready-row:last-child { margin-bottom: 0; }
+.ready-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  font-size: 13.5px;
+}
+.ready-line em {
+  font-style: normal;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ready-note {
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  font-style: italic;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
 /* Filters above the log: quieter than the tabs, since they sort one view
    rather than switching between four. */
 .log-filter {
@@ -392,6 +424,49 @@ table.ledger tr:hover td { background: rgba(255, 252, 240, 0.5); }
   font-size: 11.5px;
   border-radius: 3px;
 }
+/* What the King asked for, on the chart, where it is planned against. */
+.chart-voyage {
+  position: absolute;
+  bottom: 14px; right: 14px;
+  width: 280px;
+  max-width: calc(100% - 28px);
+  background: rgba(255, 250, 235, 0.9);
+  border: 1px solid rgba(90, 74, 55, 0.35);
+  border-radius: 3px;
+  padding: 9px 12px 10px;
+  font-size: 12.5px;
+}
+.chart-voyage-title {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 5px;
+}
+.chart-voyage-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 11px;
+  padding: 2.5px 4px;
+  margin: 0 -4px;
+  border-radius: 2px;
+  line-height: 1.4;
+}
+.chart-voyage-row em {
+  font-style: normal;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.chart-voyage-row.done { opacity: 0.5; }
+.chart-voyage-row.steerable { cursor: pointer; }
+.chart-voyage-row.steerable:hover { background: rgba(168, 50, 40, 0.12); }
+.chart-voyage-rule {
+  border-top: 1px solid rgba(90, 74, 55, 0.28);
+  margin: 7px 0 5px;
+}
+
 .chart-legend div { display: flex; align-items: center; gap: 7px; padding: 1.5px 0; }
 .chart-legend i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
 
@@ -844,6 +919,18 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   }
   .chart-legend em, .chart-legend i + span { flex-basis: 100%; }
   .chart-overlay { top: 52px; left: 8px; max-width: calc(100% - 16px); }
+  /* The legend holds the bottom of a narrow screen; the commission sits above
+     it rather than on top of it. */
+  .chart-voyage {
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-width: none;
+    bottom: auto;
+    top: 52px;
+    font-size: 11.5px;
+  }
+  .chart-overlay { top: auto; bottom: 96px; }
 }
 
 /* Where she is bound, and what to do with the helm about it. Shown only when a

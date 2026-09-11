@@ -22,7 +22,7 @@ import { Chart, sightingRangeNm, type SurveyResult } from '../navigation/charts'
 import { sightOpportunities, type SightBody } from '../navigation/navigator';
 import { magneticVariation } from '../navigation/celestial';
 import {
-  ableHands, crewFactor, newCrew, officerBonus, updateCrew, type CrewState,
+  ableHands, crewFactor, enduranceDays, newCrew, officerBonus, updateCrew, type CrewState,
 } from '../crew/crew';
 import { newSkills, skill, train, type SkillSet } from '../crew/skills';
 import { Markets } from '../economy/market';
@@ -2174,6 +2174,112 @@ export class Game {
     }
     // She also crabs sideways, so her course made good is worse than she points.
     return clamp(best + 7, 20, 88);
+  }
+
+  /**
+   * What a captain walks the deck asking himself before he gives the word.
+   *
+   * Voyages in this game are lost in port, quietly, a fortnight before anybody
+   * notices: she sails with forty days of water on a fifty-day passage, or with
+   * six hands down and the fore course split, and the first the player hears of
+   * it is the alert that says the last cask is dry. Every one of these numbers
+   * was already in the simulation and every one of them was on a different
+   * screen. None of it is new information. It is the same information, on the
+   * quay, at the one moment when it can still be acted on.
+   *
+   * The endurance is measured against the passage she is actually laid off for,
+   * at four and a half knots made good, which is a caravel's honest average
+   * over a long run — she does better on a reach and much worse working to
+   * windward, so the estimate carries a half again as a margin the way a
+   * careful master victualled.
+   */
+  readiness(): { label: string; value: string; state: 'good' | 'warn' | 'bad'; note?: string }[] {
+    const out: { label: string; value: string; state: 'good' | 'warn' | 'bad'; note?: string }[] = [];
+    const crew = this.crew;
+    const cond = this.ship.condition;
+
+    // How long the passage is, if one has been laid off.
+    const course = this.destination
+      ? haversine(this.nav.estimated, { lat: this.destination.lat, lon: this.destination.lon }) / NM
+      : null;
+    const passageDays = course === null ? null : (course / (4.5 * 24)) * 1.5;
+
+    const endurance = enduranceDays(crew);
+    const days = (n: number) => `${n.toFixed(0)} ${n < 1.5 ? 'day' : 'days'}`;
+    if (passageDays === null) {
+      out.push({
+        label: 'Water and stores',
+        value: days(endurance),
+        state: endurance > 45 ? 'good' : endurance > 20 ? 'warn' : 'bad',
+        note: 'No course laid off. Lay one on the chart and this is measured against it.',
+      });
+    } else {
+      const slack = endurance - passageDays;
+      out.push({
+        label: 'Water and stores',
+        value: days(endurance),
+        state: slack > 14 ? 'good' : slack > 0 ? 'warn' : 'bad',
+        note: slack > 0
+          ? `${passageDays.toFixed(0)} days to ${this.destination!.name} with the wind fair. ${slack.toFixed(0)} days in hand.`
+          : `${passageDays.toFixed(0)} days to ${this.destination!.name}, and you have ${endurance.toFixed(0)}.`,
+      });
+    }
+
+    const fresh = crew.provisions.fresh;
+    out.push({
+      label: 'Fresh food',
+      value: days(fresh),
+      state: fresh > 12 ? 'good' : fresh > 4 ? 'warn' : 'bad',
+      note: fresh > 4 ? undefined : 'Nothing green aboard. The scurvy begins about five weeks after the last of it.',
+    });
+
+    const able = ableHands(crew);
+    const short = crew.complement - crew.count;
+    out.push({
+      label: 'Hands',
+      value: `${able} fit of ${crew.complement}`,
+      state: able >= crew.complement * 0.85 ? 'good' : able >= crew.complement * 0.6 ? 'warn' : 'bad',
+      note: short > 0 ? `${short} short of her complement. Ship men in the crimp house.` : undefined,
+    });
+
+    out.push({
+      label: 'Hull',
+      value: `${(cond.hull * 100).toFixed(0)} in a hundred`,
+      state: cond.hull > 0.82 ? 'good' : cond.hull > 0.6 ? 'warn' : 'bad',
+      note: cond.leak > 0.55 ? 'She makes water faster than one watch can pump.' : undefined,
+    });
+
+    if (cond.fouling > 0.3) {
+      out.push({
+        label: 'Her bottom',
+        value: cond.fouling > 0.6 ? 'Foul' : 'Growing weed',
+        state: cond.fouling > 0.6 ? 'bad' : 'warn',
+        note: `Costing perhaps ${(cond.fouling * 22).toFixed(0)} in a hundred of her speed. Careen her at a yard.`,
+      });
+    }
+
+    const worst = this.ship.state.sails.reduce((a, s) => Math.min(a, s.condition), 1);
+    if (worst < 0.75) {
+      out.push({
+        label: 'Canvas',
+        value: worst < 0.4 ? 'Split' : 'Worn',
+        state: worst < 0.4 ? 'bad' : 'warn',
+        note: 'New canvas is bent at a yard, not at sea.',
+      });
+    }
+
+    // A cargo commission with no room for the cargo is the quiet mistake.
+    const wants = this.crown.patent?.objectives.find((o) => o.kind === 'cargo' && !o.complete);
+    if (wants) {
+      out.push({
+        label: 'Room in the hold',
+        value: `${this.ship.holdFree.toFixed(0)} of ${this.ship.holdCapacity.toFixed(0)} tons`,
+        state: this.ship.holdFree > this.ship.holdCapacity * 0.3 ? 'good' : 'warn',
+        note: `The King wants ${wants.description.toLowerCase().replace(/^bring home /, '')} brought home in her.`,
+      });
+    }
+
+    return out;
   }
 
   courseTo(portId: string): { bearing: number; distNm: number } | null {

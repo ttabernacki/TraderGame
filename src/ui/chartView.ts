@@ -1,6 +1,6 @@
 import { clamp, compassPoint, cosd, formatLat, formatLon, wrap180 } from '../core/math';
 import { LANDMASSES } from '../world/landmass';
-import { portDef } from '../world/ports';
+import { PORTS, portDef } from '../world/ports';
 import type { Game } from '../game/state';
 import { append, button, clear, el } from './dom';
 
@@ -19,6 +19,7 @@ export class ChartView {
   private canvas = el('canvas', { id: 'chart-canvas' }) as HTMLCanvasElement;
   private overlay = el('div', { class: 'chart-overlay' });
   private tools = el('div', { class: 'chart-tools' });
+  private voyage = el('div', { class: 'chart-voyage' });
   private wrap = el('div', { class: 'chart-wrap' });
 
   private centre = { lat: 38, lon: -12 };
@@ -36,7 +37,7 @@ export class ChartView {
   constructor(onClose: () => void) {
     this.onClose = onClose;
 
-    this.wrap.append(this.canvas, this.overlay, this.tools, buildLegend());
+    this.wrap.append(this.canvas, this.overlay, this.tools, this.voyage, buildLegend());
 
     this.root.append(
       el('div', { class: 'screen-head' },
@@ -56,6 +57,7 @@ export class ChartView {
     this.game = g;
     this.centre = { ...g.nav.estimated };
     this.buildTools();
+    this.buildVoyage();
     this.resize();
     this.draw();
   }
@@ -89,13 +91,84 @@ export class ChartView {
         { primary: true },
       ),
       this.game?.destination
-        ? button('Cancel the course', () => { this.game?.clearDestination(); this.buildTools(); this.draw(); })
+        ? button('Cancel the course', () => {
+          this.game?.clearDestination(); this.buildTools(); this.buildVoyage(); this.draw();
+        })
         : null,
       button('Name this place', () => this.namePlace()),
       button(this.showTrue ? 'Hide the true coast' : 'Compare with the truth', () => {
         this.showTrue = !this.showTrue; this.buildTools(); this.draw();
       }, { title: 'A modern overlay showing where the land actually is. No pilot of this century had this.' }),
     );
+  }
+
+  /**
+   * What the voyage is for, on the chart, where a pilot would plan it.
+   *
+   * The chart drew everything the ship had found and nothing about what she was
+   * sent to do, so it was a readout — a beautiful one, but you looked at it
+   * rather than worked at it. The commission belongs here: each place the King
+   * named, how far off it is on your own chart and on what bearing, and a click
+   * to lay the course for it. The survey and the doubt in the reckoning are
+   * here for the same reason — they are the two numbers that decide whether to
+   * stand in with the land or take a sight.
+   */
+  private buildVoyage(): void {
+    const g = this.game;
+    clear(this.voyage);
+    if (!g) return;
+
+    const patent = g.crown.patent;
+    const rows: (Node | null)[] = [];
+
+    if (patent) {
+      rows.push(el('div', { class: 'chart-voyage-title' }, patent.title));
+      for (const o of patent.objectives) {
+        const def = o.target ? PORTS.find((x) => x.id === o.target) : undefined;
+        const course = def ? g.courseTo(def.id) : null;
+        const detail = o.complete
+          ? 'done'
+          : course
+            ? `${course.bearing.toFixed(0)}° ${compassPoint(course.bearing)} · ${course.distNm.toFixed(0)} miles`
+            : o.amount
+              ? `${Math.floor(o.progress)} of ${o.amount}`
+              : 'open';
+        // A place the King named is one click from being the course steered.
+        const steerable = !o.complete && !!def && o.kind !== 'return';
+        rows.push(el('div', {
+          class: `chart-voyage-row${o.complete ? ' done' : ''}${steerable ? ' steerable' : ''}`,
+          title: steerable ? `Lay off a course for ${def!.name}` : undefined,
+          onclick: steerable
+            ? () => {
+              g.setDestinationPort(def!.id);
+              this.buildTools();
+              this.buildVoyage();
+              this.draw();
+            }
+            : undefined,
+        },
+          el('span', {}, o.description),
+          el('em', {}, detail),
+        ));
+      }
+    } else {
+      rows.push(el('div', { class: 'chart-voyage-title' }, 'No commission'),
+        el('div', { class: 'chart-voyage-row' },
+          el('span', {}, 'Sailing on your own account'), el('em', {}, '')));
+    }
+
+    rows.push(el('div', { class: 'chart-voyage-rule' }));
+    rows.push(el('div', { class: 'chart-voyage-row' },
+      el('span', {}, 'Coast surveyed this passage'),
+      el('em', {}, `${g.chartedThisPassage.toFixed(0)} miles`)));
+    rows.push(el('div', { class: 'chart-voyage-row' },
+      el('span', {}, 'Doubt in your position'),
+      el('em', {}, `± ${Math.max(g.nav.sigmaLat, g.nav.sigmaLon).toFixed(0)} miles`)));
+    rows.push(el('div', { class: 'chart-voyage-row' },
+      el('span', {}, 'Since the last observation'),
+      el('em', {}, `${g.nav.milesSinceFix.toFixed(0)} miles`)));
+
+    append(this.voyage, ...rows);
   }
 
   /**
@@ -116,6 +189,7 @@ export class ChartView {
       g.setDestination('the marked spot', this.centre.lat, this.centre.lon);
     }
     this.buildTools();
+    this.buildVoyage();
     this.draw();
   }
 
@@ -682,8 +756,9 @@ export class ChartView {
     leagues = nice.reduce((a, b) => (Math.abs(b - leagues) < Math.abs(a - leagues) ? b : a), nice[0]);
     const px = (leagues / leaguesPerDeg) * this.scale;
 
-    const x = rect.width - px - 24;
-    const y = rect.height - 30;
+    // Bottom centre: the corners belong to the legend and the commission.
+    const x = rect.width / 2 - px / 2;
+    const y = rect.height - 22;
     ctx.save();
     ctx.strokeStyle = '#4a3520';
     ctx.fillStyle = '#4a3520';
