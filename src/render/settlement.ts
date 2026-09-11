@@ -7,8 +7,15 @@ import { Rng } from '../core/rng';
 
 const EARTH_RADIUS_M = 6371000;
 
-function curvatureDrop(distanceM: number): number {
-  return (distanceM * distanceM) / (2 * EARTH_RADIUS_M);
+/**
+ * How far the curve hides a point, measured from the horizon rather than from
+ * the ship — see the same function in `land.ts`. A town this side of the
+ * horizon is not hidden by the curve at all.
+ */
+function curvatureDrop(distanceM: number, eyeM: number): number {
+  const horizonM = Math.sqrt(2 * EARTH_RADIUS_M * Math.max(eyeM, 1.5));
+  const beyond = Math.max(distanceM - horizonM, 0);
+  return (beyond * beyond) / (2 * EARTH_RADIUS_M);
 }
 
 /**
@@ -152,20 +159,24 @@ export class Settlements {
   private plumes: Plume[] = [];
   private lastOrigin: LatLon = { lat: 999, lon: 999 };
   private lastRangeNm = 0;
+  private eyeM = 20;
 
   constructor() {
     this.material = new THREE.MeshLambertMaterial({ vertexColors: true });
   }
 
-  needsRebuild(origin: LatLon, rangeNm: number): boolean {
+  needsRebuild(origin: LatLon, rangeNm: number, eyeM: number): boolean {
     const dLat = Math.abs(origin.lat - this.lastOrigin.lat) * 60;
     const dLon = Math.abs(wrap180(origin.lon - this.lastOrigin.lon)) * 60 * cosd(origin.lat);
-    return Math.hypot(dLat, dLon) > 1.2 || Math.abs(rangeNm - this.lastRangeNm) > 8;
+    const step = this.mesh ? 0.25 : 1.2;
+    return Math.hypot(dLat, dLon) > step || Math.abs(rangeNm - this.lastRangeNm) > 8
+      || Math.abs(eyeM - this.eyeM) > 4;
   }
 
-  rebuild(origin: LatLon, rangeNm: number): void {
+  rebuild(origin: LatLon, rangeNm: number, eyeM: number): void {
     this.lastOrigin = { ...origin };
     this.lastRangeNm = rangeNm;
+    this.eyeM = eyeM;
     this.clear();
 
     const towns = this.townsNear(origin, rangeNm);
@@ -262,7 +273,7 @@ export class Settlements {
       const x = town.x + alongX * alongM + backX * backM;
       const z = town.z + alongZ * alongM + backZ * backM;
       const base = Math.max(groundAt(x, z), 0.5);
-      const drop = curvatureDrop(Math.hypot(x, z));
+      const drop = curvatureDrop(Math.hypot(x, z), this.eyeM);
       const y = base - drop;
       if (round) {
         cylinder(positions, colours, indices, x, y, z, w / 2, h, wall);
@@ -302,7 +313,7 @@ export class Settlements {
       const backM = style.landmark === 'keep' ? 60 : plan.radius * 0.35 + 40;
       const x = town.x + backX * backM;
       const z = town.z + backZ * backM;
-      const base = Math.max(groundAt(x, z), 0.5) - curvatureDrop(Math.hypot(x, z));
+      const base = Math.max(groundAt(x, z), 0.5) - curvatureDrop(Math.hypot(x, z), this.eyeM);
       box(positions, colours, indices,
         x, base, z, wide, wide, tall, town.brg,
         style.landmark === 'keep' ? style.wall : WHITEWASH);
@@ -318,7 +329,7 @@ export class Settlements {
       const alongM = plan.radius * 0.9;
       const x = town.x + alongX * alongM + backX * 20;
       const z = town.z + alongZ * alongM + backZ * 20;
-      const base = Math.max(groundAt(x, z), 0.5) - curvatureDrop(Math.hypot(x, z));
+      const base = Math.max(groundAt(x, z), 0.5) - curvatureDrop(Math.hypot(x, z), this.eyeM);
       box(positions, colours, indices, x, base, z, 34, 34, 9, town.brg, WHITEWASH);
       for (const corner of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
         const cx = x + (alongX * corner[0] + backX * corner[1]) * 15;
@@ -362,7 +373,7 @@ export class Settlements {
       const backM = rng.range(0.2, 1.0) * plan.radius + 40;
       const x = town.x + alongX * alongM + backX * backM;
       const z = town.z + alongZ * alongM + backZ * backM;
-      const drop = curvatureDrop(Math.hypot(x, z));
+      const drop = curvatureDrop(Math.hypot(x, z), this.eyeM);
       // Four puffs up each column, widening and thinning as they go.
       const puffs = 4;
       for (let i = 0; i < puffs; i++) {

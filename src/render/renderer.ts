@@ -445,15 +445,20 @@ export class Renderer {
     // true-scale coast would, and building only as far as the game's own
     // sighting rule allows would cut the far hills off at a hard edge.
     const landRange = clamp(f.sightingRangeNm * 1.6, 16, 110);
-    if (this.land.needsRebuild(f.pos, landRange)) {
-      this.land.rebuild(f.pos, landRange);
+    // Where the eye actually is, because that is what decides how far off the
+    // horizon stands and therefore how much of the coast the curve hides. Going
+    // to the masthead really does open the land, which is what a masthead was
+    // for.
+    const eyeM = clamp(this.camera.position.y, 2, 60);
+    if (this.land.needsRebuild(f.pos, landRange, eyeM)) {
+      this.land.rebuild(f.pos, landRange, eyeM);
     }
     this.land.setFog(lighting.horizon, clamp(1 - f.visibilityNm / 24, 0, 0.7));
 
     // Towns, which are built from the same land range: a settlement that has
     // not risen over the curve yet has no business being drawn either.
-    if (this.settlements.needsRebuild(f.pos, landRange)) {
-      this.settlements.rebuild(f.pos, landRange);
+    if (this.settlements.needsRebuild(f.pos, landRange, eyeM)) {
+      this.settlements.rebuild(f.pos, landRange, eyeM);
     }
     this.settlements.setFog(lighting.horizon, clamp(1 - f.visibilityNm / 24, 0, 0.7));
     this.settlements.setWind(f.windFrom, f.windKnots, f.simTime);

@@ -502,6 +502,45 @@ export class Game {
     return portsNear(this.ship.state.pos, 8).map((p) => ({ def: p.def, distNm: p.distNm }));
   }
 
+  /**
+   * The port the lookout can see, with its true bearing and distance.
+   *
+   * Finding a place you have never been was the hard half of this trade and the
+   * game should keep it hard. Finding a place that is *on your chart*, whose
+   * latitude you have from the quadrant, on a coast you are already in sight
+   * of, was not hard at all: you ran down the parallel until the land came up
+   * and then you asked the man at the masthead which way the town lay, and he
+   * told you, because he could see it. Without that the player was sailing to
+   * the charted position — which since the chart is wrong in longitude by a
+   * degree and a half off Guinea is open sea — finding nothing there, and
+   * having no way at all to convert "somewhere on this coast" into a course.
+   *
+   * So: a port already on the chart, within the lookout's range, on a coast in
+   * sight, bears thus-and-so. Places not yet charted are not included. This
+   * tells the player nothing a ship's company would not have known and it turns
+   * an impossible search into a chase.
+   */
+  portInSight(): { def: PortDef; bearing: number; distNm: number; sure: boolean } | null {
+    const eye = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
+    // Two ranges. Inside the lookout's, with the coast up, he can see the place
+    // and says so. Outside it — but within a day's run — it is the pilot
+    // talking, not the lookout: he has the latitude off the quadrant and he
+    // knows the town is on this coast, so he knows which way to turn, and that
+    // is exactly how these places were found.
+    for (const near of portsNear(this.ship.state.pos, 60)) {
+      if (!this.chart.ports.has(near.def.id)) continue;
+      const dLat = near.at.lat - this.ship.state.pos.lat;
+      const dLon = angleDelta(this.ship.state.pos.lon, near.at.lon) * cosd(this.ship.state.pos.lat);
+      return {
+        def: near.def,
+        bearing: wrap360((Math.atan2(dLon, dLat) * 180) / Math.PI),
+        distNm: near.distNm,
+        sure: near.distNm <= eye && this.sounding.shoreDistNm <= Math.max(eye, 30),
+      };
+    }
+    return null;
+  }
+
   relationsFor(portId: string): Relations {
     let r = this.relations.get(portId);
     if (!r) {

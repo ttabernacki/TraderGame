@@ -337,6 +337,24 @@ export class Hud {
             ? 'weathering it — off your course'
             : { offing: 'a good offing (G)', close: 'standing in (G)', none: 'you have her (G)' }[g.standOff])),
       );
+
+      // The man at the masthead, once the coast is up: which way the town lies.
+      // Steering for the charted position of a port is steering for a place the
+      // chart has in the wrong longitude, and without this there was no way at
+      // all to turn "somewhere along here" into a course.
+      const seen = g.portInSight();
+      if (seen) {
+        append(this.course,
+          el('div', { class: 'hud-row' },
+            el('span', { class: 'k' },
+              seen.sure ? `${seen.def.name} bears` : `${seen.def.name}, by the pilot`),
+            el('span', {
+              class: 'v',
+              style: { color: seen.sure ? '#c8a44e' : 'rgba(200,164,78,0.66)' },
+            },
+              `${seen.bearing.toFixed(0).padStart(3, '0')}° ${compassPoint(seen.bearing)} `
+              + `\u00b7 ${seen.distNm.toFixed(seen.distNm < 10 ? 1 : 0)} miles`)));
+      }
     }
 
     // --- What she is at sea for --------------------------------------------
@@ -369,14 +387,13 @@ export class Hud {
     // --- Context hint ------------------------------------------------------
     const near = g.approachablePorts();
     if (g.sounding.aground) {
-      this.hint.innerHTML = '<b>Aground.</b> Press <b>R</b> to try to warp her off.';
+      this.hint.innerHTML =
+        '<b>Aground.</b> <b>B</b> walks her astern off it; <b>R</b> lays out the kedge '
+        + 'and waits for the flood.';
     } else if (near.length > 0 && !g.dockedAt) {
       this.hint.innerHTML = `<b>${near[0].def.name}</b> lies ${near[0].distNm.toFixed(1)} miles off. Press <b>Space</b> to come to an anchor.`;
     } else if (g.backing) {
       this.hint.innerHTML = 'Walking her astern. Press <b>B</b> to belay.';
-    } else if (g.sounding.aground) {
-      this.hint.innerHTML =
-        'She is aground. <b>B</b> backs her off; <b>R</b> lays out the kedge and waits for the flood.';
     } else if (g.dockedAt) {
       this.hint.innerHTML = `At anchor off <b>${g.portHere?.name}</b>. Press <b>P</b> to go ashore, <b>Space</b> to weigh.`;
     } else {

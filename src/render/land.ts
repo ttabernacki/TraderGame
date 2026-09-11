@@ -28,8 +28,8 @@ const LAND_LIFT = 2.5;
 const EARTH_RADIUS_M = 6371000;
 
 /**
- * How far the earth's curve carries a point below the level of the eye, in
- * metres, at a given distance.
+ * How far the earth's curve hides a point, in metres, at a given distance from
+ * an eye a given height above the water.
  *
  * The sea is drawn as a flat plane, which is the right approximation for water
  * the ship is sailing on, but land is not: without this a beach fifty miles off
@@ -38,9 +38,23 @@ const EARTH_RADIUS_M = 6371000;
  * the curve instead puts it where it belongs — hull-down, high ground first —
  * so a landfall opens as it really does, a peak lifting out of the sea long
  * before the shore beneath it is anywhere in sight.
+ *
+ * But the drop is measured from the *horizon*, not from the ship. Nothing this
+ * side of the horizon is hidden by the curve at all — that is what a horizon
+ * is — and sinking it anyway drowned the near shore in the flat sea plane and
+ * drew the waterline a mile inland of where the waterline is. A player then
+ * steers confidently at what looks like open water and takes the ground in it,
+ * which is exactly the complaint, and the model was innocent: she strikes four
+ * metres from the coastline, and the picture was putting that coastline in the
+ * wrong place.
+ *
+ * From twenty metres up the horizon is about eight and a half miles, so the
+ * beach is drawn honestly out to there and hull-down beyond it.
  */
-function curvatureDrop(distanceM: number): number {
-  return (distanceM * distanceM) / (2 * EARTH_RADIUS_M);
+function curvatureDrop(distanceM: number, eyeM: number): number {
+  const horizonM = Math.sqrt(2 * EARTH_RADIUS_M * Math.max(eyeM, 1.5));
+  const beyond = Math.max(distanceM - horizonM, 0);
+  return (beyond * beyond) / (2 * EARTH_RADIUS_M);
 }
 
 interface Segment {
@@ -69,6 +83,8 @@ export class Land {
   private inwardCache = new Map<string, number>();
   private lastOrigin: LatLon = { lat: 999, lon: 999 };
   private lastRangeNm = 0;
+  /** Height of the eye above the water, which decides where the horizon is. */
+  private eyeM = 20;
 
   constructor() {
     this.material = new THREE.MeshLambertMaterial({
@@ -81,15 +97,26 @@ export class Land {
   }
 
   /** True when the terrain needs rebuilding for the ship's new position. */
-  needsRebuild(origin: LatLon, rangeNm: number): boolean {
+  needsRebuild(origin: LatLon, rangeNm: number, eyeM: number): boolean {
     const dLat = Math.abs(origin.lat - this.lastOrigin.lat) * 60;
     const dLon = Math.abs(wrap180(origin.lon - this.lastOrigin.lon)) * 60 * cosd(origin.lat);
-    return Math.hypot(dLat, dLon) > 2.5 || Math.abs(rangeNm - this.lastRangeNm) > 8;
+    // Two and a half miles between rebuilds is nothing in open water and far
+    // too much with the land aboard: the coast is then drawn where it was two
+    // and a half miles ago, which at the fast clock rates is a beach that sits
+    // visibly out ahead of the ship while she is already on it. Where there is
+    // land in the mesh at all, it is rebuilt every quarter mile — about a
+    // millisecond of work, and only ever while closing a coast.
+    const step = this.mesh ? 0.25 : 2.5;
+    return Math.hypot(dLat, dLon) > step || Math.abs(rangeNm - this.lastRangeNm) > 8
+      // Going aloft moves the horizon, and the horizon is where the coast is
+      // cut off, so the band has to be built again for the new eye.
+      || Math.abs(eyeM - this.eyeM) > 4;
   }
 
-  rebuild(origin: LatLon, rangeNm: number): void {
+  rebuild(origin: LatLon, rangeNm: number, eyeM: number): void {
     this.lastOrigin = { ...origin };
     this.lastRangeNm = rangeNm;
+    this.eyeM = eyeM;
 
     const segments = this.segmentsNear(origin, rangeNm);
     this.clear();
@@ -139,7 +166,7 @@ export class Land {
           // Eased in over the first band so the shoreline still meets the sea.
           const lift = 1 + (LAND_LIFT - 1) * Math.min(inland / 900, 1);
           const height = Math.max(h, floor) * lift;
-          positions.push(x, height - curvatureDrop(Math.hypot(x, z)), z);
+          positions.push(x, height - curvatureDrop(Math.hypot(x, z), eyeM), z);
 
           const tint = BAND_TINT[b];
           // Vegetation and rock tinted by latitude: desert coasts are pale,
@@ -165,10 +192,10 @@ export class Land {
       const outward = 130;
       const cx = ax - nx * outward, cz = az - nz * outward;
       const dx2 = bx - nx * outward, dz2 = bz - nz * outward;
-      surfPositions.push(ax, 0.35 - curvatureDrop(Math.hypot(ax, az)), az);
-      surfPositions.push(bx, 0.35 - curvatureDrop(Math.hypot(bx, bz)), bz);
-      surfPositions.push(cx, 0.3 - curvatureDrop(Math.hypot(cx, cz)), cz);
-      surfPositions.push(dx2, 0.3 - curvatureDrop(Math.hypot(dx2, dz2)), dz2);
+      surfPositions.push(ax, 0.35 - curvatureDrop(Math.hypot(ax, az), eyeM), az);
+      surfPositions.push(bx, 0.35 - curvatureDrop(Math.hypot(bx, bz), eyeM), bz);
+      surfPositions.push(cx, 0.3 - curvatureDrop(Math.hypot(cx, cz), eyeM), cz);
+      surfPositions.push(dx2, 0.3 - curvatureDrop(Math.hypot(dx2, dz2), eyeM), dz2);
       surfIndices.push(sBase, sBase + 2, sBase + 1);
       surfIndices.push(sBase + 1, sBase + 2, sBase + 3);
     }
