@@ -594,7 +594,14 @@ export class Ocean {
     // The grid must reach past the true horizon — sixteen kilometres from a
     // masthead on a clear day — or the player sees the edge of the water before
     // he sees where the sea meets the sky.
-    const geometry = buildRadialGrid(256, 224, 1.6, 42000);
+    //
+    // Every one of these vertices is displaced by the wave sum in the shader,
+    // so the count is very nearly the whole cost of drawing the sea. A phone
+    // gets rather under half of them, which at that size costs a little
+    // definition in the chop and buys back the frame rate.
+    const dense = !smallScreen();
+    const geometry = buildRadialGrid(
+      dense ? 256 : 168, dense ? 224 : 136, 1.6, 42000);
 
     this.dirs = Array.from({ length: WAVE_COUNT }, () => new THREE.Vector2(1, 0));
     this.amps = new Array(WAVE_COUNT).fill(0.4);
@@ -908,6 +915,18 @@ function wrap(v: number, limit: number): number {
 function slewAngle(from: number, to: number, k: number): number {
   let delta = ((to - from) % 360 + 540) % 360 - 180;
   return from + delta * k;
+}
+
+/**
+ * Whether this is a handheld screen, for how much sea to build.
+ *
+ * A coarse pointer means fingers, which means a device with a battery and a
+ * thermal budget; the width test keeps a touchscreen desktop out of it.
+ */
+function smallScreen(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(pointer: coarse)').matches
+    && Math.min(window.innerWidth, window.innerHeight) <= 900;
 }
 
 /**

@@ -372,10 +372,22 @@ setInterval(() => {
   if (game && game.mode !== 'gameover') ui.save(game);
 }, 180000);
 
-window.addEventListener('beforeunload', () => {
-  if (game && game.mode !== 'gameover') {
-    try { localStorage.setItem('carreira-da-india:save', game.serialize()); } catch { /* ignore */ }
-  }
+/**
+ * Write the voyage out whenever the page might be about to go away.
+ *
+ * `beforeunload` is close to useless on a phone: switching apps, locking the
+ * screen or having the tab evicted under memory pressure never fires it, and a
+ * player who took a call in the middle of the Atlantic came back to the title
+ * screen. `visibilitychange` to hidden is the event that actually fires in all
+ * of those cases, and `pagehide` covers the back-forward cache.
+ */
+function saveIfPlaying(): void {
+  if (game && game.mode !== 'gameover') Ui.saveQuietly(game);
+}
+window.addEventListener('beforeunload', saveIfPlaying);
+window.addEventListener('pagehide', saveIfPlaying);
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) saveIfPlaying();
 });
 
 // A handle on the running simulation, for driving the renderer into particular

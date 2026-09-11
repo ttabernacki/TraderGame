@@ -88,7 +88,9 @@ export class Ui {
     this.hud.setVisible(false);
     this.touch.setVisible(false);
     clear(this.overlay);
-    const hasSave = !!localStorage.getItem(SAVE_KEY);
+    // Reading localStorage throws outright in some privacy modes, which would
+    // otherwise take the title screen down with it before anything is drawn.
+    const hasSave = !!Ui.loadSave();
     const t = new TitleView(this.cb.onNewGame, this.cb.onContinue, hasSave);
     this.overlay.append(t.root);
   }
@@ -291,6 +293,11 @@ export class Ui {
     } catch {
       g.pushAlert('Could not write the save.', 'warning');
     }
+  }
+
+  /** Write the voyage out without saying anything about it. */
+  static saveQuietly(g: Game): void {
+    try { localStorage.setItem(SAVE_KEY, g.serialize()); } catch { /* nowhere to put it */ }
   }
 
   static loadSave(): string | null {

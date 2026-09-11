@@ -172,7 +172,9 @@ export class Renderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // The soft variant takes many more samples per fragment. On a phone that is
+    // paid for on every frame for a softness nobody can see at that size.
+    this.renderer.shadowMap.type = phone ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 
     // The far plane must clear the ocean's outer rim, or the water is clipped
     // short of the horizon and the sky shows through beneath it.
@@ -201,7 +203,10 @@ export class Renderer {
     cam.left = -span; cam.right = span;
     cam.top = span; cam.bottom = -span;
     cam.near = 1; cam.far = span * 6;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    // Two thousand square is a lot of depth buffer to fill for a shadow that
+    // covers one small ship, and a phone feels every megabyte of it.
+    const shadowSize = isPhone() ? 1024 : 2048;
+    this.sun.shadow.mapSize.set(shadowSize, shadowSize);
     this.sun.shadow.bias = -0.0009;
     this.sun.shadow.normalBias = 0.06;
 
