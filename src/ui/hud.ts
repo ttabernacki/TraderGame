@@ -443,7 +443,8 @@ function progressBar(fraction: number): HTMLElement {
   const pct = clamp(fraction, 0, 1) * 100;
   return el('div', { class: 'run-bar' },
     el('i', { style: { width: `${pct}%` } }),
-    el('span', {}, `${pct.toFixed(0)}% of the passage run`),
+    // Short enough to survive a phone-width column without being clipped.
+    el('span', {}, `${pct.toFixed(0)}% of the way`),
   );
 }
 

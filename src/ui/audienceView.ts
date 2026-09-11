@@ -2,7 +2,7 @@ import { clamp } from '../core/math';
 import { good } from '../economy/goods';
 import { people } from '../world/peoples';
 import {
-  applyMove, applyOutcome, availableMoves, beginAudience, concludeAudience,
+  applyMove, applyOutcome, audienceReading, availableMoves, beginAudience, concludeAudience,
   expectedGiftValue, giftCandidates, type AudienceContext, type AudienceState, type GiftOffer,
 } from '../diplomacy/contact';
 import { skill, train } from '../crew/skills';
@@ -63,7 +63,9 @@ export class AudienceView {
     this.foot.append(
       s.concluded
         ? button('Return aboard', () => this.finish(), { primary: true })
-        : button('Take your leave', () => { applyMove(s, 'depart', this.context(g)); this.render(); }),
+        // Once the room has given you enough, leaving is the move.
+        : button('Take your leave', () => { applyMove(s, 'depart', this.context(g)); this.render(); },
+          { primary: audienceReading(s).state === 'good' }),
     );
 
     clear(this.body);
@@ -93,6 +95,13 @@ export class AudienceView {
         ? el('p', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '8px', lineHeight: '1.55' } },
             'Almost nothing you say is arriving. Find a man who has their tongue, or one who has Arabic if these are people of the Indian Ocean trade, or put a degredado ashore and come back in a year.')
         : null,
+      // What the two bars actually add up to, which is the only thing the
+      // outcome depends on and was nowhere on the screen.
+      s.concluded ? null : (() => {
+        const r = audienceReading(s);
+        return el('div', { class: `audience-reading ${r.state}` },
+          el('b', {}, 'How it is going'), el('span', {}, r.text));
+      })(),
     ));
 
     if (!s.concluded) {

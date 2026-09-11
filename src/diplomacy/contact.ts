@@ -419,6 +419,52 @@ export function applyMove(
   }
 }
 
+/**
+ * How an experienced captain would read the room.
+ *
+ * The screen showed interest and suspicion as two bars and never said that
+ * what decides the outcome is the difference between them — so a player could
+ * run the interest up to eighty, never notice the suspicion had gone to
+ * ninety, take his leave, and be told he had got nothing, with no way of
+ * knowing which of the six things he did was the mistake. This reads off the
+ * same expression concludeAudience() settles on, so it can never flatter the
+ * player about a room that is going to refuse him.
+ */
+export function audienceReading(s: AudienceState): { text: string; state: 'good' | 'warn' | 'bad' } {
+  const net = s.interest - s.suspicion * 0.85;
+  if (s.suspicion > 85 && s.interest < 30) {
+    return {
+      text: 'There are more men on the beach than there were. Leave now and you leave for good.',
+      state: 'bad',
+    };
+  }
+  if (net > 74) {
+    return {
+      text: 'They would give you ground to build on, if you asked for it and did not spoil it.',
+      state: 'good',
+    };
+  }
+  if (net > 62) {
+    return { text: 'They would prefer Portugal to whoever comes next. Ask for it.', state: 'good' };
+  }
+  if (net > 12) {
+    return {
+      text: 'You have enough. Take your leave now and you go away with leave to trade.',
+      state: 'good',
+    };
+  }
+  if (net > -10) {
+    return {
+      text: 'Not enough. They are neither pleased nor alarmed, and would let you go away with nothing.',
+      state: 'warn',
+    };
+  }
+  return {
+    text: 'Badly. Their suspicion is running ahead of their interest and nothing will be agreed today.',
+    state: 'bad',
+  };
+}
+
 export function concludeAudience(s: AudienceState, _ctx: AudienceContext): void {
   if (s.concluded) return;
   s.concluded = true;
