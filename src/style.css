@@ -206,34 +206,38 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
    away.
    
    Nothing here may set a backdrop-filter, and it is not a .hud-panel. */
+/* The running commentary, bottom right, out of the way of the sea. */
 #hud-alerts {
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 480px;
-  text-align: center;
+  right: 14px;
+  bottom: 54px;
+  width: min(34vw, 330px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  text-align: right;
   pointer-events: none;
   user-select: none;
-  font-size: 13px;
-  line-height: 1.45;
+  font-size: 12.5px;
+  line-height: 1.4;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
 
 .alert {
   display: inline-block;
-  padding: 7px 16px;
-  margin-bottom: 6px;
-  background: rgba(18, 12, 8, 0.88);
-  border-left: 3px solid var(--gold);
+  padding: 4px 9px;
+  background: rgba(18, 12, 8, 0.78);
+  border-left: none;
+  border-right: 3px solid var(--gold);
   border-radius: 2px;
-  font-size: 14px;
-  animation: fadein 0.3s ease;
+  font-size: 12.5px;
+  animation: fadein 0.35s ease;
 }
-.alert.warning { border-left-color: var(--warn); }
-.alert.grave { border-left-color: var(--red); background: rgba(48, 12, 8, 0.9); }
-@keyframes fadein { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; } }
+.alert.warning { border-right-color: var(--warn); }
+.alert.grave { border-right-color: var(--red); background: rgba(48, 12, 8, 0.88); }
+@keyframes fadein { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; } }
 
 /* Compass rose and wind dial */
 .dial { display: block; margin: 4px auto 2px; }
@@ -265,6 +269,17 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
   white-space: nowrap;
 }
 .hint b { color: var(--gold); font-weight: normal; }
+/* The standing key list, once it has been read. Nothing about it changes from
+   one frame to the next, so it steps back out of the picture and comes forward
+   again the moment the pointer goes looking for it. The situational hints never
+   carry this class. */
+.hint.idle {
+  opacity: 0.28;
+  background: rgba(15, 11, 7, 0.34);
+  border-color: transparent;
+  transition: opacity 260ms ease, background 260ms ease;
+}
+.hint.idle:hover { opacity: 1; background: rgba(15, 11, 7, 0.78); border-color: var(--deck-edge); }
 
 /* --------------------------------------------------------------- Screens */
 
@@ -669,6 +684,33 @@ table.ledger tr:hover td { background: rgba(255, 252, 240, 0.5); }
   display: flex; flex-direction: column; gap: 5px;
   align-items: stretch;
 }
+/* The overlay chips: what is drawn on the chart, in one line rather than four
+   buttons. Pressed-looking when the layer is on. */
+.chart-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+  margin-top: 2px;
+}
+.chart-chip {
+  font-family: inherit;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  min-height: 0;
+  border: 1px solid rgba(90, 74, 55, 0.4);
+  border-radius: 10px;
+  background: rgba(255, 250, 235, 0.72);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.chart-chip:hover { background: rgba(255, 250, 235, 0.95); color: var(--ink); }
+.chart-chip.on {
+  background: rgba(90, 74, 55, 0.82);
+  border-color: rgba(90, 74, 55, 0.6);
+  color: #f4ecda;
+}
 .chart-legend {
   position: absolute;
   bottom: calc(14px + var(--safe-b)); left: calc(14px + var(--safe-l));
@@ -931,6 +973,7 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   .tabs button { min-height: 34px; padding: 5px 11px; font-size: 12.5px; }
   .card { padding: 9px 11px; margin-bottom: 8px; }
   .chart-tools button { min-height: 36px; padding: 6px 11px; }
+  .chart-tools .chart-chip { min-height: 32px; padding: 5px 11px; font-size: 12px; }
   /* The instrument columns stop above the thumb pads rather than behind them. */
   .hud-col { max-height: calc(100% - 132px); }
 }
@@ -1105,19 +1148,18 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   .hud-big { font-size: 19px; }
   .hud-unit { font-size: 10px; }
   .hud-panel .dial { display: none; }
-  /* Only the rows that decide what to do next survive the cut. */
-  #hud-nav .hud-row:nth-of-type(n + 3),
-  #hud-wind .hud-row:nth-of-type(n + 4),
-  #hud-ship .hud-row:nth-of-type(n + 5),
-  #hud-time .hud-row:nth-of-type(n + 3) { display: none; }
+  /* Only the rows that decide what to do next survive the cut. Which ones
+     those are is marked where they are written, in hud.ts: counting elements
+     from the CSS here counted the titles and the big readouts too, and pointed
+     at a different row every time a panel changed. */
+  .hud-row.aside { display: none; }
   /* The alerts are centred on the screen, which on a tall narrow one is
      exactly where the instrument panels are. They drop into the open sea
      below them instead. */
   #hud-alerts {
-    width: min(92vw, 480px);
-    top: auto;
+    width: min(72vw, 330px);
+    right: calc(10px + var(--safe-r));
     bottom: calc(104px + var(--safe-b));
-    transform: translateX(-50%);
   }
   .hint { display: none; }
 
@@ -1370,6 +1412,16 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
     font-size: 12px;
     padding: 9px 12px;
     min-height: 42px;
+  }
+  /* In the scrolling row the chips are members of the row, not a block of
+     their own, so they wrap nothing and keep a thumb-sized target. */
+  .chart-tools .chart-chips {
+    display: contents;
+  }
+  .chart-tools .chart-chip {
+    padding: 9px 13px;
+    min-height: 42px;
+    border-radius: 21px;
   }
   /* Both corner panels sit above the tool row and stop short of the bottom, so
      the middle of the map is always visible behind whichever one is open. */

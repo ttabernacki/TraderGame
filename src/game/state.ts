@@ -83,11 +83,26 @@ export interface Sounding {
   shoaling: boolean;
 }
 
+/** Wall-clock milliseconds, wherever the environment keeps them. */
+function nowMs(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
 export interface Alert {
   id: number;
   text: string;
   severity: 'note' | 'warning' | 'grave';
   t: number;
+  /**
+   * When it was said, by the clock on the wall rather than the ship's.
+   *
+   * An alert is something the player reads, so it has to last long enough for a
+   * player to read it and no longer — and that is a quantity in seconds of his
+   * life, not in hours of the ship's. Expiring them on ship's time meant the
+   * same line hung on screen for an hour and a half at the slow rates and
+   * flickered past at the fast ones, which is exactly backwards.
+   */
+  said: number;
 }
 
 /** What a boat's crew can be sent in to do. */
@@ -3088,8 +3103,10 @@ export class Game {
   pushAlert(text: string, severity: Alert['severity']): void {
     const last = this.alerts[this.alerts.length - 1];
     if (last && last.text === text && this.clock.t - last.t < 7200) return;
-    this.alerts.push({ id: this.nextAlertId++, text, severity, t: this.clock.t });
-    if (this.alerts.length > 6) this.alerts.shift();
+    this.alerts.push({
+      id: this.nextAlertId++, text, severity, t: this.clock.t, said: nowMs(),
+    });
+    if (this.alerts.length > 5) this.alerts.shift();
     // Something wants the captain *now*. Bring the clock down so he is on deck
     // to see it: the fast rate is for the empty ocean, and the moment it stops
     // being empty he should be at a pace he can act at.
@@ -3103,7 +3120,13 @@ export class Game {
   }
 
   private expireAlerts(): void {
-    this.alerts = this.alerts.filter((a) => this.clock.t - a.t < 5400);
+    // Fourteen seconds is about as long as a line of text is worth leaving on a
+    // screen somebody is trying to see the sea through. The grave ones get
+    // twice that, because they are the ones he may want to read twice.
+    const now = nowMs();
+    this.alerts = this.alerts.filter(
+      (a) => now - a.said < (a.severity === 'grave' ? 30000 : 14000),
+    );
   }
 
   logEvent(kind: LogKind, text: string, important = false): void {

@@ -46,15 +46,16 @@ export type EntryKind =
   | 'coast' | 'port' | 'nature' | 'people' | 'chronicle'
   | 'passage' | 'rumour' | 'person';
 
+/** One word each, to match the tabs everywhere else. */
 export const KIND_LABEL: Record<EntryKind, string> = {
-  coast: 'The coast',
-  port: 'Ports and anchorages',
-  nature: 'What grows and what swims',
-  people: 'The peoples',
-  chronicle: 'The chronicle',
-  passage: 'Passages and the sea',
-  rumour: 'What is said',
-  person: 'Men and their characters',
+  coast: 'Coasts',
+  port: 'Ports',
+  nature: 'Nature',
+  people: 'Peoples',
+  chronicle: 'Chronicle',
+  passage: 'Seas',
+  rumour: 'Rumours',
+  person: 'Men',
 };
 
 /**

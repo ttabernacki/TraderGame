@@ -43,8 +43,10 @@ export class ChartView {
   private showTrack = true;
   private showPlaces = true;
   private showTrue = false;
-  /** Draw the wind and current your own roteiro records. */
+  /** Draw the wind your own roteiro records, for this month. */
   private showWinds = true;
+  /** And the set of the water, which is off until he goes looking for it. */
+  private showSet = false;
   private selectedPort: string | null = null;
   /**
    * The spot on the paper the pilot has his dividers on.
@@ -116,8 +118,28 @@ export class ChartView {
     this.draw();
   }
 
+  /**
+   * A small on/off chip for one of the chart's overlays.
+   *
+   * The overlays used to be full-width buttons reading "Hide the track", "Show
+   * names", "Compare with the truth" — nine words of imperative apiece, stacked
+   * with the things that actually *do* something, and a player had to read the
+   * label to work out which state the chart was in. A chip says what the layer
+   * is, once, and looks pressed when it is on. Four of them fit on the line the
+   * one button used to take.
+   */
+  private chip(label: string, on: boolean, toggle: () => void, title?: string): HTMLElement {
+    return el('button', {
+      class: `chart-chip${on ? ' on' : ''}`,
+      title,
+      onclick: () => { toggle(); this.buildTools(); this.draw(); },
+    }, label);
+  }
+
   private buildTools(): void {
     clear(this.tools);
+    const g = this.game;
+    const hasRoute = (g?.route.length ?? 0) > 0;
     append(this.tools,
       // Where the panels have to be toggled, their buttons come first: the row
       // scrolls on a small screen and the far end of it is the hardest to get
@@ -138,35 +160,23 @@ export class ChartView {
           this.buildTools();
         })
         : null,
-      button('Centre on the reckoning', () => {
-        if (this.game) this.centre = { ...this.game.nav.estimated };
-        this.draw();
-      }),
-      button(this.showTrack ? 'Hide the track' : 'Show the track', () => {
-        this.showTrack = !this.showTrack; this.buildTools(); this.draw();
-      }),
-      button(this.showPlaces ? 'Hide names' : 'Show names', () => {
-        this.showPlaces = !this.showPlaces; this.buildTools(); this.draw();
-      }),
-      (this.game?.rutter.seaNotes().length ?? 0) > 0
-        ? button(this.showWinds ? 'Hide your winds' : 'Your winds', () => {
-          this.showWinds = !this.showWinds; this.buildTools(); this.draw();
-        }, { title: 'The wind and the set as your own book has them, for this month' })
-        : null,
+      // What the chart *does*, and nothing that merely changes how it looks.
+      // Laying a course is the reason a pilot comes to the table, so it is the
+      // one button that is always here and always first.
       button(
         `Steer for ${this.targetLabel()}`,
         () => this.steerForSelection(false),
         { primary: true, title: 'Lay off a fresh course, striking whatever is laid now' },
       ),
-      (this.game?.route.length ?? 0) > 0
+      hasRoute
         ? button(
           `Then ${this.targetLabel()}`,
           () => this.steerForSelection(true),
           { title: 'Add this to the end of the passage instead of replacing it' },
         )
         : null,
-      (this.game?.route.length ?? 0) > 0
-        ? button('Cancel the course', () => {
+      hasRoute
+        ? button('Clear course', () => {
           this.game?.clearDestination(); this.buildTools(); this.buildVoyage(); this.draw();
         })
         : null,
@@ -176,9 +186,27 @@ export class ChartView {
           if (this.game) this.updateOverlay(this.game.nav.estimated);
         })
         : button('Name this place', () => this.namePlace()),
-      button(this.showTrue ? 'Hide the true coast' : 'Compare with the truth', () => {
-        this.showTrue = !this.showTrue; this.buildTools(); this.draw();
-      }, { title: 'A modern overlay showing where the land actually is. No pilot of this century had this.' }),
+
+      // The layers, as chips: what is drawn on the chart, not what to do next.
+      el('div', { class: 'chart-chips' },
+        this.chip('Track', this.showTrack, () => { this.showTrack = !this.showTrack; },
+          'The track she has actually run'),
+        this.chip('Names', this.showPlaces, () => { this.showPlaces = !this.showPlaces; },
+          'The names of places on the chart'),
+        (g?.rutter.seaNotes().length ?? 0) > 0
+          ? this.chip('Winds', this.showWinds, () => { this.showWinds = !this.showWinds; },
+            'The wind as your own book has it, for this month')
+          : null,
+        (g?.rutter.seaNotes().length ?? 0) > 0
+          ? this.chip('Set', this.showSet, () => { this.showSet = !this.showSet; },
+            'The set of the water as your own book has it, for this month')
+          : null,
+        this.chip('Truth', this.showTrue, () => { this.showTrue = !this.showTrue; },
+          'A modern overlay showing where the land actually is. No pilot of this century had this.'),
+        this.chip('Centre', false, () => {
+          if (g) this.centre = { ...g.nav.estimated };
+        }, 'Bring the chart back to where she thinks she is'),
+      ),
     );
     this.applyPanels();
   }
@@ -636,7 +664,9 @@ export class ChartView {
     this.drawGraticule(ctx, rect);
     this.drawRhumbNetwork(ctx, rect);
     if (this.showTrue) this.drawTrueCoast(ctx);
-    if (this.showWinds && this.game) this.drawYourWinds(ctx, this.game);
+    // The set under the wind, so where both are drawn the wind reads on top.
+    if (this.showSet && this.game) this.drawSeaArrows(ctx, this.game, 'set');
+    if (this.showWinds && this.game) this.drawSeaArrows(ctx, this.game, 'wind');
     this.drawChartedCoast(ctx, g);
     if (this.showTrack) this.drawTrack(ctx, g);
     this.drawPorts(ctx, g);
@@ -844,62 +874,73 @@ export class ChartView {
    * not in is not advice, and because the whole point of the thing is that the
    * same water is a different sea in March and in September.
    */
-  private drawYourWinds(ctx: CanvasRenderingContext2D, g: Game): void {
+  /**
+   * The wind (and, if he asks for it, the set) as the book has them, drawn as a
+   * field of small arrows about a day's sailing apart.
+   *
+   * This used to be one enormous rose per five-degree square, which is a
+   * *diagram of a region* — the eye had to work out what a passage through it
+   * would be like. A field of arrows is the wind itself: a player reads a route
+   * through it the way he reads a river, and the belts of the Atlantic — the
+   * north-easterly trades, the variables above them, the south-easterlies below
+   * the line — show themselves without a word of explanation. Faint and thin
+   * and behind everything else, because this is the one layer on the chart that
+   * must never compete with the coast.
+   */
+  private drawSeaArrows(ctx: CanvasRenderingContext2D, g: Game, which: 'wind' | 'set'): void {
     const month = g.clock.date.month;
     const notes = g.rutter.seaNotes().filter((s) => s.month === month);
     if (notes.length === 0) return;
+
+    // A hundred nautical miles: one day's run in a fair breeze, and so the
+    // natural grain for a picture of the wind a passage would meet.
+    const stepDeg = 100 / 60;
+    const rect = this.canvas.getBoundingClientRect();
     ctx.save();
+    ctx.lineCap = 'round';
     for (const s of notes) {
       const d = describeSea(s);
-      const mid = { lat: s.lat + REGION / 2, lon: s.lon + REGION / 2 };
-      const p = this.toScreen(mid.lat, mid.lon);
-      const half = (REGION / 2) * this.scale;
-      if (p.x < -half || p.y < -half) continue;
-      const arm = Math.min(half * 0.62, 30);
-      if (arm < 5) continue;
+      // How far the book is worth listening to here: hours run in the square,
+      // and how much of that ran the one way.
+      const sure = clamp(d.hours / 30, 0.15, 1) * clamp(d.steadiness + 0.3, 0.3, 1);
+      if (which === 'set' && d.currentKnots < 0.15) continue;
+      const alpha = which === 'wind' ? 0.15 + sure * 0.3 : 0.14 + sure * 0.26;
+      const toward = which === 'wind' ? d.windFrom + 180 : d.currentToward;
+      const colour = which === 'wind' ? '58, 104, 168' : '40, 118, 116';
 
-      // Firm where the book is sure of it, faint where it is one passage's
-      // worth of guess.
-      const sure = clamp(d.hours / 30, 0.18, 1) * clamp(d.steadiness + 0.25, 0.3, 1);
-      const rad = ((d.windFrom + 180) * Math.PI) / 180;
-      const dx = Math.sin(rad), dy = -Math.cos(rad);
+      for (let lat = s.lat + stepDeg / 2; lat < s.lat + REGION; lat += stepDeg) {
+        for (let lon = s.lon + stepDeg / 2; lon < s.lon + REGION; lon += stepDeg) {
+          const p = this.toScreen(lat, lon);
+          if (p.x < -40 || p.y < -40) continue;
+          if (p.x > rect.width + 40 || p.y > rect.height + 40) continue;
 
-      ctx.strokeStyle = `rgba(60, 90, 138, ${0.25 + sure * 0.5})`;
-      ctx.lineWidth = 1 + sure * 2.2;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(p.x - dx * arm, p.y - dy * arm);
-      ctx.lineTo(p.x + dx * arm, p.y + dy * arm);
-      ctx.stroke();
-      // Feathers on the tail, as on a real wind rose, one for each four knots.
-      const barbs = clamp(Math.round(d.windKnots / 5), 1, 4);
-      for (let i = 0; i < barbs; i++) {
-        const at = 1 - i * 0.22;
-        const bx = p.x - dx * arm * at;
-        const by = p.y - dy * arm * at;
-        ctx.beginPath();
-        ctx.moveTo(bx, by);
-        ctx.lineTo(bx + (dx * 0.5 - dy) * arm * 0.3, by + (dy * 0.5 + dx) * arm * 0.3);
-        ctx.stroke();
-      }
-      // The arrow head, pointing the way the wind goes.
-      ctx.fillStyle = `rgba(60, 90, 138, ${0.35 + sure * 0.5})`;
-      ctx.beginPath();
-      ctx.arc(p.x + dx * arm, p.y + dy * arm, 1.6 + sure * 2, 0, Math.PI * 2);
-      ctx.fill();
+          // An arrow flies the way the wind blows, which is the reciprocal of
+          // where it blows from; the set is already said as a direction it runs
+          // towards. Drawn in screen space, where y runs down.
+          const rad = (toward * Math.PI) / 180;
+          const dx = Math.sin(rad);
+          const dy = -Math.cos(rad);
+          // The set is drawn a little shorter and offset across the wind, so
+          // the two layers can be read together without lying on top of
+          // each other.
+          const len = clamp(this.scale * stepDeg * 0.36, 5, 14) * (which === 'wind' ? 1 : 0.8);
+          const ox = which === 'wind' ? 0 : -dy * len * 0.5;
+          const oy = which === 'wind' ? 0 : dx * len * 0.5;
+          const hx = p.x + ox + dx * len, hy = p.y + oy + dy * len;
 
-      // The set of the current, in a different hand.
-      if (d.currentKnots > 0.2) {
-        const crad = (d.currentToward * Math.PI) / 180;
-        const cx = Math.sin(crad), cy = -Math.cos(crad);
-        ctx.strokeStyle = `rgba(40, 110, 110, ${0.3 + sure * 0.4})`;
-        ctx.lineWidth = 1.1;
-        ctx.setLineDash([3, 3]);
-        ctx.beginPath();
-        ctx.moveTo(p.x, p.y + 5);
-        ctx.lineTo(p.x + cx * arm * 0.75, p.y + 5 + cy * arm * 0.75);
-        ctx.stroke();
-        ctx.setLineDash([]);
+          ctx.strokeStyle = `rgba(${colour}, ${alpha})`;
+          ctx.lineWidth = 0.8 + sure * 0.6;
+          ctx.beginPath();
+          ctx.moveTo(p.x + ox - dx * len, p.y + oy - dy * len);
+          ctx.lineTo(hx, hy);
+          // A small barbed head, so the direction reads at this size.
+          const wing = len * 0.42;
+          ctx.moveTo(hx, hy);
+          ctx.lineTo(hx - dx * wing - dy * wing * 0.55, hy - dy * wing + dx * wing * 0.55);
+          ctx.moveTo(hx, hy);
+          ctx.lineTo(hx - dx * wing + dy * wing * 0.55, hy - dy * wing - dx * wing * 0.55);
+          ctx.stroke();
+        }
       }
     }
     ctx.restore();

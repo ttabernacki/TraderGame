@@ -4,8 +4,21 @@ import { moraleWord } from '../crew/crew';
 import { enduranceDays } from '../crew/crew';
 import { daysLeft } from '../progression/ventures';
 import type { Game, MastTrim } from '../game/state';
-import { append, clear, el, hudRow, svg } from './dom';
+import { append, asideRow, clear, el, hudRow, svg } from './dom';
 import { HeadingTape } from './headingTape';
+
+/**
+ * The standing key list. One constant rather than a string built in two places,
+ * because the strip has to be able to recognise it to know when to fade.
+ */
+const KEYS =
+  '<b>A</b>/<b>D</b> helm \u2014 alter course when the clock is up &nbsp; ' +
+  '<b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
+  '<b>T</b> about ship &nbsp; <b>B</b> back her astern &nbsp; ' +
+  '<b>J</b> the book \u2014 chart, roteiro, log, orders, company &nbsp; ' +
+  '<b>N</b> sight &nbsp; <b>V</b> view &nbsp; <b>M</b> sound &nbsp; ' +
+  '<b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor &nbsp; ' +
+  'drag to look about, wheel to close in';
 
 /**
  * The sailing head-up display: everything a captain would have in front of him
@@ -68,11 +81,8 @@ export class Hud {
     const right = el('div', { class: 'hud-col', id: 'hud-right' },
       this.wind, this.orders, this.time);
     this.root.append(this.tape.root, left, right, this.alerts, this.hint);
-    this.hint.innerHTML =
-      '<b>A</b>/<b>D</b> helm (alter course above x15) &nbsp; <b>X</b> steady &nbsp; <b>W</b>/<b>S</b> canvas &nbsp; ' +
-      '<b>Q</b>/<b>E</b> trim &nbsp; <b>T</b> about ship &nbsp; <b>H</b> hold course &nbsp; ' +
-      '<b>J</b> the book &nbsp; <b>N</b> sight &nbsp; <b>V</b> view &nbsp; ' +
-      '<b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
+    this.hint.innerHTML = KEYS;
+    this.hint.classList.add('idle');
   }
 
   update(g: Game): void {
@@ -87,17 +97,16 @@ export class Hud {
       el('div', { class: 'hud-big' }, r.compass.toFixed(0).padStart(3, '0') + '°',
         el('span', { class: 'hud-unit' }, compassPoint(r.compass) + ' by compass')),
       this.compassSvg,
-      hudRow('Speed', `${Math.abs(r.speed).toFixed(1)} kn${r.sternway ? ' astern' : ''}`),
-      hudRow('Made good', `${r.groundSpeed.toFixed(1)} kn ${compassPoint(r.cog)}`),
-      hudRow('Latitude', p.lat),
-      hudRow('Longitude', p.lon),
-      // When the last observation was. Without this the player has no way to
-      // know the reckoning is going stale except by reading a sigma he does not
-      // understand, and the whole sextant is content nobody opens.
-      hudRow('Last observed', lastObserved(g)),
+      // Through the water and over the ground on one line. They are the same
+      // number until the set gets hold of her, and the moment they differ is
+      // the thing worth seeing — which reads better side by side than as two
+      // rows a hand's breadth apart.
+      hudRow('Speed', `${Math.abs(r.speed).toFixed(1)} kn${r.sternway ? ' astern' : ''}`
+        + ` · ${r.groundSpeed.toFixed(1)} made good ${compassPoint(r.cog)}`),
+      hudRow('By the reckoning', `${p.lat}  ${p.lon}`),
       // Colour it, because the whole point of this line is that the player
       // should notice when it changes.
-      el('div', { class: 'hud-row', style: { marginTop: '3px' } },
+      el('div', { class: 'hud-row aside', style: { marginTop: '3px' } },
         el('span', {
           class: 'k',
           style: {
@@ -107,7 +116,11 @@ export class Hud {
             whiteSpace: 'normal',
             color: p.doubt > 26 ? '#d4553f' : p.doubt > 12 ? '#e0b96a' : '#8a7a63',
           },
-        }, p.certainty)),
+        // When the last observation was, said here rather than on a row of its
+        // own: the doubt and its cause are one thought. Without it the player
+        // has no way to know the reckoning is going stale except by reading a
+        // sigma he does not understand, and the whole quadrant goes unopened.
+        }, `${p.certainty}  ·  observed ${lastObserved(g)}`)),
     );
     this.compassCard.setAttribute('transform', `rotate(${-r.compass} 44 44)`);
     this.compassShip.setAttribute('transform', `rotate(${wrap360(r.cog - r.heading)} 44 44)`);
@@ -119,21 +132,28 @@ export class Hud {
     // through twenty-six degrees a frame when the clock is wound up.
     const shown = g.displayWind;
     clear(this.wind);
-    this.wind.append(
+    append(this.wind,
       el('div', { class: 'hud-title' }, 'Wind and sea'),
       el('div', { class: 'hud-big' }, shown.speed.toFixed(0),
         el('span', { class: 'hud-unit' }, `kn from ${compassPoint(shown.from)}`)),
       this.windSvg,
       hudRow('Point of sail', r.inIrons ? 'IN IRONS' : `${r.pointOfSail}${r.tack ? ', ' + r.tack : ''}`),
-      hudRow('Apparent', `${r.apparent.toFixed(0)} kn at ${Math.abs(r.beta).toFixed(0)}°`),
-      hudRow('Sea', `${g.displayWave.toFixed(1)} m — ${beaufortName(shown.speed)}`),
-      hudRow('Set', g.currentKnots > 0.15 ? `${g.currentKnots.toFixed(1)} kn ${compassPoint(g.currentToward)}` : 'none felt'),
-      hudRow('Visibility', wx.visibility > 20 ? 'clear' : `${wx.visibility.toFixed(1)} miles`),
+      asideRow('Sea', `${g.displayWave.toFixed(1)} m — ${beaufortName(shown.speed)}`),
+      // The set and the apparent wind are both on the dial, drawn relative to
+      // her head, which is where they mean something. Printing them again as
+      // numbers was three more lines saying what the picture already said.
+      wx.visibility < 20
+        ? asideRow('Visibility', `${wx.visibility.toFixed(1)} miles`)
+        : null,
     );
-    this.windNeedle.setAttribute('transform', `rotate(${shown.from} 44 44)`);
-    this.windShip.setAttribute('transform', `rotate(${g.displayHeading} 44 44)`);
+    // Everything on the dial is relative to her head, which is fixed up the
+    // page. `wind.from - heading` is the wind's bearing off the bow, which is
+    // the number a sailor has in his head at all times.
+    const hdg = g.displayHeading;
+    this.windNeedle.setAttribute('transform', `rotate(${wrap360(shown.from - hdg)} 44 44)`);
+    this.windShip.setAttribute('transform', 'rotate(0 44 44)');
     if (g.currentKnots > 0.15) {
-      this.windCurrent.setAttribute('transform', `rotate(${g.currentToward} 44 44)`);
+      this.windCurrent.setAttribute('transform', `rotate(${wrap360(g.currentToward - hdg)} 44 44)`);
       this.windCurrent.setAttribute('opacity', String(clamp(g.currentKnots / 2, 0.2, 0.9)));
     } else {
       this.windCurrent.setAttribute('opacity', '0');
@@ -203,19 +223,28 @@ export class Hud {
             ? 'sails coming across'
             : trim.advice)),
       trimBars,
-      el('div', { class: 'hud-row' },
-        el('span', { class: 'k' }, 'Helm'),
-        el('span', { class: 'v' },
-          Math.abs(r.rudder) < 0.04
-            ? 'amidships'
-            : `${(Math.abs(r.rudder) * 100).toFixed(0)}% to ${r.rudder > 0 ? 'starboard' : 'port'}`)),
+      // The helm reads as a bar with a centre mark, and when it is on the mark
+      // the bar has already said "amidships" — a row repeating it in words is
+      // one more line of standing text that never changes. It comes back the
+      // moment the rudder is over, which is when the figure matters.
+      Math.abs(r.rudder) < 0.04
+        ? null
+        : el('div', { class: 'hud-row' },
+            el('span', { class: 'k' }, 'Helm'),
+            el('span', { class: 'v' },
+              `${(Math.abs(r.rudder) * 100).toFixed(0)}% to ${r.rudder > 0 ? 'starboard' : 'port'}`)),
       helmBar,
-      hudRow('Heel', `${Math.abs(g.displayHeel).toFixed(0)}° to ${g.displayHeel >= 0 ? 'starboard' : 'port'}`),
-      hudRow('Leeway', `${Math.abs(r.leeway).toFixed(1)}°`),
-      hudRow('Hands', `${r.ableHands} of ${g.crew.count} able`),
-      hudRow('Crew', moraleWord(g.crew.morale)),
-      hudRow('Stores', `${endurance.toFixed(0)} days`),
-      hudRow('By the lead', g.sounding.depth > 200 ? 'no bottom' : `${g.sounding.depth.toFixed(0)} fathoms`),
+      // Heel and leeway you can see out of the window, and the lead is on the
+      // land report where it is wanted. The company is one line instead of
+      // three: how many can work, how they feel about it, and how long the food
+      // lasts, which is the whole of what a captain checks in passing.
+      el('div', { class: 'hud-row aside' },
+        el('span', { class: 'k' }, 'Company'),
+        el('span', {
+          class: 'v',
+          style: { color: endurance < 20 || g.crew.morale < 0.3 ? '#e0b96a' : undefined },
+        }, `${r.ableHands}/${g.crew.count} able · ${moraleWord(g.crew.morale)} · `
+          + `${endurance.toFixed(0)} days`)),
       // The pump, which is the thing that quietly sinks ships.
       //
       // She makes water after any damage, the slider that decides whether the
@@ -245,25 +274,15 @@ export class Hud {
     append(this.time,
       el('div', { class: 'hud-title' }, g.clock.watchName),
       el('div', { class: 'hud-big' }, g.clock.formatTime()),
-      hudRow('Date', g.clock.formatDate()),
-      hudRow('Rate', g.clock.scaleLabel),
-      hudRow('Weather', wx.description),
-      hudRow('Days out', `${g.crew.daysSinceLandfall.toFixed(0)}`),
-      // Miles behind her. A ship held at the origin gives the eye nothing to
-      // measure headway by; this is what a navigator used instead.
-      hudRow('Run', `${g.groundRun.toFixed(0)} miles`),
-      // The other thing the voyage is for. Charting is done quietly by the
-      // escrivão every quarter of an hour and used to leave no trace on the
-      // screen at all, which made the game's own title an activity the player
-      // never saw happen.
-      g.chartedThisPassage > 0
-        ? hudRow('Coast drawn', `${g.chartedThisPassage.toFixed(0)} miles`)
-        : null,
-      g.dayRuns.length > 0
-        ? hudRow(g.dayRuns[0].hours < 20 ? 'Since sailing' : 'Last day\u2019s run',
-            `${g.dayRuns[0].nm.toFixed(0)} miles`)
-        : null,
-      g.crown.patent ? hudRow('Commission', g.crown.patent.title) : null,
+      // The date, the rate of the clock and the weather. Everything else that
+      // used to be here — the run, the days out, the coast drawn, the
+      // commission's title — is a number about the *voyage* rather than about
+      // this moment, and the voyage has a book. A head-up display is for what
+      // you would look up and check.
+      el('div', { class: 'hud-row' },
+        el('span', { class: 'k' }, g.clock.formatDate()),
+        el('span', { class: 'v' }, g.clock.scaleLabel)),
+      asideRow('Weather', wx.description),
     );
 
     // --- The course she is steering -----------------------------------------
@@ -414,18 +433,34 @@ export class Hud {
     // has ever raised was in the DOM, correctly positioned, and drawn at zero
     // opacity. Land ho, the pilot asking for a sight, the watch shortening
     // sail, the noon report: none of them were ever visible.
-    const key = g.alerts.slice(-3).map((a) => a.id).join(',');
+    //
+    // And they live in the corner now, not across the middle of the sea. A
+    // warning in the centre of the screen is a modal dialogue that happens to
+    // have no button: it covers the thing it is warning you about, and there
+    // were routinely three of them stacked over the horizon. A ship's day is
+    // mostly small observations — the watch shortening sail, a smoke on the
+    // land, the pilot wanting a sight — and the right place for a running
+    // commentary is out of the way, in order, fading as it goes stale.
+    const recent = g.alerts.slice(-5);
+    const key = recent.map((a) => a.id).join(',');
     if (key !== this.alertKey) {
       this.alertKey = key;
       clear(this.alerts);
-      for (const a of g.alerts.slice(-3)) {
-        this.alerts.append(el('div', { class: `alert ${a.severity}` }, a.text));
-        this.alerts.append(el('br'));
+      for (let i = 0; i < recent.length; i++) {
+        const a = recent[i];
+        // The oldest of the five is nearly gone, the newest is full strength:
+        // the stack reads as a thing that is passing rather than a list.
+        const age = (recent.length - 1 - i) / Math.max(recent.length - 1, 1);
+        this.alerts.append(el('div', {
+          class: `alert ${a.severity}`,
+          style: { opacity: String(1 - age * 0.62) },
+        }, a.text));
       }
     }
 
     // --- Context hint ------------------------------------------------------
     const near = g.approachablePorts();
+    let keysOnly = false;
     if (g.sounding.aground) {
       this.hint.innerHTML =
         '<b>She is in against the land.</b> Press <b>B</b> to walk her astern, or steer off.';
@@ -437,15 +472,18 @@ export class Hud {
     } else if (g.dockedAt) {
       this.hint.innerHTML = `At anchor off <b>${g.portHere?.name}</b>. Press <b>P</b> to go ashore, <b>Space</b> to weigh.`;
     } else {
-      this.hint.innerHTML =
-        '<b>A</b>/<b>D</b> helm — alter course when the clock is up &nbsp; ' +
-        '<b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
-        '<b>T</b> about ship &nbsp; <b>B</b> back her astern &nbsp; ' +
-        '<b>J</b> the book \u2014 chart, roteiro, log, orders, company &nbsp; ' +
-        '<b>N</b> sight &nbsp; <b>V</b> view &nbsp; <b>M</b> sound &nbsp; ' +
-        '<b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor &nbsp; ' +
-        'drag to look about, wheel to close in';
+      this.hint.innerHTML = KEYS;
+      keysOnly = true;
     }
+    // The key list is scenery once it has been read — the same eleven items,
+    // every frame, straight across the bottom of the sea. It fades back to
+    // almost nothing and comes up again under the pointer. The situational
+    // hints above it never fade: those are the ones telling him something.
+    //
+    // Tracked as a flag rather than by comparing innerHTML back out, because
+    // the DOM hands the string back normalised — &nbsp; comes out as the
+    // character — and the comparison never matched.
+    this.hint.classList.toggle('idle', keysOnly);
   }
 
   /**
@@ -626,9 +664,21 @@ function buildWindDial(): { root: SVGElement; needle: SVGElement; ship: SVGEleme
     }));
   }
 
-  // The ship, which turns within the dial: the dial is oriented to true north.
+  // The ship, and she does not turn.
+  //
+  // The dial used to be oriented to true north with the ship swinging inside
+  // it, which is what a compass rose does and is exactly wrong for this
+  // instrument. Nobody asks "where is the wind in the world"; they ask "where
+  // is the wind *on me*" — on the bow, on the quarter, dead astern — because
+  // that is what decides whether the sails draw. Her head is now always up the
+  // dial and everything else swings around her, so the picture answers the
+  // question a sailor is actually asking, and the shaded no-go sector sits
+  // where it belongs: the water she cannot get to from here.
   const ship = svg('g', {});
-  ship.append(svg('path', { d: 'M44 30 L39 52 L44 48 L49 52 Z', fill: '#efe4cc', opacity: 0.9 }));
+  ship.append(svg('path', { d: 'M44 26 L38 56 L44 51 L50 56 Z', fill: '#efe4cc', opacity: 0.92 }));
+  ship.append(svg('line', {
+    x1: 44, y1: 26, x2: 44, y2: 14, stroke: 'rgba(239,228,204,0.35)', 'stroke-width': 1,
+  }));
   root.append(ship);
 
   // Wind arrow, pointing from where the wind blows.

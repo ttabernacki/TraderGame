@@ -17,11 +17,11 @@ type Tab = 'log' | 'traverse' | 'sights' | 'discoveries';
 type Filter = 'matters' | 'all' | 'navigation' | 'company' | 'trade';
 
 const FILTERS: [Filter, string][] = [
-  ['matters', 'What matters'],
+  ['matters', 'Notable'],
   ['all', 'Everything'],
   ['navigation', 'Navigation'],
-  ['company', 'The company'],
-  ['trade', 'Trade and contact'],
+  ['company', 'Company'],
+  ['trade', 'Trade'],
 ];
 
 const FILTER_KINDS: Record<Filter, Set<string> | null> = {
@@ -34,8 +34,8 @@ const FILTER_KINDS: Record<Filter, Set<string> | null> = {
 
 const KIND_LABEL: Record<string, string> = {
   departure: 'Departure', landfall: 'Landfall', weather: 'Weather',
-  navigation: 'Navigation', discovery: 'Discovery', crew: 'The company',
-  trade: 'Trade', contact: 'Contact', crown: 'The Crown', peril: 'Peril', note: '',
+  navigation: 'Navigation', discovery: 'Discovery', crew: 'Company',
+  trade: 'Trade', contact: 'Contact', crown: 'Crown', peril: 'Peril', note: '',
 };
 
 /** The ship's log, the traverse board, and the register of discoveries. */
@@ -72,7 +72,7 @@ export class LogbookView {
         el('button', {
           class: this.tab === t ? 'active' : '',
           onclick: () => { this.tab = t; this.render(); },
-        }, { log: 'The log', traverse: 'Traverse board', sights: 'Observations', discoveries: 'Discoveries' }[t])),
+        }, { log: 'Log', traverse: 'Traverse', sights: 'Sights', discoveries: 'Discoveries' }[t])),
     );
 
     const inner = el('div', { class: 'scroll-narrow' });

@@ -59,8 +59,8 @@ export class OrdersView {
       rival: 0,
     };
     const names: Record<Tab, string> = {
-      orders: 'The commission', charters: 'Charters', reports: 'Hearsay',
-      wardroom: 'The wardroom', rival: 'The other man',
+      orders: 'Commission', charters: 'Charters', reports: 'Hearsay',
+      wardroom: 'Wardroom', rival: 'Rival',
     };
 
     this.body.append(el('div', { class: 'tabs' },

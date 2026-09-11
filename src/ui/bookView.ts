@@ -30,12 +30,16 @@ export interface Section {
   key: string;
 }
 
+/**
+ * One word each, capitalised the same way. A row of tabs is read at a glance
+ * and an inconsistent one is read twice.
+ */
 export const SECTIONS: Section[] = [
-  { mode: 'chart', label: 'The chart', key: 'C' },
-  { mode: 'rutter', label: 'The roteiro', key: 'J' },
-  { mode: 'logbook', label: 'The log', key: 'L' },
+  { mode: 'chart', label: 'Chart', key: 'C' },
+  { mode: 'rutter', label: 'Roteiro', key: 'J' },
+  { mode: 'logbook', label: 'Log', key: 'L' },
   { mode: 'orders', label: 'Orders', key: 'O' },
-  { mode: 'crew', label: 'The company', key: 'K' },
+  { mode: 'crew', label: 'Company', key: 'K' },
 ];
 
 export function isBookSection(mode: GameMode): boolean {

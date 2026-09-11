@@ -49,6 +49,19 @@ export function hudRow(k: string, v: string): HTMLElement {
   return el('div', { class: 'hud-row' }, el('span', { class: 'k' }, k), el('span', { class: 'v' }, v));
 }
 
+/**
+ * A row that is worth having at a desk and is the first thing to go on a phone.
+ *
+ * The panels used to shed their rows on a small screen by counting elements —
+ * `nth-of-type(n + 3)` and so on — which counted every div in the panel, titles
+ * and big readouts included, and silently pointed at a different row every time
+ * anybody added or merged one. Saying which rows are expendable, here, in the
+ * place they are written, cannot drift.
+ */
+export function asideRow(k: string, v: string): HTMLElement {
+  return el('div', { class: 'hud-row aside' }, el('span', { class: 'k' }, k), el('span', { class: 'v' }, v));
+}
+
 export function meter(value: number, cls = ''): HTMLElement {
   const pct = Math.max(0, Math.min(1, value)) * 100;
   return el('div', { class: `meter ${cls}` }, el('i', { style: { width: `${pct}%` } }));

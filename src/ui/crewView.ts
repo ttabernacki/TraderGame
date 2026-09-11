@@ -46,7 +46,7 @@ export class CrewView {
         el('button', {
           class: this.tab === t ? 'active' : '',
           onclick: () => { this.tab = t; this.render(); },
-        }, { company: 'The company', stores: 'Stores', ship: 'Condition', skills: 'The captain' }[t])),
+        }, { company: 'Company', stores: 'Stores', ship: 'Condition', skills: 'Captain' }[t])),
     );
 
     const inner = el('div', {});

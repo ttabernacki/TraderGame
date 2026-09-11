@@ -79,12 +79,12 @@ export class PortView {
 
     clear(this.body);
     const tabs: [Tab, string][] = [
-      ['town', 'The place'],
+      ['town', 'Town'],
       ['market', 'Market'],
       ['freight', g.ventureOffers.length > 0 ? `Freight (${g.ventureOffers.length})` : 'Freight'],
-      ['stores', 'Water and stores'],
+      ['stores', 'Stores'],
       ['yard', 'Shipwrights'],
-      ['hands', 'Hands and officers'],
+      ['hands', 'Hands'],
     ];
     this.body.append(el('div', { class: 'tabs' },
       ...tabs.map(([t, label]) => el('button', {

@@ -28,6 +28,15 @@ interface Spec {
   wide?: boolean;
 }
 
+/**
+ * Whether this is a device operated by touch. A coarse pointer is the honest
+ * signal: it means fingers, and fingers are what these controls exist for.
+ */
+function hasFingers(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(pointer: coarse)').matches;
+}
+
 export class TouchControls {
   root = el('div', { id: 'touch', class: 'touch' });
   private handlers: TouchHandlers;
@@ -154,6 +163,14 @@ export class TouchControls {
   }
 
   setVisible(on: boolean): void {
+    // Only where there are fingers.
+    //
+    // The top row of buttons was drawn on every screen, so a desktop player got
+    // a permanent strip of eleven controls across the sky duplicating keys the
+    // hint line already lists — which was most of the clutter, and every one of
+    // them a thing to wonder whether you were supposed to press. A mouse has a
+    // keyboard next to it. A thumb does not.
+    if (on && !hasFingers()) on = false;
     this.visible = on;
     this.root.classList.toggle('on', on);
     // Nothing should stay held while the controls are off the screen.
