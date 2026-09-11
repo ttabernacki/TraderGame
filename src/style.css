@@ -81,6 +81,12 @@ html, body {
 }
 #ui { position: absolute; inset: 0; pointer-events: none; }
 #ui > * { pointer-events: auto; }
+/* The touch layer is a frame round the edges of the screen, not a lid on it.
+   Only its pads take pointers; everywhere else the pointer belongs to the sea,
+   so a mouse dragged across it swings the view. `.touch { pointer-events: none }`
+   loses to `#ui > *` on specificity, which laid an invisible sheet of glass over
+   the entire game and meant the camera could not be moved with a mouse at all. */
+#ui > #touch { pointer-events: none; }
 
 button {
   font-family: var(--serif);

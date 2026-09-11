@@ -249,6 +249,11 @@ export class Ui {
           return true;
         }
         return false;
+      case 'b':
+        // Astern. Wanted most when she is on the sand, so it is a key and not
+        // something buried in a panel.
+        g.pushAlert(g.backHer(), 'note');
+        return true;
       case ' ': {
         if (g.sounding.aground) { g.pushAlert(g.tryRefloat(), 'note'); return true; }
         if (g.anchored) g.pushAlert(g.weighAnchor(), 'note');

@@ -6,7 +6,7 @@ import {
 import { Rng } from '../core/rng';
 import { Weather, type WeatherSample } from '../world/weather';
 import { currentAt, dominantCurrentName, tidalStream, tideHeight } from '../world/currents';
-import { depthAt, nearestShore } from '../world/landmass';
+import { depthAt, isLand, nearestShore } from '../world/landmass';
 import { PORTS, anchorageOf, portDef, portsNear, type PortDef } from '../world/ports';
 import { people } from '../world/peoples';
 import { Ship } from '../ship/ship';
@@ -369,6 +369,18 @@ export class Game {
    */
   standOff: StandOff = 'offing';
   private lastPortCheck = -1e9;
+  /**
+   * Backing her off, which no caravel could do and which is here anyway.
+   *
+   * A square-rigged ship can be got astern by bracing the yards aback, but not
+   * off a beach she is sitting on, and the honest answer to being hard aground
+   * on a lee shore is that the voyage is over. That is a fine answer for a
+   * history and a miserable one for a game: a player who has put her on the
+   * sand wants to get her off and carry on, and telling him to start a new
+   * campaign is not a lesson, it is an exit. So she will walk astern at a knot
+   * and a half whenever she is told to, and the log does not pretend otherwise.
+   */
+  backing = false;
   /** Hours she has been unable to lay a mark that is dead to windward. */
   private stuckHours = 0;
   /** The pilot only explains the turn of the sea once. */
@@ -561,7 +573,16 @@ export class Game {
       depth,
       shoreDistNm: shore.distance / NM,
       shoreBearing: wrap360(shore.bearing),
-      aground: depth < this.ship.baseHull.draft * 1.05,
+      // She takes the ground when she is on the land, and not before.
+      //
+      // The depth field is a smooth ramp off a coastline that is itself a
+      // coarse polygon, so a draft test put her hard aground in water the chart
+      // called five fathoms and the eye called open sea — a mile off a beach
+      // she had never been shown. Shoal water is still shoal water: the lead
+      // calls it, the watch keep their offing by it, and running through it is
+      // the risk the player is taking. What it no longer does is wreck her
+      // without warning.
+      aground: shore.signed <= 0,
       shoaling: depth < this.ship.baseHull.draft * 4,
     };
 
@@ -617,8 +638,9 @@ export class Game {
 
     this.weather.update(simDt, this.clock.t, this.ship.state.pos);
     this.refreshEnvironment();
+    this.makeSternway(simDt);
 
-    if (this.anchored) {
+    if (this.anchored && !this.backing) {
       this.ship.state.surge *= 0.85;
       this.ship.state.sway *= 0.85;
       this.ship.state.yawRate *= 0.8;
@@ -721,12 +743,23 @@ export class Game {
       if (this.autoTrim) this.applyAutoTrim(chunk);
       if (this.rules.autoCanvas) this.applyAutoCanvas(chunk);
       const held = s.heading;
+      const was = { ...s.pos };
       this.physics = this.runPhysics(chunk);
       // The watch are holding her there. Whatever the rig tried to do to her
       // head over the last quarter of an hour, they took out with the helm.
       if (want !== null) {
         s.heading = held;
         s.yawRate = 0;
+      }
+      // A chunk at the fastest rates is minutes of sailing, which is a mile or
+      // more in one step, and a mile is enough to put her a long way inside a
+      // coast she never touched. Stop her at the water's edge instead: she is
+      // still aground, and she is aground where the land is.
+      if (!isLand(was) && isLand(s.pos)) {
+        s.pos = was;
+        s.surge = 0;
+        s.sway = 0;
+        break;
       }
     }
   }
@@ -1503,7 +1536,7 @@ export class Game {
   private checkWorldEvents(): void {
     const pos = this.ship.state.pos;
 
-    if (this.sounding.aground && !this.anchored) {
+    if (this.sounding.aground && !this.anchored && !this.backing) {
       this.runAground();
       return;
     }
@@ -2211,27 +2244,100 @@ export class Game {
     this.refreshEnvironment();
   }
 
+  /**
+   * She has run up on the beach.
+   *
+   * Survivable. A caravel drawing two metres that walks onto sand at four knots
+   * is in trouble and not in a wreck, and the thing that actually happened next
+   * was that they got her off: kedge out, start the water over the side, back
+   * the sails and wait for the flood. Losing a campaign outright to a grounding
+   * the player was never shown coming is not difficulty, it is a bad joke, so
+   * the hull can no longer be taken below a tenth here however hard she hits.
+   * What it costs is time, damage, and the crew's opinion of the captain.
+   */
   private runAground(): void {
     const speed = Math.abs(this.physics.speedKnots);
-    const severity = clamp(speed / 7, 0.06, 1);
-    this.ship.damage(severity * 0.55);
+    const severity = clamp(speed / 9, 0.04, 1);
+    const floor = 0.1;
+    const room = Math.max(this.ship.condition.hull - floor, 0);
+    this.ship.damage(Math.min(severity * 0.3, room));
     this.ship.state.surge = 0;
     this.ship.state.sway = 0;
     this.anchored = true;
 
-    if (this.ship.condition.hull <= 0.02) {
-      this.endGame('She struck hard, bilged on the reef, and broke up where she lay.');
-      return;
-    }
-
-    this.crew.morale = clamp(this.crew.morale - 0.2, 0, 1);
-    this.pushAlert('Aground!', 'grave');
+    this.crew.morale = clamp(this.crew.morale - 0.12, 0, 1);
+    this.pushAlert('Aground! Back her off with B, or warp her off with R.', 'grave');
     this.logEvent('peril',
       speed > 4
         ? 'She took the ground at speed. Everything not lashed went forward, and there is water over the ceiling in the after hold. We are on, and hard on.'
         : 'She touched and stuck. No great violence to it, but she is aground and the tide is what it is.',
       true,
     );
+  }
+
+  /**
+   * Walk her astern, off whatever she has got herself onto.
+   *
+   * A knot and a half, straight back down her own heading, whether she is
+   * afloat or sitting on the beach, until she is in clear water — and then it
+   * stops itself, so nobody backs her half a mile out to sea by forgetting
+   * about it.
+   */
+  backHer(): string {
+    if (this.dockedAt) return 'She is moored. There is nothing to back off.';
+    this.backing = !this.backing;
+    if (!this.backing) return 'Belay backing her.';
+    this.setCanvas(0);
+    this.holdCourse = false;
+    this.helmOrder = null;
+    this.logEvent('note',
+      'Got the sweeps and the boat ahead with a line to the stern, and walked her back off it.');
+    return 'Backing her astern. B again to stop.';
+  }
+
+  private makeSternway(simDt: number): void {
+    if (!this.backing) return;
+    // Capped so that backing at a watch a second does not fling her a league.
+    const dt = Math.min(simDt, 45);
+    // Afloat, she goes straight astern, which is what backing means. Aground,
+    // she goes toward deep water whichever way her head happens to be lying —
+    // because the whole point of this is to get her off, and a ship that walks
+    // further up the beach because she struck while paying off is not a rescue,
+    // it is the same trap with an extra keystroke.
+    // Which way is off.
+    //
+    // From *inside* a landmass the shore bearing points out to the sea, and
+    // from outside it points at the beach, so the sign flips the moment she
+    // floats. Both cases are worked as "away from the land" while she is
+    // anywhere near it, and only out in clear water does backing mean what the
+    // word means. Going straight astern throughout walked her up the beach
+    // whenever she had struck while paying off, and made her jitter across the
+    // waterline once she was free of it.
+    const close = this.sounding.shoreDistNm < 0.6;
+    const off = this.sounding.aground
+      ? this.sounding.shoreBearing
+      : wrap360(this.sounding.shoreBearing + 180);
+    const astern = this.sounding.aground || close
+      ? off
+      : wrap360(this.ship.state.heading + 180);
+    const run = 1.5 * NM * (dt / 3600);
+    this.ship.state.pos = rhumbStep(this.ship.state.pos, astern, run);
+    this.nav.estimated = rhumbStep(this.nav.estimated, astern, run);
+    this.ship.state.surge = 0;
+    this.ship.state.sway = 0;
+    this.ship.state.yawRate = 0;
+    // Her head comes round to the offing as she comes off, so that when the
+    // sweeps stop she is pointing at deep water and not back at the sand.
+    if (this.sounding.aground || close) this.ship.state.heading = off;
+    this.refreshEnvironment();
+
+    if (!this.sounding.aground) {
+      this.anchored = false;
+      if (this.sounding.shoreDistNm > 0.5) {
+        this.backing = false;
+        this.pushAlert('She is off and afloat. Make sail when you are ready.', 'note');
+      }
+    }
   }
 
   /** Attempt to warp off a grounding. */

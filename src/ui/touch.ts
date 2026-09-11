@@ -59,6 +59,8 @@ export class TouchControls {
       { label: '▼', key: 's', hold: true, hint: 'Shorten' },
       { label: '↶', key: 'q', hold: true, hint: 'Ease' },
       { label: '↷', key: 'e', hold: true, hint: 'Harden' },
+      // Astern, which is wanted at exactly the moment nobody can find a menu.
+      { label: '⏪', key: 'b', hint: 'Back her astern, off whatever she is on' },
     ]);
 
     const top = this.pad('touch-top', [

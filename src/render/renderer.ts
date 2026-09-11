@@ -440,7 +440,11 @@ export class Renderer {
     // --- Land ---------------------------------------------------------------
     // Only as far as the lookout could actually raise it. Building further than
     // that costs geometry for terrain the curve has already put out of sight.
-    const landRange = clamp(f.sightingRangeNm * 1.1, 12, 70);
+    // Drawn a good way beyond the range the lookout is credited with, because
+    // land lifted two and a half times stands up over the curve long before a
+    // true-scale coast would, and building only as far as the game's own
+    // sighting rule allows would cut the far hills off at a hard edge.
+    const landRange = clamp(f.sightingRangeNm * 1.6, 16, 110);
     if (this.land.needsRebuild(f.pos, landRange)) {
       this.land.rebuild(f.pos, landRange);
     }

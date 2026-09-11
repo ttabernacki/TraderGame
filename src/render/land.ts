@@ -6,6 +6,25 @@ import { LANDMASSES, elevationAt, isLand } from '../world/landmass';
 const BANDS = [0, 320, 1100, 3200, 8000, 17000];
 const BAND_TINT = [0.55, 0.62, 0.72, 0.84, 0.95, 1.0];
 
+/**
+ * How much the land is drawn higher than it is.
+ *
+ * Every chart and every panorama in the sailing directions does this, for the
+ * same reason: at true scale a coast is almost nothing. Two hundred metres of
+ * headland eight miles off subtends a quarter of a degree, the curve of the
+ * earth has already taken the beach under it, and the whole of Africa arrives
+ * as a hairline you cannot see until you are on it — which is exactly how a
+ * player ends up aground without ever having been shown the shore. Lifting it
+ * two and a half times puts the land back where the eye expects it, and the
+ * order in which it rises over the horizon — high ground first, then the
+ * shoreline — is unchanged, because the curvature it is sunk by is not touched.
+ *
+ * The beach itself is never lifted: the shoreline has to meet the water at the
+ * water, or the coast stands on a cliff of its own making. The exaggeration
+ * comes in over the first band inland.
+ */
+const LAND_LIFT = 2.5;
+
 const EARTH_RADIUS_M = 6371000;
 
 /**
@@ -117,7 +136,9 @@ export class Land {
           const h = b === 0 ? 0.4 : elevationAt({ lat, lon });
           // Guarantee the band rises even where the elevation field is flat.
           const floor = relief * 0.12 * (inland / 17000);
-          const height = Math.max(h, floor);
+          // Eased in over the first band so the shoreline still meets the sea.
+          const lift = 1 + (LAND_LIFT - 1) * Math.min(inland / 900, 1);
+          const height = Math.max(h, floor) * lift;
           positions.push(x, height - curvatureDrop(Math.hypot(x, z)), z);
 
           const tint = BAND_TINT[b];

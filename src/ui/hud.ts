@@ -372,14 +372,21 @@ export class Hud {
       this.hint.innerHTML = '<b>Aground.</b> Press <b>R</b> to try to warp her off.';
     } else if (near.length > 0 && !g.dockedAt) {
       this.hint.innerHTML = `<b>${near[0].def.name}</b> lies ${near[0].distNm.toFixed(1)} miles off. Press <b>Space</b> to come to an anchor.`;
+    } else if (g.backing) {
+      this.hint.innerHTML = 'Walking her astern. Press <b>B</b> to belay.';
+    } else if (g.sounding.aground) {
+      this.hint.innerHTML =
+        'She is aground. <b>B</b> backs her off; <b>R</b> lays out the kedge and waits for the flood.';
     } else if (g.dockedAt) {
       this.hint.innerHTML = `At anchor off <b>${g.portHere?.name}</b>. Press <b>P</b> to go ashore, <b>Space</b> to weigh.`;
     } else {
       this.hint.innerHTML =
         '<b>A</b>/<b>D</b> helm — alter course when the clock is up &nbsp; ' +
         '<b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
-        '<b>G</b> how close to the land &nbsp; <b>O</b> orders &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
-        '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>M</b> sound &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
+        '<b>G</b> how close to the land &nbsp; <b>B</b> back her astern &nbsp; ' +
+        '<b>O</b> orders &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
+        '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>M</b> sound &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor &nbsp; ' +
+        'drag to look about, wheel to close in';
     }
   }
 
