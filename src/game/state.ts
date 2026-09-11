@@ -2393,6 +2393,25 @@ export class Game {
       });
     }
 
+    // A commission that wants pillars, and no pillars aboard. They are cut at
+    // Lisbon and nowhere else, so finding this out at the Congo is finding it
+    // out three months too late.
+    const wantsPadrao = this.crown.patent?.objectives.find(
+      (o) => o.kind === 'padrao' && !o.complete);
+    if (wantsPadrao) {
+      const have = this.crown.padraoStock;
+      const left = (wantsPadrao.amount ?? 1) - Math.floor(wantsPadrao.progress);
+      out.push({
+        label: 'Stone pillars',
+        value: have > 0 ? `${have} aboard` : 'None aboard',
+        state: have >= left ? 'good' : 'bad',
+        note: have >= left
+          ? undefined
+          : 'The King wants pillars set up and there are none in the hold. They are '
+            + 'cut and shipped at Lisbon, at the shipwrights, and nowhere else on the coast.',
+      });
+    }
+
     // A cargo commission with no room for the cargo is the quiet mistake.
     const wants = this.crown.patent?.objectives.find((o) => o.kind === 'cargo' && !o.complete);
     if (wants) {
