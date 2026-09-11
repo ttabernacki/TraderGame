@@ -351,6 +351,8 @@ export class Game {
    */
   standOff: StandOff = 'offing';
   private lastPortCheck = -1e9;
+  /** When each settlement was last in sight, and how close she was cried at. */
+  private townsRaised = new Map<string, { seenT: number; criedNm: number; sign: string }>();
   private lastCanvasWord = -1e9;
   private lastManualTrim = -1e9;
   gameOverReason: string | null = null;
@@ -1488,6 +1490,7 @@ export class Game {
       const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
       for (const near of portsNear(pos, range)) {
         const charted = this.chart.ports.get(near.def.id);
+        this.crySettlementRaised(near.def, near.at, near.distNm);
         if (charted) continue;
         const isNew = this.chart.chartPort(near.def, this.nav.estimated, pos, this.clock.t, false);
         if (isNew) {
@@ -1499,6 +1502,64 @@ export class Game {
           }
         }
       }
+    }
+  }
+
+  /**
+   * "Smoke on the land!"
+   *
+   * A coast with people on it is a different proposition from an empty one and
+   * the ship has to be told which she has found while there is still sea room
+   * to do something about it. What the lookout can actually make out at the
+   * distance is what he says: a smoke first, because a column standing a
+   * hundred metres up is twenty times the size of the roofs under it, then the
+   * tower or the fort, then the houses. That progression is why a masthead was
+   * worth manning, and it is the one piece of information in this game that
+   * arrives before the player has committed to anything.
+   */
+  private crySettlementRaised(def: PortDef, at: LatLon, distNm: number): void {
+    const known = this.chart.ports.has(def.id);
+    const big = def.size === 'city' || def.size === 'emporium';
+
+    // What is actually distinguishable, given how far off she is. The lookout
+    // says what he can see, and the whole point of a masthead is that what he
+    // can see changes as she closes.
+    const sign = distNm > 9
+      ? (big ? 'Smokes on the land' : 'A smoke on the land')
+      : distNm > 4
+        ? (def.feitoria ? 'A fort on the point' : big ? 'Towers and smokes' : 'Roofs among the trees')
+        : (big ? 'A great town, and shipping in the road' : 'Houses along the beach');
+
+    const last = this.townsRaised.get(def.id);
+    const gone = !last || this.clock.t - last.seenT > 20 * 3600;
+    // Raised again after a day out of sight of it, or closed far enough that he
+    // has something new to say. Otherwise he holds his tongue, or a ship
+    // coasting past a town reports it every half hour as it drops astern.
+    const closed = !!last && distNm < last.criedNm * 0.5 && sign !== last.sign;
+    this.townsRaised.set(def.id, {
+      seenT: this.clock.t,
+      criedNm: gone || closed ? distNm : (last?.criedNm ?? distNm),
+      sign: gone || closed ? sign : (last?.sign ?? sign),
+    });
+    if (!gone && !closed) return;
+
+    const dLat = at.lat - this.ship.state.pos.lat;
+    const dLon = angleDelta(this.ship.state.pos.lon, at.lon) * cosd(this.ship.state.pos.lat);
+    const bearing = wrap360((Math.atan2(dLon, dLat) * 180) / Math.PI);
+    const word = formatBearing(bearing);
+
+    this.pushAlert(
+      known
+        ? `${sign}, ${word} — ${def.name}, ${distNm.toFixed(0)} miles.`
+        : `${sign}, ${word}, ${distNm.toFixed(0)} miles. Somebody lives here.`,
+      'note');
+
+    if (!known) {
+      this.logEvent('landfall',
+        `${sign} ${word}, ${distNm.toFixed(0)} miles off, and no chart aboard shows a soul on `
+        + 'this coast. The hands are on the rail. Whoever they are, they have seen us by now.',
+        true);
+      this.crew.morale = clamp(this.crew.morale + 0.05, 0, 1);
     }
   }
 
@@ -2195,6 +2256,11 @@ export class Game {
     // a two-day coastal hop is announced as a landfall.
     this.lastLandSeenT = this.clock.t;
     this.landInSight = true;
+    // Nobody at the masthead announces the town the ship is standing out of.
+    for (const near of portsNear(this.ship.state.pos, 6)) {
+      this.townsRaised.set(near.def.id,
+        { seenT: this.clock.t, criedNm: near.distNm, sign: '' });
+    }
     this.nav.lastFixT = this.clock.t;
     this.nav.milesSinceFix = 0;
     this.runSinceNoon = 0;

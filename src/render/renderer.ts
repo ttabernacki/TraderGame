@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { DEG, clamp, lerp, type LatLon } from '../core/math';
 import { Land } from './land';
+import { Settlements } from './settlement';
 import { Ocean } from './ocean';
 import { Sky, type SkyLighting } from './sky';
 import { ShipMesh } from './shipMesh';
@@ -93,6 +94,7 @@ export class Renderer {
   ocean = new Ocean();
   sky = new Sky();
   land = new Land();
+  settlements = new Settlements();
   spray = new Spray();
   ship: ShipMesh;
 
@@ -188,6 +190,7 @@ export class Renderer {
     this.scene.add(this.sky.group);
     this.scene.add(this.ocean.mesh);
     this.scene.add(this.land.group);
+    this.scene.add(this.settlements.group);
     this.scene.add(this.ship.group);
     this.scene.add(this.spray.points);
     this.scene.add(this.sun);
@@ -413,6 +416,14 @@ export class Renderer {
     }
     this.land.setFog(lighting.horizon, clamp(1 - f.visibilityNm / 24, 0, 0.7));
 
+    // Towns, which are built from the same land range: a settlement that has
+    // not risen over the curve yet has no business being drawn either.
+    if (this.settlements.needsRebuild(f.pos, landRange)) {
+      this.settlements.rebuild(f.pos, landRange);
+    }
+    this.settlements.setFog(lighting.horizon, clamp(1 - f.visibilityNm / 24, 0, 0.7));
+    this.settlements.setWind(f.windFrom, f.windKnots, f.simTime);
+
     this.updateCamera(f, realDt, centre.height, f.waveHeight);
     this.applyCameraFeel(f, realDt);
     this.renderer.render(this.scene, this.camera);
@@ -585,6 +596,7 @@ export class Renderer {
     this.ocean.dispose();
     this.sky.dispose();
     this.land.dispose();
+    this.settlements.dispose();
     this.ship.dispose();
     this.renderer.dispose();
   }

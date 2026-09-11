@@ -393,7 +393,7 @@ export class Hud {
         lines.push({
           k: 'The King',
           v: want > 1
-            ? `${next.description} (${Math.min(next.progress, want)}/${want})`
+            ? `${next.description} (${Math.min(next.progress, want).toFixed(0)}/${want})`
             : next.description,
         });
       } else {

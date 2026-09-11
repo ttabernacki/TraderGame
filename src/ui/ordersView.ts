@@ -94,7 +94,7 @@ export class OrdersView {
     const done = p.objectives.filter((o) => o.complete).length;
     const rows = p.objectives.map((o) => {
       const want = o.amount ?? 1;
-      const at = Math.min(o.progress, want);
+      const at = Math.round(Math.min(o.progress, want));
       return el('div', { class: `objective${o.complete ? ' done' : ''}` },
         el('span', { class: 'objective-mark' }, o.complete ? '✓' : '·'),
         el('div', { class: 'objective-body' },
