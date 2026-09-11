@@ -201,11 +201,18 @@ export class Navigator {
     if (this.fixes.length > 200) this.fixes.shift();
   }
 
-  /** Landfall on a charted feature is the only thing that fixes longitude. */
-  applyLandfall(known: LatLon, t: number): void {
+  /**
+   * Landfall on a charted feature is the only thing that fixes longitude — and
+   * it fixes it no better than the chart has it, which is the point.
+   *
+   * `sigmaLonNm` is the doubt in the chart's own longitude for the place he has
+   * made, so a port he has run down a dozen times gives him a good departure
+   * and one he has only read about gives him a bad one.
+   */
+  applyLandfall(known: LatLon, t: number, sigmaLonNm = 1.2): void {
     this.estimated = { ...known };
     this.sigmaLat = 0.6;
-    this.sigmaLon = 1.2;
+    this.sigmaLon = clamp(sigmaLonNm, 1.2, 90);
     this.lastFixT = t;
     this.milesSinceFix = 0;
     this.fixes.push({ t, latitude: known.lat, method: 'Landfall', sigma: 0.02, body: 'the land' });

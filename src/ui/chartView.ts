@@ -3,6 +3,7 @@ import { LANDMASSES } from '../world/landmass';
 import { PORTS, portDef } from '../world/ports';
 import type { Game } from '../game/state';
 import { append, button, clear, el } from './dom';
+import { AGREED_W } from '../navigation/charts';
 
 /**
  * The chart table.
@@ -661,12 +662,25 @@ export class ChartView {
     // ink either way, so the player can see at a glance which part of his own
     // chart he would stake the ship on, and that turns running a known coast
     // from scenery into work worth doing.
-    const byLand = new Map<number, { index: number; lat: number; lon: number; sure: boolean }[]>();
+    //
+    // Which grade a stretch gets is read off what the pilot knows about it and
+    // nothing else: how many times he has run it and how far his reckonings
+    // agreed. It used to be read off how far the drawing is from the real
+    // coast, which is a number nobody aboard could possibly have — a lucky
+    // guess came out drawn firm and an honest survey with a bad departure came
+    // out drawn as hearsay. The chart may be wrong. It may not know it.
+    const byLand = new Map<number, { index: number; lat: number; lon: number; grade: number }[]>();
     for (const p of g.chart.points.values()) {
       const idx = Number(p.key.split(':')[1]);
       let arr = byLand.get(p.land);
       if (!arr) byLand.set(p.land, (arr = []));
-      arr.push({ index: idx, lat: p.lat, lon: p.lon, sure: p.errorNm <= 20 });
+      // What the paper is worth, in three grades: a position anybody aboard
+      // would steer on, one drawn from a single day's reckoning, and the
+      // Casa's word for it. Home waters come out firm without your having sailed
+      // them, because sixty years of Portuguese pilots got there first; Guinea
+      // comes out dashed until you have been, because they did not.
+      const grade = p.wLon >= AGREED_W ? 2 : p.passes > 0 ? 1 : 0;
+      arr.push({ index: idx, lat: p.lat, lon: p.lon, grade });
     }
 
     ctx.lineWidth = 1.6;
@@ -676,24 +690,28 @@ export class ChartView {
     for (const [land, pts] of byLand) {
       pts.sort((a, b) => a.index - b.index);
       const ringLength = LANDMASSES[land].ring.length / 2;
-      let run: { index: number; lat: number; lon: number; sure: boolean }[] = [];
+      let run: { index: number; lat: number; lon: number; grade: number }[] = [];
 
       const flush = () => {
         if (run.length < 2) {
           if (run.length === 1) {
             const s = this.toScreen(run[0].lat, run[0].lon);
-            ctx.fillStyle = run[0].sure ? '#4a3520' : 'rgba(74, 53, 32, 0.4)';
+            ctx.fillStyle = run[0].grade > 0 ? '#4a3520' : 'rgba(74, 53, 32, 0.4)';
             ctx.beginPath(); ctx.arc(s.x, s.y, 1.4, 0, Math.PI * 2); ctx.fill();
           }
           run = [];
           return;
         }
-        const sure = run[0].sure;
+        const grade = run[0].grade;
         ctx.save();
-        if (!sure) {
+        if (grade === 0) {
           ctx.strokeStyle = 'rgba(74, 53, 32, 0.42)';
           ctx.setLineDash([6, 5]);
           ctx.lineWidth = 1.3;
+        } else if (grade === 1) {
+          // Drawn, but on one man's reckoning on one day.
+          ctx.strokeStyle = '#6b4f30';
+          ctx.lineWidth = 1.4;
         }
         ctx.beginPath();
         for (let i = 0; i < run.length; i++) {
@@ -703,8 +721,9 @@ export class ChartView {
         ctx.stroke();
 
         // A little hachuring on the landward side, portolan fashion. Only on
-        // coast somebody has actually seen.
-        if (sure) {
+        // coast the pilot has run often enough that his own reckonings agree
+        // about where it is.
+        if (grade === 2) {
           ctx.globalAlpha = 0.2;
           ctx.lineWidth = 3.5;
           ctx.stroke();
@@ -721,7 +740,7 @@ export class ChartView {
         // A run is broken where the coast stops being consecutive *or* where it
         // changes from surveyed to hearsay, so the two are never stroked as one
         // line in one style.
-        if (joined && p.sure === prev.sure) run.push(p);
+        if (joined && p.grade === prev.grade) run.push(p);
         else { flush(); run.push(p); }
       }
       flush();
@@ -885,7 +904,10 @@ export class ChartView {
     ctx.font = 'italic 11px serif';
     ctx.fillStyle = '#5a4a37';
     for (const p of g.chart.places) {
-      const s = this.toScreen(p.lat, p.lon);
+      // Where the chart now puts the coast this name belongs to, not where the
+      // reckoning happened to be on the day it was written.
+      const at = g.chart.placeAt(p);
+      const s = this.toScreen(at.lat, at.lon);
       ctx.beginPath();
       ctx.moveTo(s.x, s.y - 4); ctx.lineTo(s.x + 3.5, s.y + 3); ctx.lineTo(s.x - 3.5, s.y + 3);
       ctx.closePath();
@@ -1006,7 +1028,8 @@ function buildLegend(): HTMLElement {
   const item = (color: string, label: string) =>
     el('div', {}, el('i', { style: { background: color } }), el('span', {}, label));
   return el('div', { class: 'chart-legend' },
-    item('#4a3520', 'Coast you have run yourself'),
+    item('#4a3520', 'A position you would steer on'),
+    item('#6b4f30', 'Drawn on one day\u2019s reckoning'),
     item('rgba(74,53,32,0.42)', 'On the Casa\u2019s chart, position doubtful'),
     item('#a83228', 'Portuguese factory'),
     item('#3c5a8a', 'A padrão of yours'),

@@ -351,6 +351,10 @@ export class Game {
    */
   standOff: StandOff = 'offing';
   private lastPortCheck = -1e9;
+  /** Hours she has been unable to lay a mark that is dead to windward. */
+  private stuckHours = 0;
+  /** The pilot only explains the turn of the sea once. */
+  private voltaAdvised = false;
   /** When each settlement was last in sight, and how close she was cried at. */
   private townsRaised = new Map<string, { seenT: number; criedNm: number; sign: string }>();
   private lastCanvasWord = -1e9;
@@ -1052,6 +1056,58 @@ export class Game {
     }
   }
 
+  /**
+   * The pilot suggests the volta do mar, once, the first time she is stuck.
+   *
+   * This is the one piece of seamanship in the game that a player will not
+   * arrive at by reasoning, because it is the opposite of reasoning: the way
+   * home from Madeira is not towards Lisbon, it is four hundred miles out into
+   * the empty Atlantic, away from everything, until the wind changes hands and
+   * carries you in. It took the Portuguese the better part of a lifetime to
+   * work out and it is why their caravels could come back from places other
+   * people's ships could only go to. A player who has not been told will beat
+   * to windward for a fortnight, lose the crew, and conclude the game is
+   * broken, which is fair of him.
+   *
+   * So the pilot says it: once a voyage, only when she is actually stuck, and
+   * only when the mark is to windward and far enough off to matter. After that
+   * it is the captain's business. Being told is not the same as being able to
+   * do it, which is the part worth playing.
+   */
+  private watchForTheTurn(hours: number): void {
+    const dest = this.destination;
+    if (!dest || this.voltaAdvised || this.anchored || this.dockedAt) return;
+    const course = this.courseToDestination();
+    if (!course || course.distNm < 150) return;
+
+    // Is the mark to windward, and is it to the north — which is the case this
+    // advice is about, and the case every homeward passage from the south is?
+    const offWind = Math.abs(angleDelta(this.weatherNow.wind.from, course.bearing));
+    const northward = dest.lat > this.ship.state.pos.lat + 1.5;
+    if (offWind > this.noGoAngle + 12 || !northward) {
+      this.stuckHours = Math.max(0, this.stuckHours - hours * 0.5);
+      return;
+    }
+
+    this.stuckHours += hours;
+    if (this.stuckHours < 9) return;
+    this.voltaAdvised = true;
+
+    this.pushAlert('The pilot asks to speak to you about the course.', 'warning');
+    this.logEvent('note',
+      `The pilot has been at the rail an hour working out how to say this. ${dest.name} `
+      + 'bears up into the wind’s eye and we will not lay it on this tack or the other, and '
+      + 'beating up is a month of it with the water going down. He says there is another way '
+      + 'and that it sounds like madness: stand out to the north-west, away from the land and '
+      + 'away from where we are going, four hundred miles of it or more, until we are up in the '
+      + 'latitude of the Azores. The wind is westerly up there. It blows the way we want to go. '
+      + 'Then we run in for Portugal with it behind us and make in a fortnight what we would not '
+      + 'make in two months by the short road. He calls it the volta do mar, the turn of the sea. '
+      + 'He says every man who has come home from Guinea has come home that way, and that the '
+      + 'ones who tried the short road are still out there.',
+      true);
+  }
+
   private updateNavigation(simDt: number): void {
     const pos = this.ship.state.pos;
     const eff = this.effectiveSkill;
@@ -1071,6 +1127,7 @@ export class Game {
     );
 
     this.chart.logTrack(this.nav.estimated, this.clock.t);
+    this.watchForTheTurn(hours);
 
     // Chart whatever the lookout can see, at intervals.
     if (this.clock.t - this.lastSurveyT > 900) {
@@ -1079,6 +1136,11 @@ export class Game {
       if (this.sounding.shoreDistNm < range) {
         const result = this.chart.survey(
           pos, this.nav.estimated, range, this.clock.t, skill(eff, 'cartografia'),
+          // What the sighting is worth is what the pilot's position is worth.
+          // A cape laid down an hour after a noon sight is worth having; the
+          // same cape laid down at the end of three weeks of blue water is a
+          // guess, and the chart treats it as one.
+          this.nav.sigmaLat, this.nav.sigmaLon,
         );
         // Coast run in sight counts even when no ring vertex happened to fall
         // inside the horizon — which, with vertices forty-seven miles apart, is
@@ -1492,7 +1554,10 @@ export class Game {
         const charted = this.chart.ports.get(near.def.id);
         this.crySettlementRaised(near.def, near.at, near.distNm);
         if (charted) continue;
-        const isNew = this.chart.chartPort(near.def, this.nav.estimated, pos, this.clock.t, false);
+        const isNew = this.chart.chartPort(
+          near.def, this.nav.estimated, pos, this.clock.t, false,
+          this.nav.sigmaLat, this.nav.sigmaLon,
+        );
         if (isNew) {
           const value = near.def.discovery;
           if (value > 0) {
@@ -2011,7 +2076,7 @@ export class Game {
       };
     }
     const near = this.chart.places.find(
-      (p) => haversine({ lat: p.lat, lon: p.lon }, this.nav.estimated) / NM < 12,
+      (p) => haversine(this.chart.placeAt(p), this.nav.estimated) / NM < 12,
     );
     if (near) {
       return { ok: false, message: `You have already called this place ${near.name}.` };
@@ -2316,12 +2381,36 @@ export class Game {
 
     const first = !this.visitedPorts.has(def.id);
     this.visitedPorts.add(def.id);
-    this.chart.chartPort(def, this.nav.estimated, this.ship.state.pos, this.clock.t, true);
+    // Drawn before the landfall fix, so what goes onto the paper is the
+    // reckoning she arrived on — an opinion formed at sea and independent of
+    // what the chart already said. Fixing first and charting afterwards would
+    // have every visit confirm the chart with the chart.
+    this.chart.chartPort(
+      def, this.nav.estimated, this.ship.state.pos, this.clock.t, true,
+      this.nav.sigmaLat, this.nav.sigmaLon,
+    );
 
-    // Making a landfall on a place you already know fixes your position entirely.
+    // Making a landfall on a place you already know fixes your position — but
+    // only as well as you know the place.
+    //
+    // A pilot who raises Arguim does not thereby learn his longitude. He learns
+    // that he is at Arguim, and then writes down whatever longitude his chart
+    // gives Arguim, which for most of this coast in 1482 was out by a degree
+    // and more. His latitude is a different matter: the quadrant is ashore, it
+    // is steady, and there is all day to use it, so that much is settled for
+    // good. Fixing him to the truth instead made the inherited chart's error
+    // self-correcting and the whole survey pointless — every port call quietly
+    // handed him a longitude nobody in Europe had.
     const rel = this.relationsFor(def.id);
     if (rel.met || def.known) {
-      this.nav.applyLandfall(anchorageOf(def), this.clock.t);
+      const at = anchorageOf(def);
+      const believed = this.chart.believedPort(def.id);
+      const lonDoubt = believed ? Math.sqrt(1 / Math.max(believed.wLon, 1e-9)) : 1.2;
+      this.nav.applyLandfall(
+        { lat: at.lat, lon: believed ? believed.lon : at.lon },
+        this.clock.t,
+        lonDoubt,
+      );
     }
 
     this.crown.progressObjective('reach', def.id);
@@ -2838,6 +2927,7 @@ export class Game {
       autoTrim: this.autoTrim,
       difficulty: this.difficulty,
       standOff: this.standOff,
+      voltaAdvised: this.voltaAdvised,
       orderedCanvas: this.orderedCanvas,
       holdCourse: this.holdCourse,
       helmOrder: this.helmOrder,
@@ -2903,6 +2993,7 @@ export class Game {
     // watch had stopped working the ship.
     g.difficulty = d.difficulty ?? 'watch';
     g.standOff = d.standOff ?? 'offing';
+    (g as any).voltaAdvised = d.voltaAdvised ?? false;
     g.orderedCanvas = d.orderedCanvas ?? g.ship.canvasSet;
     g.holdCourse = d.holdCourse ?? false;
     g.helmOrder = d.helmOrder ?? null;

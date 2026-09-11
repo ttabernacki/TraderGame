@@ -208,12 +208,17 @@ export class LogbookView {
 
   private renderDiscoveries(host: HTMLElement, g: Game): void {
     const found = g.crown.discoveries;
+    const agree = g.chart.agreement();
     host.append(
       el('div', { class: 'card' },
         kv('Entered on the register', String(found.length)),
         kv('Renown not yet claimed', String(g.crown.unreportedValue())),
         kv('Coastline drawn', `${(g.chart.coverage() * 100).toFixed(1)}% of the known world`),
-        kv('Mean error in the drawing', `${g.chart.meanError().toFixed(1)} miles`),
+        // What the pilot knows about his own chart, rather than how wrong it
+        // is, which is a thing nobody aboard could tell you.
+        kv('Coast you have run yourself', `${agree.run + agree.agreed} stretches`),
+        kv('\u2014 of which your reckonings agree', `${agree.agreed}`),
+        kv('Still on the Casa\u2019s word alone', `${agree.hearsay} stretches`),
       ),
     );
 
