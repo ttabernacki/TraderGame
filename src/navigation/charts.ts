@@ -189,6 +189,22 @@ export class Chart {
     };
   }
 
+  /**
+   * Whether the coast now in sight was already on the chart before `before`.
+   *
+   * The cutoff matters: the running survey draws whatever the lookout can see
+   * every quarter of an hour, so by the time anybody asks "do we know this
+   * coast" the answer is always yes — we drew it forty seconds ago. Asking
+   * about the chart as it stood an hour back gives the honest answer.
+   */
+  knewCoastNear(at: LatLon, rangeNm: number, before: number): boolean {
+    for (const v of coastVerticesNear(at, rangeNm)) {
+      const p = this.points.get(`${v.land}:${v.index}`);
+      if (p && p.t <= before) return true;
+    }
+    return false;
+  }
+
   /** Note the ship's position on the chart, as the pilot reckons it. */
   logTrack(reckoned: LatLon, t: number): void {
     if (t - this.lastTrackT < 3 * 3600) return;

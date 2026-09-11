@@ -282,6 +282,17 @@ export class Game {
   private lastSurveyWord = -1e9;
   private lastSightWord = -1e9;
   private lastLandWord = -1e9;
+  /**
+   * When the land was last in sight from the masthead.
+   *
+   * Raising land after a long passage is the oldest and best moment in any
+   * voyage, and the game only ever mentioned land as a hazard — "she is
+   * standing at it" — so a ship coasting comfortably past Africa, or making a
+   * perfect landfall after three weeks of blue water, was told nothing at all.
+   */
+  private lastLandSeenT = -1e9;
+  /** True while she is in soundings, so the cry is given once and not hourly. */
+  private landInSight = false;
   /** The last course the watch settled on after looking at the water. */
   private avoidCourse = 0;
   private avoidWant = 0;
@@ -311,6 +322,8 @@ export class Game {
     this.skills = newSkills();
     this.rival = newRival(this.rng);
     this.rival.lastNews = this.clock.t;
+    // She begins at a quay, which is as much in sight of land as it gets.
+    this.lastLandSeenT = this.clock.t;
     assignTraits(this.crew, this.rng);
 
     for (const p of PORTS) {
@@ -1116,6 +1129,49 @@ export class Game {
    * the first time a stretch of inherited coast turns out to be a long way from
    * where Lisbon thinks it is, which is the moment the mapmaking becomes real.
    */
+  /**
+   * "Terra!"
+   *
+   * Said once, when the land lifts over the horizon after the ship has been out
+   * of sight of it for days. What makes the moment is not the land — it is that
+   * the reckoning is about to be judged. A pilot who has run three weeks on
+   * dead reckoning finds out here whether he is where he thinks he is, and the
+   * whole company knows it.
+   */
+  private cryLandRaised(bearing: number, daysAway: number): void {
+    const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
+    const known = this.chart.knewCoastNear(this.ship.state.pos, range, this.clock.t - 3600);
+    const word = formatBearing(bearing);
+
+    this.pushAlert(
+      known
+        ? `Land, ${word}. ${daysAway.toFixed(0)} days without sight of it.`
+        : `Land, ${word} — and it is on nobody's chart.`,
+      'note');
+
+    // What actually makes the moment: the reckoning is about to be judged, and
+    // everybody aboard knows by how much it might be wrong.
+    const doubt = Math.max(this.nav.sigmaLat, this.nav.sigmaLon);
+    const verdict = doubt < 12
+      ? 'The pilot has her within a dozen miles and is saying so to anyone who will listen.'
+      : doubt < 45
+        ? `The pilot allows ${doubt.toFixed(0)} miles of doubt. We are about to find out.`
+        : `The pilot will not put a figure on it below ${doubt.toFixed(0)} miles, which is `
+          + 'another way of saying he does not know.';
+
+    this.logEvent('landfall',
+      (known
+        ? `Raised the land ${word} after ${daysAway.toFixed(0)} days out of sight of it. `
+          + 'The hands are up the shrouds without being told. '
+        : `Raised the land ${word} after ${daysAway.toFixed(0)} days of blue water. `
+          + 'No chart aboard shows anything here. The escrivão has been sent for. ')
+      + verdict,
+      true);
+
+    // A landfall is worth more to a crew than a week of fair wind.
+    this.crew.morale = clamp(this.crew.morale + (known ? 0.06 : 0.11), 0, 1);
+  }
+
   private announceSurvey(result: SurveyResult): void {
     if (this.clock.t - this.lastSurveyWord < 6 * 3600) return;
     this.lastSurveyWord = this.clock.t;
@@ -1287,6 +1343,16 @@ export class Game {
       const off = Math.abs(angleDelta(this.ship.state.heading, bearing));
       const closing = off < 55;
       const hours = this.sounding.shoreDistNm / Math.max(Math.abs(this.physics.speedKnots), 0.5);
+
+      // Raising the land. Not a warning — the other thing, the one everybody
+      // aboard has been waiting weeks for.
+      const inSight = this.sounding.shoreDistNm < range;
+      if (inSight && !this.landInSight) {
+        const away = (this.clock.t - this.lastLandSeenT) / 86400;
+        if (away > 3) this.cryLandRaised(bearing, away);
+      }
+      if (inSight) this.lastLandSeenT = this.clock.t;
+      this.landInSight = inSight;
 
       if (this.sounding.shoreDistNm < range && closing && hours < 6
           && this.clock.t - this.lastLandWord > 3 * 3600) {
@@ -1829,7 +1895,11 @@ export class Game {
     // first noon at sea has something to report.
     const day = Math.floor(this.clock.t / 86400);
     this.lastNoonDay = this.clock.hour < 12 ? day - 1 : day;
-    // Weighing from a known anchorage is itself a fix.
+    // Weighing from a known anchorage is itself a fix, and the land she is
+    // dropping astern counts as land seen — otherwise the first headland after
+    // a two-day coastal hop is announced as a landfall.
+    this.lastLandSeenT = this.clock.t;
+    this.landInSight = true;
     this.nav.lastFixT = this.clock.t;
     this.nav.milesSinceFix = 0;
     this.runSinceNoon = 0;
@@ -1859,6 +1929,8 @@ export class Game {
     this.dockedAt = def.id;
     this.anchored = true;
     this.daysSincePort = 0;
+    this.lastLandSeenT = this.clock.t;
+    this.landInSight = true;
     this.recentEvents = [];
     this.markets.refresh(def.id, this.clock.t);
     this.refreshPortBusiness(def);
