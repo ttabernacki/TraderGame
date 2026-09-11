@@ -34,7 +34,7 @@ import { rollOfficerEvent } from './officerEvents';
 import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty';
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
 import { daysLeft, offerVentures, ventureLine, type Venture } from '../progression/ventures';
-import { advanceRival, newRival, type RivalState } from '../progression/rival';
+import { advanceRival, newRival, rivalGossip, type RivalState } from '../progression/rival';
 import { assignTraits, wardroom, type TraitEffects } from '../progression/officers';
 import { good } from '../economy/goods';
 
@@ -109,6 +109,8 @@ export class Game {
   ventureOffers: Venture[] = [];
   /** The other captain, working his way down the coast while you refit. */
   rival: RivalState;
+  /** What they are saying about the other man in the port she now lies in. */
+  portGossip: string | null = null;
   private nextVentureId = 1;
   private nextLeadId = 1;
 
@@ -308,6 +310,7 @@ export class Game {
     this.markets = new Markets(seed);
     this.skills = newSkills();
     this.rival = newRival(this.rng);
+    this.rival.lastNews = this.clock.t;
     assignTraits(this.crew, this.rng);
 
     for (const p of PORTS) {
@@ -1443,6 +1446,67 @@ export class Game {
     return true;
   }
 
+  /**
+   * Coming among a people who have never seen a ship like yours.
+   *
+   * This is the most dramatic thing that happens in the game and it used to
+   * produce one line of flavour text and no alert at all. A player anchored
+   * off a city nobody in Europe had heard of, was shown a port menu, went to
+   * the market, and was told he had no leave to trade — with no indication that
+   * the way to get it was a button in the footer.
+   *
+   * What the peoples file knows about them — their tongue, their faith, how
+   * much of the world they have already seen, and what they will think of a
+   * hold full of brass bracelets — is the whole payoff of having sailed here,
+   * and none of it reached the player either.
+   */
+  /**
+   * Whether this people is already known to the ship, by any of their towns.
+   *
+   * Relations are kept per port, so two Akan towns forty miles apart each
+   * counted as a people nobody had ever seen — and arriving at the second one
+   * announced first contact with the Akan for a second time, in the same
+   * words, on the same day. What makes a people new is that nobody aboard has
+   * stood among them anywhere.
+   */
+  peopleKnown(def: PortDef, ignorePort = def.id): boolean {
+    if (def.people === 'portuguese') return true;
+    for (const id of this.visitedPorts) {
+      if (id === ignorePort) continue;
+      if (portDef(id).people === def.people) return true;
+    }
+    return false;
+  }
+
+  private announceFirstContact(def: PortDef): void {
+    if (def.people === 'portuguese') return;
+    const pe = people(def.people);
+    const met = this.peopleKnown(def);
+
+    if (met) {
+      // Their people are known, this town is not.
+      this.pushAlert(`${def.name} — ${pe.name} again. They will have heard of you.`, 'note');
+      return;
+    }
+
+    this.crown.record('people', `The ${pe.name}`, this.nav.estimated, 18, this.clock.t);
+    this.logEvent('contact',
+      `First contact with the ${pe.name}. ${pe.blurb} They speak ${pe.language}, `
+      + `${FAITH_WORD[pe.faith]}, and `
+      + (pe.sophistication > 0.7
+        ? 'they have been trading with the whole of the known world for longer than Portugal has existed. '
+          + 'Whatever is in the hold, it will not impress them.'
+        : pe.sophistication > 0.35
+          ? 'they know the sea and the peoples on either side of them, and they will drive a hard bargain.'
+          : 'nothing like this ship has ever come here.')
+      + (pe.rivalNetwork
+        ? ' There are Arab merchants ashore and they understood what you are before you did.'
+        : ''), true);
+    this.pushAlert(
+      `The ${pe.name}. No Portuguese has stood here before. Seek an audience before you open the hold.`,
+      'note');
+  }
+
   /** Take a merchant's charter, on your own account and at your own risk. */
   acceptVenture(id: string): string {
     const v = this.ventureOffers.find((x) => x.id === id);
@@ -1560,6 +1624,7 @@ export class Game {
       this.rival, days, this.ship.state.pos.lat, this.crown.lifetimeStanding, this.rng,
     );
     if (!news) return;
+    this.rival.lastNews = this.clock.t;
     this.pushAlert(`${this.rival.name} has been before you.`, 'warning');
     this.logEvent('note', news.text, true);
     this.crew.morale = clamp(this.crew.morale - 0.04, 0, 1);
@@ -1817,9 +1882,15 @@ export class Game {
         this.crown.record('port', def.name, this.nav.estimated, value, this.clock.t);
       }
       this.logEvent('landfall', `Came to an anchor off ${def.name}. ${def.blurb}`, true);
+      this.announceFirstContact(def);
     } else {
       this.logEvent('landfall', `Anchored again off ${def.name}.`);
     }
+    this.portGossip = rivalGossip(
+      this.rival, def, this.crown.lifetimeStanding,
+      (this.clock.t - this.rival.lastNews) / 86400, this.rng,
+    );
+    if (this.portGossip) this.logEvent('note', this.portGossip);
     this.crew.morale = clamp(this.crew.morale + 0.1, 0, 1);
     this.mode = 'port';
   }
@@ -2278,6 +2349,14 @@ export class Game {
     return g;
   }
 }
+
+const FAITH_WORD: Record<string, string> = {
+  catholic: 'they are Christians',
+  muslim: 'they are Muslims and have been for six hundred years',
+  hindu: 'their faith is one nobody in Lisbon has a name for',
+  buddhist: 'their faith is one nobody in Lisbon has a name for',
+  traditional: 'they keep their own gods',
+};
 
 export { KNOTS, portName };
 

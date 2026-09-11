@@ -2,6 +2,7 @@ import './style.css';
 
 import { DEG, clamp } from './core/math';
 import { Game } from './game/state';
+import { portDef } from './world/ports';
 import type { Difficulty } from './game/difficulty';
 import { rollOfficerEvent } from './game/officerEvents';
 import { rollSeaEvent } from './game/seaEvents';
@@ -50,7 +51,12 @@ function startNew(difficulty: Difficulty = 'watch'): void {
   game.mode = 'sailing';
   ensureRenderer(game);
   ui.attach(game);
-  ui.setMode('port');
+  // A new captain begins at court, not on the quay. The King's commission is
+  // the briefing — it says what the voyage is for, what it pays, and who else
+  // is trying to do it — and choosing between the three on offer is the first
+  // decision of the game. Opening on the market instead left a player at anchor
+  // in Lisbon with a purse, no orders, and nothing telling him where to go.
+  ui.setMode('court');
 }
 
 function continueSaved(): void {
@@ -283,6 +289,15 @@ if (import.meta.env.DEV) {
         }
         g.ship.state.heading = heading;
         g.displayHeading = heading;
+      },
+      /** Drop her straight into a port, for looking at the port screens. */
+      anchorAt(id: string) {
+        if (!game) return;
+        const def = portDef(id);
+        game.ship.state.pos = { lat: def.lat, lon: def.lon };
+        game.nav.estimated = { lat: def.lat, lon: def.lon };
+        game.enterPort(def);
+        ui.setMode('port');
       },
       rollOfficerEvent,
       rollSeaEvent,

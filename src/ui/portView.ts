@@ -68,8 +68,13 @@ export class PortView {
       button('Seek an audience', () => this.onAudience(), {
         disabled: def.people === 'portuguese',
         title: def.people === 'portuguese' ? 'These are your own people.' : undefined,
+        // Until you have leave to trade, the audience is the only thing at this
+        // anchorage worth doing, and a player who does not know that wanders
+        // into the market and is told no.
+        primary: def.people !== 'portuguese' && !rel.mayTrade,
       }),
-      button('Weigh anchor  (Space)', () => { g.weighAnchor(); this.onClose(); }, { primary: true }),
+      button('Weigh anchor  (Space)', () => { g.weighAnchor(); this.onClose(); },
+        { primary: def.people === 'portuguese' || rel.mayTrade }),
     );
 
     clear(this.body);
@@ -109,8 +114,34 @@ export class PortView {
     const pe = people(def.people);
 
     const left = el('div', {});
+    const right = el('div', {});
+    // Coming among a people nobody from Europe has met is the single most
+    // dramatic thing in the game, and it used to be one line of prose in the
+    // same grey box as the harbour's holding ground.
+    const unknown = !g.peopleKnown(def) && !rel.met;
+
+    if (unknown) {
+      left.append(el('div', { class: 'first-contact' },
+        el('div', { class: 'first-contact-eyebrow' }, 'No Portuguese has stood here before'),
+        el('h2', {}, `The ${pe.name}`),
+        el('p', {}, firstContactLine(pe)),
+        el('p', { class: 'first-contact-do' },
+          'Nothing may be bought or sold until whoever governs the place has seen you '
+          + 'and decided what you are. Seek an audience.'),
+      ));
+    }
+
     left.append(card('', el('p', { style: { fontSize: '15px', lineHeight: '1.7' } }, def.blurb)));
-    left.append(card(pe.name, el('p', {}, pe.blurb),
+
+    if (g.portGossip) {
+      left.append(card('What they say ashore',
+        el('p', { style: { fontStyle: 'italic', lineHeight: '1.7' } }, g.portGossip)));
+    }
+
+    // The people, in the sidebar. When the card above has just introduced them
+    // at length, this is the reference table and not a second introduction.
+    right.append(card(pe.name,
+      unknown ? null : el('p', {}, pe.blurb),
       kv('Language', pe.language),
       kv('Faith', { catholic: 'Catholic', muslim: 'Muslim', hindu: 'Hindu', traditional: 'Their own', buddhist: 'Buddhist' }[pe.faith]),
       kv('Regard for you', regardWord(rel.regard)),
@@ -119,12 +150,12 @@ export class PortView {
       rel.factory ? kv('Factory', 'Established') : null,
     ));
 
-    if (!rel.mayTrade && def.people !== 'portuguese') {
-      left.append(el('div', { class: 'notice' },
+    // Said once. The hero card above already says it better.
+    if (!rel.mayTrade && def.people !== 'portuguese' && !unknown) {
+      right.append(el('div', { class: 'notice' },
         'You have no leave to trade here. Seek an audience with whoever governs the place before you open the hold.'));
     }
 
-    const right = el('div', {});
     right.append(card('The anchorage',
       kv('Shelter', qualityWord(def.anchorage)),
       kv('Water and provisions', qualityWord(def.refit)),
@@ -705,6 +736,32 @@ function officerCost(role: OfficerRole, wealth: number): number {
     cirurgiao: 190, capelao: 70, lingua: 260, degredado: 25,
   };
   return Math.round(base[role] * (0.75 + wealth * 0.6));
+}
+
+/**
+ * What a captain would actually want to know, standing on the poop looking at a
+ * shore nobody has described to him: what they speak, what they believe, and
+ * whether his hold full of brass is treasure or an insult.
+ */
+function firstContactLine(pe: ReturnType<typeof people>): string {
+  const tongue = `They speak ${pe.language}, and no one aboard has a word of it.`;
+  const faith = {
+    catholic: 'They are Christians.',
+    muslim: 'They are Muslims, and have been for six hundred years.',
+    hindu: 'Their faith has no name in any book in Lisbon.',
+    buddhist: 'Their faith has no name in any book in Lisbon.',
+    traditional: 'They keep their own gods.',
+  }[pe.faith];
+  const world = pe.sophistication > 0.7
+    ? 'They have traded with the whole of the known world for longer than Portugal has existed; '
+      + 'what is in your hold will not impress them.'
+    : pe.sophistication > 0.35
+      ? 'They know the sea, and the peoples on either side of them, and they will drive a hard bargain.'
+      : 'Nothing like this ship has ever come here.';
+  const rival = pe.rivalNetwork
+    ? ' There are Arab merchants ashore who understood what you are before you did.'
+    : '';
+  return `${pe.blurb} ${tongue} ${faith} ${world}${rival}`;
 }
 
 function regardWord(r: number): string {

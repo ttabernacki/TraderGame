@@ -1,6 +1,7 @@
 import { monarchAt, nextTitle, type Patent } from '../progression/crown';
+import { rivalStanding } from '../progression/rival';
 import type { Game } from '../game/state';
-import { button, card, clear, el, kv, meter } from './dom';
+import { append, button, card, clear, el, kv, meter } from './dom';
 
 /** The court at Lisbon: report the voyage, collect what you are owed, take the next commission. */
 export class CourtView {
@@ -38,7 +39,18 @@ export class CourtView {
     );
 
     clear(this.foot);
-    this.foot.append(button('Withdraw', () => this.onClose(), { primary: true }));
+    // A captain standing in front of the King with three commissions on the
+    // table and no orders of his own should not be told that leaving is the
+    // obvious thing to do.
+    const undecided = !g.crown.patent && this.offers.length > 0;
+    append(this.foot,
+      undecided
+        ? el('div', { style: { marginRight: 'auto', fontSize: '13.5px', color: 'var(--ink-soft)' } },
+          'Take a commission, or go without one and sail on your own account.')
+        : null,
+      button(undecided ? 'Withdraw' : g.crown.patent ? 'Go aboard' : 'Withdraw',
+        () => this.onClose(), { primary: !undecided }),
+    );
 
     clear(this.body);
     const left = el('div', {});
@@ -54,6 +66,18 @@ export class CourtView {
       next ? meter(g.crown.lifetimeStanding / next.standing) : null,
       kv('Your share of a cargo', `${(title.share * 100).toFixed(0)}%`),
       kv('In the purse', `${g.crown.gold.toFixed(0)} cruzados`),
+    ));
+
+    // The other man belongs at the briefing. He is the reason the commission
+    // has a hurry in it, and a player who never opens the orders book had no
+    // way of learning that he existed.
+    left.append(card('The other man',
+      el('p', {}, `${g.rival.name} is at sea in ${g.rival.ship}, under the same flag and `
+        + 'on the same errand, and the padrão real has room for one name against each headland.'),
+      el('p', { style: { fontStyle: 'italic', color: 'var(--ink-soft)' } },
+        rivalStanding(g.rival, g.crown.lifetimeStanding)),
+      kv('His reach', `${Math.abs(g.rival.frontierLat).toFixed(0)}° ${g.rival.frontierLat < 0 ? 'south' : 'north'}`),
+      kv('Places entered under his name', String(g.rival.claimed.length)),
     ));
 
     if (this.settlement) {
@@ -128,6 +152,8 @@ export class CourtView {
         el('p', {}, 'Nothing is offered. Come back when you have something to show, or take a cargo on your own account.')));
     }
 
-    this.body.append(el('div', { class: 'cols side' }, left, right));
+    // The commissions carry three paragraphs each and are the reason the
+    // player is here; the standing and the monarch are a sidebar.
+    this.body.append(el('div', { class: 'cols side' }, right, left));
   }
 }

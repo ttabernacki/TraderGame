@@ -212,6 +212,41 @@ const PATENT_TEMPLATES: {
     }),
   },
   {
+    // A survey commission. The whole apparatus of this game — the reckoning, the
+    // sights, the running survey — was optional right up until the Cape, because
+    // nothing the Crown asked for before then required any of it. This asks for
+    // exactly that and nothing else.
+    minStanding: 0,
+    build: () => ({
+      title: 'The King\'s coast',
+      advance: 130, reward: 250, standingReward: 55, returnTo: 'lisboa',
+      narrative:
+        'The Crown has a great many reports of the Guinea coast and no two of them agree about where anything is. Pilots are working from a chart that puts Cape Verde a hundred miles from where it stands. You are not asked to bring back anything. You are asked to sail that coast with the lead going and the quadrant out, set a pillar where the land is worth naming, and come home with the truth about it. It pays badly. It is how a man becomes a pilot rather than a carrier.',
+      objectives: [
+        { kind: 'chart', description: 'Survey 300 miles of coast', amount: 300, progress: 0, complete: false },
+        { kind: 'padrao', description: 'Raise a padrão on a headland', amount: 1, progress: 0, complete: false },
+        { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },
+      ],
+    }),
+  },
+  {
+    // A diplomatic commission, which is the third thing the game does and the
+    // one the player had no reason to touch on a first voyage.
+    minStanding: 0,
+    build: () => ({
+      title: 'The pepper of Guinea',
+      advance: 210, reward: 430, standingReward: 45, returnTo: 'lisboa',
+      narrative:
+        'Malagueta is not pepper and everyone in Lisbon knows it, but until somebody reaches the Indies it is what the apothecaries have, and the Venetians are charging what they like for the real thing. The grain coast lies below Cape Verde among people we have traded with twice and quarrelled with once. Go and put it on a footing. The cargo matters less than whether they will still be dealing with us in ten years.',
+      objectives: [
+        { kind: 'reach', description: 'Call at Serra Leoa', target: 'serra-leoa', progress: 0, complete: false },
+        { kind: 'contact', description: 'Come to terms with the Temne', target: 'temne', progress: 0, complete: false },
+        { kind: 'cargo', description: 'Bring home 40 quintais of malagueta', target: 'malagueta', amount: 40, progress: 0, complete: false },
+        { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },
+      ],
+    }),
+  },
+  {
     minStanding: 25,
     build: () => ({
       title: 'Beyond the Congo',

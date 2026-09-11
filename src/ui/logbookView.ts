@@ -6,6 +6,32 @@ import { button, card, clear, el, kv } from './dom';
 
 type Tab = 'log' | 'traverse' | 'sights' | 'discoveries';
 
+/**
+ * Filters for the log.
+ *
+ * Sixty-six days of sailing put eighty-six navigation entries in the book,
+ * every one of them "Noon: ran 98 miles, course SSW", and the two lines that
+ * actually mattered were somewhere in the middle of them. A logbook that cannot
+ * be read is not a record.
+ */
+type Filter = 'matters' | 'all' | 'navigation' | 'company' | 'trade';
+
+const FILTERS: [Filter, string][] = [
+  ['matters', 'What matters'],
+  ['all', 'Everything'],
+  ['navigation', 'Navigation'],
+  ['company', 'The company'],
+  ['trade', 'Trade and contact'],
+];
+
+const FILTER_KINDS: Record<Filter, Set<string> | null> = {
+  all: null,
+  matters: new Set(['departure', 'landfall', 'discovery', 'contact', 'crown', 'peril']),
+  navigation: new Set(['navigation', 'weather', 'discovery']),
+  company: new Set(['crew']),
+  trade: new Set(['trade', 'contact']),
+};
+
 const KIND_LABEL: Record<string, string> = {
   departure: 'Departure', landfall: 'Landfall', weather: 'Weather',
   navigation: 'Navigation', discovery: 'Discovery', crew: 'The company',
@@ -17,6 +43,7 @@ export class LogbookView {
   root = el('div', { class: 'screen' });
   private body = el('div', { class: 'screen-body' });
   private tab: Tab = 'log';
+  private filter: Filter = 'matters';
   private game: Game | null = null;
 
   constructor(private onClose: () => void) {
@@ -60,9 +87,26 @@ export class LogbookView {
   }
 
   private renderLog(host: HTMLElement, g: Game): void {
-    const entries = g.log.recent(180);
+    host.append(el('div', { class: 'log-filter' },
+      el('span', {}, 'Show'),
+      ...FILTERS.map(([f, label]) => el('button', {
+        class: this.filter === f ? 'active' : '',
+        onclick: () => { this.filter = f; this.render(); },
+      }, label)),
+    ));
+
+    const kinds = FILTER_KINDS[this.filter];
+    // "What matters" also keeps anything the simulation flagged as important,
+    // whatever kind it was written under.
+    const all = g.log.entries.slice(-600).reverse();
+    const entries = kinds === null
+      ? all.slice(0, 180)
+      : all.filter((e) => kinds.has(e.kind)
+        || (this.filter === 'matters' && e.important)).slice(0, 180);
+
     if (entries.length === 0) {
-      host.append(el('p', {}, 'Nothing written yet.'));
+      host.append(el('p', { style: { marginTop: '18px' } },
+        all.length === 0 ? 'Nothing written yet.' : 'Nothing of that sort has been written yet.'));
       return;
     }
     let lastDate = '';
