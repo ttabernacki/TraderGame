@@ -12,6 +12,17 @@ const EARTH_RADIUS_M = 6371000;
  * the ship — see the same function in `land.ts`. A town this side of the
  * horizon is not hidden by the curve at all.
  */
+/** The same fade the coast uses, so a town and its shore go together. */
+function hazeAt(distanceM: number, rangeNm: number): number {
+  const rangeM = rangeNm * 1852;
+  const from = rangeM * 0.55;
+  const to = rangeM * 0.97;
+  if (distanceM <= from) return 1;
+  if (distanceM >= to) return 0;
+  const t = (distanceM - from) / (to - from);
+  return 1 - t * t * (3 - 2 * t);
+}
+
 function curvatureDrop(distanceM: number, eyeM: number): number {
   const horizonM = Math.sqrt(2 * EARTH_RADIUS_M * Math.max(eyeM, 1.5));
   const beyond = Math.max(distanceM - horizonM, 0);
@@ -97,14 +108,25 @@ function styleFor(def: PortDef): Style {
   };
 }
 
-/** How many houses, and how far the town spreads, by what the place is. */
+/**
+ * How many houses, and how far the town spreads, by what the place is.
+ *
+ * Exaggerated, like the land behind it and for the same reason. A real village
+ * of sixteen huts three miles off is three or four pixels of pale smudge, and
+ * the player has sailed two thousand miles to find it. These are about twice
+ * the footprint and the buildings themselves stand higher than they stood, so
+ * that raising a town reads as raising a town.
+ */
 const SPREAD: Record<string, { count: number; radius: number }> = {
-  anchorage: { count: 6, radius: 90 },
-  village: { count: 16, radius: 170 },
-  town: { count: 40, radius: 340 },
-  city: { count: 80, radius: 620 },
-  emporium: { count: 110, radius: 820 },
+  anchorage: { count: 14, radius: 150 },
+  village: { count: 34, radius: 300 },
+  town: { count: 80, radius: 600 },
+  city: { count: 150, radius: 1050 },
+  emporium: { count: 200, radius: 1400 },
 };
+
+/** How much higher than life the buildings are drawn. */
+const BUILD_LIFT = 2.4;
 
 /**
  * A cooking fire's smoke, which is how a town was actually raised.
@@ -119,27 +141,51 @@ const SPREAD: Record<string, { count: number; radius: number }> = {
  */
 interface Plume {
   sprite: THREE.Sprite;
+  /** Its own material, so it can be faded and darkened on its own. */
+  material: THREE.SpriteMaterial;
   /** Where the fire is, in the scene's metres. */
   x: number;
   z: number;
   y: number;
   /** How far up this puff sits, which sets how far the wind has carried it. */
   rise: number;
+  /** Its size at the foot of the column, before the churn. */
+  width: number;
+  /** How tall the whole column is, which is what sets how far it leans. */
+  tall: number;
+  /** Phase, so the puffs of one column do not breathe together. */
+  seed: number;
 }
 
+/**
+ * One puff of smoke, with a ragged edge.
+ *
+ * A clean radial gradient reads as a smudge of fog. Smoke has lumps in it: the
+ * texture is a handful of overlapping blobs, so a stack of them churns instead
+ * of sliding, which is what makes a column look like it is boiling upward
+ * rather than being dragged past.
+ */
 function smokeTexture(): THREE.Texture | null {
   if (typeof document === 'undefined') return null;
-  const size = 64;
+  const size = 128;
   const c = document.createElement('canvas');
   c.width = size; c.height = size;
   const ctx = c.getContext('2d');
   if (!ctx) return null;
-  const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  g.addColorStop(0, 'rgba(255,255,255,0.85)');
-  g.addColorStop(0.45, 'rgba(255,255,255,0.34)');
-  g.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, size, size);
+  const blob = (cx: number, cy: number, r: number, a: number) => {
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+    g.addColorStop(0, `rgba(255,255,255,${a})`);
+    g.addColorStop(0.5, `rgba(255,255,255,${a * 0.45})`);
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+  };
+  const h = size / 2;
+  blob(h, h, h * 0.92, 0.55);
+  blob(h * 0.72, h * 0.78, h * 0.5, 0.55);
+  blob(h * 1.28, h * 0.86, h * 0.44, 0.5);
+  blob(h * 1.1, h * 1.26, h * 0.5, 0.5);
+  blob(h * 0.8, h * 1.2, h * 0.38, 0.45);
   const tex = new THREE.CanvasTexture(c);
   tex.needsUpdate = true;
   return tex;
@@ -147,14 +193,31 @@ function smokeTexture(): THREE.Texture | null {
 
 /** How many fires are worth drawing, by what the place is. */
 const SMOKES: Record<string, number> = {
-  anchorage: 1, village: 2, town: 3, city: 5, emporium: 6,
+  anchorage: 2, village: 3, town: 5, city: 8, emporium: 10,
+};
+
+/**
+ * How high the smoke of each kind of place stands, in metres.
+ *
+ * Frankly enormous, and on purpose. A cooking fire's smoke is thirty metres and
+ * invisible from a mile; what this is drawing is the *sign* of a town — the
+ * thing that has to carry across twenty miles of sea and tell a lookout there
+ * are people on that shore. It is the one piece of the coast the player is
+ * allowed to see before he is committed, and at honest scale there is nothing
+ * to see. A big place makes a bigger mark, which is at least the right shape of
+ * lie.
+ */
+const SMOKE_HEIGHT: Record<string, number> = {
+  anchorage: 420, village: 700, town: 1250, city: 1900, emporium: 2400,
 };
 
 export class Settlements {
   group = new THREE.Group();
 
   private material: THREE.MeshLambertMaterial;
-  private smokeMaterial: THREE.SpriteMaterial | null = null;
+  private smokeMap: THREE.Texture | null = null;
+  /** How thick the haze is, for fading the plumes out at range. */
+  private hazeIntensity = 0;
   private mesh: THREE.Mesh | null = null;
   private plumes: Plume[] = [];
   private lastOrigin: LatLon = { lat: 999, lon: 999 };
@@ -162,7 +225,9 @@ export class Settlements {
   private eyeM = 20;
 
   constructor() {
-    this.material = new THREE.MeshLambertMaterial({ vertexColors: true });
+    this.material = new THREE.MeshLambertMaterial({
+      vertexColors: true, transparent: true, depthWrite: true,
+    });
   }
 
   needsRebuild(origin: LatLon, rangeNm: number, eyeM: number): boolean {
@@ -194,7 +259,14 @@ export class Settlements {
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(colours, 3));
+    // The fourth component is the haze, as for the coast behind it: a town
+    // dissolves before the edge of what is built rather than appearing at it.
+    const withHaze: number[] = [];
+    for (let i = 0, v = 0; i < colours.length; i += 3, v += 3) {
+      const d = Math.hypot(positions[v], positions[v + 2]);
+      withHaze.push(colours[i], colours[i + 1], colours[i + 2], hazeAt(d, rangeNm));
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(withHaze, 4));
     geo.setIndex(indices);
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
@@ -297,19 +369,21 @@ export class Settlements {
       const t = i / plan.count;
       const backM = 30 + plan.radius * (0.15 + 0.85 * t * t) * rng.range(0.6, 1.25);
       const alongM = rng.range(-1, 1) * plan.radius * (0.45 + 0.9 * (1 - t));
-      const w = style.round ? rng.range(4.5, 7.5) : rng.range(6, 12);
-      const d = style.round ? w : rng.range(5, 10);
-      const h = style.round ? rng.range(2.4, 3.2) : rng.range(3.2, 6.5);
+      const w = (style.round ? rng.range(4.5, 7.5) : rng.range(6, 12)) * 1.5;
+      const d = style.round ? w : rng.range(5, 10) * 1.5;
+      const h = (style.round ? rng.range(2.4, 3.2) : rng.range(3.2, 6.5)) * BUILD_LIFT;
       place(alongM, backM, w, d, h, style.wall, style.roofColour, style.roof, style.round);
     }
 
     // The one building a lookout can see before any of the others, which is
     // exactly why towns built them where they did.
     if (style.landmark !== 'none') {
-      const tall = style.landmark === 'minaret' ? 24
-        : style.landmark === 'tower' ? 21 : 12;
-      const wide = style.landmark === 'minaret' ? 5
-        : style.landmark === 'tower' ? 8 : 16;
+      // The landmark is the thing a lookout picks up first, so it is lifted
+      // hardest: a minaret you can see at ten miles is the whole point of it.
+      const tall = (style.landmark === 'minaret' ? 24
+        : style.landmark === 'tower' ? 21 : 12) * BUILD_LIFT * 1.35;
+      const wide = (style.landmark === 'minaret' ? 5
+        : style.landmark === 'tower' ? 8 : 16) * 1.9;
       const backM = style.landmark === 'keep' ? 60 : plan.radius * 0.35 + 40;
       const x = town.x + backX * backM;
       const z = town.z + backZ * backM;
@@ -330,12 +404,12 @@ export class Settlements {
       const x = town.x + alongX * alongM + backX * 20;
       const z = town.z + alongZ * alongM + backZ * 20;
       const base = Math.max(groundAt(x, z), 0.5) - curvatureDrop(Math.hypot(x, z), this.eyeM);
-      box(positions, colours, indices, x, base, z, 34, 34, 9, town.brg, WHITEWASH);
+      box(positions, colours, indices, x, base, z, 62, 62, 22, town.brg, WHITEWASH);
       for (const corner of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
-        const cx = x + (alongX * corner[0] + backX * corner[1]) * 15;
-        const cz = z + (alongZ * corner[0] + backZ * corner[1]) * 15;
+        const cx = x + (alongX * corner[0] + backX * corner[1]) * 27;
+        const cz = z + (alongZ * corner[0] + backZ * corner[1]) * 27;
         box(positions, colours, indices,
-          cx, base, cz, 8, 8, 13, town.brg, WHITEWASH);
+          cx, base, cz, 15, 15, 33, town.brg, WHITEWASH);
       }
     }
   }
@@ -346,20 +420,10 @@ export class Settlements {
    * the wind is over the land.
    */
   private buildSmoke(town: Town): void {
-    if (!this.smokeMaterial) {
+    if (!this.smokeMap) {
       const map = smokeTexture();
       if (!map) return;
-      this.smokeMaterial = new THREE.SpriteMaterial({
-        map, transparent: true, depthWrite: false, opacity: 0.62,
-        // Wood smoke is grey, and grey is what shows against a pale sky. A
-        // white plume on a white horizon is a plume nobody sees.
-        color: new THREE.Color(0.58, 0.56, 0.53),
-        // The scene's haze is not applied to it. Everything else on that coast
-        // is meant to fade out at ten miles, and a smoke is meant not to: it is
-        // the one mark a lookout could still pick up when the land under it had
-        // gone soft, which is exactly why landfalls were made on smokes.
-        fog: false,
-      });
+      this.smokeMap = map;
     }
     const fires = SMOKES[town.def.size] ?? 1;
     const plan = SPREAD[town.def.size] ?? SPREAD.village;
@@ -374,22 +438,61 @@ export class Settlements {
       const x = town.x + alongX * alongM + backX * backM;
       const z = town.z + alongZ * alongM + backZ * backM;
       const drop = curvatureDrop(Math.hypot(x, z), this.eyeM);
-      // Four puffs up each column, widening and thinning as they go.
-      const puffs = 4;
+      const tall = SMOKE_HEIGHT[town.def.size] ?? 700;
+      const puffs = 9;
       for (let i = 0; i < puffs; i++) {
         const t = (i + 0.5) / puffs;
-        const sprite = new THREE.Sprite(this.smokeMaterial);
-        const wide = 24 + t * 96;
-        sprite.scale.set(wide, wide, 1);
-        this.plumes.push({ sprite, x, z, y: ground + 14 + t * 168 - drop, rise: t });
+        // Its own material, so each puff can be darkened at the fire, thinned
+        // as it rises, and faded out at range, which one shared material could
+        // not do — and which is why the plumes used to arrive all at once at
+        // full strength the moment a town came into the built circle.
+        const material = new THREE.SpriteMaterial({
+          map: this.smokeMap,
+          transparent: true,
+          depthWrite: false,
+          // The scene's haze is not applied to it. Everything else on that
+          // coast is meant to fade out at ten miles, and a smoke is meant not
+          // to: it is the one mark a lookout could still pick up when the land
+          // under it had gone soft, which is why landfalls were made on smokes.
+          fog: false,
+          // Sooty at the fire and going grey as it thins with height. Wood and
+          // green brush burn dirty, and dark is what shows against a pale sky
+          // at twenty miles — which is the whole job this is doing.
+          // Black at the fire and only a little greyer at the top. Green brush
+          // and wet wood burn filthy, and against a pale sky it is darkness
+          // that carries, not shape: a pale plume twenty miles off is the sky.
+          //
+          // These are *linear* values and the renderer writes sRGB, which lifts
+          // the bottom of the range enormously — a linear tenth comes out of
+          // the screen as a third. Smoke set to a plausible-looking 0.2 arrived
+          // as pale tan. This is what black has to be written as here.
+          color: new THREE.Color(0.010 + t * 0.030, 0.0095 + t * 0.029, 0.009 + t * 0.027),
+        });
+        const sprite = new THREE.Sprite(material);
+        const width = tall * (0.22 + t * 0.52);
+        sprite.scale.set(width, width, 1);
+        this.plumes.push({
+          sprite, material, x, z,
+          y: ground + tall * 0.06 + t * tall - drop,
+          rise: t,
+          width,
+          tall,
+          seed: rng.range(0, 100),
+        });
         this.group.add(sprite);
       }
     }
   }
 
   /**
-   * Lean the smoke downwind. Cheap enough to do every frame, and it is the one
-   * thing on the whole coast that moves.
+   * Carry the smoke: lean it downwind, let it boil as it goes up, and fade it
+   * out at the edge of what is built.
+   *
+   * The boil is the thing that makes it read as smoke rather than as four
+   * stacked blobs. Each puff swells and shrinks on its own clock and drifts a
+   * little across the column, so the whole thing churns upward. It runs on the
+   * rigging clock, which is real seconds, so a plume rolls at the same rate
+   * whatever the game clock is doing.
    */
   setWind(fromDeg: number, knots: number, time: number): void {
     if (this.plumes.length === 0) return;
@@ -398,27 +501,39 @@ export class Settlements {
     const ex = Math.sin(rad), ez = -Math.cos(rad);
     // Enough lean to say which way the wind is over the land, not so much that
     // the column lies down along the beach and stops being a column.
-    const reach = clamp(knots, 2, 30) * 4.5;
+    // Leaned as a fraction of its own height, so a big smoke and a small one
+    // bend at the same angle. Leaning by a fixed number of metres stood the
+    // little ones upright and folded the big ones flat along the beach.
+    const lean = clamp(knots, 2, 30) / 42;
+    const rangeM = this.lastRangeNm * 1852;
     for (const p of this.plumes) {
-      const drift = p.rise * p.rise * reach;
-      // A slow breathing, so a plume is never a solid bar.
-      const wobble = Math.sin(time * 0.35 + p.rise * 5 + p.x * 0.01) * 5 * p.rise;
-      p.sprite.position.set(
-        p.x + ex * drift + wobble, p.y + Math.sin(time * 0.2 + p.rise * 3) * 2, p.z + ez * drift,
-      );
+      const drift = p.rise * p.rise * p.tall * lean;
+      const wobble = Math.sin(time * 0.33 + p.seed) * p.width * 0.14 * p.rise;
+      const x = p.x + ex * drift + wobble;
+      const z = p.z + ez * drift;
+      p.sprite.position.set(x, p.y + Math.sin(time * 0.21 + p.seed * 0.7) * p.width * 0.05, z);
+      // Boiling: each puff breathes, and the higher ones breathe wider.
+      const swell = 1 + Math.sin(time * 0.5 + p.seed * 1.7) * 0.16 * (0.4 + p.rise);
+      const w = p.width * swell;
+      p.sprite.scale.set(w, w, 1);
+      // Thick at the fire, thinning as it goes up, and gone before the edge of
+      // the built world so nothing arrives at the boundary.
+      const far = clamp(1 - Math.max(Math.hypot(x, z) - rangeM * 0.6, 0) / (rangeM * 0.37), 0, 1);
+      p.material.opacity = (0.95 - p.rise * 0.3)
+        * (1 - this.hazeIntensity * 0.3) * far * far;
     }
   }
 
   setFog(color: THREE.Color, intensity: number): void {
-    this.material.color.setRGB(1, 1, 1).lerp(color, clamp(intensity, 0, 0.7));
-    if (this.smokeMaterial) {
-      // Thinned by haze, but never to nothing.
-      this.smokeMaterial.opacity = 0.62 - clamp(intensity, 0, 0.7) * 0.34;
-    }
+    this.hazeIntensity = clamp(intensity, 0, 0.7);
+    this.material.color.setRGB(1, 1, 1).lerp(color, this.hazeIntensity);
   }
 
   clear(): void {
-    for (const p of this.plumes) this.group.remove(p.sprite);
+    for (const p of this.plumes) {
+      this.group.remove(p.sprite);
+      p.material.dispose();
+    }
     this.plumes = [];
     if (!this.mesh) return;
     this.group.remove(this.mesh);
@@ -429,11 +544,8 @@ export class Settlements {
   dispose(): void {
     this.clear();
     this.material.dispose();
-    if (this.smokeMaterial) {
-      this.smokeMaterial.map?.dispose();
-      this.smokeMaterial.dispose();
-      this.smokeMaterial = null;
-    }
+    this.smokeMap?.dispose();
+    this.smokeMap = null;
   }
 }
 

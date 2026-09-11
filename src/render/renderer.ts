@@ -461,7 +461,9 @@ export class Renderer {
       this.settlements.rebuild(f.pos, landRange, eyeM);
     }
     this.settlements.setFog(lighting.horizon, clamp(1 - f.visibilityNm / 24, 0, 0.7));
-    this.settlements.setWind(f.windFrom, f.windKnots, f.simTime);
+    // On the rigging clock, which runs on real seconds: smoke boils at the rate
+    // smoke boils whatever the game's clock is set to.
+    this.settlements.setWind(f.windFrom, f.windKnots, this.riggingClock);
 
     this.updateCamera(f, realDt, centre.height, f.waveHeight);
     this.applyCameraFeel(f, realDt);

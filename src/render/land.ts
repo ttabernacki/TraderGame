@@ -51,6 +51,30 @@ const EARTH_RADIUS_M = 6371000;
  * From twenty metres up the horizon is about eight and a half miles, so the
  * beach is drawn honestly out to there and hull-down beyond it.
  */
+/**
+ * How much of a vertex survives the haze, from 1 close to 0 at the far edge of
+ * what is built.
+ *
+ * The band of coast is built out to a fixed range and simply stopped there, so
+ * the whole far edge of a continent used to arrive at once, fully lit, the
+ * moment the ship came close enough for it to be inside the circle — the coast
+ * of Africa appearing out of nothing along a straight line. Fading the last
+ * third of the range to nothing means the land is already gone before the
+ * boundary is reached, so what crosses it is invisible and there is nothing to
+ * see arrive. It is also simply what distance does to land.
+ */
+function hazeAt(distanceM: number, rangeNm: number): number {
+  const rangeM = rangeNm * 1852;
+  const from = rangeM * 0.55;
+  const to = rangeM * 0.97;
+  if (distanceM <= from) return 1;
+  if (distanceM >= to) return 0;
+  const t = (distanceM - from) / (to - from);
+  // Smooth at both ends, so neither the near edge of the fade nor the far one
+  // draws a line across the sea.
+  return 1 - t * t * (3 - 2 * t);
+}
+
 function curvatureDrop(distanceM: number, eyeM: number): number {
   const horizonM = Math.sqrt(2 * EARTH_RADIUS_M * Math.max(eyeM, 1.5));
   const beyond = Math.max(distanceM - horizonM, 0);
@@ -63,6 +87,14 @@ interface Segment {
   land: number;
   /** +1 or -1: which perpendicular points into the land. */
   inward: number;
+  /**
+   * The ring vertices either side of this one, and whether each end of the
+   * drawn piece is a real corner of the coast or just where the sighting
+   * circle cut it. Only a real corner is mitred — see {@link Land.rebuild}.
+   */
+  prevLat: number; prevLon: number;
+  nextLat: number; nextLon: number;
+  cornerA: boolean; cornerB: boolean;
 }
 
 /**
@@ -90,6 +122,10 @@ export class Land {
     this.material = new THREE.MeshLambertMaterial({
       vertexColors: true,
       side: THREE.DoubleSide,
+      // Land carries its own fade in the alpha of its vertex colours, so the
+      // far edge of the built band dissolves into the haze instead of ending.
+      transparent: true,
+      depthWrite: true,
     });
     this.surfMaterial = new THREE.MeshBasicMaterial({
       color: 0xdfeef2, transparent: true, opacity: 0.55, depthWrite: false,
@@ -123,6 +159,8 @@ export class Land {
     if (segments.length === 0) return;
 
     const positions: number[] = [];
+    // Four components: the fourth is how much of this vertex the haze has
+    // eaten. See `hazeAt`.
     const colors: number[] = [];
     const indices: number[] = [];
     const surfPositions: number[] = [];
@@ -149,14 +187,54 @@ export class Land {
       const nx = (-dz / len) * seg.inward;
       const nz = (dx / len) * seg.inward;
 
+      // Mitred at the corners of the coast.
+      //
+      // Each segment used to raise its band on its own perpendicular, and the
+      // band runs seventeen kilometres inland — so at every bend in the coast
+      // the two neighbouring bands splayed apart and left a wedge of open sky
+      // cut clean through the middle of a continent, which is precisely what a
+      // continent does not do. A shared corner now uses the average of the two
+      // perpendiculars, lengthened by the secant of the half-angle so the two
+      // bands meet exactly, the way a mitred joint does. Only real corners are
+      // mitred: an end that is merely where the sighting circle cut the segment
+      // has no neighbour to meet.
+      const mitre = (
+        px: number, pz: number, otherLat: number, otherLon: number, corner: boolean,
+        // +1 when the neighbouring segment runs *into* this corner (the vertex
+        // before A), -1 when it runs out of it (the vertex after B). Getting
+        // this backwards reverses the neighbour's perpendicular and mitres the
+        // joint the wrong way, which opens the gap instead of closing it.
+        toward: number,
+      ): [number, number] => {
+        if (!corner) return [nx, nz];
+        const [ox, oz] = toLocal(otherLat, otherLon);
+        const ex = (px - ox) * toward, ez = (pz - oz) * toward;
+        const elen = Math.hypot(ex, ez);
+        if (elen < 1) return [nx, nz];
+        const mx = (-ez / elen) * seg.inward;
+        const mz = (ex / elen) * seg.inward;
+        let sx = nx + mx, sz = nz + mz;
+        const slen = Math.hypot(sx, sz);
+        if (slen < 1e-6) return [nx, nz];
+        sx /= slen; sz /= slen;
+        // 1/cos(half-angle), capped so a hairpin does not throw the band out
+        // to the far side of the world.
+        const scale = Math.min(1 / Math.max(sx * nx + sz * nz, 1e-3), 3);
+        return [sx * scale, sz * scale];
+      };
+      const [naX, naZ] = mitre(ax, az, seg.prevLat, seg.prevLon, seg.cornerA, 1);
+      const [nbX, nbZ] = mitre(bx, bz, seg.nextLat, seg.nextLon, seg.cornerB, -1);
+
       const base = positions.length / 3;
       const relief = LANDMASSES[seg.land].relief;
 
       for (let b = 0; b < BANDS.length; b++) {
         const inland = BANDS[b];
-        for (const [px, pz] of [[ax, az], [bx, bz]] as const) {
-          const x = px + nx * inland;
-          const z = pz + nz * inland;
+        for (const [px, pz, ex, ez] of [
+          [ax, az, naX, naZ], [bx, bz, nbX, nbZ],
+        ] as const) {
+          const x = px + ex * inland;
+          const z = pz + ez * inland;
           // Sample the real elevation field at this inland point.
           const lat = origin.lat - z / mPerDegLat;
           const lon = origin.lon + x / mPerDegLon;
@@ -172,7 +250,7 @@ export class Land {
           // Vegetation and rock tinted by latitude: desert coasts are pale,
           // equatorial ones green, southern capes brown and scrubby.
           const c = groundColour(lat, height, relief);
-          colors.push(c.r * tint, c.g * tint, c.b * tint);
+          colors.push(c.r * tint, c.g * tint, c.b * tint, hazeAt(Math.hypot(x, z), rangeNm));
         }
       }
 
@@ -187,7 +265,10 @@ export class Land {
 
       // A strip of surf just seaward of the shoreline. It sinks with the curve
       // like everything else ashore, so it drops out of sight long before the
-      // headland behind it does.
+      // headland behind it does — and it is not drawn at all beyond a few
+      // miles, because surf is not visible from a few miles and a bright line
+      // of it along a hazed-out coast is the whole pop-in problem again.
+      if (Math.min(Math.hypot(ax, az), Math.hypot(bx, bz)) > 9 * 1852) continue;
       const sBase = surfPositions.length / 3;
       const outward = 130;
       const cx = ax - nx * outward, cz = az - nz * outward;
@@ -204,7 +285,7 @@ export class Land {
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
     geo.setIndex(indices);
     geo.computeVertexNormals();
     geo.computeBoundingSphere();
@@ -268,10 +349,16 @@ export class Land {
         const [clipALat, clipALon] = toLatLon(ax + dx * t0, ay + dy * t0);
         const [clipBLat, clipBLon] = toLatLon(ax + dx * t1, ay + dy * t1);
 
+        const h = (i + n - 1) % n;
+        const k = (j + 1) % n;
         out.push({
           aLat: clipALat, aLon: clipALon, bLat: clipBLat, bLon: clipBLon, land: li,
           // Taken from the whole segment, whose orientation clipping does not change.
           inward: this.inwardFor(li, i, aLat, aLon, bLat, bLon),
+          prevLat: ring[h * 2], prevLon: ring[h * 2 + 1],
+          nextLat: ring[k * 2], nextLon: ring[k * 2 + 1],
+          cornerA: t0 <= 1e-9,
+          cornerB: t1 >= 1 - 1e-9,
         });
       }
     }

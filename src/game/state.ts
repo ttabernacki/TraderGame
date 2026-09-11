@@ -1205,16 +1205,43 @@ export class Game {
    * dead reckoning finds out here whether he is where he thinks he is, and the
    * whole company knows it.
    */
+  /**
+   * Take the way off the clock, not off the ship.
+   *
+   * A passage is run at a watch a second because most of it is empty, and the
+   * price of that is that the one moment in a fortnight that wants attention
+   * goes past inside a single frame: the land is raised twenty miles off and
+   * the ship is on it before the alert has finished fading. Nobody can react to
+   * that, and asking the player to sit at real time all the way down the coast
+   * in case something happens is not a game, it is a watch-keeping punishment.
+   *
+   * So the clock comes down by itself when something is raised, the way the
+   * captain would be sent for. It never speeds up on its own, and it never goes
+   * below what it is told to — if the player is already at four times or slower
+   * he is left alone.
+   */
+  private easeTheClock(toIndex: number): void {
+    if (this.clock.scaleIndex <= toIndex) return;
+    this.clock.scaleIndex = toIndex;
+  }
+
   private cryLandRaised(bearing: number, daysAway: number): void {
     const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
     const known = this.chart.knewCoastNear(this.ship.state.pos, range, this.clock.t - 3600);
     const word = formatBearing(bearing);
+    const miles = this.sounding.shoreDistNm;
+
+    // The cry brings the ship down to four times whatever she was running at,
+    // so the player is actually at the rail when the land opens.
+    const wasFast = this.clock.scaleIndex > 2;
+    this.easeTheClock(2);
 
     this.pushAlert(
-      known
-        ? `Land, ${word}. ${daysAway.toFixed(0)} days without sight of it.`
-        : `Land, ${word} — and it is on nobody's chart.`,
-      'note');
+      `LAND HO — ${word}, ${miles.toFixed(0)} miles.`
+      + (known ? ` ${daysAway < 1 ? 'Raised again' : `${daysAway.toFixed(0)} days without sight of it`}.`
+        : ' It is on nobody\u2019s chart.')
+      + (wasFast ? ' The clock is down to four times.' : ''),
+      'warning');
 
     // What actually makes the moment: the reckoning is about to be judged, and
     // everybody aboard knows by how much it might be wrong.
@@ -1419,7 +1446,7 @@ export class Game {
       const inSight = this.sounding.shoreDistNm < range;
       if (inSight && !this.landInSight) {
         const away = (this.clock.t - this.lastLandSeenT) / 86400;
-        if (away > 3) this.cryLandRaised(bearing, away);
+        if (away > 0.6) this.cryLandRaised(bearing, away);
       }
       if (inSight) this.lastLandSeenT = this.clock.t;
       this.landInSight = inSight;
@@ -1427,6 +1454,10 @@ export class Game {
       if (this.sounding.shoreDistNm < range && closing && hours < 6
           && this.clock.t - this.lastLandWord > 3 * 3600) {
         this.lastLandWord = this.clock.t;
+        // Standing straight at a coast is the other case where the clock has to
+        // come down: two hours of sea room at a watch a second is gone between
+        // one frame and the next.
+        this.easeTheClock(hours < 2 ? 1 : 2);
         this.pushAlert(
           `Land ho — ${formatBearing(bearing)}, ${this.sounding.shoreDistNm.toFixed(0)} miles, `
           + `and she is standing at it. ${hours < 2 ? 'Under two hours.' : `About ${hours.toFixed(0)} hours.`}`,

@@ -323,8 +323,13 @@ export class Chart {
    * about the chart as it stood an hour back gives the honest answer.
    */
   knewCoastNear(at: LatLon, rangeNm: number, before: number): boolean {
-    for (const v of coastVerticesNear(at, rangeNm)) {
-      const p = this.points.get(`${v.land}:${v.index}`);
+    // By segment, not by vertex. The ring's vertices are a median of forty-odd
+    // miles apart, so a ship twenty-five miles off a coast that has been on
+    // European charts for sixty years very often has no vertex inside her
+    // horizon at all — and the landfall was then announced as a discovery of
+    // somewhere nobody had ever seen, off Morocco.
+    for (const seg of coastSegmentsNear(at, rangeNm)) {
+      const p = this.points.get(`${seg.land}:${seg.aIndex}`);
       if (p && p.t <= before) return true;
     }
     return false;
