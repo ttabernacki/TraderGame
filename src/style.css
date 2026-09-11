@@ -1126,7 +1126,11 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   .touch-pad { gap: 5px; }
   .touch-helm { left: 7px; }
   .touch-rig { right: 7px; }
-  .touch-helm, .touch-rig { max-width: calc(50% - 11px); }
+  /* A real width, not a maximum: an absolutely positioned flex box shrink-wraps
+     to its content, so capping it did stop the two pads colliding but left the
+     buttons twenty points wide — which is not a control anybody can hit. Given
+     half the screen each, the buttons divide a width that is known. */
+  .touch-helm, .touch-rig { width: calc(50% - 11px); }
   .touch-helm .touch-btn, .touch-rig .touch-btn {
     flex: 1 1 0;
     min-width: 0;
