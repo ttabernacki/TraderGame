@@ -73,6 +73,7 @@ export class TouchControls {
       { label: 'Chart', key: 'c', hint: 'Chart' },
       { label: 'Sight', key: 'n', hint: 'Sextant' },
       { label: 'Log', key: 'l', hint: 'Logbook' },
+      { label: 'Book', key: 'j', hint: 'The roteiro \u2014 what you know' },
       { label: 'Crew', key: 'k', hint: 'Crew' },
       { label: 'Padrão', key: 'u', hint: 'Land a pillar and claim the place' },
       { label: '♪', key: 'm', hint: 'Sound on or off' },

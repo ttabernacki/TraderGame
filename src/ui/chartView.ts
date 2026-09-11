@@ -4,6 +4,7 @@ import { PORTS, portDef } from '../world/ports';
 import type { Game } from '../game/state';
 import { append, button, clear, el } from './dom';
 import { AGREED_W } from '../navigation/charts';
+import { REGION, describeSea } from '../game/rutter';
 
 /**
  * The chart table.
@@ -42,6 +43,8 @@ export class ChartView {
   private showTrack = true;
   private showPlaces = true;
   private showTrue = false;
+  /** Draw the wind and current your own roteiro records. */
+  private showWinds = true;
   private selectedPort: string | null = null;
   /**
    * The spot on the paper the pilot has his dividers on.
@@ -143,6 +146,11 @@ export class ChartView {
       button(this.showPlaces ? 'Hide names' : 'Show names', () => {
         this.showPlaces = !this.showPlaces; this.buildTools(); this.draw();
       }),
+      (this.game?.rutter.seaNotes().length ?? 0) > 0
+        ? button(this.showWinds ? 'Hide your winds' : 'Your winds', () => {
+          this.showWinds = !this.showWinds; this.buildTools(); this.draw();
+        }, { title: 'The wind and the set as your own book has them, for this month' })
+        : null,
       button(
         `Steer for ${this.targetLabel()}`,
         () => this.steerForSelection(false),
@@ -626,6 +634,7 @@ export class ChartView {
     this.drawGraticule(ctx, rect);
     this.drawRhumbNetwork(ctx, rect);
     if (this.showTrue) this.drawTrueCoast(ctx);
+    if (this.showWinds && this.game) this.drawYourWinds(ctx, this.game);
     this.drawChartedCoast(ctx, g);
     if (this.showTrack) this.drawTrack(ctx, g);
     this.drawPorts(ctx, g);
@@ -817,6 +826,81 @@ export class ChartView {
       }
       flush();
     }
+  }
+
+  /**
+   * The wind and the water as your own book has them.
+   *
+   * This is the roteiro paying for itself. Everything else on this chart is a
+   * coastline, which tells a pilot where not to go; this tells him how to get
+   * anywhere — and unlike the coast, no amount of looking at the paper will
+   * give it to him. He has to have been there, in that month, and written it
+   * down. A square he has thirty hours in is drawn firm; one he has passed
+   * through once is a hint.
+   *
+   * Only the current month is drawn, because a wind rose for a month you are
+   * not in is not advice, and because the whole point of the thing is that the
+   * same water is a different sea in March and in September.
+   */
+  private drawYourWinds(ctx: CanvasRenderingContext2D, g: Game): void {
+    const month = g.clock.date.month;
+    const notes = g.rutter.seaNotes().filter((s) => s.month === month);
+    if (notes.length === 0) return;
+    ctx.save();
+    for (const s of notes) {
+      const d = describeSea(s);
+      const mid = { lat: s.lat + REGION / 2, lon: s.lon + REGION / 2 };
+      const p = this.toScreen(mid.lat, mid.lon);
+      const half = (REGION / 2) * this.scale;
+      if (p.x < -half || p.y < -half) continue;
+      const arm = Math.min(half * 0.62, 30);
+      if (arm < 5) continue;
+
+      // Firm where the book is sure of it, faint where it is one passage's
+      // worth of guess.
+      const sure = clamp(d.hours / 30, 0.18, 1) * clamp(d.steadiness + 0.25, 0.3, 1);
+      const rad = ((d.windFrom + 180) * Math.PI) / 180;
+      const dx = Math.sin(rad), dy = -Math.cos(rad);
+
+      ctx.strokeStyle = `rgba(60, 90, 138, ${0.25 + sure * 0.5})`;
+      ctx.lineWidth = 1 + sure * 2.2;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p.x - dx * arm, p.y - dy * arm);
+      ctx.lineTo(p.x + dx * arm, p.y + dy * arm);
+      ctx.stroke();
+      // Feathers on the tail, as on a real wind rose, one for each four knots.
+      const barbs = clamp(Math.round(d.windKnots / 5), 1, 4);
+      for (let i = 0; i < barbs; i++) {
+        const at = 1 - i * 0.22;
+        const bx = p.x - dx * arm * at;
+        const by = p.y - dy * arm * at;
+        ctx.beginPath();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx + (dx * 0.5 - dy) * arm * 0.3, by + (dy * 0.5 + dx) * arm * 0.3);
+        ctx.stroke();
+      }
+      // The arrow head, pointing the way the wind goes.
+      ctx.fillStyle = `rgba(60, 90, 138, ${0.35 + sure * 0.5})`;
+      ctx.beginPath();
+      ctx.arc(p.x + dx * arm, p.y + dy * arm, 1.6 + sure * 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // The set of the current, in a different hand.
+      if (d.currentKnots > 0.2) {
+        const crad = (d.currentToward * Math.PI) / 180;
+        const cx = Math.sin(crad), cy = -Math.cos(crad);
+        ctx.strokeStyle = `rgba(40, 110, 110, ${0.3 + sure * 0.4})`;
+        ctx.lineWidth = 1.1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y + 5);
+        ctx.lineTo(p.x + cx * arm * 0.75, p.y + 5 + cy * arm * 0.75);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+    ctx.restore();
   }
 
   private drawTrueCoast(ctx: CanvasRenderingContext2D): void {
@@ -1147,6 +1231,8 @@ function buildLegend(): HTMLElement {
     item('#3c5a8a', 'A padrão of yours'),
     item('rgba(170,130,70,0.55)', 'Where a rumour points'),
     item('rgba(110,34,92,0.6)', 'How far the other man has got'),
+    item('rgba(60,90,138,0.75)', 'The wind, as your book has it this month'),
+    item('rgba(40,110,110,0.7)', 'The set of the water'),
     el('div', { style: { marginTop: '5px', fontStyle: 'italic', opacity: '0.7', maxWidth: '190px', lineHeight: '1.4' } },
       el('span', {}, 'The dotted ellipse is the doubt in your own position, not a margin on the chart.')),
   );

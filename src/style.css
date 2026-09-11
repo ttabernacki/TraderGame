@@ -1756,3 +1756,150 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
 @media (max-height: 700px) {
   #hud-alerts .alert:not(:last-child) { display: none; }
 }
+
+/* ---------------------------------------------------------------------------
+   O Roteiro
+   --------------------------------------------------------------------------
+   A book, not a panel. The shelf of pages on the left in the order a pilot
+   keeps them; one page open on the right, in his hand. What separates this
+   from an inventory screen is that the page is *written on* — it has a
+   condition, and the condition is drawn rather than described.
+   ------------------------------------------------------------------------ */
+
+.rutter {
+  display: grid;
+  grid-template-columns: minmax(210px, 280px) 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.rutter-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.rutter-tab {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  border: 1px solid rgba(90, 74, 55, 0.3);
+  background: rgba(255, 253, 246, 0.4);
+  color: var(--ink);
+  cursor: pointer;
+}
+.rutter-tab.active { background: var(--ink); color: #f2ead8; border-color: var(--ink); }
+
+.rutter-list { display: flex; flex-direction: column; gap: 4px; max-height: 62vh; overflow-y: auto; }
+.rutter-item {
+  text-align: left;
+  font: inherit;
+  padding: 7px 9px;
+  border: 1px solid rgba(90, 74, 55, 0.22);
+  border-left: 3px solid rgba(90, 74, 55, 0.3);
+  border-radius: 2px;
+  background: rgba(255, 253, 246, 0.5);
+  color: var(--ink);
+  cursor: pointer;
+  display: block;
+}
+.rutter-item:hover { background: rgba(168, 50, 40, 0.08); }
+.rutter-item.active { border-left-color: #a8322a; background: rgba(255, 253, 246, 0.95); }
+.rutter-item b { display: block; font-weight: 600; }
+.rutter-item span { display: block; font-size: 11.5px; opacity: 0.7; margin-top: 1px; }
+.rutter-item.hurt b::after { content: ' \203B'; opacity: 0.55; }
+
+/* The open page. */
+.rutter-page {
+  background: rgba(255, 252, 244, 0.82);
+  border: 1px solid rgba(90, 74, 55, 0.28);
+  border-radius: 2px;
+  padding: 18px 22px 20px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5) inset, 0 2px 8px rgba(40, 30, 18, 0.08);
+  position: relative;
+}
+.rutter-page-head { border-bottom: 1px solid rgba(90, 74, 55, 0.25); padding-bottom: 8px; margin-bottom: 12px; }
+.rutter-page-head h2 { margin: 0 0 2px; font-size: 21px; font-weight: 600; }
+.rutter-where { font-size: 12px; font-style: italic; opacity: 0.7; }
+.rutter-damage { font-size: 11.5px; margin-top: 5px; color: #8a5a2a; font-style: italic; }
+
+/* What the sea does here, which is what the book is for. */
+.rutter-sea {
+  display: flex; gap: 14px; align-items: flex-start;
+  padding: 10px 12px; margin-bottom: 14px;
+  background: rgba(120, 140, 160, 0.09);
+  border-left: 3px solid rgba(60, 90, 138, 0.5);
+}
+.rutter-sea p { margin: 0 0 4px; }
+.rutter-sea-rose { flex: 0 0 auto; }
+
+/* The four kinds of knowing, kept visibly apart. */
+.rutter-conf { margin-bottom: 12px; padding-left: 11px; border-left: 3px solid; }
+.rutter-conf-head {
+  font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase;
+  opacity: 0.75; margin-bottom: 4px;
+}
+.conf-observed { border-color: #4a7a46; }
+.conf-reported { border-color: #8a7430; }
+.conf-rumoured { border-color: #9a6a3a; }
+.conf-speculative { border-color: #6a5a8a; }
+.conf-rumoured .rutter-line, .conf-speculative .rutter-line { font-style: italic; opacity: 0.88; }
+
+.rutter-line { margin: 0 0 5px; line-height: 1.5; }
+.rutter-line em { opacity: 0.7; font-size: 12.5px; }
+.rutter-line.mine::before { content: '\270E '; opacity: 0.6; }
+
+.rutter-own { display: flex; gap: 8px; align-items: flex-start; margin: 14px 0 4px; }
+.rutter-write {
+  flex: 1; font: inherit; font-size: 13.5px; line-height: 1.5;
+  padding: 6px 8px; border: 1px solid rgba(90, 74, 55, 0.3);
+  background: rgba(255, 255, 255, 0.5); color: var(--ink); border-radius: 2px;
+  resize: vertical;
+}
+
+.rutter-publish { border-top: 1px solid rgba(90, 74, 55, 0.25); margin-top: 14px; padding-top: 10px; }
+.rutter-publish.done { font-size: 13px; font-style: italic; opacity: 0.8; }
+.rutter-publish-head {
+  font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; opacity: 0.75;
+  margin-bottom: 7px;
+}
+.rutter-acts { display: flex; flex-wrap: wrap; gap: 7px; }
+.rutter-act {
+  font: inherit; text-align: left; cursor: pointer; flex: 1 1 180px;
+  padding: 7px 10px; border-radius: 2px; color: var(--ink);
+  border: 1px solid rgba(90, 74, 55, 0.32);
+  background: rgba(255, 253, 246, 0.65);
+}
+.rutter-act:hover:not(:disabled) { background: rgba(168, 50, 40, 0.1); }
+.rutter-act:disabled { opacity: 0.45; cursor: default; }
+.rutter-act b { display: block; font-weight: 600; }
+.rutter-act span { display: block; font-size: 11.5px; opacity: 0.72; }
+
+/* Condition. Stains lie over the page and under the words. */
+.rutter-page.damaged::before {
+  content: '';
+  position: absolute; inset: 0;
+  pointer-events: none;
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+  background: transparent;
+}
+.rutter-page.dmg-water::before {
+  background:
+    radial-gradient(60% 45% at 78% 12%, rgba(150, 132, 96, 0.5), transparent 70%),
+    radial-gradient(48% 60% at 8% 72%, rgba(140, 128, 100, 0.42), transparent 72%);
+}
+.rutter-page.dmg-blood::before {
+  background:
+    radial-gradient(26% 18% at 22% 26%, rgba(122, 36, 28, 0.5), transparent 70%),
+    radial-gradient(12% 9% at 34% 40%, rgba(122, 36, 28, 0.42), transparent 70%);
+}
+.rutter-page.dmg-fire::before {
+  background: linear-gradient(200deg, rgba(60, 34, 12, 0.62), transparent 34%);
+}
+.rutter-page.dmg-foxed::before { background: radial-gradient(90% 90% at 50% 50%, rgba(150, 120, 70, 0.3), transparent 75%); }
+.rutter-page.dmg-torn {
+  clip-path: polygon(0 0, 100% 0, 100% 88%, 92% 100%, 0 100%);
+}
+
+@media (max-width: 860px) {
+  .rutter { grid-template-columns: 1fr; }
+  .rutter-list { max-height: 30vh; }
+  .rutter-page { padding: 14px 15px 16px; }
+}

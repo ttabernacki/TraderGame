@@ -3,6 +3,7 @@ import type { Difficulty } from '../game/difficulty';
 import type { Game, GameMode } from '../game/state';
 import { AudienceView } from './audienceView';
 import { ChartView } from './chartView';
+import { RutterView } from './rutterView';
 import { CourtView } from './courtView';
 import { CrewView } from './crewView';
 import { clear, el } from './dom';
@@ -39,6 +40,7 @@ export class Ui {
   hud = new Hud();
 
   private chart: ChartView;
+  private rutter: RutterView;
   private sight: SightView;
   private logbook: LogbookView;
   private crew: CrewView;
@@ -68,6 +70,7 @@ export class Ui {
 
     const back = () => this.setMode('sailing');
     this.chart = new ChartView(back);
+    this.rutter = new RutterView(back);
     this.sight = new SightView(back);
     this.logbook = new LogbookView(back);
     this.crew = new CrewView(back);
@@ -110,6 +113,10 @@ export class Ui {
 
     switch (mode) {
       case 'sailing':
+        break;
+      case 'rutter':
+        this.overlay.append(this.rutter.root);
+        this.rutter.open(g);
         break;
       case 'chart':
         this.overlay.append(this.chart.root);
@@ -243,6 +250,10 @@ export class Ui {
         g.pushAlert(g.raisePadrao(), 'note');
         return true;
       }
+      case 'j':
+        // The book. Open at any time, at sea or ashore.
+        this.setMode('rutter');
+        return true;
       case 't':
         // About ship. The order a windward passage is made of.
         g.pushAlert(g.aboutShip(), 'note');

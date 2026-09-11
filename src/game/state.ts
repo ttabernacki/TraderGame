@@ -33,6 +33,9 @@ import {
   type Hearsay, type LandingResult, type ShorePlace,
 } from './shore';
 import { Logbook, type LogKind } from './log';
+import {
+  Rutter, compass, regionKey, seaSentence, type Confidence, type Damage,
+} from './rutter';
 import { rollSeaEvent, type SeaEvent } from './seaEvents';
 import { rollOfficerEvent } from './officerEvents';
 import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty';
@@ -45,7 +48,7 @@ import { good } from '../economy/goods';
 export type GameMode =
   | 'sailing' | 'chart' | 'sight' | 'logbook' | 'crew' | 'port'
   | 'audience' | 'court' | 'shipyard' | 'menu' | 'title' | 'gameover' | 'orders' | 'epilogue'
-  | 'shore';
+  | 'shore' | 'rutter';
 
 /** One mast's sails, as set against how they ought to be. */
 export interface MastTrim {
@@ -100,6 +103,8 @@ export class Game {
   crew: CrewState;
   nav: Navigator;
   chart: Chart;
+  /** The pilot's own book: what he has seen, been told, and guessed at. */
+  rutter = new Rutter();
   crown: Crown;
   markets: Markets;
   skills: SkillSet;
@@ -331,6 +336,10 @@ export class Game {
   /** True while she is in soundings, so the cry is given once and not hourly. */
   private landInSight = false;
   private lastPortCheck = -1e9;
+  /** When each port was last compared with what the book already said. */
+  private lastRemembered = new Map<string, number>();
+  /** When the sea was last written up, so the book is not scribbled in hourly. */
+  private lastSeaWrite = -1e9;
   /** When she last came up against the land, so it is said once and not hourly. */
   private lastTouchT = -1e9;
   /** The course she is being carried through the wind's eye onto, while tacking. */
@@ -1077,6 +1086,43 @@ export class Game {
       true);
   }
 
+  /**
+   * Keep the book, a watch at a time.
+   *
+   * Everything the pilot writes is written from what the ship actually did, so
+   * the roteiro is a record of this voyage and not a list of unlockables. The
+   * sea is the part that has to be accumulated rather than noticed: one glance
+   * at the wind tells you nothing, and thirty hours in the same square in the
+   * same month tells you the trade holds from the north-east — which is the
+   * single most valuable thing a pilot of this century could own.
+   */
+  private keepTheBook(simDt: number): void {
+    if (this.anchored || this.dockedAt) return;
+    const hours = simDt / 3600;
+    this.rutter.observeSea(
+      this.nav.estimated, this.clock.date.month,
+      this.weatherNow.wind.from, this.weatherNow.wind.speed,
+      this.currentToward, this.currentKnots, hours,
+    );
+
+    // Once a square is well enough observed, it goes onto a page as a rule.
+    if (this.clock.t - this.lastSeaWrite < 6 * 3600) return;
+    this.lastSeaWrite = this.clock.t;
+    const month = this.clock.date.month;
+    const s = this.rutter.sea.get(regionKey(this.nav.estimated, month));
+    if (!s || s.hours < 30) return;
+    const key = `sea:${s.key}`;
+    if (this.rutter.find(key) && this.rutter.find(key)!.notes.length > 0) return;
+    const { entry } = this.rutter.open(
+      'passage', key,
+      `The sea in ${Math.abs(s.lat)}\u00b0${s.lat < 0 ? 'S' : 'N'}, `
+      + `${Math.abs(s.lon)}\u00b0${s.lon < 0 ? 'W' : 'E'}`,
+      this.nav.estimated, this.clock.t,
+    );
+    this.rutter.note(entry, seaSentence(s), 'observed', this.clock.t,
+      { fact: { tag: 'winds', target: s.key } });
+  }
+
   private updateNavigation(simDt: number): void {
     const pos = this.ship.state.pos;
     const eff = this.effectiveSkill;
@@ -1096,6 +1142,7 @@ export class Game {
     );
 
     this.chart.logTrack(this.nav.estimated, this.clock.t);
+    this.keepTheBook(simDt);
     this.watchForTheTurn(hours);
 
     // Chart whatever the lookout can see, at intervals.
@@ -1468,6 +1515,9 @@ export class Game {
           this.logEvent('peril', `Split the sail on the ${mastName.toLowerCase()}. Handed what was left of it.`);
         }
         this.crew.morale = clamp(this.crew.morale - 0.06, 0, 1);
+        if (this.rng.chance(0.3)) {
+          this.damageTheBook('torn', 1, 'the case went over with the spar and a page is gone.');
+        }
       }
     }
 
@@ -1478,6 +1528,11 @@ export class Game {
         this.ship.damage(dmg);
         this.pushAlert('A sea came aboard and started the seams forward.', 'warning');
         this.logEvent('peril', `A heavy sea broke over the bow and worked the topsides. She is making water. Pumps manned in both watches.`);
+        // The book was in the round-house with everything else that got wet.
+        if (this.rng.chance(0.45)) {
+          this.damageTheBook('water', this.rng.int(1, 3),
+            'a sea got into the round-house and into the roteiro.');
+        }
       }
     }
   }
@@ -1561,6 +1616,7 @@ export class Game {
     this.lastLat = pos.lat;
     if (pos.lat < this.deepestSouth) this.deepestSouth = pos.lat;
     for (const l of landmarks) {
+      this.writeCoast(l.name, this.nav.estimated, l.announce);
       this.crown.record('coast', l.name, this.nav.estimated, l.value, this.clock.t);
       this.logEvent('discovery', l.announce, true);
       this.pushAlert(`${l.name} — ${l.value} renown`, 'note');
@@ -1804,6 +1860,253 @@ export class Game {
     return false;
   }
 
+  /**
+   * Write the port up, or come back to the page and see what has changed.
+   *
+   * The memory is the point. A book that only records the first visit is a
+   * catalogue; a book that says "I first entered this harbour twelve years ago
+   * and the village had forty houses" is a life. Everything needed for that is
+   * already here — when the page was opened, how many times it has been come
+   * back to — so the ship can be made to notice.
+   */
+  /**
+   * What the book is worth to the ship that carries it.
+   *
+   * Knowledge is the resource this game is actually about, and until now it was
+   * scored rather than used. These are the places where having written
+   * something down changes what happens, and every one of them is weighted by
+   * how the thing was come by — a rumour of good water is worth something and
+   * not much; a stream you filled the casks at yourself is worth all of it.
+   */
+
+  /** Days of water the book says can be had at a place, discounted by doubt. */
+  waterKnownAt(portId: string): number {
+    return this.rutter.knows('water', portId);
+  }
+
+  /**
+   * A shoal or a reef somebody has written down, close enough to matter.
+   *
+   * The lead gives eight metres of warning. The book gives a mile, and only for
+   * water somebody has already been frightened by — which is exactly the trade
+   * a roteiro was for.
+   */
+  hazardAhead(): { title: string; distNm: number; text: string } | null {
+    const near = this.rutter.hazardsNear(this.nav.estimated, 6);
+    if (near.length === 0) return null;
+    const h = near[0];
+    return { title: h.entry.title, distNm: h.distNm, text: h.note.text };
+  }
+
+  /**
+   * How much the book improves a bargain.
+   *
+   * A merchant pays more for a cargo from a man who can tell him what it cost
+   * where it came from, and a captain who has the page in front of him is not
+   * guessing at the price. Capped low: it is an edge, not a cheat.
+   */
+  tradeEdge(goodId: string): number {
+    return this.rutter.knows('trade', goodId) * 0.09;
+  }
+
+  /** How much easier an audience is with the page open in front of you. */
+  diplomaticEdge(peopleId: string): number {
+    return this.rutter.knows('people', peopleId) * 0.18
+      + this.rutter.knows('ruler', peopleId) * 0.22;
+  }
+
+  /**
+   * Everything else the book writes itself, gathered in one place so that the
+   * hooks scattered through the game stay one line each.
+   */
+  writeCoast(name: string, at: LatLon, text: string, conf: Confidence = 'observed'): void {
+    const { entry } = this.rutter.open('coast', `coast:${name}`, name, at, this.clock.t);
+    this.rutter.note(entry, text, conf, this.clock.t);
+  }
+
+  writePeople(peopleId: string, text: string, conf: Confidence, source?: string): void {
+    const folk = people(peopleId);
+    const { entry, fresh } = this.rutter.open(
+      'people', `people:${peopleId}`, folk ? folk.name : peopleId,
+      this.nav.estimated, this.clock.t);
+    if (fresh && folk) {
+      this.rutter.note(entry,
+        `They speak ${folk.language}. ${folk.blurb}`, 'observed', this.clock.t,
+        { fact: { tag: 'people', target: peopleId } });
+    }
+    this.rutter.note(entry, text, conf, this.clock.t, { source });
+  }
+
+  writeChronicle(title: string, text: string): void {
+    const { entry } = this.rutter.open(
+      'chronicle', `ch:${title}:${Math.floor(this.clock.t / 86400)}`, title,
+      this.nav.estimated, this.clock.t);
+    this.rutter.note(entry, text, 'observed', this.clock.t);
+  }
+
+  writeRumour(title: string, text: string, source: string): void {
+    const { entry } = this.rutter.open(
+      'rumour', `rum:${title}`, title, this.nav.estimated, this.clock.t);
+    this.rutter.note(entry, text, 'rumoured', this.clock.t, { source });
+  }
+
+  /**
+   * The captain's own hand: a guess, written down as a guess.
+   *
+   * The one kind of entry the ship does not make for him. A supposition that
+   * turns out right is the most valuable thing in the book and the only thing
+   * in it that is his rather than the sea's.
+   */
+  /**
+   * What to do with what you know.
+   *
+   * The decision the whole book exists to pose. Everything in it is worth
+   * something to somebody, and every one of them costs you the others: give the
+   * Crown your winds and you are a made man and so is the next captain down
+   * that coast; sell them to the Rua Nova and you eat well and the Casa hears
+   * about it; keep them and you are the only man alive who can lay that passage,
+   * for as long as you live. There is no right answer, which is the point of
+   * having it be a choice.
+   *
+   * Publishing is per-page rather than all-or-nothing, because the interesting
+   * version of this is a captain who gives away his coasts and keeps his winds.
+   */
+  publish(entryId: string, to: 'crown' | 'merchants' | 'atlas'): string {
+    const e = this.rutter.entries.find((x) => x.id === entryId);
+    if (!e) return 'No such page.';
+    if (e.published) return `That page is already with ${e.published === 'atlas' ? 'the world' : e.published}.`;
+    if (!this.dockedAt) return 'This is done ashore, at Lisbon.';
+    const worth = this.rutter.worth(e);
+    e.published = to;
+    e.publishedT = this.clock.t;
+
+    if (to === 'crown') {
+      this.crown.standing += worth.crown;
+      this.crown.lifetimeStanding += worth.crown;
+      // The Casa copies it, and the next man out has it — including the other
+      // man, who is on the same coast and is now a little further down it than
+      // he would have got on his own.
+      this.rival.standing += Math.round(worth.crown * 0.3);
+      this.logEvent('crown',
+        `Laid the page on ${e.title} before the Casa. ${worth.crown} renown, and a clerk `
+        + 'was copying it before I was out of the building. Every pilot on the Guinea run '
+        + 'will have it by the spring.', true);
+      return `${worth.crown} renown. The Casa has it now, and so will everybody.`;
+    }
+    if (to === 'merchants') {
+      this.crown.gold += worth.merchants;
+      this.crown.standing = Math.max(0, this.crown.standing - Math.round(worth.crown * 0.25));
+      this.logEvent('trade',
+        `Sold what I know of ${e.title} on the Rua Nova for ${worth.merchants} cruzados. `
+        + 'The Casa will hear that I sold it, and the Casa does not forget that sort of thing.',
+        true);
+      return `${worth.merchants} cruzados. The Casa will hear of it.`;
+    }
+    this.crown.standing += Math.round(worth.atlas * 0.6);
+    this.crown.lifetimeStanding += worth.atlas;
+    train(this.skills, 'cartografia', worth.atlas * 0.05);
+    this.logEvent('discovery',
+      `Entered ${e.title} in the atlas, under my own name, where it will stand after me. `
+      + `${worth.atlas} renown, no money at all, and it is the only kind of this work that lasts.`,
+      true);
+    return `In the atlas, under your name. ${worth.atlas} renown.`;
+  }
+
+  /** Everything the captain has given the world, which is his atlas. */
+  atlas(): { entries: number; renown: number; kinds: Record<string, number> } {
+    const kinds: Record<string, number> = {};
+    let renown = 0;
+    let entries = 0;
+    for (const e of this.rutter.entries) {
+      if (e.published !== 'atlas') continue;
+      entries++;
+      renown += this.rutter.worth(e).atlas;
+      kinds[e.kind] = (kinds[e.kind] ?? 0) + 1;
+    }
+    return { entries, renown, kinds };
+  }
+
+  /**
+   * Something has got at the book.
+   *
+   * Called from the events that would actually do it. Deliberately destructive:
+   * a page that has been soaked is harder to read for the rest of the campaign,
+   * and the knowledge on it is worth less because the reader is no longer sure
+   * what it said. That is the cost of carrying twenty years of work to sea in a
+   * leather case, and it is what makes an old book feel like an object rather
+   * than a database.
+   */
+  damageTheBook(kind: Damage, pages: number, why: string): void {
+    const hit = this.rutter.damageRecent(kind, pages, this.clock.t);
+    if (hit.length === 0) return;
+    this.pushAlert(`The book: ${why}`, 'warning');
+    this.logEvent('peril',
+      `${why} ${hit.length === 1 ? 'One page' : `${hit.length} pages`} of the roteiro `
+      + `${hit.length === 1 ? 'is' : 'are'} the worse for it — `
+      + `${hit.map((e) => e.title).join(', ')}.`, true);
+  }
+
+  writeSupposition(entryId: string, text: string): string {
+    const e = this.rutter.entries.find((x) => x.id === entryId);
+    if (!e) return 'No such page.';
+    if (!text.trim()) return 'Nothing written.';
+    this.rutter.note(e, text.trim(), 'speculative', this.clock.t, { mine: true });
+    train(this.skills, 'cartografia', 0.05);
+    return 'Entered in your own hand.';
+  }
+
+  private writeUpPort(def: PortDef, first: boolean): void {
+    const t = this.clock.t;
+    const { entry, fresh } = this.rutter.open(
+      'port', `port:${def.id}`, def.name, this.nav.estimated, t);
+
+    if (fresh) {
+      this.rutter.note(entry, def.blurb, 'observed', t);
+      this.rutter.note(entry,
+        `Anchored in ${this.sounding.depth.toFixed(0)} fathoms. `
+        + (def.anchorage > 0.7 ? 'Good holding and shelter from anything.'
+          : def.anchorage > 0.45 ? 'Fair holding. It would be no place to lie in an onshore blow.'
+            : 'An open roadstead. She would have to run for it if it came on to blow.'),
+        'observed', t, { fact: { tag: 'harbour', value: def.anchorage, target: def.id } });
+      if (def.refit > 0.5) {
+        this.rutter.note(entry, 'Water and provisions to be had here.', 'observed', t,
+          { fact: { tag: 'water', target: def.id } });
+      }
+      const folk = people(def.people);
+      if (folk) {
+        this.rutter.note(entry,
+          `The people are ${folk.name}, and speak ${folk.language}.`, 'observed', t,
+          { fact: { tag: 'people', target: def.people } });
+      }
+      const best = Object.entries(def.produces).sort((a, b) => b[1] - a[1])[0];
+      if (best) {
+        this.rutter.note(entry,
+          `They have ${good(best[0]).english} here, and plenty of it.`,
+          'observed', t, { fact: { tag: 'trade', target: best[0] } });
+      }
+      return;
+    }
+
+    // Back again. How long has it been, and what is different?
+    const years = (t - entry.opened) / (86400 * 365.25);
+    if (years > 0.75 && this.clock.t - (this.lastRemembered.get(def.id) ?? -1e9) > 86400 * 200) {
+      this.lastRemembered.set(def.id, t);
+      const span = years < 1.6 ? 'a year ago'
+        : years < 12 ? `${years.toFixed(0)} years ago`
+          : `${years.toFixed(0)} years ago, when I was a younger man`;
+      const rel = this.relationsFor(def.id);
+      const changed = rel.regard > 0.5
+        ? 'They know the ship now, and a boat came off before the anchor was down.'
+        : rel.regard < -0.2
+          ? 'They have not forgotten whatever it was, and nobody came off to us.'
+          : 'It is much as it was, and nobody remembers us.';
+      this.rutter.note(entry,
+        `Entered this harbour again, ${span}. ${changed}`, 'observed', t);
+      this.pushAlert(`You first wrote this place up ${span}.`, 'note');
+    }
+    void first;
+  }
+
   private announceFirstContact(def: PortDef): void {
     if (def.people === 'portuguese') return;
     const pe = people(def.people);
@@ -1924,7 +2227,10 @@ export class Game {
     }
     if (r.woodDays) p.biscuit = Math.min(p.biscuit + r.woodDays * 0.25, 160);
     if (r.moraleDelta) this.crew.morale = clamp(this.crew.morale + r.moraleDelta, 0, 1);
-    if (r.hurt) this.crew.sickness = clamp(this.crew.sickness + r.hurt * 0.02, 0, 1);
+    if (r.hurt) {
+      this.crew.sickness = clamp(this.crew.sickness + r.hurt * 0.02, 0, 1);
+      this.damageTheBook('blood', 1, 'the book was in the boat, and it has blood on it now.');
+    }
     // What they pointed at goes on the chart, at the place their arm and their
     // fingers put it — which is a rough place, and is how most of this coast
     // first got drawn.
@@ -1959,6 +2265,38 @@ export class Game {
       if (this.crown.record('people', `The ${name}`, this.nav.estimated, 14, this.clock.t)) {
         this.logEvent('contact', `Met the ${name} on an open beach, with no town in sight.`, true);
       }
+    }
+
+    // Into the book, where the next voyage can use it.
+    const where = `${formatLat(this.nav.estimated.lat)}, ${formatLon(this.nav.estimated.lon)}`;
+    const { entry } = this.rutter.open(
+      'coast', `shore:${this.shoreKey()}`, `The coast at ${where}`,
+      this.nav.estimated, this.clock.t);
+    if (entry.notes.length === 0) this.rutter.note(entry, place.describe, 'observed', this.clock.t);
+    if (r.waterDays) {
+      this.rutter.note(entry, 'Fresh water to be had here.', 'observed', this.clock.t,
+        { fact: { tag: 'water', value: r.waterDays } });
+    }
+    if (r.freshDays) {
+      this.rutter.note(entry, 'Greens and fruit ashore, enough to check the scurvy.',
+        'observed', this.clock.t, { fact: { tag: 'victuals', value: r.freshDays } });
+    }
+    if (r.woodDays) {
+      this.rutter.note(entry, 'Timber worth cutting.', 'observed', this.clock.t,
+        { fact: { tag: 'wood' } });
+    }
+    if (action === 'water' && !r.waterDays) {
+      this.rutter.note(entry, 'No water on this coast. They dug and got salt.',
+        'observed', this.clock.t, { fact: { tag: 'nowater' } });
+    }
+    if (r.told) {
+      this.writeRumour(r.told.name,
+        `They point ${compass(r.told.bearing)} along the shore and hold up fingers for the days. `
+        + `By my reckoning that puts it ${r.told.distNm.toFixed(0)} miles off.`,
+        folk ? `the ${folk.name}` : 'the people of this coast');
+    }
+    if (r.metPeople && place.peopleId) {
+      this.writePeople(place.peopleId, r.text, 'observed');
     }
 
     this.shoreReport = r.text;
@@ -2166,6 +2504,10 @@ export class Game {
     }
 
     const place = this.chart.addPlace(given, 'cape', this.nav.estimated, this.clock.t);
+    this.writeCoast(given, this.nav.estimated,
+      `Named by me, ${this.clock.formatDate()}. `
+      + `${this.sounding.depth.toFixed(0)} fathoms a mile off it, and the land behind `
+      + `${this.sounding.shoreDistNm.toFixed(0)} miles distant when it first came up.`);
     const fresh = this.crown.record('coast', given, this.nav.estimated, 8, this.clock.t);
     this.crown.progressObjective('name', undefined, 1);
     this.logEvent('discovery',
@@ -2689,6 +3031,8 @@ export class Game {
 
     this.crown.progressObjective('reach', def.id);
 
+    this.writeUpPort(def, first);
+
     if (first) {
       const value = def.discovery;
       if (value > 0) {
@@ -3208,6 +3552,7 @@ export class Game {
         kit: this.nav.kit,
       },
       chart: this.chart.serialize(),
+      rutter: this.rutter.serialize(),
       crown: {
         standing: this.crown.standing,
         lifetimeStanding: this.crown.lifetimeStanding,
@@ -3271,6 +3616,7 @@ export class Game {
     g.nav.fixes = d.nav.fixes ?? [];
     g.nav.kit = d.nav.kit;
     g.chart = Chart.deserialize(d.chart);
+    g.rutter = Rutter.deserialize(d.rutter);
     g.crown.standing = d.crown.standing;
     g.crown.lifetimeStanding = d.crown.lifetimeStanding;
     g.crown.gold = d.crown.gold;

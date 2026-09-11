@@ -200,7 +200,11 @@ export class PortView {
 
     const eff = g.effectiveSkill;
     const tradeSkill = skill(eff, 'comercio');
-    const listings = g.markets.listings(def.id, g.clock.t, rel.regard, tradeSkill);
+    // Standing with a people you have written up is standing you have earned:
+    // the page has their language, what they will take, who their king is, and
+    // a man who has all that is not a stranger on the beach.
+    const known = g.diplomaticEdge(def.people);
+    const listings = g.markets.listings(def.id, g.clock.t, rel.regard + known, tradeSkill);
 
     // Not a table.
     //
@@ -351,7 +355,11 @@ export class PortView {
     const paid = lot ? lot.cost : 0;
     // Landing a great parcel at once gluts the quay and the price falls under
     // you as you sell.
-    const got = l.bid / Markets.slippage(take, l.appetite);
+    // A captain with the page open knows what the stuff cost where it grew,
+    // and a merchant who can see he knows does not try it on. Small on purpose:
+    // an edge, not a cheat.
+    const edge = g.tradeEdge(l.goodId);
+    const got = (l.bid / Markets.slippage(take, l.appetite)) * (1 + edge);
     const revenue = take * got;
     g.ship.removeCargo(l.goodId, take);
     g.crown.gold += revenue;
@@ -364,7 +372,9 @@ export class PortView {
       `Sold ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} at ${got.toFixed(1)}, ${revenue.toFixed(0)} cruzados` +
       (paid > 0 ? `, against ${(paid * take).toFixed(0)} paid — ${profit >= 0 ? 'a gain' : 'a loss'} of ${Math.abs(profit).toFixed(0)}.` : '.'));
     this.notice = {
-      text: `Sold for ${revenue.toFixed(0)} cruzados` + (paid > 0 ? ` — ${profit >= 0 ? 'profit' : 'loss'} ${Math.abs(profit).toFixed(0)}.` : '.'),
+      text: `Sold for ${revenue.toFixed(0)} cruzados`
+        + (paid > 0 ? ` — ${profit >= 0 ? 'profit' : 'loss'} ${Math.abs(profit).toFixed(0)}.` : '.')
+        + (edge > 0.01 ? ` Your book was worth ${(edge * 100).toFixed(0)}% of it.` : ''),
     };
     this.render();
   }

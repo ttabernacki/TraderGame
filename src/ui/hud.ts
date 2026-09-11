@@ -70,7 +70,7 @@ export class Hud {
     this.root.append(this.tape.root, left, right, this.alerts, this.hint);
     this.hint.innerHTML =
       '<b>A</b>/<b>D</b> helm (alter course above x15) &nbsp; <b>X</b> steady &nbsp; <b>W</b>/<b>S</b> canvas &nbsp; ' +
-      '<b>Q</b>/<b>E</b> trim &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
+      '<b>Q</b>/<b>E</b> trim &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; <b>J</b> the roteiro &nbsp; ' +
       '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>H</b> hold course &nbsp; ' +
       '<b>O</b> orders &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
   }
