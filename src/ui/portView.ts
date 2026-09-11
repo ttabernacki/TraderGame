@@ -202,70 +202,83 @@ export class PortView {
     const tradeSkill = skill(eff, 'comercio');
     const listings = g.markets.listings(def.id, g.clock.t, rel.regard, tradeSkill);
 
-    const table = el('table', { class: 'ledger' },
-      el('thead', {}, el('tr', {},
-        el('th', {}, 'Goods'),
-        el('th', { class: 'num' }, 'They ask'),
-        el('th', { class: 'num' }, 'They offer'),
-        el('th', { class: 'num' }, 'Lisbon'),
-        el('th', { class: 'num' }, 'Available'),
-        el('th', { class: 'num' }, 'In hold'),
-        el('th', {}, ''),
-      )),
+    // Not a table.
+    //
+    // The market had seven columns, the last of them a quantity box and two
+    // buttons, and on a phone the whole right-hand half of it was off the side
+    // of the screen — which meant the trading half of a trading game could not
+    // be played on a phone at all. This is a grid whose rows are laid out
+    // across on a wide screen and stacked into a card on a narrow one, with
+    // `display: contents` doing the switching, so the figures still line up in
+    // columns where there is room for columns and the controls are always
+    // reachable where there is not.
+    const grid = el('div', { class: 'trade-grid' },
+      el('div', { class: 'trade-head' },
+        el('div', {}, 'Goods'),
+        el('div', { class: 'num' }, 'They ask'),
+        el('div', { class: 'num' }, 'They offer'),
+        el('div', { class: 'num' }, 'Lisbon'),
+        el('div', { class: 'num' }, 'Available'),
+        el('div', { class: 'num' }, 'In hold'),
+        el('div', {}, ''),
+      ),
     );
 
-    const tbody = el('tbody', {});
     for (const l of listings) {
       const gd = good(l.goodId);
       const held = g.ship.quantityOf(l.goodId);
       const qty = this.quantities.get(l.goodId) ?? 10;
       const margin = gd.lisbon / Math.max(l.ask, 0.01);
+      const onCharter = consignedOf(g, l.goodId);
 
-      tbody.append(el('tr', {},
-        el('td', {},
-          el('div', {}, gd.name),
-          el('div', { style: { fontSize: '11.5px', color: 'var(--ink-soft)' } },
-            `${gd.english} · per ${gd.unit}`),
+      grid.append(el('div', { class: 'trade-row' },
+        el('div', { class: 'trade-name' },
+          el('b', {}, gd.name),
+          el('span', {}, `${gd.english} · per ${gd.unit}`),
         ),
-        el('td', { class: 'num' }, l.stock > 0 ? l.ask.toFixed(1) : '—'),
-        el('td', { class: 'num' }, l.appetite > 0 ? l.bid.toFixed(1) : '—'),
-        el('td', { class: 'num', style: { color: margin > 3 ? 'var(--green)' : 'inherit' } },
-          gd.lisbon.toFixed(0)),
-        el('td', { class: 'num' }, l.stock > 0 ? l.stock.toFixed(0) : '—'),
-        el('td', { class: 'num', title: consignedOf(g, l.goodId) > 0 ? 'Part of this is on charter' : undefined },
+        el('div', { class: 'trade-fig', 'data-k': 'They ask' },
+          l.stock > 0 ? l.ask.toFixed(1) : '—'),
+        el('div', { class: 'trade-fig', 'data-k': 'They offer' },
+          l.appetite > 0 ? l.bid.toFixed(1) : '—'),
+        el('div', {
+          class: 'trade-fig', 'data-k': 'At Lisbon',
+          style: { color: margin > 3 ? 'var(--green)' : 'inherit' },
+        }, gd.lisbon.toFixed(0)),
+        el('div', { class: 'trade-fig', 'data-k': 'Available' },
+          l.stock > 0 ? l.stock.toFixed(0) : '—'),
+        el('div', {
+          class: 'trade-fig', 'data-k': 'In hold',
+          title: onCharter > 0 ? 'Part of this is on charter' : undefined,
+        },
           held > 0
-            ? consignedOf(g, l.goodId) > 0
-              ? `${held.toFixed(0)} (${consignedOf(g, l.goodId)} on charter)`
-              : held.toFixed(0)
+            ? onCharter > 0 ? `${held.toFixed(0)} (${onCharter} on charter)` : held.toFixed(0)
             : '—'),
-        el('td', {},
-          el('div', { style: { display: 'flex', gap: '4px', alignItems: 'center' } },
-            el('input', {
-              type: 'number', min: '1', value: String(qty),
-              style: { width: '62px', fontFamily: 'inherit', fontSize: '13px', padding: '2px 4px' },
-              oninput: (e: Event) => this.quantities.set(l.goodId, Math.max(1, Number((e.target as HTMLInputElement).value))),
-            }),
-            button('Buy', () => this.buy(g, l, this.quantities.get(l.goodId) ?? qty), {
-              disabled: l.stock <= 0 || g.crown.gold < l.ask,
-            }),
-            button('Sell', () => this.sell(g, l, this.quantities.get(l.goodId) ?? qty), {
-              disabled: held <= 0 || l.appetite <= 0,
-            }),
-          ),
+        el('div', { class: 'trade-act' },
+          el('input', {
+            type: 'number', min: '1', inputmode: 'numeric', value: String(qty),
+            'aria-label': `Quantity of ${gd.name}`,
+            oninput: (e: Event) => this.quantities.set(
+              l.goodId, Math.max(1, Number((e.target as HTMLInputElement).value))),
+          }),
+          button('Buy', () => this.buy(g, l, this.quantities.get(l.goodId) ?? qty), {
+            disabled: l.stock <= 0 || g.crown.gold < l.ask,
+          }),
+          button('Sell', () => this.sell(g, l, this.quantities.get(l.goodId) ?? qty), {
+            disabled: held <= 0 || l.appetite <= 0,
+          }),
         ),
       ));
     }
-    table.append(tbody);
 
     host.append(
       el('div', { class: 'card' },
-        el('div', { style: { display: 'flex', gap: '26px', flexWrap: 'wrap' } },
+        el('div', { class: 'purse-row' },
           el('div', {}, kv('Purse', `${g.crown.gold.toFixed(0)} cruzados`)),
           el('div', {}, kv('Hold free', `${g.ship.holdFree.toFixed(1)} of ${g.ship.holdCapacity} tons`)),
           el('div', {}, kv('Your bargaining', `${g.skills.comercio.toFixed(0)}`)),
         ),
       ),
-      table,
+      grid,
       el('p', { class: 'quote', style: { marginTop: '16px' } },
         'The Lisbon column is what a quintal fetches on the Tagus. The whole enterprise rests on the difference between that number and what they are asking here — pepper bought at Calicut for two cruzados sold at home for thirty, and one cargo paid for the voyage several times over.'),
     );

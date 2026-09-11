@@ -72,6 +72,19 @@ export interface RenderFrame {
   sightingRangeNm: number;
 }
 
+/**
+ * Whether this is a phone, for the purposes of how hard to work the GPU.
+ *
+ * A coarse pointer is the honest signal — it means fingers, which means a
+ * handheld device with a thermal budget and a battery — and the width test
+ * catches a small tablet held in portrait.
+ */
+function isPhone(): boolean {
+  if (typeof window === 'undefined' || !window.matchMedia) return false;
+  return window.matchMedia('(pointer: coarse)').matches
+    && Math.min(window.innerWidth, window.innerHeight) <= 900;
+}
+
 export class Renderer {
   scene = new THREE.Scene();
   camera: THREE.PerspectiveCamera;
@@ -137,13 +150,24 @@ export class Renderer {
   private drawnHeading = 0;
   private drawnHeel = 0;
 
+  /** The element the scene is drawn into, measured rather than assumed. */
+  private canvas: HTMLCanvasElement;
+
   constructor(canvas: HTMLCanvasElement, hull: HullClass) {
+    this.canvas = canvas;
+    // Antialiasing is a real cost on a phone GPU and the sea is mostly smooth
+    // gradients, where it buys least. The pixel ratio does the same work more
+    // cheaply.
+    const phone = isPhone();
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true,
+      antialias: !phone,
       powerPreference: 'high-performance',
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // A modern phone reports a device pixel ratio of three, which on a 390-point
+    // screen is 1170 columns of a shader that was written for a desktop. Half of
+    // that is indistinguishable at arm's length and roughly four times faster.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, phone ? 1.5 : 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
@@ -194,8 +218,12 @@ export class Renderer {
   }
 
   resize(): void {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    // Measured from the element, not from window.innerHeight: on a phone the
+    // two disagree by the height of the address bar, and drawing to the window
+    // stretches the scene behind the bottom of the screen.
+    const box = this.canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(box.width)) || window.innerWidth;
+    const h = Math.max(1, Math.round(box.height)) || window.innerHeight;
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();

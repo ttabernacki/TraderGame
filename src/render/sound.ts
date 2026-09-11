@@ -119,6 +119,17 @@ export class Sound {
     if (ctx.state === 'suspended') void ctx.resume();
   }
 
+  /**
+   * Pick the sound back up after the page has been away.
+   *
+   * A phone suspends the audio context when the tab goes to the background and
+   * leaves it suspended when it comes back, which silences the wind for the
+   * rest of the session with no indication why.
+   */
+  resume(): void {
+    if (this.ctx && this.ctx.state === 'suspended') void this.ctx.resume();
+  }
+
   setMuted(m: boolean): void {
     this.muted = m;
     if (this.master && this.ctx) {

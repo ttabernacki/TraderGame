@@ -66,15 +66,27 @@ export function append(host: HTMLElement, ...children: Child[]): void {
   }
 }
 
+/**
+ * A button, with any keyboard hint in its label marked so it can be hidden.
+ *
+ * "Weigh anchor  (Space)" is helpful at a desk and nonsense on a phone, where
+ * it also wraps the button onto three lines and pushes the footer up over the
+ * screen. Anything in trailing parentheses is treated as the hint and dropped
+ * where there is no keyboard.
+ */
 export function button(
   label: string, onClick: () => void, opts: { primary?: boolean; disabled?: boolean; ghost?: boolean; title?: string } = {},
 ): HTMLButtonElement {
+  const hint = /^(.*?)\s*\(([^()]+)\)\s*$/.exec(label);
   return el('button', {
     class: `${opts.primary ? 'primary' : ''} ${opts.ghost ? 'ghost' : ''}`.trim(),
     disabled: opts.disabled,
     title: opts.title,
     onclick: onClick,
-  }, label);
+  },
+    hint ? hint[1] : label,
+    hint ? el('span', { class: 'kbd' }, ` (${hint[2]})`) : null,
+  );
 }
 
 /** A full-screen parchment panel with a head, scrolling body and footer. */

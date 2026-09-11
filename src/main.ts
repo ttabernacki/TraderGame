@@ -13,6 +13,29 @@ import { Renderer, type RenderFrame } from './render/renderer';
 import { Sound } from './render/sound';
 import { InputState, Ui } from './ui';
 
+/**
+ * Let the game draw into the corners of a phone screen.
+ *
+ * `viewport-fit=cover` is what makes `env(safe-area-inset-*)` report anything
+ * other than zero, and without it a notched phone letterboxes the page in
+ * portrait and leaves two black bars in landscape. The tag is set here rather
+ * than in the HTML because the page is also served inside a host that writes
+ * its own head, where the markup in index.html never arrives.
+ */
+function claimTheWholeScreen(): void {
+  let meta = document.querySelector('meta[name="viewport"]');
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.setAttribute('name', 'viewport');
+    document.head.append(meta);
+  }
+  const content = meta.getAttribute('content') ?? 'width=device-width, initial-scale=1';
+  if (!/viewport-fit/.test(content)) {
+    meta.setAttribute('content', `${content}, viewport-fit=cover`);
+  }
+}
+claimTheWholeScreen();
+
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
 const uiHost = document.getElementById('ui') as HTMLElement;
 
@@ -33,6 +56,12 @@ const sound = new Sound();
 const wake = () => sound.start();
 window.addEventListener('pointerdown', wake, { once: true });
 window.addEventListener('keydown', wake, { once: true });
+window.addEventListener('touchend', wake, { once: true });
+// A phone suspends the audio context whenever the page goes to the background,
+// and coming back does not resume it — so the wind stops and never restarts.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) sound.resume();
+});
 
 const ui = new Ui(uiHost, {
   onNewGame: (difficulty) => startNew(difficulty),
@@ -160,9 +189,25 @@ window.addEventListener('keydown', (e) => {
   if (ui.handleKey(e, game)) e.preventDefault();
 });
 
-window.addEventListener('resize', () => {
+/**
+ * Follow the screen as it changes shape.
+ *
+ * A phone browser hides its address bar when the page is scrolled and shows it
+ * again when it is not, which changes the height of the viewport without
+ * always firing a `resize` on the window — iOS in particular reports it only on
+ * `visualViewport`. An orientation change arrives before the new dimensions are
+ * readable, so it is re-read on the next frame as well.
+ */
+function relayout(): void {
   renderer?.resize();
   ui.resize();
+}
+window.addEventListener('resize', relayout);
+window.visualViewport?.addEventListener('resize', relayout);
+window.addEventListener('orientationchange', () => {
+  relayout();
+  requestAnimationFrame(relayout);
+  setTimeout(relayout, 300);
 });
 
 /** Continuous controls, applied every frame while the sailing view is up. */

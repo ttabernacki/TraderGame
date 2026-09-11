@@ -15,9 +15,21 @@
   --warn: #c47d2a;
   --serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
   --mono: 'SF Mono', 'Cascadia Mono', Menlo, Consolas, monospace;
+
+  /* The parts of the screen a phone will not let you draw in: the notch, the
+     rounded corners, and the home indicator. Zero everywhere else. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
 }
 
 * { box-sizing: border-box; }
+
+/* `hidden` has to beat any `display` a class sets, or a panel told to hide
+   stays on screen because a media query later in this file happens to give it
+   `display: flex`. */
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0;
@@ -28,9 +40,35 @@ html, body {
   color: var(--cream);
   font-family: var(--serif);
   -webkit-font-smoothing: antialiased;
+  /* A phone browser treats a swipe at the top of the page as "reload" and a
+     swipe past the end of a list as a rubber-band bounce. Neither belongs in a
+     game where a swipe is the helm. */
+  overscroll-behavior: none;
+  /* Stops the double-tap-to-zoom delay on every button in the game, which
+     otherwise makes the whole interface feel a third of a second late. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
-#app { position: relative; width: 100vw; height: 100vh; }
+/*
+ * The height of a phone screen is a moving target.
+ *
+ * `100vh` on a mobile browser is the height the page *would* have if the
+ * address bar were hidden, which it is not when the game loads — so the bottom
+ * of the screen, where the thumb controls live, sits below the fold until the
+ * player scrolls, and the page cannot be scrolled because the body is fixed.
+ * `100dvh` is the height actually available right now and follows the bar as it
+ * comes and goes. The `100vh` line stays underneath it for anything too old to
+ * know the unit.
+ */
+#app {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+}
 #scene { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
 #ui { position: absolute; inset: 0; pointer-events: none; }
 #ui > * { pointer-events: auto; }
@@ -48,6 +86,10 @@ button {
 }
 button:hover:not(:disabled) { background: rgba(70, 54, 34, 0.85); border-color: var(--gold); }
 button:disabled { opacity: 0.38; cursor: not-allowed; }
+/* Hidden where there is no keyboard to press. */
+.kbd { opacity: 0.6; font-size: 0.85em; }
+@media (pointer: coarse) { .kbd { display: none; } }
+
 button.primary { background: var(--red); border-color: #d4553f; }
 button.primary:hover:not(:disabled) { background: #c03d30; }
 
@@ -127,8 +169,8 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
   width: 100%;
   min-width: 0;
 }
-#hud-left { left: 14px; width: min(258px, 45vw); }
-#hud-right { right: 14px; width: min(238px, 45vw); }
+#hud-left { left: calc(14px + var(--safe-l)); width: min(258px, 45vw); }
+#hud-right { right: calc(14px + var(--safe-r)); width: min(238px, 45vw); }
 /* The alerts, which are messages over the sea and not an instrument panel.
    
    This carried .hud-panel for a long time, and that class sets
@@ -229,7 +271,7 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 16px 26px 12px;
+  padding: calc(16px + var(--safe-t)) calc(26px + var(--safe-r)) 12px calc(26px + var(--safe-l));
   border-bottom: 1px solid rgba(90, 74, 55, 0.3);
   position: relative;
   flex: 0 0 auto;
@@ -242,15 +284,24 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
 }
 .screen-head .sub { font-size: 13px; color: var(--ink-soft); font-style: italic; }
 
-.screen-body { flex: 1 1 auto; overflow: auto; padding: 18px 26px 22px; position: relative; }
+.screen-body {
+  flex: 1 1 auto;
+  overflow: auto;
+  /* Momentum scrolling, and no rubber-band handoff to the page behind. */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 18px calc(26px + var(--safe-r)) 22px calc(26px + var(--safe-l));
+  position: relative;
+}
 .screen-foot {
   flex: 0 0 auto;
-  padding: 11px 26px;
+  padding: 11px calc(26px + var(--safe-r)) calc(11px + var(--safe-b)) calc(26px + var(--safe-l));
   border-top: 1px solid rgba(90, 74, 55, 0.3);
   display: flex;
   gap: 9px;
   justify-content: flex-end;
   align-items: center;
+  flex-wrap: wrap;
   position: relative;
 }
 
@@ -299,6 +350,99 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
   line-height: 1.5;
 }
 .list li:last-child { border-bottom: none; }
+
+/* --------------------------------------------------------------------------
+   The market
+   Seven figures and a pair of buttons for every good in the port. On a wide
+   screen that wants to be a table, because the whole skill of the thing is
+   reading one column down the page; on a phone a table of that width simply
+   runs off the side, taking the Buy and Sell buttons with it. The rows are
+   `display: contents` so their cells join the grid and line up in columns, and
+   at phone width the grid and the rows both become blocks — one card per good,
+   each figure labelled, the controls underneath where a thumb can reach them.
+   -------------------------------------------------------------------------- */
+.trade-grid {
+  display: grid;
+  grid-template-columns:
+    minmax(150px, 1.7fr)
+    repeat(5, minmax(52px, 0.62fr))
+    minmax(188px, 1fr);
+  align-items: center;
+  column-gap: 10px;
+}
+.trade-head, .trade-row { display: contents; }
+.trade-head > * {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding: 5px 0 7px;
+  border-bottom: 1px solid rgba(90, 74, 55, 0.35);
+}
+.trade-head > .num, .trade-fig { text-align: right; }
+.trade-row > * {
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(90, 74, 55, 0.13);
+  font-size: 13.5px;
+}
+.trade-fig { font-variant-numeric: tabular-nums; }
+.trade-name b { font-weight: normal; display: block; }
+.trade-name span { font-size: 11.5px; color: var(--ink-soft); }
+.trade-act { display: flex; gap: 5px; align-items: center; justify-content: flex-end; }
+.trade-act input {
+  width: 66px;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 4px 5px;
+  border: 1px solid rgba(90, 74, 55, 0.42);
+  border-radius: 2px;
+  background: rgba(255, 250, 238, 0.7);
+  color: var(--ink);
+}
+
+@media (max-width: 760px) {
+  .trade-grid { display: block; }
+  .trade-head { display: none; }
+  .trade-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 2px 12px;
+    background: rgba(255, 250, 238, 0.42);
+    border: 1px solid rgba(90, 74, 55, 0.24);
+    border-radius: 3px;
+    padding: 10px 12px;
+    margin-bottom: 9px;
+  }
+  .trade-row > * { border-bottom: none; padding: 2px 0; }
+  .trade-name { grid-column: 1 / -1; margin-bottom: 4px; }
+  .trade-name b { font-size: 15px; }
+  /* Each figure carries its own heading, since the column heads are gone. */
+  .trade-fig {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    text-align: right;
+  }
+  .trade-fig::before {
+    content: attr(data-k);
+    color: var(--ink-soft);
+    font-size: 12px;
+    text-align: left;
+  }
+  .trade-act {
+    grid-column: 1 / -1;
+    justify-content: stretch;
+    margin-top: 9px;
+    gap: 7px;
+  }
+  .trade-act input { width: 84px; flex: 0 0 auto; }
+  .trade-act button { flex: 1 1 auto; }
+}
+
+/* Purse, hold and bargaining above the market. They sit together rather than
+   spreading across a wide screen, and stack when there is no room. */
+.purse-row { display: flex; gap: 10px 26px; flex-wrap: wrap; }
+.purse-row > div { min-width: 200px; flex: 0 1 260px; }
 
 table.ledger { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 table.ledger th {
@@ -421,7 +565,7 @@ table.ledger tr:hover td { background: rgba(255, 252, 240, 0.5); }
 
 .chart-overlay {
   position: absolute;
-  top: 14px; left: 14px;
+  top: calc(14px + var(--safe-t)); left: calc(14px + var(--safe-l));
   background: rgba(255, 250, 235, 0.86);
   border: 1px solid rgba(90, 74, 55, 0.35);
   padding: 9px 12px;
@@ -430,6 +574,34 @@ table.ledger tr:hover td { background: rgba(255, 252, 240, 0.5); }
   line-height: 1.5;
   max-width: 270px;
 }
+/* Naming a headland, in the page: window.prompt is blocked in a sandboxed
+   frame and is a poor thing on a phone. */
+.chart-name-head {
+  font-size: 11px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+.chart-overlay input[type="text"] {
+  width: 100%;
+  font-family: var(--serif);
+  font-size: 15px;
+  padding: 7px 9px;
+  border: 1px solid rgba(90, 74, 55, 0.5);
+  border-radius: 2px;
+  background: rgba(255, 252, 244, 0.9);
+  color: var(--ink);
+}
+.chart-name-row { display: flex; gap: 6px; margin-top: 8px; }
+.chart-name-row button { flex: 1 1 auto; }
+.chart-name-at {
+  margin-top: 7px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--ink-faint);
+}
+
 /* What the chart table just said back — a refusal to name open water, or the
    name that went on the sheet. */
 .chart-notice {
@@ -443,13 +615,13 @@ table.ledger tr:hover td { background: rgba(255, 252, 240, 0.5); }
 
 .chart-tools {
   position: absolute;
-  top: 14px; right: 14px;
+  top: calc(14px + var(--safe-t)); right: calc(14px + var(--safe-r));
   display: flex; flex-direction: column; gap: 5px;
   align-items: stretch;
 }
 .chart-legend {
   position: absolute;
-  bottom: 14px; left: 14px;
+  bottom: calc(14px + var(--safe-b)); left: calc(14px + var(--safe-l));
   background: rgba(255, 250, 235, 0.86);
   border: 1px solid rgba(90, 74, 55, 0.3);
   padding: 8px 11px;
@@ -459,7 +631,7 @@ table.ledger tr:hover td { background: rgba(255, 252, 240, 0.5); }
 /* What the King asked for, on the chart, where it is planned against. */
 .chart-voyage {
   position: absolute;
-  bottom: 14px; right: 14px;
+  bottom: calc(14px + var(--safe-b)); right: calc(14px + var(--safe-r));
   width: 280px;
   max-width: calc(100% - 28px);
   background: rgba(255, 250, 235, 0.9);
@@ -683,6 +855,46 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
 ::-webkit-scrollbar-thumb { background: rgba(90, 74, 55, 0.34); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(90, 74, 55, 0.55); }
 
+/* --------------------------------------------------------------------------
+   A screen held in one hand
+   Tighter gutters, a footer that stacks rather than squeezing its buttons to
+   three lines each, and controls big enough for a thumb. Forty-four points is
+   the smallest target anybody can hit reliably.
+   -------------------------------------------------------------------------- */
+@media (max-width: 760px) {
+  .screen-head {
+    padding: calc(12px + var(--safe-t)) calc(14px + var(--safe-r)) 9px calc(14px + var(--safe-l));
+    flex-wrap: wrap;
+    gap: 2px 10px;
+  }
+  .screen-head h1 { font-size: 21px; }
+  .screen-head .sub { font-size: 12px; }
+  .screen-body { padding: 14px calc(14px + var(--safe-r)) 18px calc(14px + var(--safe-l)); }
+  .screen-foot {
+    padding: 9px calc(14px + var(--safe-r)) calc(9px + var(--safe-b)) calc(14px + var(--safe-l));
+    gap: 7px;
+  }
+  .screen-foot button { flex: 1 1 auto; min-height: 44px; padding: 8px 12px; }
+  /* The purse line goes across the top of the footer rather than fighting the
+     buttons for the same row. */
+  .screen-foot > div:first-child {
+    flex-basis: 100%;
+    margin-right: 0 !important;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+  }
+  .tabs button { min-height: 40px; padding: 7px 12px; }
+  .card { padding: 11px 12px; margin-bottom: 10px; }
+  .quote { font-size: 13.5px; padding-left: 11px; }
+  table.ledger { font-size: 12.5px; }
+  table.ledger th, table.ledger td { padding: 5px 5px; }
+  /* Any table left over is allowed to scroll sideways inside its own box
+     rather than pushing the whole screen wider than the phone. */
+  .screen-body table.ledger { display: block; overflow-x: auto; white-space: nowrap; }
+  .list li { padding: 9px 0; }
+  input, select, textarea { font-size: 16px; }
+}
+
 @media (max-width: 900px) {
   .cols.two, .cols.three, .cols.side { grid-template-columns: 1fr; }
   .move-grid { grid-template-columns: 1fr; }
@@ -754,8 +966,8 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
 @media (pointer: coarse), (max-width: 860px) {
   .touch-helm, .touch-rig { display: flex; }
 }
-.touch-helm { left: 18px; bottom: 18px; }
-.touch-rig { right: 18px; bottom: 18px; }
+.touch-helm { left: calc(18px + var(--safe-l)); bottom: calc(18px + var(--safe-b)); }
+.touch-rig { right: calc(18px + var(--safe-r)); bottom: calc(18px + var(--safe-b)); }
 
 /* The clock and the ship's business along the top, where nothing is steering. */
 /* The row never wraps. A second line of controls drops onto the heading tape
@@ -764,7 +976,7 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
 .touch-top {
   left: 50%;
   transform: translateX(-50%);
-  top: 12px;
+  top: calc(12px + var(--safe-t));
   flex-wrap: nowrap;
   justify-content: center;
   max-width: min(920px, calc(100vw - 24px));
@@ -785,8 +997,13 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
 /* On a phone the head-up panels and the controls are fighting for the same
    corners, so the panels give way and the buttons grow. */
 @media (pointer: coarse) {
-  .touch-helm, .touch-rig { bottom: 14px; }
+  .touch-helm, .touch-rig { bottom: calc(14px + var(--safe-b)); }
   .touch-btn { min-width: 64px; height: 64px; }
+  /* Forty-four points is the smallest target a thumb hits reliably. Nothing in
+     the game may be smaller than that where there is no mouse. */
+  .screen button, .tabs button, .move { min-height: 44px; }
+  .trade-act button { min-height: 44px; }
+  .difficulty .difficulty-btn { min-height: 52px; }
 }
 
 /* On a phone there is no room for four panels of instruments and a set of
@@ -817,11 +1034,17 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
     right: 0;
     transform: none;
     max-width: none;
-    padding: 0 10px;
+    padding: 0 calc(10px + var(--safe-r)) 0 calc(10px + var(--safe-l));
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: none;
     justify-content: flex-start;
+    /* The row runs off both edges on a phone and there is no scrollbar to say
+       so. Fading the ends is the only honest signal that it continues. */
+    mask-image: linear-gradient(to right, transparent 0, #000 14px,
+      #000 calc(100% - 14px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 14px,
+      #000 calc(100% - 14px), transparent 100%);
   }
   .touch-top::-webkit-scrollbar { display: none; }
   .touch-top .touch-btn { flex: 0 0 auto; }
@@ -1022,11 +1245,26 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
     padding-bottom: 2px;
   }
   .chart-tools::-webkit-scrollbar { display: none; }
+  .chart-tools {
+    /* The row runs past both edges; fading them is the only sign it scrolls. */
+    mask-image: linear-gradient(to right, transparent 0, #000 12px,
+      #000 calc(100% - 12px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 12px,
+      #000 calc(100% - 12px), transparent 100%);
+  }
   .chart-tools button {
     flex: 0 0 auto;
     white-space: nowrap;
     font-size: 12px;
-    padding: 7px 11px;
+    padding: 9px 12px;
+    min-height: 42px;
+  }
+  /* Both corner panels sit above the tool row and stop short of the bottom, so
+     the middle of the map is always visible behind whichever one is open. */
+  .chart-voyage, .chart-legend {
+    max-height: 46vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
   .chart-legend {
     bottom: 8px;

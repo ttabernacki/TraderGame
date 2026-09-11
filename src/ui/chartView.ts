@@ -20,12 +20,23 @@ export class ChartView {
   private overlay = el('div', { class: 'chart-overlay' });
   private tools = el('div', { class: 'chart-tools' });
   private voyage = el('div', { class: 'chart-voyage' });
+  private legend: HTMLElement = el('div');
+  /**
+   * Which of the three panels are showing.
+   *
+   * On a desktop all of them, always: there is room. On a phone the chart is
+   * 390 points wide and the commission, the cursor readout and the key between
+   * them covered very nearly all of it — a map of eight thousand miles of coast
+   * with about two inches of coast visible. They go behind buttons instead, and
+   * start closed, because the map is the point of the screen.
+   */
+  private showVoyage = true;
+  private showLegend = true;
   private wrap = el('div', { class: 'chart-wrap' });
 
   private centre = { lat: 38, lon: -12 };
   /** Pixels per degree of latitude. */
   private scale = 16;
-  private dragging = false;
   private lastPointer = { x: 0, y: 0 };
   private showTrack = true;
   private showPlaces = true;
@@ -33,13 +44,18 @@ export class ChartView {
   private selectedPort: string | null = null;
   /** The last thing the chart table said back, shown until something else happens. */
   private notice: string | null = null;
+  /** True while the player is typing a name for where she lies. */
+  private naming = false;
+  /** What has been typed so far, held across the redraws the chart does. */
+  private draftName = 'Cabo de ';
   private game: Game | null = null;
   private onClose: () => void;
 
   constructor(onClose: () => void) {
     this.onClose = onClose;
 
-    this.wrap.append(this.canvas, this.overlay, this.tools, this.voyage, buildLegend());
+    this.legend = buildLegend();
+    this.wrap.append(this.canvas, this.overlay, this.tools, this.voyage, this.legend);
 
     this.root.append(
       el('div', { class: 'screen-head' },
@@ -55,8 +71,15 @@ export class ChartView {
     this.bindPointer();
   }
 
+  /** True where the screen is too small to show the map and the panels at once. */
+  private get compact(): boolean {
+    return typeof window !== 'undefined' && !!window.matchMedia
+      && window.matchMedia('(max-width: 860px), (max-height: 560px)').matches;
+  }
+
   open(g: Game): void {
     this.game = g;
+    if (this.compact) { this.showVoyage = false; this.showLegend = false; }
     this.centre = { ...g.nav.estimated };
     this.buildTools();
     this.buildVoyage();
@@ -65,6 +88,8 @@ export class ChartView {
   }
 
   resize(): void {
+    if (!this.compact) { this.showVoyage = true; this.showLegend = true; }
+    this.applyPanels();
     const rect = this.wrap.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio, 2);
     this.canvas.width = Math.max(1, Math.floor(rect.width * dpr));
@@ -97,11 +122,40 @@ export class ChartView {
           this.game?.clearDestination(); this.buildTools(); this.buildVoyage(); this.draw();
         })
         : null,
-      button('Name this place', () => this.namePlace()),
+      this.naming
+        ? button('Stop naming', () => {
+          this.naming = false; this.notice = null; this.buildTools();
+          if (this.game) this.updateOverlay(this.game.nav.estimated);
+        })
+        : button('Name this place', () => this.namePlace()),
       button(this.showTrue ? 'Hide the true coast' : 'Compare with the truth', () => {
         this.showTrue = !this.showTrue; this.buildTools(); this.draw();
       }, { title: 'A modern overlay showing where the land actually is. No pilot of this century had this.' }),
+      // Only where there is not room for everything at once.
+      this.compact
+        ? button(this.showVoyage ? 'Hide the voyage' : 'The voyage', () => {
+          this.showVoyage = !this.showVoyage;
+          if (this.showVoyage) this.showLegend = false;
+          this.applyPanels();
+          this.buildTools();
+        })
+        : null,
+      this.compact
+        ? button(this.showLegend ? 'Hide the key' : 'The key', () => {
+          this.showLegend = !this.showLegend;
+          if (this.showLegend) this.showVoyage = false;
+          this.applyPanels();
+          this.buildTools();
+        })
+        : null,
     );
+    this.applyPanels();
+  }
+
+  /** Show or hide the two corner panels without rebuilding them. */
+  private applyPanels(): void {
+    this.voyage.hidden = !this.showVoyage;
+    this.legend.hidden = !this.showLegend;
   }
 
   /**
@@ -195,44 +249,156 @@ export class ChartView {
     this.draw();
   }
 
+  /**
+   * Ask for the name, in the page rather than in a browser dialog.
+   *
+   * `window.prompt` is blocked outright in a sandboxed frame — which is how the
+   * game is served when it is published — so the one commission article that
+   * depends on naming a headland could not be discharged at all there. It is
+   * also a poor thing on a phone. This is a field on the chart itself.
+   */
   private namePlace(): void {
+    if (!this.game) return;
+    this.naming = true;
+    this.notice = null;
+    this.buildTools();
+    this.updateOverlay(this.game.nav.estimated);
+    const input = this.overlay.querySelector('input');
+    if (input instanceof HTMLInputElement) {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }
+  }
+
+  private commitName(name: string): void {
     const g = this.game;
     if (!g) return;
-    const name = window.prompt('What will you call this place?', 'Cabo de ');
-    if (name === null) return;
     const r = g.namePlace(name);
     this.notice = r.message;
+    if (r.ok) this.naming = false;
+    this.buildTools();
     this.buildVoyage();
     this.draw();
     this.updateOverlay(g.nav.estimated);
   }
 
+  /**
+   * Panning, zooming and picking, from a mouse or from fingers.
+   *
+   * The chart is the one screen in the game with no keyboard equivalent for its
+   * most important control: on a phone there is no wheel, so before this there
+   * was no way to change the scale of the chart at all — a map of eight
+   * thousand miles of coast, fixed at whatever zoom it happened to open at.
+   *
+   * One pointer drags. Two pinch about the point between them, which is what
+   * everybody expects and is also the only way to zoom in on a particular
+   * headland rather than on the middle of the screen. A tap that has not moved
+   * far and has not lasted long picks a port; a drag never does, which is why
+   * the old `click` handler had to go — on a touch screen every pan ended with
+   * one and selected whatever happened to be under the finger.
+   */
   private bindPointer(): void {
+    const live = new Map<number, { x: number; y: number }>();
+    let startedAt = 0;
+    let moved = 0;
+    /** Distance between the two fingers when the pinch began. */
+    let pinchFrom = 0;
+    let pinchScale = 0;
+
+    const positions = () => [...live.values()];
+    const spread = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      Math.hypot(a.x - b.x, a.y - b.y);
+
     this.canvas.addEventListener('pointerdown', (e) => {
-      this.dragging = true;
-      this.lastPointer = { x: e.clientX, y: e.clientY };
       this.canvas.setPointerCapture(e.pointerId);
+      live.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (live.size === 1) {
+        startedAt = performance.now();
+        moved = 0;
+        this.lastPointer = { x: e.clientX, y: e.clientY };
+      } else if (live.size === 2) {
+        const [a, b] = positions();
+        pinchFrom = spread(a, b);
+        pinchScale = this.scale;
+      }
     });
-    this.canvas.addEventListener('pointerup', (e) => {
-      this.dragging = false;
-      this.canvas.releasePointerCapture(e.pointerId);
-    });
+
+    const release = (e: PointerEvent) => {
+      const wasSingle = live.size === 1;
+      live.delete(e.pointerId);
+      if (this.canvas.hasPointerCapture(e.pointerId)) {
+        this.canvas.releasePointerCapture(e.pointerId);
+      }
+      // A short, still touch is a tap on whatever is underneath it.
+      if (wasSingle && moved < 10 && performance.now() - startedAt < 500) this.pick(e);
+      if (live.size < 2) pinchFrom = 0;
+      if (live.size === 1) {
+        // A finger lifted out of a pinch: carry on panning from where the other
+        // one is, rather than jumping by the distance between them.
+        this.lastPointer = { ...positions()[0] };
+      }
+    };
+    this.canvas.addEventListener('pointerup', release);
+    this.canvas.addEventListener('pointercancel', release);
+
     this.canvas.addEventListener('pointermove', (e) => {
-      if (!this.dragging) { this.hover(e); return; }
+      if (!live.has(e.pointerId)) { this.hover(e); return; }
+      live.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (live.size >= 2 && pinchFrom > 8) {
+        const [a, b] = positions();
+        const now = spread(a, b);
+        this.zoomAbout(
+          (a.x + b.x) / 2, (a.y + b.y) / 2,
+          clamp(pinchScale * (now / pinchFrom), 0.6, 420),
+        );
+        // The midpoint of the two fingers also pans, so a pinch can move the
+        // chart as well as scale it, which is how the gesture is actually used.
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        this.panBy(mid.x - this.lastPointer.x, mid.y - this.lastPointer.y);
+        this.lastPointer = mid;
+        this.draw();
+        return;
+      }
+
       const dx = e.clientX - this.lastPointer.x;
       const dy = e.clientY - this.lastPointer.y;
+      moved += Math.hypot(dx, dy);
       this.lastPointer = { x: e.clientX, y: e.clientY };
-      this.centre.lat = clamp(this.centre.lat + dy / this.scale, -60, 72);
-      this.centre.lon = wrap180(this.centre.lon - dx / (this.scale * Math.max(cosd(this.centre.lat), 0.15)));
+      this.panBy(dx, dy);
       this.draw();
     });
+
     this.canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
+      const rect = this.canvas.getBoundingClientRect();
       const factor = e.deltaY > 0 ? 0.85 : 1.18;
-      this.scale = clamp(this.scale * factor, 0.6, 420);
+      this.zoomAbout(e.clientX - rect.left, e.clientY - rect.top,
+        clamp(this.scale * factor, 0.6, 420));
       this.draw();
     }, { passive: false });
-    this.canvas.addEventListener('click', (e) => this.pick(e));
+  }
+
+  private panBy(dx: number, dy: number): void {
+    this.centre.lat = clamp(this.centre.lat + dy / this.scale, -60, 72);
+    this.centre.lon = wrap180(
+      this.centre.lon - dx / (this.scale * Math.max(cosd(this.centre.lat), 0.15)));
+  }
+
+  /**
+   * Change the scale while holding one point of the chart still under the
+   * finger. Zooming about the middle of the screen instead makes it impossible
+   * to close in on anything that is not already in the middle of the screen.
+   */
+  private zoomAbout(x: number, y: number, scale: number): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const fx = x - (x > rect.width ? rect.left : 0);
+    const fy = y - (y > rect.height ? rect.top : 0);
+    const before = this.toGeo(fx, fy);
+    this.scale = scale;
+    const after = this.toGeo(fx, fy);
+    this.centre.lat = clamp(this.centre.lat + (before.lat - after.lat), -60, 72);
+    this.centre.lon = wrap180(this.centre.lon + (before.lon - after.lon));
   }
 
   private toScreen(lat: number, lon: number): { x: number; y: number } {
@@ -284,14 +450,58 @@ export class ChartView {
     if (!g) return;
     clear(this.overlay);
 
+    if (this.naming) {
+      const field = el('input', {
+        type: 'text',
+        value: this.draftName,
+        maxlength: '40',
+        'aria-label': 'Name for this place',
+        oninput: (e: Event) => { this.draftName = (e.target as HTMLInputElement).value; },
+        onkeydown: (e: KeyboardEvent) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') this.commitName(this.draftName);
+          if (e.key === 'Escape') {
+            this.naming = false;
+            this.buildTools();
+            this.updateOverlay(p);
+          }
+        },
+      }) as HTMLInputElement;
+      append(this.overlay,
+        this.notice ? el('div', { class: 'chart-notice' }, this.notice) : null,
+        el('div', { class: 'chart-name-head' }, 'What will you call this place?'),
+        field,
+        el('div', { class: 'chart-name-row' },
+          button('Enter it', () => this.commitName(this.draftName), { primary: true }),
+          button('Never mind', () => {
+            this.naming = false;
+            this.notice = null;
+            this.buildTools();
+            this.updateOverlay(p);
+          }),
+        ),
+        el('div', { class: 'chart-name-at' },
+          `${formatLat(g.nav.estimated.lat)}, ${formatLon(g.nav.estimated.lon)} by the reckoning`),
+      );
+      return;
+    }
+
+    // A cursor readout is a thing a mouse has. A finger has no hover position,
+    // so on a touch screen the panel carries nothing until it has something to
+    // say — which also gives the map back the corner it was sitting in.
+    const pointing = !this.compact;
     const nodes: (Node | string)[] = [
       this.notice
         ? el('div', { class: 'chart-notice' }, this.notice)
         : '',
-      el('div', { style: { fontWeight: '600', marginBottom: '4px' } }, 'Cursor'),
-      el('div', {}, `${formatLat(p.lat)}`),
-      el('div', { style: { marginBottom: '7px' } }, `${formatLon(p.lon)}`),
     ];
+    if (pointing) {
+      nodes.push(
+        el('div', { style: { fontWeight: '600', marginBottom: '4px' } }, 'Cursor'),
+        el('div', {}, `${formatLat(p.lat)}`),
+        el('div', { style: { marginBottom: '7px' } }, `${formatLon(p.lon)}`),
+      );
+    }
 
     if (this.selectedPort) {
       const def = portDef(this.selectedPort);
@@ -307,9 +517,12 @@ export class ChartView {
         el('div', { style: { marginTop: '3px', fontSize: '11.5px' } },
           rel.met ? (rel.mayTrade ? 'Trade permitted here.' : 'Known, but no leave to trade.') : 'Not yet visited.'),
       );
-    } else {
+    } else if (pointing) {
       nodes.push(el('div', { style: { fontSize: '11.5px', fontStyle: 'italic', opacity: '0.72' } },
         'Drag to move the chart, scroll to change the scale, click a port for a course.'));
+    } else if (this.notice === null) {
+      // Nothing selected and nothing said: the box collapses away entirely.
+      return;
     }
 
     for (const n of nodes) this.overlay.append(typeof n === 'string' ? document.createTextNode(n) : n);
