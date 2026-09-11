@@ -1929,6 +1929,29 @@ export class Game {
     this.ship.setAllCanvas(fraction);
   }
 
+  /**
+   * Hand sail for the weather, without changing what she is ordered to carry.
+   *
+   * There is a difference between "take that in, it is coming on to blow" and
+   * "she carries a third of her canvas from here to India", and the squall was
+   * making the second one every time it made the first. It called setCanvas(),
+   * which writes the standing order, so a black squall that "passed in twenty
+   * minutes" left the ship under thirty-five per cent canvas for the rest of
+   * the voyage — and the watch could never shake it out, because
+   * applyAutoCanvas only ever *raises* the standing order to meet what she is
+   * already carrying, which is impossible once the order is the thing holding
+   * her down.
+   *
+   * Measured on a Lisbon–Mina passage: a hundred and thirty miles a day until
+   * the first squall on day nine, and under a hundred for ever afterwards, in
+   * a steady thirteen-knot breeze with nothing whatever wrong with the ship.
+   * Squalls come round every five days, so almost every long passage in the
+   * game was being sailed at half speed by a ship nobody had told to slow down.
+   */
+  handSail(fraction: number): void {
+    this.ship.setAllCanvas(Math.min(this.ship.canvasSet, fraction));
+  }
+
   adjustTrim(delta: number): void {
     this.autoTrim = false;
     this.lastManualTrim = this.clock.t;

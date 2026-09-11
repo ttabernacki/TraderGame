@@ -202,7 +202,9 @@ const EVENTS: SeaEventDef[] = [
           label: 'Shorten down now',
           detail: 'Lose a little way. Risk nothing.',
           resolve: (g) => {
-            g.setCanvas(Math.min(g.ship.canvasSet, 0.35));
+            // Handed, not ordered: when it has blown through, the watch make
+            // sail again to whatever she was carrying before.
+            g.handSail(0.35);
             return 'Handed everything but a rag of the main before it struck. It came on hard and passed in twenty minutes, and she never felt it.';
           },
         },
