@@ -239,6 +239,90 @@ export function coastVerticesNear(p: LatLon, nm: number): CoastVertex[] {
   return out;
 }
 
+export interface CoastSegment {
+  /** Stable identity: the landmass and the vertex the segment runs from. */
+  land: number;
+  aIndex: number;
+  bIndex: number;
+  aLat: number; aLon: number;
+  bLat: number; bLon: number;
+  /** Length of the whole segment in nautical miles. */
+  lengthNm: number;
+  /**
+   * The portion of the segment inside the sighting circle, as a parameter
+   * range along it. 0 is the `a` end and 1 the `b` end.
+   */
+  t0: number;
+  t1: number;
+}
+
+/**
+ * Coastline *segments* within `nm` nautical miles, with the visible part of
+ * each one marked off along its length.
+ *
+ * The chart used to ask for vertices and credit the surveyor six miles for
+ * each one he saw. Neither half of that survived contact with the data: the
+ * ring points are a median of forty-seven miles apart on the African coast and
+ * two hundred at the worst of it, so a ship standing eight miles off a shore
+ * she could see perfectly well would frequently have no *vertex* inside her
+ * thirty-five-mile horizon at all, and a commission to survey three hundred
+ * miles of coast came home with six.
+ *
+ * A coast is a line, not a set of dots. This measures the distance to the line
+ * and gives back how much of it lies within sight, which is the quantity a
+ * surveyor is actually paid for.
+ */
+export function coastSegmentsNear(p: LatLon, nm: number): CoastSegment[] {
+  build();
+  const out: CoastSegment[] = [];
+  const radiusDeg = nm / 60;
+  const kLon = Math.max(cosd(p.lat), 0.2);
+  const lonSpan = radiusDeg / kLon;
+
+  for (let li = 0; li < prepared.length; li++) {
+    const L = prepared[li];
+    if (p.lat + radiusDeg < L.minLat || p.lat - radiusDeg > L.maxLat) continue;
+    if (p.lon + lonSpan < L.minLon || p.lon - lonSpan > L.maxLon) continue;
+    const r = L.ring;
+    const n = r.length / 2;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      // Local flat coordinates in nautical miles, which is exact enough over
+      // the few hundred miles a masthead can see.
+      const ax = wrap180(r[i * 2 + 1] - p.lon) * 60 * kLon;
+      const ay = (r[i * 2] - p.lat) * 60;
+      const bx = wrap180(r[j * 2 + 1] - p.lon) * 60 * kLon;
+      const by = (r[j * 2] - p.lat) * 60;
+      const dx = bx - ax;
+      const dy = by - ay;
+      const len2 = dx * dx + dy * dy;
+      if (len2 < 1e-9) continue;
+
+      // Where the segment crosses the circle of radius nm about the ship.
+      // |A + t·D|² = nm²  →  len2·t² + 2(A·D)·t + (|A|² − nm²) = 0
+      const b = ax * dx + ay * dy;
+      const c = ax * ax + ay * ay - nm * nm;
+      const disc = b * b - len2 * c;
+      if (disc <= 0) continue;
+      const root = Math.sqrt(disc);
+      const t0 = Math.max(0, (-b - root) / len2);
+      const t1 = Math.min(1, (-b + root) / len2);
+      if (t1 <= t0) continue;
+
+      out.push({
+        land: li,
+        aIndex: i,
+        bIndex: j,
+        aLat: r[i * 2], aLon: r[i * 2 + 1],
+        bLat: r[j * 2], bLon: r[j * 2 + 1],
+        lengthNm: Math.sqrt(len2),
+        t0, t1,
+      });
+    }
+  }
+  return out;
+}
+
 /**
  * Every coast vertex inside a lat/lon box, keyed the way the chart keys them.
  *

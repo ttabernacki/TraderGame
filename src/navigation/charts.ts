@@ -1,5 +1,7 @@
 import { NM, cosd, wrap180, type LatLon } from '../core/math';
-import { coastVertexKeysInBox, coastVerticesNear, type CoastVertex } from '../world/landmass';
+import {
+  coastSegmentsNear, coastVertexKeysInBox, coastVerticesNear, type CoastVertex,
+} from '../world/landmass';
 import { PORTS, anchorageOf, type PortDef } from '../world/ports';
 
 export interface ChartedPoint {
@@ -62,6 +64,17 @@ export interface TrackPoint {
  */
 export class Chart {
   points = new Map<string, ChartedPoint>();
+  /**
+   * How much of each stretch of coast has been run in sight of, as a span
+   * along the segment between two ring vertices.
+   *
+   * Kept apart from `points`, which is what gets drawn. A pilot is paid for
+   * miles of coast run, and the miles are a property of the line between the
+   * points rather than of the points themselves — the ring vertices are a
+   * median of forty-seven miles apart, so counting them and multiplying was
+   * out by an order of magnitude in both directions at once.
+   */
+  seen = new Map<string, { t0: number; t1: number }>();
   ports = new Map<string, ChartedPort>();
   places: Placename[] = [];
   track: TrackPoint[] = [];
@@ -140,6 +153,7 @@ export class Chart {
   ): SurveyResult {
     if (rangeNm <= 0) return { fresh: [], corrected: 0, milesTaken: 0 };
     const seen = coastVerticesNear(truePos, rangeNm);
+    const milesTaken = this.creditCoastRun(truePos, rangeNm);
     const newly: CoastVertex[] = [];
     let corrected = 0;
     let improvedNm = 0;
@@ -179,14 +193,41 @@ export class Chart {
       }
       this.points.set(key, { key, lat: plottedLat, lon: plottedLon, errorNm: errNm, land: v.land, t });
     }
-    return {
-      fresh: newly,
-      corrected,
-      // Roughly how much coast this pass accounts for. Six miles a vertex is
-      // the spacing of the ring data.
-      milesTaken: (newly.length + corrected) * 6,
-      improvedNm,
-    };
+    return { fresh: newly, corrected, milesTaken, improvedNm };
+  }
+
+  /**
+   * How much coast this pass has brought into sight that had not been seen
+   * before, in nautical miles.
+   *
+   * Coverage is tracked as a span along each segment rather than as a count of
+   * anything, so running the same headland twice credits nothing the second
+   * time, and creeping along a two-hundred-mile stretch credits it a few miles
+   * at a time as it comes into view — which is what surveying a coast is.
+   */
+  private creditCoastRun(at: LatLon, rangeNm: number): number {
+    let miles = 0;
+    for (const seg of coastSegmentsNear(at, rangeNm)) {
+      const key = `${seg.land}:${seg.aIndex}`;
+      const had = this.seen.get(key);
+      if (!had) {
+        this.seen.set(key, { t0: seg.t0, t1: seg.t1 });
+        miles += (seg.t1 - seg.t0) * seg.lengthNm;
+        continue;
+      }
+      // The union of two spans is only a span when they touch, which they do
+      // whenever she is coasting. A disjoint second look extends the nearer
+      // end rather than being counted twice.
+      const t0 = Math.min(had.t0, seg.t0);
+      const t1 = Math.max(had.t1, seg.t1);
+      const grew = (t1 - t0) - (had.t1 - had.t0);
+      if (grew > 0) {
+        had.t0 = t0;
+        had.t1 = t1;
+        miles += grew * seg.lengthNm;
+      }
+    }
+    return miles;
   }
 
   /**
@@ -290,6 +331,7 @@ export class Chart {
       ports: [...this.ports.values()],
       places: this.places,
       track: this.track,
+      seen: [...this.seen.entries()],
     };
   }
 
@@ -299,6 +341,7 @@ export class Chart {
     c.ports = new Map((data.ports ?? []).map((p: ChartedPort) => [p.id, p]));
     c.places = data.places ?? [];
     c.track = data.track ?? [];
+    c.seen = new Map(data.seen ?? []);
     (c as any).lastTrackT = -1e9;
     (c as any).nextPlaceId = (c.places.length ?? 0) + 1;
     return c;

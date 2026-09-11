@@ -988,16 +988,21 @@ export class Game {
         const result = this.chart.survey(
           pos, this.nav.estimated, range, this.clock.t, skill(eff, 'cartografia'),
         );
+        // Coast run in sight counts even when no ring vertex happened to fall
+        // inside the horizon — which, with vertices forty-seven miles apart, is
+        // most of the time.
         const worked = result.fresh.length + result.corrected;
-        if (worked > 0) {
+        if (worked > 0 || result.milesTaken > 0) {
           // Coast drawn for the first time and coast put right both count. The
           // Casa da Guiné paid for corrections — a stretch of Africa that is on
           // the chart eighty miles from where it really is has cost ships, and
           // a pilot who fixes it has done the Crown a service.
           this.crown.chartedSincePatent += result.milesTaken;
           this.crown.progressObjective('chart', undefined, result.milesTaken);
-          train(this.skills, 'cartografia', worked * 0.14);
-          train(this.skills, 'navegacao', worked * 0.04);
+          // Paid in miles of coast, not in ring vertices, for the same reason
+          // the commission is.
+          train(this.skills, 'cartografia', result.milesTaken * 0.006);
+          train(this.skills, 'navegacao', result.milesTaken * 0.0018);
           this.chartedThisPassage += result.milesTaken;
           this.correctedNm += result.improvedNm ?? 0;
           this.announceSurvey(result);
@@ -1176,9 +1181,11 @@ export class Game {
     if (this.clock.t - this.lastSurveyWord < 6 * 3600) return;
     this.lastSurveyWord = this.clock.t;
     const improved = result.improvedNm ?? 0;
-    if (result.fresh.length > 0 && result.corrected === 0) {
+    // Under a dozen miles is a headland coming abeam, not a survey.
+    if (result.milesTaken < 12) return;
+    if (result.corrected === 0) {
       this.pushAlert(
-        `The escrivão is drawing coast nobody has drawn before — ${result.milesTaken} miles of it.`,
+        `The escrivão is drawing coast nobody has drawn before — ${Math.round(result.milesTaken)} miles of it.`,
         'note');
       return;
     }
