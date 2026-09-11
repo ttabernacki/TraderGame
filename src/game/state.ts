@@ -228,7 +228,25 @@ export class Game {
    * if your reckoning has drifted the course you lay off is wrong in exactly the
    * way the reckoning is wrong. That is the whole game.
    */
-  destination: { name: string; lat: number; lon: number } | null = null;
+  /**
+   * The marks she is to make, in order.
+   *
+   * A passage is not one bearing. The whole of the volta do mar is a course
+   * that goes the wrong way first on purpose, and a pilot planning one lays off
+   * three or four legs on the paper before he weighs: out to the westward until
+   * this latitude, then north until that one, then in for the land. With one
+   * mark at a time the player had to sit over the chart and re-lay the course
+   * by hand at every corner, which is a chore the ship's own pilot would have
+   * done and which made planning a passage impossible to think about as a
+   * whole. So the chart takes as many marks as he wants to put on it, and the
+   * watch work them in order.
+   */
+  route: { name: string; lat: number; lon: number; portId?: string }[] = [];
+
+  /** The mark she is steering for now, which is the first one left on the list. */
+  get destination(): { name: string; lat: number; lon: number } | null {
+    return this.route[0] ?? null;
+  }
 
   /**
    * A compass course the watch are told to hold, when the captain is conning
@@ -1677,7 +1695,21 @@ export class Game {
     if (!d) return;
     const trueDist = haversine(this.ship.state.pos, { lat: d.lat, lon: d.lon }) / NM;
     if (trueDist > 6) return;
-    this.destination = null;
+    this.route.shift();
+    const next = this.route[0];
+    if (next) {
+      // One leg of the passage done and the next one begins from here: the
+      // watch put her head round without anybody having to go to the chart.
+      this.markLaidAt = { ...this.nav.estimated };
+      this.markDistNm = haversine(
+        this.nav.estimated, { lat: next.lat, lon: next.lon }) / NM;
+      this.pushAlert(`Up with ${d.name}. Now for ${next.name}.`, 'note');
+      this.logEvent('note',
+        `Made ${d.name}, and shaped a course for ${next.name}: `
+        + `${this.route.length} ${this.route.length === 1 ? 'mark' : 'marks'} left of the passage.`,
+        true);
+      return;
+    }
     this.holdCourse = false;
     this.pushAlert(`Up with ${d.name}.`, 'note');
     this.logEvent('note', `Made ${d.name} by the reckoning, and there it was.`, true);
@@ -2647,7 +2679,7 @@ export class Game {
     if (!def) return;
     const charted = this.chart.ports.get(def.id);
     const at = charted ?? { lat: def.lat, lon: def.lon };
-    this.setDestination(def.name, at.lat, at.lon);
+    this.setDestination(def.name, at.lat, at.lon, def.id);
   }
 
   /** The furthest south she has ever been, by the reckoning. */
@@ -2655,9 +2687,9 @@ export class Game {
     return this.deepestSouth;
   }
 
-  /** Lay off a course for somewhere, or clear the one that is set. */
-  setDestination(name: string, lat: number, lon: number): void {
-    this.destination = { name, lat, lon };
+  /** Lay off a fresh course for somewhere, striking whatever was laid before. */
+  setDestination(name: string, lat: number, lon: number, portId?: string): void {
+    this.route = [{ name, lat, lon, portId }];
     this.holdCourse = true;
     this.helmOrder = null;
     this.markLaidAt = { ...this.nav.estimated };
@@ -2666,8 +2698,41 @@ export class Game {
     this.pushAlert(`Course laid off for ${name}.`, 'note');
   }
 
+  /**
+   * Add a mark to the end of the passage she is already laid off for.
+   *
+   * The first one is a course; the second makes it a plan.
+   */
+  addWaypoint(name: string, lat: number, lon: number, portId?: string): void {
+    if (this.route.length === 0) {
+      this.setDestination(name, lat, lon, portId);
+      return;
+    }
+    if (this.route.length >= 12) return;
+    this.route.push({ name, lat, lon, portId });
+    this.holdCourse = true;
+    this.pushAlert(`${name} added to the passage \u2014 ${this.route.length} marks.`, 'note');
+  }
+
+  /** Strike one mark out of the passage, leaving the rest of it standing. */
+  removeWaypoint(index: number): void {
+    if (index < 0 || index >= this.route.length) return;
+    const gone = this.route.splice(index, 1)[0];
+    if (this.route.length === 0) {
+      this.holdCourse = false;
+      this.markLaidAt = null;
+    } else if (index === 0) {
+      // The leg she was actually steering has been struck out, so the next one
+      // begins here rather than wherever the last was laid off from.
+      this.markLaidAt = { ...this.nav.estimated };
+      this.markDistNm = haversine(
+        this.nav.estimated, { lat: this.route[0].lat, lon: this.route[0].lon }) / NM;
+    }
+    this.pushAlert(`${gone.name} struck off the passage.`, 'note');
+  }
+
   clearDestination(): void {
-    this.destination = null;
+    this.route = [];
     this.holdCourse = false;
     this.markLaidAt = null;
   }
@@ -2931,7 +2996,7 @@ export class Game {
       orderedCanvas: this.orderedCanvas,
       holdCourse: this.holdCourse,
       helmOrder: this.helmOrder,
-      destination: this.destination,
+      route: this.route,
       daysSincePort: this.daysSincePort,
       distanceRun: this.distanceRun,
       correctedNm: this.correctedNm,
@@ -2997,7 +3062,9 @@ export class Game {
     g.orderedCanvas = d.orderedCanvas ?? g.ship.canvasSet;
     g.holdCourse = d.holdCourse ?? false;
     g.helmOrder = d.helmOrder ?? null;
-    g.destination = d.destination ?? null;
+    // Saves from before a passage could have more than one mark carry a single
+    // destination; it becomes a route of one.
+    g.route = d.route ?? (d.destination ? [d.destination] : []);
     g.daysSincePort = d.daysSincePort ?? 0;
     g.distanceRun = d.distanceRun ?? 0;
     g.correctedNm = d.correctedNm ?? 0;

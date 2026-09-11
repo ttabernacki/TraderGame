@@ -398,6 +398,7 @@ if (import.meta.env.DEV) {
       game,
       demo,
       renderer,
+      ui,
       /** Put the ship somewhere, at a time of day, sailing at a steady state. */
       place(lat: number, lon: number, hour: number, heading: number, canvas = 1) {
         if (game) settle(game, lat, lon, hour, heading, canvas);

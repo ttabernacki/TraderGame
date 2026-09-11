@@ -710,6 +710,13 @@ table.ledger tr:hover td { background: rgba(255, 252, 240, 0.5); }
 .chart-voyage-row.done { opacity: 0.5; }
 .chart-voyage-row.steerable { cursor: pointer; }
 .chart-voyage-row.steerable:hover { background: rgba(168, 50, 40, 0.12); }
+/* The leg she is actually steering, as against the rest of the plan. */
+.chart-voyage-row.leg-now { font-weight: 600; }
+.chart-voyage-row.leg-now span::before {
+  content: '\25B8';
+  margin-right: 5px;
+  color: rgba(168, 50, 40, 0.9);
+}
 .chart-voyage-rule {
   border-top: 1px solid rgba(90, 74, 55, 0.28);
   margin: 7px 0 5px;

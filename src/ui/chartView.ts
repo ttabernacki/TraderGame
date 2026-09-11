@@ -43,6 +43,17 @@ export class ChartView {
   private showPlaces = true;
   private showTrue = false;
   private selectedPort: string | null = null;
+  /**
+   * The spot on the paper the pilot has his dividers on.
+   *
+   * The chart could only ever steer for a port or for whatever happened to be
+   * dead centre of the view, which meant marking an open-water position — the
+   * corner of a volta, a latitude to run down — required panning the map until
+   * the place you wanted was exactly in the middle, with nothing drawn to tell
+   * you where the middle was. A pilot puts his finger on the chart. So now a
+   * click does.
+   */
+  private marked: { lat: number; lon: number } | null = null;
   /** The last thing the chart table said back, shown until something else happens. */
   private notice: string | null = null;
   /** True while the player is typing a name for where she lies. */
@@ -133,11 +144,18 @@ export class ChartView {
         this.showPlaces = !this.showPlaces; this.buildTools(); this.draw();
       }),
       button(
-        this.selectedPort ? `Steer for ${portDef(this.selectedPort).name}` : 'Steer for this spot',
-        () => this.steerForSelection(),
-        { primary: true },
+        `Steer for ${this.targetLabel()}`,
+        () => this.steerForSelection(false),
+        { primary: true, title: 'Lay off a fresh course, striking whatever is laid now' },
       ),
-      this.game?.destination
+      (this.game?.route.length ?? 0) > 0
+        ? button(
+          `Then ${this.targetLabel()}`,
+          () => this.steerForSelection(true),
+          { title: 'Add this to the end of the passage instead of replacing it' },
+        )
+        : null,
+      (this.game?.route.length ?? 0) > 0
         ? button('Cancel the course', () => {
           this.game?.clearDestination(); this.buildTools(); this.buildVoyage(); this.draw();
         })
@@ -216,6 +234,38 @@ export class ChartView {
           el('span', {}, 'Sailing on your own account'), el('em', {}, '')));
     }
 
+    // The passage as laid off, leg by leg, with the bearing and distance of
+    // each — which is the sheet of paper a pilot actually works from. Clicking
+    // a leg strikes it out.
+    if (g.route.length > 0) {
+      rows.push(el('div', { class: 'chart-voyage-rule' }));
+      rows.push(el('div', { class: 'chart-voyage-title' },
+        g.route.length > 1 ? `The passage \u2014 ${g.route.length} marks` : 'The course'));
+      let from = g.nav.estimated;
+      for (let i = 0; i < g.route.length; i++) {
+        const leg = g.route[i];
+        const dLat = leg.lat - from.lat;
+        const dLon = wrap180(leg.lon - from.lon) * cosd(from.lat);
+        const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI;
+        const distNm = Math.hypot(dLat, dLon) * 60;
+        const idx = i;
+        rows.push(el('div', {
+          class: `chart-voyage-row steerable${i === 0 ? ' leg-now' : ''}`,
+          title: 'Strike this mark off the passage',
+          onclick: () => {
+            g.removeWaypoint(idx);
+            this.buildTools();
+            this.buildVoyage();
+            this.draw();
+          },
+        },
+          el('span', {}, `${g.route.length > 1 ? `${i + 1}. ` : ''}${leg.name}`),
+          el('em', {}, `${((bearing + 360) % 360).toFixed(0)}\u00b0 \u00b7 ${distNm.toFixed(0)} miles`),
+        ));
+        from = leg;
+      }
+    }
+
     rows.push(el('div', { class: 'chart-voyage-rule' }));
     rows.push(el('div', { class: 'chart-voyage-row' },
       el('span', {}, 'Coast surveyed this passage'),
@@ -231,11 +281,21 @@ export class ChartView {
   }
 
   /**
-   * Lay off a course for the selected port, or for the middle of the chart if
-   * nothing is selected — which is how a pilot marks a spot he means to make
-   * for and has no name for yet.
+   * Lay off a course for whatever the pilot has under his hand: the port he
+   * clicked, or the spot he clicked, or — if he has clicked nothing — the
+   * middle of the view, which is where he has panned the chart to.
+   *
+   * `append` adds it to the end of the passage rather than replacing it, which
+   * is how a plan with corners in it gets made.
    */
-  private steerForSelection(): void {
+  /** What the two course buttons would act on, in words. */
+  private targetLabel(): string {
+    if (this.selectedPort) return portDef(this.selectedPort).name;
+    if (this.marked) return markName(this.marked);
+    return 'this spot';
+  }
+
+  private steerForSelection(append: boolean): void {
     const g = this.game;
     if (!g) return;
     if (this.selectedPort) {
@@ -243,9 +303,13 @@ export class ChartView {
       const def = portDef(this.selectedPort);
       // Steer for where it is on *your* chart, not where it truly is.
       const at = charted ?? { lat: def.lat, lon: def.lon };
-      g.setDestination(def.name, at.lat, at.lon);
+      if (append) g.addWaypoint(def.name, at.lat, at.lon, def.id);
+      else g.setDestination(def.name, at.lat, at.lon, def.id);
     } else {
-      g.setDestination('the marked spot', this.centre.lat, this.centre.lon);
+      const at = this.marked ?? this.centre;
+      const name = markName(at);
+      if (append) g.addWaypoint(name, at.lat, at.lon);
+      else g.setDestination(name, at.lat, at.lon);
     }
     this.buildTools();
     this.buildVoyage();
@@ -334,8 +398,13 @@ export class ChartView {
           this.canvas.releasePointerCapture(e.pointerId);
         }
       } catch { /* already gone */ }
-      // A short, still touch is a tap on whatever is underneath it.
-      if (wasSingle && moved < 10 && performance.now() - startedAt < 500) this.pick(e);
+      // A still touch is a tap on whatever is underneath it, however long it
+      // was held. What separates a tap from a drag is that the finger did not
+      // move; the clock has nothing to do with it, and judging by the clock
+      // silently swallowed taps on any device slow enough that half a second
+      // went by between the two events — which is most phones with this scene
+      // running behind the chart. Two seconds is a sanity bound, not a test.
+      if (wasSingle && moved < 10 && performance.now() - startedAt < 2000) this.pick(e);
       if (live.size < 2) pinchFrom = 0;
       if (live.size === 1) {
         // A finger lifted out of a pinch: carry on panning from where the other
@@ -445,7 +514,10 @@ export class ChartView {
       if (d < bestD) { bestD = d; best = cp.id; }
     }
     this.selectedPort = best;
+    // A click on open water marks that spot; a click on a port marks the port.
+    this.marked = best ? null : this.toGeo(mx, my);
     this.notice = null;
+    this.buildTools();
     this.draw();
     this.updateOverlay(this.toGeo(mx, my));
   }
@@ -524,7 +596,7 @@ export class ChartView {
       );
     } else if (pointing) {
       nodes.push(el('div', { style: { fontSize: '11.5px', fontStyle: 'italic', opacity: '0.72' } },
-        'Drag to move the chart, scroll to change the scale, click a port for a course.'));
+        'Drag to move the chart, scroll to change the scale. Click anywhere to prick off a mark, and again to add another to the passage.'));
     } else if (this.notice === null) {
       // Nothing selected and nothing said: the box collapses away entirely.
       return;
@@ -924,35 +996,63 @@ export class ChartView {
    * chart, and it is wrong in exactly the way his reckoning is wrong.
    */
   private drawCourse(ctx: CanvasRenderingContext2D, g: Game): void {
-    const d = g.destination;
-    if (!d) return;
-    const from = this.toScreen(g.nav.estimated.lat, g.nav.estimated.lon);
-    const to = this.toScreen(d.lat, d.lon);
+    // The spot the pilot has his dividers on, whether or not he has laid a
+    // course to it yet.
+    if (this.marked) {
+      const m = this.toScreen(this.marked.lat, this.marked.lon);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(90, 74, 55, 0.8)';
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath();
+      ctx.moveTo(m.x - 8, m.y); ctx.lineTo(m.x + 8, m.y);
+      ctx.moveTo(m.x, m.y - 8); ctx.lineTo(m.x, m.y + 8);
+      ctx.stroke();
+      ctx.restore();
+    }
 
+    if (g.route.length === 0) return;
     ctx.save();
     ctx.strokeStyle = 'rgba(140, 60, 40, 0.75)';
-    ctx.lineWidth = 1.4;
-    ctx.setLineDash([7, 5]);
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // The mark: a ruled cross, as a pilot pricks off a place he means to make.
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.moveTo(to.x - 7, to.y); ctx.lineTo(to.x + 7, to.y);
-    ctx.moveTo(to.x, to.y - 7); ctx.lineTo(to.x, to.y + 7);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(to.x, to.y, 9, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.fillStyle = 'rgba(140, 60, 40, 0.9)';
     ctx.font = 'italic 12px Georgia, serif';
     ctx.textAlign = 'left';
-    ctx.fillText(d.name, to.x + 13, to.y - 9);
+
+    // The whole passage as one ruled chain, beginning at the reckoning: the
+    // legs behind the first mark are the part of the plan the ship has not got
+    // to yet, and a pilot draws them all before he weighs.
+    let from = this.toScreen(g.nav.estimated.lat, g.nav.estimated.lon);
+    for (let i = 0; i < g.route.length; i++) {
+      const leg = g.route[i];
+      const to = this.toScreen(leg.lat, leg.lon);
+      const steering = i === 0;
+
+      ctx.lineWidth = steering ? 1.4 : 1.1;
+      ctx.globalAlpha = steering ? 1 : 0.55;
+      ctx.setLineDash(steering ? [7, 5] : [3, 4]);
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // The mark: a ruled cross, as a pilot pricks off a place he means to make.
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(to.x - 7, to.y); ctx.lineTo(to.x + 7, to.y);
+      ctx.moveTo(to.x, to.y - 7); ctx.lineTo(to.x, to.y + 7);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(to.x, to.y, 9, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(140, 60, 40, 0.9)';
+      // Numbered once there is more than one, because then the order is the
+      // information: which way round the corners go is the plan.
+      ctx.fillText(
+        g.route.length > 1 ? `${i + 1}. ${leg.name}` : leg.name, to.x + 13, to.y - 9);
+      from = to;
+    }
+    ctx.globalAlpha = 1;
     ctx.restore();
   }
 
@@ -1022,6 +1122,18 @@ export class ChartView {
     ctx.fillText(`${leagues} léguas`, x + px / 2 - 24, y - 9);
     ctx.restore();
   }
+}
+
+/**
+ * What to call a spot somebody has pricked off in open water.
+ *
+ * Its position, because that is what it is and what a pilot would write beside
+ * the cross. Whole degrees: a mark is a place to turn at, not a rock to clear.
+ */
+function markName(at: { lat: number; lon: number }): string {
+  const la = `${Math.abs(at.lat).toFixed(0)}\u00b0${at.lat >= 0 ? 'N' : 'S'}`;
+  const lo = `${Math.abs(at.lon).toFixed(0)}\u00b0${at.lon >= 0 ? 'E' : 'W'}`;
+  return `${la} ${lo}`;
 }
 
 function buildLegend(): HTMLElement {

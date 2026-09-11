@@ -285,7 +285,12 @@ export class Hud {
 
       append(this.course,
         el('div', { class: 'hud-title' },
-          g.helmOrder !== null ? 'Course ordered' : 'Bound for'),
+          g.helmOrder !== null ? 'Course ordered'
+            // Say how much of the plan is still ahead of her, or a passage laid
+            // off in four legs looks from the deck exactly like one laid off in
+            // one and the captain forgets he has corners coming.
+            : g.route.length > 1 ? `Bound for \u2014 mark 1 of ${g.route.length}`
+              : 'Bound for'),
         el('div', { class: 'hud-big' },
           g.helmOrder !== null
             ? `${g.helmOrder.toFixed(0).padStart(3, '0')}°`
@@ -308,6 +313,9 @@ export class Hud {
           ? 'less than a mile'
           : `${dest.distNm.toFixed(0)} miles`) : null,
         dest ? hudRow('At this rate', formatEta(dest.hours)) : null,
+        g.route.length > 1
+          ? hudRow('Then', g.route[1].name + (g.route.length > 2 ? `, and ${g.route.length - 2} more` : ''))
+          : null,
         // How much of the passage is behind her. This is the single readout
         // that answers "am I getting anywhere", and at the fast clock rates it
         // is the only one that visibly moves.

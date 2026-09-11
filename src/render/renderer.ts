@@ -11,6 +11,16 @@ import type { SailState } from '../ship/physics';
 
 export type CameraMode = 'chase' | 'deck' | 'masthead' | 'beam';
 
+/**
+ * How much faster than real time the water may be drawn streaming past her.
+ *
+ * Six knots is genuinely slow, and from a ship held at the origin the only
+ * thing that shows headway at all is the water going by, so this has to be
+ * above one. It does not have to be ten: that read as a strobing blur and told
+ * the player nothing he could not get from the log.
+ */
+const WATER_GAIN = 3.4;
+
 /** The colour of light off the whole sky dome, which the zenith is bluer than. */
 const SKYLIGHT = new THREE.Color(0.72, 0.78, 0.86);
 
@@ -139,6 +149,18 @@ export class Renderer {
    */
   private drawnRate = 1;
   /**
+   * A clock for cloth, in real seconds, which the game's clock never touches.
+   *
+   * A pennant snaps about twice a second in a breeze. It does that whether the
+   * player is watching the voyage in real time or at a watch a second, because
+   * it is a property of the wind and the cloth and not of how fast he wants the
+   * month to go by. Driving it off the wave clock — which runs at up to three
+   * times real time — put the flag, the telltales and the luffing sails at five
+   * to eight cycles a second, which at sixty frames is not a flag whipping, it
+   * is a strobe.
+   */
+  private riggingClock = 0;
+  /**
    * The heading and heel she is *drawn* at, which lag the simulated ones
    * through a short real-time filter.
    *
@@ -261,8 +283,16 @@ export class Renderer {
     // read thirty knots of progress while the sea crawled, and putting the
     // clock on gave no sensation of moving at all. Ten times reads as a ship
     // driving hard, which is what the player has asked the clock for.
-    const visualDt = Math.min(simDt, realDt * 10);
-    this.drawnRate = realDt > 1e-5 ? clamp(visualDt / realDt, 0.05, 10) : 1;
+    // The ceiling is approached along a curve rather than run into: each step
+    // up the clock still reads as faster water, but the gain falls away, so the
+    // top of the range is a ship driving hard rather than a river in flood.
+    // A flat ten times was the same wall of streaming water at every rate above
+    // four, and it was what made the fast clock unpleasant to sit in.
+    const ratio = realDt > 1e-5 ? Math.max(simDt / realDt, 0) : 1;
+    const shown = 1 + WATER_GAIN * (1 - Math.exp(-Math.max(ratio - 1, 0) / 5));
+    const visualDt = Math.min(simDt, realDt * shown);
+    this.drawnRate = realDt > 1e-5 ? clamp(visualDt / realDt, 0.05, WATER_GAIN + 1) : 1;
+    this.riggingClock += realDt;
     // f.heading and f.heel are already the filtered, shown values: the game
     // smooths them once, on real seconds, so the 3D view and the compass never
     // disagree about which way her head is.
@@ -283,9 +313,9 @@ export class Renderer {
       // water flows past her. Advancing both together reads as a film run fast;
       // advancing only the flow reads as a ship going fast, which is the thing
       // the player turned the clock up to feel.
-      Math.min(simDt, realDt * 3) * 0.62,
+      Math.min(simDt, realDt * 2) * 0.62,
     );
-    this.waveClock += Math.min(simDt, realDt * 3);
+    this.waveClock += Math.min(simDt, realDt * 2);
 
     // The ship pushes the water aside: a bow wave forward and a spreading wake
     // astern, both keyed to how hard she is driving.
@@ -392,7 +422,7 @@ export class Renderer {
       apparentBeta: f.apparentBeta,
       apparentKnots: f.apparentKnots,
       rudder: f.rudder,
-      t: this.waveClock,
+      t: this.riggingClock,
     });
 
     // --- Spray at the bow ---------------------------------------------------

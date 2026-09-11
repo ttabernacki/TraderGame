@@ -305,7 +305,7 @@ export class ShipMesh {
 
         const belly = depth * b.weight[k];
         const flap = shake * b.scale * 0.07 * b.luff[k]
-          * Math.sin(v.t * 10 + k * 0.7 + bx * 0.3 + bz * 0.3);
+          * Math.sin(v.t * 6.5 + k * 0.7 + bx * 0.3 + bz * 0.3);
         const offset = belly + flap;
 
         if (b.axis === 0) pos.setXYZ(k, bx + offset, by, bz);
@@ -353,7 +353,10 @@ export class ShipMesh {
       // Nothing at the luff, everything at the fly: a pennant is held at one end
       // and the whip travels down it.
       const u = clamp(bx / 6.4, 0, 1);
-      const whip = Math.sin(v.t * (5 + gust * 7) - u * 5.5) * u * u * gust;
+      // About a cycle a second in a light air and two and a half in a fresh
+      // breeze, which is what a pennant does. `v.t` runs on real seconds, so
+      // the clock rate never touches it.
+      const whip = Math.sin(v.t * (3.6 + gust * 4.2) - u * 5.5) * u * u * gust;
       // In a light air it hangs; in a breeze it stands out straight.
       const droop = (1 - gust) * u * u * 1.5;
       fpos.setXYZ(k, bx, by + whip * 0.45 - droop, whip * 1.1);
@@ -368,7 +371,7 @@ export class ShipMesh {
         const bx = t.base[k * 3];
         const by = t.base[k * 3 + 1];
         const u = clamp(bx / t.length, 0, 1);
-        const whip = Math.sin(v.t * (7 + gust * 9) - u * 6 + t.phase) * u * gust;
+        const whip = Math.sin(v.t * (4.8 + gust * 5.4) - u * 6 + t.phase) * u * gust;
         fpos.needsUpdate = true;
         tp.setXYZ(k, bx, by + whip * 0.22 - (1 - gust) * u * u * 0.5, whip * 0.5);
       }
