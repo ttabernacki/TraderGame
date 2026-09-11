@@ -111,6 +111,17 @@ function describeShore(wood: number, relief: number, peopled: boolean): string {
   return `${land}, ${green}${signs}`;
 }
 
+/** What the people on the beach point to when they are asked. */
+export interface Hearsay {
+  portId: string;
+  name: string;
+  /** True bearing they point along. */
+  bearing: number;
+  distNm: number;
+  /** Whether the pilot already had the place on his chart. */
+  known: boolean;
+}
+
 export interface LandingResult {
   /** What to write in the log. */
   text: string;
@@ -122,6 +133,8 @@ export interface LandingResult {
   moraleDelta?: number;
   /** True when the party met somebody. */
   metPeople?: boolean;
+  /** The place they told the party about, if the meeting got that far. */
+  told?: Hearsay;
   hurt?: number;
   severity?: 'note' | 'warning' | 'grave';
 }
@@ -217,8 +230,33 @@ export function foragingParty(place: ShorePlace, rng: Rng): LandingResult {
  * factory with a governor and an interpreter, but a boat's crew and a dozen
  * people on a beach, neither of whom could say a word to the other.
  */
+/**
+ * How the direction they point in gets written down.
+ *
+ * Not a bearing: nobody on that beach has a compass and nobody in the boat has
+ * a common word with them. What comes back is an arm held out along the coast
+ * and a number of days held up on fingers, and that is what the pilot writes in
+ * his book — which is how half the places on a Portuguese chart of this coast
+ * first got onto it.
+ */
+function pointing(told: Hearsay): string {
+  const points = [
+    'north', 'north and east', 'east', 'south and east',
+    'south', 'south and west', 'west', 'north and west',
+  ];
+  const way = points[Math.round(((told.bearing % 360) + 360) % 360 / 45) % 8];
+  const days = clamp(Math.round(told.distNm / 45), 1, 8);
+  return `They walked the boat's crew to the top of the beach and one of them pointed away `
+    + `to the ${way} along the shore, and held up ${days === 1 ? 'one finger' : `${days} fingers`}, `
+    + `and said a word twice that the scrivener has written down as ${told.name}. `
+    + (told.known
+      ? 'We had it already, and not far from where they put it, which is the first time '
+        + 'anything on this chart has been confirmed by somebody who lives here.'
+      : 'It is on the chart now, where they say it is, which is not the same as where it is.');
+}
+
 export function meetingParty(
-  place: ShorePlace, rng: Rng, peopleName: string | null,
+  place: ShorePlace, rng: Rng, peopleName: string | null, told: Hearsay | null = null,
 ): LandingResult {
   if (!place.peopleId || !peopleName) {
     return {
@@ -254,9 +292,11 @@ export function meetingParty(
     text: `The ${peopleName} came down to the boat, and after a long while of everybody `
       + `standing still, one of them walked into the water and put his hand on the gunwale. `
       + `Nothing was traded and nothing was agreed, and both sides went away knowing the `
-      + `other exists, which is more than either knew this morning.`,
+      + `other exists, which is more than either knew this morning.`
+      + (told ? ` ${pointing(told)}` : ''),
     days: 0.6,
     metPeople: true,
+    told: told ?? undefined,
     moraleDelta: 0.07,
   };
 }

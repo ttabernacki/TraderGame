@@ -243,19 +243,12 @@ export class Ui {
         g.pushAlert(g.raisePadrao(), 'note');
         return true;
       }
-      case 'r':
-        if (g.sounding.aground) {
-          g.pushAlert(g.tryRefloat(), 'note');
-          return true;
-        }
-        return false;
       case 'b':
         // Astern. Wanted most when she is on the sand, so it is a key and not
         // something buried in a panel.
         g.pushAlert(g.backHer(), 'note');
         return true;
       case ' ': {
-        if (g.sounding.aground) { g.pushAlert(g.tryRefloat(), 'note'); return true; }
         if (g.anchored) g.pushAlert(g.weighAnchor(), 'note');
         else g.pushAlert(g.letGoAnchor(), 'note');
         if (g.dockedAt && g.anchored) this.setMode('port');
@@ -264,14 +257,6 @@ export class Ui {
       }
       case '[': g.clock.cycleScale(-1); return true;
       case ']': g.clock.cycleScale(1); return true;
-      case 'g': {
-        // How close the watch may take her in. Cycled from the deck because it
-        // is wanted exactly when there is land in sight and no time to go and
-        // find a menu.
-        const order = { offing: 'close', close: 'none', none: 'offing' } as const;
-        g.setStandOff(order[g.standOff]);
-        return true;
-      }
       case 'h': {
         // Three states, in the order a captain would want them: give her back to
         // the mark if you have wandered off it, otherwise hand the helm over or

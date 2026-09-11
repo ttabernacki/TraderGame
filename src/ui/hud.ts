@@ -326,17 +326,35 @@ export class Hud {
             class: 'v',
             style: { color: g.holdCourse ? '#7fa86a' : '#c8a44e' },
           }, g.holdCourse ? 'kept by the watch' : 'yours (H to hand over)')),
-        // Said on deck, because it is the reason she is not on the course laid
-        // off and the player has no other way of finding that out.
-        el('div', { class: 'hud-row' },
-          el('span', { class: 'k' }, 'Land'),
-          el('span', {
-            class: 'v',
-            style: { color: g.avoidingLand ? '#c8a44e' : g.standOff === 'none' ? '#d4553f' : '#8a9a7a' },
-          }, g.avoidingLand
-            ? 'weathering it — off your course'
-            : { offing: 'a good offing (G)', close: 'standing in (G)', none: 'you have her (G)' }[g.standOff])),
       );
+
+      // The masthead, standing. The land used to be announced in an alert that
+      // scrolled away in ten seconds and then nothing on the screen mentioned it
+      // again — so a coast could be four miles under the lee and the only way to
+      // know was to look at the sea. This is the lookout doing the one job he is
+      // up there for: how far the land is and which way it bears, all the time
+      // it is in sight, and the lead when she is in soundings.
+      const land = g.landReport();
+      if (land) {
+        append(this.course,
+          el('div', { class: 'hud-row' },
+            el('span', { class: 'k' }, land.close ? 'LAND' : 'Land'),
+            el('span', {
+              class: 'v',
+              style: {
+                color: land.close ? '#d4553f' : land.near ? '#c8a44e' : '#8a9a7a',
+                fontWeight: land.close ? '700' : '500',
+              },
+            },
+              `${land.distNm < 10 ? land.distNm.toFixed(1) : land.distNm.toFixed(0)} miles, `
+              + `${land.bearing.toFixed(0).padStart(3, '0')}° ${compassPoint(land.bearing)}`)),
+          land.sounding
+            ? el('div', { class: 'hud-row' },
+                el('span', { class: 'k' }, 'By the lead'),
+                el('span', { class: 'v', style: { color: '#c8a44e' } }, land.sounding))
+            : null,
+        );
+      }
 
       // The man at the masthead, once the coast is up: which way the town lies.
       // Steering for the charted position of a port is steering for a place the
@@ -388,10 +406,10 @@ export class Hud {
     const near = g.approachablePorts();
     if (g.sounding.aground) {
       this.hint.innerHTML =
-        '<b>Aground.</b> <b>B</b> walks her astern off it; <b>R</b> lays out the kedge '
-        + 'and waits for the flood.';
+        '<b>She is in against the land.</b> Press <b>B</b> to walk her astern, or steer off.';
     } else if (near.length > 0 && !g.dockedAt) {
-      this.hint.innerHTML = `<b>${near[0].def.name}</b> lies ${near[0].distNm.toFixed(1)} miles off. Press <b>Space</b> to come to an anchor.`;
+      this.hint.innerHTML = `<b>${near[0].def.name}</b> lies ${near[0].distNm.toFixed(1)} miles off. `
+        + 'Press <b>Space</b> to hand sail, anchor and go ashore.';
     } else if (g.backing) {
       this.hint.innerHTML = 'Walking her astern. Press <b>B</b> to belay.';
     } else if (g.dockedAt) {
@@ -400,7 +418,7 @@ export class Hud {
       this.hint.innerHTML =
         '<b>A</b>/<b>D</b> helm — alter course when the clock is up &nbsp; ' +
         '<b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
-        '<b>G</b> how close to the land &nbsp; <b>B</b> back her astern &nbsp; ' +
+        '<b>B</b> back her astern &nbsp; ' +
         '<b>O</b> orders &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
         '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>M</b> sound &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor &nbsp; ' +
         'drag to look about, wheel to close in';

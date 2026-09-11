@@ -30,7 +30,7 @@ import { Crown, portName } from '../progression/crown';
 import { newRelations, type Relations } from '../diplomacy/contact';
 import {
   foragingParty, meetingParty, shorePlaceAt, waterParty, woodParty,
-  type LandingResult, type ShorePlace,
+  type Hearsay, type LandingResult, type ShorePlace,
 } from './shore';
 import { Logbook, type LogKind } from './log';
 import { rollSeaEvent, type SeaEvent } from './seaEvents';
@@ -87,23 +87,8 @@ export interface Alert {
   t: number;
 }
 
-/**
- * How much water the watch keep between her and the land.
- *
- *   offing  a good offing, three and a half miles: a long passage in open water
- *   close   stand in, a mile and a quarter: coasting, surveying, making a port
- *   none    the captain has the helm and the watch say nothing
- */
-export type StandOff = 'offing' | 'close' | 'none';
-
 /** What a boat's crew can be sent in to do. */
 export type ShoreAction = 'water' | 'wood' | 'food' | 'meet';
-
-export const STAND_OFF_NM: Record<StandOff, number> = {
-  offing: 3.5,
-  close: 1.2,
-  none: 0,
-};
 
 export class Game {
   clock: Clock;
@@ -345,30 +330,11 @@ export class Game {
   private lastLandSeenT = -1e9;
   /** True while she is in soundings, so the cry is given once and not hourly. */
   private landInSight = false;
-  /** The last course the watch settled on after looking at the water. */
-  private avoidCourse = 0;
-  private avoidWant = 0;
-  private avoidCheckedT = -1e9;
-  /** Where she was when the coast was last probed, so the cache is not timed. */
-  private avoidCheckedAt: LatLon | null = null;
-  /** True while the watch are steering off the course to keep her off a shore. */
-  avoidingLand = false;
-  /** Which way round she is weathering it: +1 starboard, -1 larboard. */
-  private avoidSide = 0;
-
-  /**
-   * How much water the watch are told to keep between her and the land.
-   *
-   * This is the captain's order, and it has to be, because there is no single
-   * right answer: a good offing is what keeps a ship off a lee shore on a long
-   * passage, and it is also exactly what stops you surveying a coast, closing
-   * a port, or looking at an island. With only the safe setting available the
-   * watch fought the player the whole way in to every anchorage he tried to
-   * make, hauling her sixty degrees off and announcing it, which is the
-   * "randomly goes way off my heading near land" everybody runs into.
-   */
-  standOff: StandOff = 'offing';
   private lastPortCheck = -1e9;
+  /** When she last came up against the land, so it is said once and not hourly. */
+  private lastTouchT = -1e9;
+  /** Set by the integrator when a step was refused because it ended on land. */
+  private touchedThisStep = false;
   /**
    * Backing her off, which no caravel could do and which is here anyway.
    *
@@ -500,6 +466,33 @@ export class Game {
   /** Ports close enough to enter. */
   approachablePorts(): { def: PortDef; distNm: number }[] {
     return portsNear(this.ship.state.pos, 8).map((p) => ({ def: p.def, distNm: p.distNm }));
+  }
+
+  /**
+   * What the masthead has to say about the land, all the time it is in sight.
+   *
+   * The lookout used to speak once, in an alert, and then the screen forgot
+   * about the land entirely: a coast could be three miles under her lee and
+   * nothing on the deck mentioned it. Now the distance and the bearing stand on
+   * the HUD the whole time the land is up, with the lead alongside it once she
+   * is in soundings — which is the one thing a man was sent to the masthead for
+   * and the only reason a ship ever knew it was standing into danger.
+   */
+  landReport(): {
+    distNm: number; bearing: number; near: boolean; close: boolean; sounding: string | null;
+  } | null {
+    const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
+    const d = this.sounding.shoreDistNm;
+    if (d > range) return null;
+    return {
+      distNm: d,
+      bearing: this.sounding.shoreBearing,
+      near: d < 6,
+      close: d < 1.5 || this.sounding.aground,
+      sounding: this.sounding.depth < 90
+        ? `${(this.sounding.depth / 1.8288).toFixed(0)} fathoms`
+        : null,
+    };
   }
 
   /**
@@ -742,7 +735,17 @@ export class Game {
       }
       if (this.autoTrim) this.applyAutoTrim(dt);
       if (this.rules.autoCanvas) this.applyAutoCanvas(dt);
+      const was = { ...this.ship.state.pos };
       this.physics = this.runPhysics(dt);
+      // The water stops here. She is not allowed onto the land at all: the step
+      // that would take her there is simply not taken, her way comes off, and
+      // she lies against the beach until somebody backs or steers her off.
+      if (!isLand(was) && isLand(this.ship.state.pos)) {
+        this.ship.state.pos = was;
+        this.ship.state.surge = 0;
+        this.ship.state.sway = 0;
+        this.touchedThisStep = true;
+      }
       remaining -= dt;
     }
   }
@@ -765,7 +768,7 @@ export class Game {
   private advancePassage(dt: number): void {
     const s = this.ship.state;
     const wanted = this.holdCourse ? this.courseToSteer() : null;
-    const want = wanted === null ? null : this.clearCourse(wanted);
+    const want = wanted;
 
     if (want !== null) {
       // She comes round at a rate a ship actually turns, not instantly, so a
@@ -791,13 +794,13 @@ export class Game {
         s.yawRate = 0;
       }
       // A chunk at the fastest rates is minutes of sailing, which is a mile or
-      // more in one step, and a mile is enough to put her a long way inside a
-      // coast she never touched. Stop her at the water's edge instead: she is
-      // still aground, and she is aground where the land is.
+      // more in one step. Same rule as the fine integration: the step that
+      // would put her on the land is not taken.
       if (!isLand(was) && isLand(s.pos)) {
         s.pos = was;
         s.surge = 0;
         s.sway = 0;
+        this.touchedThisStep = true;
         break;
       }
     }
@@ -835,195 +838,10 @@ export class Game {
     return wanted;
   }
 
-  /**
-   * Whether the water along a given course is clear for the next few hours.
-   *
-   * Probed rather than computed: a handful of points along the bearing, each
-   * asked how deep it is. Anything shoaler than a few times her draft counts as
-   * land, because a caravel drawing two metres does not want to find out
-   * whether four is enough in a swell.
-   */
-  private waterClearOn(bearing: number, aheadNm: number): boolean {
-    const from = this.ship.state.pos;
-    // Twenty metres under her and three and a half miles of offing.
-    //
-    // Clearing her draft is not the test. A ship embayed on a lee shore in
-    // twelve metres with the wind onto it is already lost, and the whole
-    // practice of the period was to keep an offing — enough water to claw off
-    // in if it came on to blow. Testing depth alone had her threading the
-    // Moroccan shallows a mile and a half off the beach in eight metres, which
-    // is survivable until the first gale and then is not.
-    // How much water the captain has told them to keep. On the close setting
-    // the depth test comes down with it, or she is refused her offing by the
-    // soundings instead of by the distance and nothing has changed.
-    const offingNm = STAND_OFF_NM[this.standOff];
-    const safe = this.ship.baseHull.draft * (this.standOff === 'close' ? 3.5 : 10);
-
-    // A mark inside the look-ahead is a place she is *trying* to get to, so the
-    // water around it is not an obstacle. Without this the watch fight the
-    // captain the whole way in to every anchorage he tries to make.
-    const dest = this.destination;
-    const markNm = dest
-      ? haversine(from, { lat: dest.lat, lon: dest.lon }) / NM
-      : Infinity;
-
-    const probes = 7;
-    for (let i = 1; i <= probes; i++) {
-      const d = (aheadNm * i) / probes;
-      // Stop probing short of the mark: past it is somebody else's problem.
-      if (d > markNm) break;
-      const at = rhumbStep(from, bearing, d * NM);
-      // A tight search radius: the question is only whether *this* spot is
-      // clear, and nothing far away can make it foul. Asking depthAt directly
-      // searches ninety miles for the nearest coast, which is an enormous query
-      // to run seven times a probe on a course checked all voyage.
-      const shore = nearestShore(at, 16);
-      if (shore.land < 0) continue;
-      if (shore.signed <= 0) return false;
-      if (shore.distance / NM < offingNm) return false;
-      if (depthAt(at, shore) < safe) return false;
-    }
-    return true;
-  }
-
-  /**
-   * The course the watch will actually steer, having looked at the water.
-   *
-   * The single most important thing this function does is refuse to sail her
-   * ashore. Before it existed the course-keeper steered the bearing of the mark
-   * and nothing else, and since the rhumb from Lisbon to Mina runs across
-   * Portugal, five runs out of five ended aground within a day of weighing and
-   * the ship broke up inside a week. A quartermaster does not do that. He sees
-   * the land, he says so, and he keeps her off it until the captain tells him
-   * otherwise.
-   *
-   * He alters as little as he can: the sweep runs outward from the course he
-   * wants, and he takes the first heading that is both clear and sailable, so
-   * she is never further off her course than the coast obliges her to be.
-   */
-  private clearCourse(want: number): number {
-    // "I have the helm." The watch keep the course they are given and say
-    // nothing about the land, which is the captain's business then.
-    if (this.standOff === 'none') {
-      this.avoidingLand = false;
-      this.avoidSide = 0;
-      return want;
-    }
-    const speed = Math.max(Math.abs(this.physics?.speedKnots ?? 0), 2);
-    // Three hours of looking ahead, which is about as far as a lookout at the
-    // masthead can see anyway.
-    const ahead = clamp(speed * 3, 6, 26);
-
-    // Cached: probing the coast is a spatial query and the steering loop runs
-    // up to forty-eight times a frame. The water does not change in two minutes.
-    // Re-probe when she has moved, not when a hundred and twenty *simulated*
-    // seconds have passed.
-    //
-    // At the fastest clock rates a hundred and twenty simulated seconds go by
-    // in under a frame, so the cache never held, the coast was probed every
-    // frame, and the side-commitment hysteresis below flipped back and forth
-    // with it — which is the course order changing by ninety degrees several
-    // times a second and the ship appearing to jump about at random. Distance
-    // run is the honest measure and it does not care how fast the clock is.
-    const movedNm = this.avoidCheckedAt
-      ? haversine(this.ship.state.pos, this.avoidCheckedAt) / NM
-      : Infinity;
-    const fresh = movedNm < 0.75
-      && this.clock.t - this.avoidCheckedT < 900
-      && Math.abs(angleDelta(this.avoidWant, want)) < 4;
-    if (fresh) return this.avoidCourse;
-
-    this.avoidCheckedT = this.clock.t;
-    this.avoidCheckedAt = { ...this.ship.state.pos };
-    this.avoidWant = want;
-
-    // Most of a voyage is a long way from anything. If the nearest land is
-    // further off than she can possibly reach in the look-ahead, there is
-    // nothing to check and no reason to pay for checking it.
-    if (this.sounding.shoreDistNm > ahead + 12) {
-      if (this.avoidingLand) {
-        this.avoidingLand = false;
-        this.avoidSide = 0;
-        this.pushAlert('Clear water ahead. The watch have her back on her course.', 'note');
-      }
-      this.avoidCourse = want;
-      return want;
-    }
-
-    // Coming back onto the course wants a wider look than going off it did, so
-    // she rounds a headland properly instead of cutting the corner the moment
-    // the point is abeam.
-    if (this.waterClearOn(want, this.avoidingLand ? ahead * 1.6 : ahead)) {
-      if (this.avoidingLand) {
-        this.avoidingLand = false;
-        this.avoidSide = 0;
-        this.pushAlert('Clear water ahead. The watch have her back on her course.', 'note');
-      }
-      this.avoidCourse = want;
-      return want;
-    }
-
-    // Something is in the way. Take the smallest alteration that clears it, and
-    // do not steer into the wind's eye to do it.
-    //
-    // Once she has begun to weather something she keeps going the same way
-    // round it. Re-choosing the smallest deviation from scratch on every check
-    // is what walks a ship into a bay: each look says the shortest way to the
-    // mark is a little to port, then a little to starboard, and she creeps into
-    // the corner and grounds. Measured, that is exactly what happened at the
-    // Cap-Vert peninsula — she got sixteen hundred miles down the coast and
-    // then trapped herself on the one headland that sticks out. Committing to a
-    // side and holding it until the mark can be laid is coast-following, which
-    // is what a pilot does and why the Portuguese got round Africa at all.
-    const windEye = this.weatherNow.wind.from;
-    const noGo = this.noGoAngle;
-    // Which way to go round it: away from where the land actually bears, which
-    // is what a seaman does and what picking the smaller sweep does not. On a
-    // coast running down her port side, the smaller sweep is repeatedly to
-    // port, and that is how she ends up in the bay.
-    const towardLand = angleDelta(want, this.sounding.shoreBearing);
-    const away = towardLand > 0 ? -1 : 1;
-    const sides: number[] = this.avoidingLand && this.avoidSide !== 0
-      ? [this.avoidSide, -this.avoidSide]
-      : [away, -away];
-
-    for (const side of sides) {
-      for (let off = 12; off <= 120; off += 12) {
-        const trial = wrap360(want + side * off);
-        if (Math.abs(angleDelta(windEye, trial)) < noGo) continue;
-        if (!this.waterClearOn(trial, ahead)) continue;
-        if (!this.avoidingLand) {
-          this.avoidingLand = true;
-          this.avoidSide = side;
-          this.pushAlert(
-            `Land ahead. The watch have hauled her ${off}° to ${side > 0 ? 'starboard' : 'larboard'} to weather it.`,
-            'warning');
-          this.logEvent('navigation',
-            `Land raised fine on the ${side > 0 ? 'starboard' : 'larboard'} bow, standing right `
-            + 'across the course laid off. Hauled her up to weather it. The chart says one thing '
-            + 'and the coast says another, and the coast is always right.');
-        }
-        this.avoidCourse = trial;
-        return trial;
-      }
-    }
-
-    // Embayed: nothing within ninety-six degrees of the course is clear water.
-    // Get her head off the land and tell the captain, because this is his
-    // problem now and not the quartermaster's.
-    const off = wrap360(this.sounding.shoreBearing + 180);
-    if (!this.avoidingLand) {
-      this.avoidingLand = true;
-      this.pushAlert('Land all round the bow. She is standing off — come and look at the chart.', 'grave');
-    }
-    this.avoidCourse = off;
-    return off;
-  }
-
   private steerToCourse(dt: number): void {
     const wanted = this.courseToSteer();
     if (wanted === null) return;
-    const want = this.clearCourse(wanted);
+    const want = wanted;
 
     const windEye = this.weatherNow.wind.from;
     const noGo = this.noGoAngle;
@@ -1575,10 +1393,11 @@ export class Game {
   private checkWorldEvents(): void {
     const pos = this.ship.state.pos;
 
-    if (this.sounding.aground && !this.anchored && !this.backing) {
-      this.runAground();
-      return;
-    }
+    // She cannot be on the land -- the integrator will not put her there -- so
+    // what is reported is the step that was refused, and the `aground` flag is
+    // only a backstop for a position set from outside the simulation.
+    if ((this.touchedThisStep || this.sounding.aground) && !this.backing) this.touchLand();
+    this.touchedThisStep = false;
 
     // The lookout, who is the warning that matters.
     //
@@ -1901,27 +1720,6 @@ export class Game {
   }
 
   /**
-   * Change how much water the watch keep under her lee, and say so.
-   *
-   * Re-probing at once matters: the order is usually given because she is
-   * being hauled off something the captain wants to look at, and waiting for
-   * the cache to lapse before obeying it reads as the order being ignored.
-   */
-  setStandOff(to: StandOff): void {
-    if (to === this.standOff) return;
-    this.standOff = to;
-    this.avoidCheckedAt = null;
-    this.avoidCheckedT = -1e9;
-    this.avoidingLand = false;
-    this.avoidSide = 0;
-    this.pushAlert({
-      offing: 'Keep a good offing.',
-      close: 'Stand in, and keep the lead going.',
-      none: 'I have the helm. Nothing from the quartermaster about the land.',
-    }[to], to === 'none' ? 'warning' : 'note');
-  }
-
-  /**
    * What the boat can be sent in for, where she now lies.
    *
    * Water, wood, something green, and who lives here. Those are the four things
@@ -1998,7 +1796,7 @@ export class Game {
       case 'water': r = waterParty(place, this.rng, hands); break;
       case 'wood': r = woodParty(place, this.rng); break;
       case 'food': r = foragingParty(place, this.rng); break;
-      default: r = meetingParty(place, this.rng, folk ? folk.name : null); break;
+      default: r = meetingParty(place, this.rng, folk ? folk.name : null, this.whatTheyKnow()); break;
     }
 
     // The boat is away, and the ship waits.
@@ -2013,6 +1811,34 @@ export class Game {
     if (r.woodDays) p.biscuit = Math.min(p.biscuit + r.woodDays * 0.25, 160);
     if (r.moraleDelta) this.crew.morale = clamp(this.crew.morale + r.moraleDelta, 0, 1);
     if (r.hurt) this.crew.sickness = clamp(this.crew.sickness + r.hurt * 0.02, 0, 1);
+    // What they pointed at goes on the chart, at the place their arm and their
+    // fingers put it — which is a rough place, and is how most of this coast
+    // first got drawn.
+    if (r.told) {
+      const def = portDef(r.told.portId);
+      const err = (this.rng.next() - 0.5) * 2;
+      const at = rhumbStep(
+        this.nav.estimated, wrap360(r.told.bearing + err * 14),
+        r.told.distNm * (1 + err * 0.22) * NM);
+      // An arm and some fingers is worth about fifty miles, which is poor and
+      // is not nothing: the chart weighs it against everything else it has.
+      const w = 1 / (50 * 50);
+      const existing = this.chart.ports.get(def.id);
+      if (!existing) {
+        this.chart.ports.set(def.id, {
+          id: def.id, lat: at.lat, lon: at.lon, visited: false, traded: false,
+          t: this.clock.t, wLat: w, wLon: w, passes: 0,
+        });
+      } else {
+        existing.lat = (existing.lat * existing.wLat + at.lat * w) / (existing.wLat + w);
+        existing.lon = existing.lon
+          + (wrap180(at.lon - existing.lon) * w) / (existing.wLon + w);
+        existing.wLat += w;
+        existing.wLon += w;
+        existing.t = this.clock.t;
+      }
+      this.pushAlert(`${def.name} — they say it lies ${formatBearing(r.told.bearing)} of here.`, 'note');
+    }
     if (r.metPeople && place.peopleId) {
       // Meeting people on a beach is worth recording, once per people.
       const name = folk ? folk.name : 'a people with no name we know';
@@ -2025,6 +1851,45 @@ export class Game {
     this.logEvent(action === 'meet' ? 'contact' : 'note', r.text, action === 'meet');
     if (r.severity && r.severity !== 'note') this.pushAlert(r.text.slice(0, 90), r.severity);
     return r.text;
+  }
+
+  /**
+   * What the people on this beach can tell a boat's crew about the coast.
+   *
+   * The nearest town they would know of that is not already on our chart —
+   * because a landing party that is told about a place the pilot drew last
+   * month has been told nothing. Four hundred miles is as far as any of this
+   * ever carried: beyond that the people on one beach have not heard of the
+   * people on the next.
+   *
+   * This is the piece that makes a landing on an empty coast worth the day it
+   * costs. Finding a town you have never heard of by asking somebody who lives
+   * two days' walk from it is exactly how the Guinea coast was charted, and it
+   * gives the player a way to work down a strange shore that is not sailing
+   * blind and hoping.
+   */
+  private whatTheyKnow(): Hearsay | null {
+    const from = this.ship.state.pos;
+    // As far as word travels along a beach. Three hundred and fifty miles is
+    // already generous — it is a week's walk — and beyond it the people on one
+    // shore have genuinely not heard of the people on the next.
+    const reach = portsNear(from, 350).filter((x) => !this.visitedPorts.has(x.def.id));
+    // A place we have never drawn is worth far more than a second opinion about
+    // one we have, so it is offered first — but a second opinion is worth
+    // having too, because the chart averages it in with everything else and
+    // somebody who lives on this coast is a better authority on it than a
+    // pilot who has run past it once.
+    const target = reach.find((x) => !this.chart.ports.has(x.def.id)) ?? reach[0];
+    if (!target) return null;
+    const dLat = target.at.lat - from.lat;
+    const dLon = angleDelta(from.lon, target.at.lon) * cosd(from.lat);
+    return {
+      portId: target.def.id,
+      name: target.def.name,
+      bearing: wrap360((Math.atan2(dLon, dLat) * 180) / Math.PI),
+      distNm: target.distNm,
+      known: this.chart.ports.has(target.def.id),
+    };
   }
 
   /** Take a merchant's charter, on your own account and at your own risk. */
@@ -2284,34 +2149,35 @@ export class Game {
   }
 
   /**
-   * She has run up on the beach.
+   * She has come up against the land.
    *
-   * Survivable. A caravel drawing two metres that walks onto sand at four knots
-   * is in trouble and not in a wreck, and the thing that actually happened next
-   * was that they got her off: kedge out, start the water over the side, back
-   * the sails and wait for the flood. Losing a campaign outright to a grounding
-   * the player was never shown coming is not difficulty, it is a bad joke, so
-   * the hull can no longer be taken below a tenth here however hard she hits.
-   * What it costs is time, damage, and the crew's opinion of the captain.
+   * Not a grounding: there is no such thing in this game any more. She stops
+   * where the water stops, the way she would stop against a quay, and nothing
+   * else happens to her — no damage, no anchor down, no waiting on a tide, and
+   * above all no state she cannot get out of. She can be backed off with B or
+   * simply steered off; the hull is untouched and the campaign is untouched.
+   *
+   * The reason is not realism, it is that being permanently stuck is the one
+   * outcome a player cannot do anything with. Everything else in this game can
+   * be recovered from by sailing better. That could not, so it is gone.
    */
-  private runAground(): void {
-    const speed = Math.abs(this.physics.speedKnots);
-    const severity = clamp(speed / 9, 0.04, 1);
-    const floor = 0.1;
-    const room = Math.max(this.ship.condition.hull - floor, 0);
-    this.ship.damage(Math.min(severity * 0.3, room));
+  private touchLand(): void {
     this.ship.state.surge = 0;
     this.ship.state.sway = 0;
-    this.anchored = true;
-
-    this.crew.morale = clamp(this.crew.morale - 0.12, 0, 1);
-    this.pushAlert('Aground! Back her off with B, or warp her off with R.', 'grave');
-    this.logEvent('peril',
-      speed > 4
-        ? 'She took the ground at speed. Everything not lashed went forward, and there is water over the ceiling in the after hold. We are on, and hard on.'
-        : 'She touched and stuck. No great violence to it, but she is aground and the tide is what it is.',
-      true,
-    );
+    if (this.clock.t - this.lastTouchT < 3 * 3600) return;
+    this.lastTouchT = this.clock.t;
+    // The watch hand the sail and hold her head where it is, and wait to be
+    // told. Nobody keeps driving a ship at a beach, and a course laid off
+    // across a continent would otherwise grind her against it for a fortnight
+    // while the player is looking at something else.
+    this.setCanvas(0);
+    this.steadyAsSheGoes();
+    this.pushAlert(
+      'She is in against the land. The watch have handed the sail. '
+      + 'Back her off with B, or steer off and press H.', 'warning');
+    this.logEvent('note',
+      'Ran her in until she would go no further and touched, gently, with no harm in it. '
+      + 'Handed the sail and lay against the shore waiting for orders.');
   }
 
   /**
@@ -2377,30 +2243,6 @@ export class Game {
         this.pushAlert('She is off and afloat. Make sail when you are ready.', 'note');
       }
     }
-  }
-
-  /** Attempt to warp off a grounding. */
-  tryRefloat(): string {
-    const pos = this.ship.state.pos;
-    const depth = depthAt(pos) + tideHeight(pos, this.clock.t);
-    const eff = this.effectiveSkill;
-    const chance = clamp(
-      0.18 + skill(eff, 'marinharia') * 0.45 + (depth - this.ship.baseHull.draft) * 0.4,
-      0.05, 0.95,
-    );
-    this.clock.t += 3 * 3600;
-    if (this.rng.chance(chance)) {
-      this.anchored = false;
-      this.sounding.aground = false;
-      // Kedge her off toward deeper water.
-      const away = wrap360(this.sounding.shoreBearing + 180);
-      this.ship.state.heading = away;
-      this.logEvent('note', 'Laid out the kedge, started the water casks, and hove her off on the flood.');
-      train(this.skills, 'marinharia', 1.8);
-      return 'She floats. Get her into deep water before the tide turns.';
-    }
-    this.crew.fatigue = clamp(this.crew.fatigue + 0.2, 0, 1);
-    return 'She will not budge. Wait for more water, or lighten her.';
   }
 
   // -------------------------------------------------------------------------
@@ -2484,7 +2326,6 @@ export class Game {
   }
 
   weighAnchor(): string {
-    if (this.sounding.aground) return 'She is aground, not anchored.';
     this.anchored = false;
     this.dockedAt = null;
     // Start the day's run from the moment she drops down the river, so the
@@ -2514,11 +2355,24 @@ export class Game {
     return 'Anchor aweigh.';
   }
 
+  /**
+   * One press. Hand the sail, let the anchor go, and open whatever is there.
+   *
+   * It used to refuse if she still had way on — "take in sail first" — which is
+   * correct and is also three separate actions to arrive somewhere, with the
+   * ship sailing past the anchorage while the player works out which one he has
+   * not done. The watch can hand sail and let go in the same breath; they did
+   * not need to be told twice.
+   */
   letGoAnchor(): string {
-    if (this.sounding.depth > 55) return 'No bottom here. You cannot anchor in this depth.';
-    if (Math.abs(this.physics.speedKnots) > 3) return 'Too much way on. Take in sail first.';
-    this.anchored = true;
+    if (this.sounding.depth > 90) return 'No bottom here. You cannot anchor in this depth.';
+    // Handing the sail is part of anchoring, not a thing to be done before it.
     this.setCanvas(0);
+    this.ship.setAllCanvas(0);
+    this.ship.state.surge *= 0.2;
+    this.ship.state.sway = 0;
+    this.backing = false;
+    this.anchored = true;
     const near = this.approachablePorts();
     if (near.length > 0) {
       this.enterPort(near[0].def);
@@ -2531,7 +2385,7 @@ export class Game {
     this.lastLandSeenT = this.clock.t;
     this.landInSight = true;
     this.shoreReport = null;
-    if (this.sounding.shoreDistNm < 12) {
+    if (this.sounding.shoreDistNm < 16) {
       this.shoreHere = shorePlaceAt(this.ship.state.pos);
       this.logEvent('landfall',
         `Came to an anchor in ${this.sounding.depth.toFixed(0)} fathoms, `
@@ -3136,7 +2990,6 @@ export class Game {
       pumpEffort: this.pumpEffort,
       autoTrim: this.autoTrim,
       difficulty: this.difficulty,
-      standOff: this.standOff,
       voltaAdvised: this.voltaAdvised,
       orderedCanvas: this.orderedCanvas,
       holdCourse: this.holdCourse,
@@ -3202,7 +3055,6 @@ export class Game {
     // handed a returning player the hard mode and no explanation for why the
     // watch had stopped working the ship.
     g.difficulty = d.difficulty ?? 'watch';
-    g.standOff = d.standOff ?? 'offing';
     (g as any).voltaAdvised = d.voltaAdvised ?? false;
     g.orderedCanvas = d.orderedCanvas ?? g.ship.canvasSet;
     g.holdCourse = d.holdCourse ?? false;
