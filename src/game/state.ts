@@ -2571,7 +2571,11 @@ export class Game {
     g.ration = d.ration ?? 1;
     g.pumpEffort = d.pumpEffort ?? 0.15;
     g.autoTrim = d.autoTrim ?? true;
-    g.difficulty = d.difficulty ?? 'captain';
+    // A save written before the setting existed loads as the relaxed one,
+    // which is what a new game gives you. Defaulting the other way silently
+    // handed a returning player the hard mode and no explanation for why the
+    // watch had stopped working the ship.
+    g.difficulty = d.difficulty ?? 'watch';
     g.orderedCanvas = d.orderedCanvas ?? g.ship.canvasSet;
     g.holdCourse = d.holdCourse ?? false;
     g.helmOrder = d.helmOrder ?? null;
