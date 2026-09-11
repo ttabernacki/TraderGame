@@ -1,7 +1,7 @@
 import { Clock } from '../core/clock';
 import {
   NM, angleDelta, clamp, cosd, formatBearing, formatLat, formatLon, haversine,
-  lerp, rhumbStep, wrap360,
+  lerp, rhumbStep, wrap180, wrap360,
 } from '../core/math';
 import { Rng } from '../core/rng';
 import { Weather, type WeatherSample } from '../world/weather';
@@ -467,7 +467,13 @@ export class Game {
     const p = this.physics;
     if (p) {
       const kb = 1 - Math.exp(-1.6 * dt);
-      this.displayBeta += (p.beta - this.displayBeta) * kb;
+      // Filtered as an angle, not as a number. Beta lives in [-180, 180], so
+      // when the apparent wind crosses the stern it steps by a full turn — and
+      // a plain filter then sweeps the drawn value the long way round, which on
+      // screen is every sail in the ship swinging across and back for no reason.
+      this.displayBeta = wrap180(
+        this.displayBeta + angleDelta(this.displayBeta, p.beta) * kb,
+      );
       this.displayApparent += (p.apparentKnots - this.displayApparent) * kb;
     }
   }

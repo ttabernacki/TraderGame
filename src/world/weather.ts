@@ -167,7 +167,12 @@ export class Weather {
       const centre = { lat: s.lat, lon: s.lon };
       const dNm = haversine(p, centre) / NM;
       if (dNm < nearestDist) { nearestDist = dNm; nearest = s; }
-      if (dNm > s.radius * 1.6) continue;
+      // Far enough off to be no part of this weather at all. The cutoff is
+      // further out than it looks: the exponential tail below is still worth
+      // an eighth of the storm at 1.6 radii, and dropping that in one frame is
+      // a wind that changes by seventy-five degrees between two frames for no
+      // reason a player can see. See the taper below.
+      if (dNm > s.radius * 2.6) continue;
 
       // Intensity envelope: builds over the first fifth of life, fades over the last third.
       const lifeT = 1 - s.life / s.maxLife;
@@ -184,8 +189,12 @@ export class Weather {
         profile = Math.exp(-(dNm - rMax) / (s.radius * 0.6));
       }
 
-      const strength = envelope * profile;
-      if (strength < 0.02) continue;
+      // Taper the tail to nothing by the cutoff, so a storm sailing out of
+      // range leaves the wind where it found it instead of letting go of it.
+      const taper = 1 - smoothstep(s.radius * 1.4, s.radius * 2.6, dNm);
+      const strength = envelope * profile * taper;
+      // A thousandth of a storm is not weather; it is only arithmetic.
+      if (strength < 0.001) continue;
 
       // Cyclonic rotation with inflow toward the centre.
       const toCentre = bearingTo(p, centre);
@@ -194,9 +203,27 @@ export class Weather {
       const stormFrom = wrap360(toCentre + spin + inflow + 180);
       const stormSpeed = s.peak * strength;
 
-      const blend = clamp(stormSpeed / Math.max(stormSpeed + speed, 1e-3), 0, 1);
-      from = lerpAngle(from, stormFrom, blend);
-      speed = Math.hypot(speed * (1 - blend * 0.6), stormSpeed);
+      // Winds add as vectors. They are not interpolated between.
+      //
+      // This used to lerp the prevailing direction toward the storm's by a
+      // weight, which has a degeneracy nobody notices until it bites: when the
+      // two are a hundred and eighty degrees apart there is no shorter way
+      // round, and the interpolation picks a side on the sign of a number that
+      // is hovering at zero. Measured off Lisbon: the prevailing wind steady at
+      // 4°, a gale two hundred and fifty miles off blowing almost exactly the
+      // other way, and the resulting wind alternating between 286° and 83° —
+      // symmetric about the 4°, which is the fingerprint — on consecutive
+      // frames, for as long as the geometry held.
+      //
+      // Adding them as vectors has no such case, and is also simply what the
+      // air does: a storm's circulation is added to the flow it sits in, and
+      // two winds that oppose each other make a calm rather than snapping to
+      // something at right angles to both.
+      const rad = Math.PI / 180;
+      const sumE = Math.sin(from * rad) * speed + Math.sin(stormFrom * rad) * stormSpeed;
+      const sumN = Math.cos(from * rad) * speed + Math.cos(stormFrom * rad) * stormSpeed;
+      speed = Math.hypot(sumE, sumN);
+      if (speed > 1e-4) from = wrap360((Math.atan2(sumE, sumN) * 180) / Math.PI);
       cloud = Math.max(cloud, clamp(strength * 1.5, 0, 1));
       rain = Math.max(rain, clamp(strength * 1.4, 0, 1));
     }
@@ -226,6 +253,8 @@ export class Weather {
       cloud,
       rain,
       storm: nearest && nearestDist < (nearest.radius * 1.6) ? nearest : null,
+      // (the 1.6 here is only what counts as "there is a storm about" for the
+      // log and the HUD, not where its wind stops)
       stormDistanceNm: nearestDist,
       description: describe(speed, rain, visibility, base.doldrums),
     };

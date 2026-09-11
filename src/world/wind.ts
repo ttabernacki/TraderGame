@@ -1,4 +1,4 @@
-import { clamp, lerpAngle, lerp, smoothstep, wrap360, type LatLon } from '../core/math';
+import { clamp, lerp, smoothstep, wrap360, type LatLon } from '../core/math';
 import { fbm1 } from '../core/rng';
 
 export interface Wind {
@@ -49,6 +49,35 @@ export function itczLatitude(dayOfYear: number): number {
   return 4 + 6 * Math.sin((2 * Math.PI * (dayOfYear - 100)) / 365);
 }
 
+/**
+ * Mix two winds, as winds and not as compass bearings.
+ *
+ * Interpolating a bearing has a hole in it: when the two are a hundred and
+ * eighty degrees apart there is no shorter way round, so the result picks a
+ * side on the sign of a number sitting at zero and flips between two answers a
+ * hundred and sixty degrees apart on consecutive frames. That was measured
+ * happening to the wind off Lisbon, and it is what made the sea look like it
+ * was flickering.
+ *
+ * Interpolating the two vectors has no such case, and says the right thing
+ * everywhere: half way between two opposed winds is a calm, which is what the
+ * edge of a weather system actually feels like.
+ */
+function blendWind(
+  fromA: number, speedA: number, fromB: number, speedB: number, t: number,
+): { from: number; speed: number } {
+  const rad = Math.PI / 180;
+  const e = Math.sin(fromA * rad) * speedA * (1 - t) + Math.sin(fromB * rad) * speedB * t;
+  const n = Math.cos(fromA * rad) * speedA * (1 - t) + Math.cos(fromB * rad) * speedB * t;
+  const speed = Math.hypot(e, n);
+  return {
+    // Below a breath of air the direction is meaningless; keep the one we had
+    // rather than letting it spin.
+    from: speed > 1e-4 ? wrap360((Math.atan2(e, n) * 180) / Math.PI) : fromA,
+    speed,
+  };
+}
+
 function sampleBelts(y: number): { from: number; speed: number; steadiness: number } {
   if (y <= BELTS[0].y) return { ...BELTS[0] };
   const last = BELTS[BELTS.length - 1];
@@ -57,11 +86,8 @@ function sampleBelts(y: number): { from: number; speed: number; steadiness: numb
     const a = BELTS[i], b = BELTS[i + 1];
     if (y >= a.y && y <= b.y) {
       const t = smoothstep(a.y, b.y, y);
-      return {
-        from: lerpAngle(a.from, b.from, t),
-        speed: lerp(a.speed, b.speed, t),
-        steadiness: lerp(a.steadiness, b.steadiness, t),
-      };
+      const w = blendWind(a.from, a.speed, b.from, b.speed, t);
+      return { from: w.from, speed: w.speed, steadiness: lerp(a.steadiness, b.steadiness, t) };
     }
   }
   return { ...last };
@@ -149,23 +175,45 @@ export function prevailingWind(p: LatLon, dayOfYear: number, t: number): WindSam
       mSpeed = 5;
       mSteady = 0.15;
     }
-    from = lerpAngle(from, mFrom, mm);
-    speed = lerp(speed, mSpeed, mm);
+    const w = blendWind(from, speed, mFrom, mSpeed, mm);
+    from = w.from;
+    speed = w.speed;
     steadiness = lerp(steadiness, mSteady, mm);
   }
 
   const coast = coastalBias(p);
   if (coast) {
-    from = lerpAngle(from, coast.from, coast.weight);
+    const w = blendWind(from, speed, coast.from, coast.speed, coast.weight);
+    from = w.from;
     speed = lerp(speed, coast.speed, coast.weight * 0.8);
   }
 
   // Slow wander. Unsteady regimes swing much further and much faster.
+  //
+  // The rate of the wander must not depend on where the ship is.
+  //
+  // It used to: the noise was sampled at `hours * wanderRate`, and wanderRate
+  // was derived from the belt's steadiness, which varies with latitude. `hours`
+  // is around four hundred and sixty thousand by 1482, so multiplying it by a
+  // number that changes with position turns any infinitesimal movement into an
+  // enormous jump in the *phase* of the noise. Measured: moving the ship two
+  // metres north swung the wind three degrees, and a degree of latitude swung
+  // it by the equivalent of a hundred and sixty thousand degrees — which is to
+  // say the wind was re-rolled from scratch every time she moved at all. That
+  // is what made the sea look like it was flickering: not the weather changing
+  // quickly, but the weather being a different weather every frame.
+  //
+  // Two noises at fixed rates, blended by steadiness, gives the same behaviour
+  // — steady air wanders slowly, unsteady air quickly — with a phase that
+  // depends only on the clock and on a gentle spatial offset.
   const hours = t / 3600;
-  const wanderRate = lerp(0.06, 0.012, steadiness);
   const spatial = p.lat * 0.31 + p.lon * 0.17;
-  const dirNoise = fbm1(hours * wanderRate + spatial, 3, 11);
-  const spdNoise = fbm1(hours * wanderRate * 1.4 + spatial + 50, 3, 27);
+  const fastDir = fbm1(hours * 0.06 + spatial, 3, 11);
+  const slowDir = fbm1(hours * 0.012 + spatial, 3, 11);
+  const dirNoise = lerp(fastDir, slowDir, steadiness);
+  const fastSpd = fbm1(hours * 0.084 + spatial + 50, 3, 27);
+  const slowSpd = fbm1(hours * 0.0168 + spatial + 50, 3, 27);
+  const spdNoise = lerp(fastSpd, slowSpd, steadiness);
 
   from = wrap360(from + dirNoise * lerp(85, 14, steadiness));
   speed = Math.max(0, speed * (1 + spdNoise * lerp(0.7, 0.25, steadiness)));
