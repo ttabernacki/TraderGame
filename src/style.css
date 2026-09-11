@@ -69,7 +69,16 @@ html, body {
   height: 100vh;
   height: 100dvh;
 }
-#scene { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+/* A drag on the scene turns the view; it must never also scroll or zoom the
+   page underneath it. */
+#scene {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
 #ui { position: absolute; inset: 0; pointer-events: none; }
 #ui > * { pointer-events: auto; }
 
@@ -679,7 +688,9 @@ table.ledger tr:hover td { background: rgba(255, 252, 240, 0.5); }
 .sight-stage {
   position: relative;
   width: 100%;
-  height: 340px;
+  /* Fixed at 340 it filled a phone held sideways and pushed the index slider —
+     the one control on the screen — below the fold. */
+  height: clamp(180px, 42vh, 340px);
   background: linear-gradient(#1d3550 0%, #395f80 55%, #4b7391 72%, #16283a 72.4%, #0d1a26 100%);
   border: 1px solid rgba(90, 74, 55, 0.4);
   border-radius: 3px;
@@ -856,6 +867,27 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(90, 74, 55, 0.55); }
 
 /* --------------------------------------------------------------------------
+   A phone on its side
+   Three hundred and ninety points of height, of which the header, the tabs and
+   the footer were taking two hundred. Everything that is not content gets out
+   of the way.
+   -------------------------------------------------------------------------- */
+@media (max-height: 560px) and (pointer: coarse) {
+  .screen-head { padding-top: calc(7px + var(--safe-t)); padding-bottom: 5px; }
+  .screen-head h1 { font-size: 18px; }
+  .screen-head .sub { font-size: 11.5px; }
+  .screen-body { padding-top: 10px; padding-bottom: 12px; }
+  .screen-foot { padding-top: 6px; padding-bottom: calc(6px + var(--safe-b)); }
+  .screen-foot button { min-height: 38px; padding: 6px 12px; }
+  .tabs { margin-bottom: 9px; }
+  .tabs button { min-height: 34px; padding: 5px 11px; font-size: 12.5px; }
+  .card { padding: 9px 11px; margin-bottom: 8px; }
+  .chart-tools button { min-height: 36px; padding: 6px 11px; }
+  /* The instrument columns stop above the thumb pads rather than behind them. */
+  .hud-col { max-height: calc(100% - 132px); }
+}
+
+/* --------------------------------------------------------------------------
    A screen held in one hand
    Tighter gutters, a footer that stacks rather than squeezing its buttons to
    three lines each, and controls big enough for a thumb. Forty-four points is
@@ -1001,7 +1033,11 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   .touch-btn { min-width: 64px; height: 64px; }
   /* Forty-four points is the smallest target a thumb hits reliably. Nothing in
      the game may be smaller than that where there is no mouse. */
-  .screen button, .tabs button, .move { min-height: 44px; }
+  .screen button, .tabs button, .move, .event-choice { min-height: 44px; }
+  /* The top row scrolls sideways, so there is no reason for its buttons to be
+     shorter than a thumb even on the narrowest screen. */
+  .touch-top .touch-btn { height: 44px; }
+  .touch-rate { height: 44px; }
   .trade-act button { min-height: 44px; }
   .difficulty .difficulty-btn { min-height: 52px; }
 }
@@ -1026,7 +1062,15 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   #hud-wind .hud-row:nth-of-type(n + 4),
   #hud-ship .hud-row:nth-of-type(n + 5),
   #hud-time .hud-row:nth-of-type(n + 3) { display: none; }
-  #hud-alerts { width: min(92vw, 480px); }
+  /* The alerts are centred on the screen, which on a tall narrow one is
+     exactly where the instrument panels are. They drop into the open sea
+     below them instead. */
+  #hud-alerts {
+    width: min(92vw, 480px);
+    top: auto;
+    bottom: calc(104px + var(--safe-b));
+    transform: translateX(-50%);
+  }
   .hint { display: none; }
 
   .touch-top {
@@ -1056,7 +1100,9 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   .touch-helm { left: 9px; }
   .touch-rig { right: 9px; }
   .touch-btn { min-width: 50px; height: 54px; font-size: 17px; }
-  .touch-top .touch-btn { height: 36px; min-width: 42px; font-size: 12px; padding: 0 8px; }
+  /* The top row is not shrunk with the pads: it scrolls sideways, so it has no
+     reason to fit, and its buttons stay thumb-sized. */
+  .touch-top .touch-btn { min-width: 42px; font-size: 12.5px; padding: 0 9px; }
 }
 
 /* Eight thumb-sized controls will not fit across a narrow phone, and when they
@@ -1069,12 +1115,13 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   .touch-helm { left: 7px; }
   .touch-rig { right: 7px; }
   .touch-btn { min-width: 44px; height: 50px; font-size: 15px; padding: 0 4px; }
-  .touch-top .touch-btn { height: 34px; min-width: 38px; font-size: 11.5px; padding: 0 7px; }
+  .touch-top .touch-btn { min-width: 38px; font-size: 12px; padding: 0 8px; }
 }
 
 @media (max-width: 380px) {
   .touch-pad { gap: 4px; }
   .touch-btn { min-width: 38px; height: 46px; font-size: 14px; }
+  .touch-top .touch-btn { min-width: 36px; padding: 0 7px; }
 }
 
 /* Landscape on a phone: almost no height, so the panels go to the sides and
@@ -1329,7 +1376,11 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
 }
 
 @media (max-width: 860px) {
-  #heading-tape { top: 56px; height: 40px; width: calc(100vw - 16px); }
+  #heading-tape {
+    top: calc(56px + var(--safe-t));
+    height: 40px;
+    width: calc(100vw - 16px - var(--safe-l) - var(--safe-r));
+  }
   /* The columns drop below it. */
   .hud-col { top: 104px; max-height: calc(100% - 150px); }
 }

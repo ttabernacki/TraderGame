@@ -321,16 +321,61 @@ export class InputState {
     window.addEventListener('keyup', (e) => this.down.delete(e.key.toLowerCase()));
     window.addEventListener('blur', () => this.down.clear());
 
+    /**
+     * Looking about, and closing in.
+     *
+     * One pointer drags the view round the ship, which is the same whether it
+     * is a mouse or a thumb. Two fingers pinch, because there is no wheel on a
+     * phone and the camera distance is otherwise fixed for the whole voyage;
+     * the pinch is fed in as wheel movement so that both ways of doing it go
+     * down the same path and cannot drift apart.
+     */
+    const live = new Map<number, { x: number; y: number }>();
+    let pinchFrom = 0;
+    const spread = () => {
+      const [a, b] = [...live.values()];
+      return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+    };
+
     canvas.addEventListener('pointerdown', (e) => {
-      this.pointerDown = true;
+      live.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      this.pointerDown = live.size === 1;
       this.lastPointer = { x: e.clientX, y: e.clientY };
-      canvas.setPointerCapture(e.pointerId);
+      if (live.size === 2) pinchFrom = spread();
+      // A browser throws if the pointer has already been released — which
+      // happens easily with two thumbs — and an exception here would take the
+      // whole frame loop down with it.
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* not ours */ }
     });
-    canvas.addEventListener('pointerup', (e) => {
+    const lift = (e: PointerEvent) => {
+      live.delete(e.pointerId);
       this.pointerDown = false;
-      canvas.releasePointerCapture(e.pointerId);
-    });
+      pinchFrom = 0;
+      // A finger lifted out of a pinch resumes looking from where it is, rather
+      // than swinging the view by the distance between the two.
+      const rest = [...live.values()][0];
+      if (rest) { this.lastPointer = { ...rest }; this.pointerDown = true; }
+      try {
+        if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
+      } catch { /* already gone */ }
+    };
+    canvas.addEventListener('pointerup', lift);
+    canvas.addEventListener('pointercancel', lift);
     canvas.addEventListener('pointermove', (e) => {
+      if (!live.has(e.pointerId)) return;
+      live.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      if (live.size >= 2) {
+        const now = spread();
+        if (pinchFrom > 8 && now > 8) {
+          // Fingers apart draws her nearer, which is the way round everybody
+          // expects a map or a camera to work.
+          this.wheelDelta -= (now - pinchFrom) * 2;
+          pinchFrom = now;
+        }
+        return;
+      }
+
       if (!this.pointerDown) return;
       this.lookDelta.x += e.clientX - this.lastPointer.x;
       this.lookDelta.y += e.clientY - this.lastPointer.y;

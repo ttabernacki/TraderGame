@@ -97,6 +97,19 @@ export class HeadingTape {
     }
 
     // --- The wind ----------------------------------------------------------
+    /**
+     * Draw a label centred on a mark, but never off the end of the strip.
+     *
+     * A long name — "São Jorge da Mina" — centred near the edge of a phone-width
+     * tape put half of itself outside the canvas, where it was simply cut off
+     * mid-word.
+     */
+    const centred = (text: string, px: number, y: number) => {
+      const half = ctx.measureText(text).width / 2 + 4;
+      ctx.textAlign = 'center';
+      ctx.fillText(text, Math.min(Math.max(px, half), w - half), y);
+    };
+
     // Where it is blowing from, which is the bearing a sailor names it by.
     const windX = x(windEye);
     const windLabel = `${g.displayWind.speed.toFixed(0)} kn`;
@@ -104,8 +117,7 @@ export class HeadingTape {
       drawMark(ctx, windX, h, WIND_COLOUR, 'wind');
       ctx.fillStyle = WIND_COLOUR;
       ctx.font = '11px Georgia, serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(windLabel, windX, 12);
+      centred(windLabel, windX, 12);
     } else {
       // Abaft the beam and off the strip. The wind is the one thing that must
       // never disappear from the display — a helmsman who cannot see where it is
@@ -129,8 +141,7 @@ export class HeadingTape {
         drawMark(ctx, px, h, '#8fbf7a', 'course');
         ctx.fillStyle = '#8fbf7a';
         ctx.font = '11px Georgia, serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`${steer.toFixed(0).padStart(3, '0')}°`, px, 12);
+        centred(`${steer.toFixed(0).padStart(3, '0')}°`, px, 12);
       }
     }
 
@@ -142,8 +153,10 @@ export class HeadingTape {
         drawMark(ctx, px, h, '#e0b64a', 'course');
         ctx.fillStyle = '#e0b64a';
         ctx.font = '11px Georgia, serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(dest.name.length > 18 ? `${dest.name.slice(0, 17)}…` : dest.name, px, 12);
+        // A narrow tape has room for fewer letters before the name is the whole
+        // strip, so the cut is measured against the width rather than fixed.
+        const room = w < 520 ? 12 : 18;
+        centred(dest.name.length > room ? `${dest.name.slice(0, room - 1)}…` : dest.name, px, 12);
       } else {
         // Off the strip: an arrow at the edge saying which way to put the helm.
         const right = angleDelta(heading, dest.bearing) > 0;

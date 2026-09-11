@@ -102,6 +102,25 @@ export class ChartView {
   private buildTools(): void {
     clear(this.tools);
     append(this.tools,
+      // Where the panels have to be toggled, their buttons come first: the row
+      // scrolls on a small screen and the far end of it is the hardest to get
+      // to with a thumb.
+      this.compact
+        ? button(this.showVoyage ? 'Hide the voyage' : 'The voyage', () => {
+          this.showVoyage = !this.showVoyage;
+          if (this.showVoyage) this.showLegend = false;
+          this.applyPanels();
+          this.buildTools();
+        })
+        : null,
+      this.compact
+        ? button(this.showLegend ? 'Hide the key' : 'The key', () => {
+          this.showLegend = !this.showLegend;
+          if (this.showLegend) this.showVoyage = false;
+          this.applyPanels();
+          this.buildTools();
+        })
+        : null,
       button('Centre on the reckoning', () => {
         if (this.game) this.centre = { ...this.game.nav.estimated };
         this.draw();
@@ -131,23 +150,6 @@ export class ChartView {
       button(this.showTrue ? 'Hide the true coast' : 'Compare with the truth', () => {
         this.showTrue = !this.showTrue; this.buildTools(); this.draw();
       }, { title: 'A modern overlay showing where the land actually is. No pilot of this century had this.' }),
-      // Only where there is not room for everything at once.
-      this.compact
-        ? button(this.showVoyage ? 'Hide the voyage' : 'The voyage', () => {
-          this.showVoyage = !this.showVoyage;
-          if (this.showVoyage) this.showLegend = false;
-          this.applyPanels();
-          this.buildTools();
-        })
-        : null,
-      this.compact
-        ? button(this.showLegend ? 'Hide the key' : 'The key', () => {
-          this.showLegend = !this.showLegend;
-          if (this.showLegend) this.showVoyage = false;
-          this.applyPanels();
-          this.buildTools();
-        })
-        : null,
     );
     this.applyPanels();
   }
@@ -310,7 +312,7 @@ export class ChartView {
       Math.hypot(a.x - b.x, a.y - b.y);
 
     this.canvas.addEventListener('pointerdown', (e) => {
-      this.canvas.setPointerCapture(e.pointerId);
+      try { this.canvas.setPointerCapture(e.pointerId); } catch { /* not ours */ }
       live.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (live.size === 1) {
         startedAt = performance.now();
@@ -326,9 +328,11 @@ export class ChartView {
     const release = (e: PointerEvent) => {
       const wasSingle = live.size === 1;
       live.delete(e.pointerId);
-      if (this.canvas.hasPointerCapture(e.pointerId)) {
-        this.canvas.releasePointerCapture(e.pointerId);
-      }
+      try {
+        if (this.canvas.hasPointerCapture(e.pointerId)) {
+          this.canvas.releasePointerCapture(e.pointerId);
+        }
+      } catch { /* already gone */ }
       // A short, still touch is a tap on whatever is underneath it.
       if (wasSingle && moved < 10 && performance.now() - startedAt < 500) this.pick(e);
       if (live.size < 2) pinchFrom = 0;
