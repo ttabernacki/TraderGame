@@ -333,6 +333,10 @@ export class Game {
   private lastPortCheck = -1e9;
   /** When she last came up against the land, so it is said once and not hourly. */
   private lastTouchT = -1e9;
+  /** The course she is being carried through the wind's eye onto, while tacking. */
+  private tackingTo: number | null = null;
+  /** When the watch give up on the tack and wear her round instead. */
+  private tackingUntil = 0;
   /** Set by the integrator when a step was refused because it ended on land. */
   private touchedThisStep = false;
   /**
@@ -839,6 +843,7 @@ export class Game {
   }
 
   private steerToCourse(dt: number): void {
+    this.watchTheTack();
     const wanted = this.courseToSteer();
     if (wanted === null) return;
     const want = wanted;
@@ -856,9 +861,14 @@ export class Game {
     // every hand aboard to get her out of it. She is therefore wound round the
     // other way instead, through the stern: wearing ship costs distance and
     // costs nothing else, which is exactly the trade a quartermaster makes.
+    //
+    // Unless he has been *told* to tack, which is the whole point of the order:
+    // then he takes her through the eye deliberately and the risk of missing
+    // stays is the captain's, as it should be.
     const short = angleDelta(heading, want);
     let dir: number = short >= 0 ? 1 : -1;
-    if (sweepEntersEye(heading, Math.abs(short), dir, windEye, noGo)) dir = -dir;
+    if (this.tackingTo === null
+        && sweepEntersEye(heading, Math.abs(short), dir, windEye, noGo)) dir = -dir;
 
     // Signed sweep in the chosen direction, which may be the long way round.
     const sweep = dir > 0 ? wrap360(want - heading) : -wrap360(heading - want);
@@ -867,6 +877,22 @@ export class Game {
     // wanders either side of it for the whole watch.
     const demand = clamp(sweep * 0.05 - this.ship.state.yawRate * 0.85, -1, 1);
     const rate = 0.9 + skill(this.effectiveSkill, 'marinharia') * 1.2;
+
+    // Coming about is not a course change, it is an evolution, and the whole
+    // ship's company is doing it: the helm goes hard down and the hands haul
+    // the yards round to force her head through the eye. Left to the rudder
+    // alone she took twenty minutes to do what a caravel did in five or six,
+    // and spent the middle of it going astern at two knots — which is what
+    // being caught in stays *is*, and is not what a tack is.
+    if (this.tackingTo !== null) {
+      this.ship.state.rudder = dir;
+      const swing = 0.45 * (0.7 + skill(this.effectiveSkill, 'marinharia') * 0.6);
+      if (Math.abs(this.ship.state.yawRate) < swing
+          || Math.sign(this.ship.state.yawRate) !== dir) {
+        this.ship.state.yawRate = dir * swing;
+      }
+      return;
+    }
 
     // Move the helm toward the demand as a first-order lag rather than a fixed
     // step of `dt * rate`.
@@ -884,6 +910,37 @@ export class Game {
       this.ship.state.rudder + (demand - this.ship.state.rudder) * move,
       -1, 1,
     );
+  }
+
+  /**
+   * Is she round yet, and if not, has she missed stays?
+   *
+   * Missing stays is the thing that makes the order a decision rather than a
+   * button. A ship that goes into the wind with too little way on, or in a sea
+   * that stops her, hangs head to wind with everything shaking and then falls
+   * back onto the tack she came from, having lost a quarter of an hour and
+   * several cables of ground to leeward. It happened constantly and it is why
+   * captains wore ship when they could afford the room.
+   */
+  private watchTheTack(): void {
+    if (this.tackingTo === null) return;
+    const offCourse = Math.abs(angleDelta(this.ship.state.heading, this.tackingTo));
+    if (offCourse < 7) {
+      this.tackingTo = null;
+      return;
+    }
+    if (this.clock.t < this.tackingUntil) return;
+
+    // Out of time. She has missed stays: her head falls back the way it came
+    // and the watch wear her round instead, which the ordinary course-keeper
+    // will now do because it is no longer told to go through the eye.
+    this.tackingTo = null;
+    this.crew.morale = clamp(this.crew.morale - 0.02, 0, 1);
+    this.pushAlert('She has missed stays. Wear her round instead.', 'warning');
+    this.logEvent('note',
+      'She would not come through the wind. Hung there head to sea with everything shaking, '
+      + 'fell back onto the old tack, and we wore her round the other way and lost half a mile '
+      + 'of it doing so.');
   }
 
   /** The crew keep the sails drawing without being told, imperfectly. */
@@ -955,6 +1012,10 @@ export class Game {
     // Say so once when they take a reef in, so the change is never silent.
     if (want < now - 0.02 && this.clock.t - this.lastCanvasWord > 4 * 3600) {
       this.lastCanvasWord = this.clock.t;
+      // Weather that takes the canvas off her is weather worth being awake
+      // for: a gale at a watch a second arrives and is over before the player
+      // has read what happened.
+      if (prudent < 0.45) this.easeTheClock(3);
       this.pushAlert(
         prudent <= 0
           ? 'The watch have taken everything off her and she lies to it under bare poles.'
@@ -1144,7 +1205,7 @@ export class Game {
    * player to ignore it, so he only speaks up once the reckoning has gone soft.
    */
   private offerSight(): void {
-    if (this.nav.sigmaLat < 9) return;
+    if (this.nav.sigmaLat < 6) return;
     if (this.clock.t - this.lastSightWord < 20 * 3600) return;
 
     const opps = sightOpportunities(
@@ -1172,6 +1233,13 @@ export class Game {
     this.lastSightWord = this.clock.t;
     const best = usable[0];
     const days = (this.clock.t - this.nav.lastFixT) / 86400;
+    // The sun is on the meridian for about an hour and a half, and at a watch a
+    // second that is four seconds of the player's life. The offer was being
+    // made and then withdrawn before anybody could reach for the quadrant, so
+    // in practice the sight — which is the whole of how a pilot knows his
+    // latitude — was something that only ever happened by accident. The clock
+    // comes down for it, the way the ship would be called.
+    this.easeTheClock(2);
     this.pushAlert(
       `${best.label} may be had. `
       + `${days > 2 ? `Nothing observed for ${days.toFixed(0)} days. ` : ''}Press N.`,
@@ -1242,6 +1310,20 @@ export class Game {
         : ' It is on nobody\u2019s chart.')
       + (wasFast ? ' The clock is down to four times.' : ''),
       'warning');
+
+    // A coast this ship has named before. The chart's placenames were write-only
+    // — you could put a headland on the paper and the game never mentioned it
+    // again — and recognising your own work is most of what makes a second
+    // voyage down a coast different from the first.
+    let mine: string | null = null;
+    let mineNm = 45;
+    for (const pl of this.chart.places) {
+      const d = haversine(this.chart.placeAt(pl), this.nav.estimated) / NM;
+      if (d < mineNm) { mineNm = d; mine = pl.name; }
+    }
+    if (mine) {
+      this.pushAlert(`That is your own ${mine}, ${mineNm.toFixed(0)} miles off.`, 'note');
+    }
 
     // What actually makes the moment: the reckoning is about to be judged, and
     // everybody aboard knows by how much it might be wrong.
@@ -1466,6 +1548,7 @@ export class Game {
       }
 
       if (this.sounding.shoaling) {
+        this.easeTheClock(2);
         this.pushAlert(
           `By the lead, ${this.sounding.depth.toFixed(0)} fathoms shoaling — land bears ${formatBearing(bearing)}`,
           'grave',
@@ -2302,6 +2385,135 @@ export class Game {
     this.helmOrder = wrap360(this.ship.state.heading);
     this.holdCourse = true;
     this.ship.state.rudder = 0;
+  }
+
+  /**
+   * About ship.
+   *
+   * The single most-used order on a windward passage and the one the game had
+   * no word for. Beating means putting her through the wind's eye every few
+   * hours, and doing it by holding the helm over — at a clock rate where the
+   * helm is not even being worked — meant nudging her round in twelve-degree
+   * steps, past the no-go, hoping she did not stall, while the watch tried to
+   * put her back. That is not the interesting decision. *When* to go about is
+   * the interesting decision, and this leaves it entirely to the captain: it
+   * only does the evolution, and it does it the way a crew does, which is in
+   * one order.
+   *
+   * She comes round onto the same angle to the wind on the other side — a
+   * close-hauled ship tacks from sixty degrees off on one bow to sixty off on
+   * the other — so nothing is gained or lost by it except the ground she makes
+   * while her head is through the wind, which the physics takes off her because
+   * her sails are aback while she is in stays.
+   *
+   * If she is sailing free rather than close-hauled there is nothing to tack,
+   * and the order wears her round instead: away from the wind and onto the
+   * other gybe, which is the slower way and the one that does not risk missing
+   * stays.
+   */
+  aboutShip(): string {
+    if (this.anchored || this.dockedAt) return 'She is at anchor.';
+    const windEye = this.weatherNow.wind.from;
+    // The rig's own convention: beta is the wind off the bow, positive with the
+    // wind to starboard, which is the starboard tack. `side` is the side of the
+    // wind's eye her head lies on, which is the opposite sign.
+    const betaSigned = angleDelta(this.ship.state.heading, windEye);
+    const beta = Math.abs(betaSigned);
+    const side = -(Math.sign(betaSigned) || 1);
+    const ontoStarboard = betaSigned < 0;
+
+    if (beta > 125) {
+      // Running. Gybe her: bring the wind across the stern to the other quarter.
+      this.helmOrder = wrap360(windEye - side * beta);
+      this.holdCourse = true;
+      this.pushAlert(
+        `Stand by to gybe \u2014 the wind onto the ${ontoStarboard ? 'starboard' : 'port'} quarter.`,
+        'note');
+      this.logEvent('note', 'Gybed her over, and the main came across with a crack you felt in the deck.');
+      return 'Gybe-o.';
+    }
+
+    // The angle she will lie on the new tack: as close as she will point, or
+    // the angle she is sailing now if she is not pinching.
+    const noGo = this.noGoAngle;
+    const newBeta = clamp(beta, noGo, 120);
+    this.helmOrder = wrap360(windEye - side * newBeta);
+    this.holdCourse = true;
+    // Her head has to go through the wind, so she loses her way while she does
+    // it: the watch let her run up, the sails come aback, and she pays off on
+    // the other bow with the speed of a walking man.
+    this.ship.state.surge *= 0.45;
+
+    // Will she come round at all?
+    //
+    // Decided here, when the order is given, so the answer is immediate and the
+    // player can see what it turned on. A ship goes through the wind on the way
+    // she has on her: with plenty of speed and a smooth sea it is routine, and
+    // with the way off her or a head sea stopping her she hangs in the eye,
+    // falls back onto the tack she came from, and has to be worn round instead
+    // — which costs a quarter of an hour and half a mile to leeward. This is
+    // the reason a captain with sea room wore rather than tacked, and without
+    // it the order was free and the choice was not a choice.
+    const way = clamp(Math.abs(this.physics.speedKnots) / 4.5, 0, 1);
+    const sea = clamp(this.weatherNow.waveHeight / 4, 0, 1);
+    const hands = skill(this.effectiveSkill, 'marinharia');
+    const chance = clamp(0.35 + way * 0.55 + hands * 0.25 - sea * 0.4, 0.12, 0.97);
+    if (!this.rng.chance(chance)) {
+      this.crew.morale = clamp(this.crew.morale - 0.02, 0, 1);
+      this.pushAlert(
+        'She missed stays \u2014 hung in the wind and fell back. The watch are wearing her '
+        + 'round instead.', 'warning');
+      this.logEvent('note',
+        'Put the helm down and she would not go through it: hung head to wind with everything '
+        + 'shaking, gathered sternway, and paid off on the tack she came from. Wore her round '
+        + 'the other way and lost the best part of half a mile doing it.');
+      // `tackingTo` is left unset, so the ordinary course-keeper takes her the
+      // long way round — which is wearing ship, which is what has happened.
+      return 'She missed stays.';
+    }
+
+    this.tackingTo = this.helmOrder;
+    // A caravel that has not got her head round in half an hour is not going
+    // to. Measured, a tack takes five or six minutes with the hands at the
+    // braces; anything much past that and she is hanging in stays.
+    this.tackingUntil = this.clock.t + 30 * 60;
+    this.easeTheClock(3);
+    this.pushAlert(
+      `Ready about. Helm\u2019s a-lee \u2014 she comes onto the `
+      + `${ontoStarboard ? 'starboard' : 'port'} tack, ${newBeta.toFixed(0)}\u00b0 off the wind.`,
+      'note');
+    this.logEvent('note',
+      'Put the helm down and carried her through the wind. She hung a moment in stays with '
+      + 'everything shaking and then paid off on the other tack.');
+    return 'Helm\u2019s a-lee.';
+  }
+
+  /**
+   * Which board makes the better ground toward the mark.
+   *
+   * Beating is a sequence of choices between two bad options, and the whole
+   * skill of it is knowing which is less bad — which is a thing a pilot reads
+   * off the set of the sea and forty years of practice, and which a player
+   * staring at a compass rose has no way to work out at all. This gives him the
+   * same answer a good pilot would have: the speed she would actually make
+   * *toward the mark* on each tack, which is not the speed she sails at.
+   */
+  tackChoice(): {
+    port: number; starboard: number; better: 'port' | 'starboard'; beating: boolean;
+  } | null {
+    const dest = this.courseToDestination();
+    if (!dest) return null;
+    const windEye = this.weatherNow.wind.from;
+    const noGo = this.noGoAngle;
+    const beating = Math.abs(angleDelta(windEye, dest.bearing)) < noGo + 8;
+    // Her best speed on each board is her speed close-hauled; what differs is
+    // how much of it is pointed at the mark.
+    const speed = Math.max(Math.abs(this.physics.groundKnots), 0.3);
+    const madeGood = (heading: number) =>
+      speed * Math.cos((angleDelta(heading, dest.bearing) * Math.PI) / 180);
+    const port = madeGood(wrap360(windEye + noGo));
+    const starboard = madeGood(wrap360(windEye - noGo));
+    return { port, starboard, better: port >= starboard ? 'port' : 'starboard', beating };
   }
 
   /** Give up your own course and steer for the mark again. */

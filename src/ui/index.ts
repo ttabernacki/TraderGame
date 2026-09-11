@@ -243,6 +243,10 @@ export class Ui {
         g.pushAlert(g.raisePadrao(), 'note');
         return true;
       }
+      case 't':
+        // About ship. The order a windward passage is made of.
+        g.pushAlert(g.aboutShip(), 'note');
+        return true;
       case 'b':
         // Astern. Wanted most when she is on the sand, so it is a key and not
         // something buried in a panel.

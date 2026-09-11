@@ -328,6 +328,28 @@ export class Hud {
           }, g.holdCourse ? 'kept by the watch' : 'yours (H to hand over)')),
       );
 
+      // Beating: which board makes the better ground, and by how much.
+      //
+      // The whole skill of working to windward is choosing between two bad
+      // options, and a player looking at a compass rose has no way at all to
+      // work out which is less bad. A pilot knew. This is what he knew.
+      const tack = g.tackChoice();
+      if (tack && tack.beating) {
+        const best = Math.max(tack.port, tack.starboard);
+        const worst = Math.min(tack.port, tack.starboard);
+        append(this.course,
+          el('div', { class: 'hud-row' },
+            el('span', { class: 'k' }, 'Best board'),
+            el('span', { class: 'v', style: { color: '#c8a44e' } },
+              `${tack.better} tack \u2014 ${best.toFixed(1)} kn toward her`
+              + (best - worst > 0.15 ? ` (${worst.toFixed(1)} on the other)` : ', much of a muchness'))),
+          el('div', { class: 'hud-row' },
+            el('span', { class: 'k' }, ''),
+            el('span', { class: 'v', style: { opacity: '0.7', fontSize: '12px' } },
+              'T to go about')),
+        );
+      }
+
       // The masthead, standing. The land used to be announced in an alert that
       // scrolled away in ten seconds and then nothing on the screen mentioned it
       // again — so a coast could be four miles under the lee and the only way to
@@ -418,7 +440,7 @@ export class Hud {
       this.hint.innerHTML =
         '<b>A</b>/<b>D</b> helm — alter course when the clock is up &nbsp; ' +
         '<b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
-        '<b>B</b> back her astern &nbsp; ' +
+        '<b>T</b> about ship &nbsp; <b>B</b> back her astern &nbsp; ' +
         '<b>O</b> orders &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
         '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>M</b> sound &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor &nbsp; ' +
         'drag to look about, wheel to close in';

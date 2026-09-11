@@ -60,6 +60,7 @@ export class TouchControls {
       { label: '↶', key: 'q', hold: true, hint: 'Ease' },
       { label: '↷', key: 'e', hold: true, hint: 'Harden' },
       // Astern, which is wanted at exactly the moment nobody can find a menu.
+      { label: '⇄', key: 't', hint: 'About ship — put her on the other tack' },
       { label: '⏪', key: 'b', hint: 'Back her astern, off whatever she is on' },
     ]);
 
