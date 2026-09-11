@@ -15,6 +15,7 @@ import { PortView } from './portView';
 import { SightView } from './sightView';
 import { GameOverView, TitleView } from './titleView';
 import { TouchControls } from './touch';
+import { ShoreView } from './shoreView';
 
 const SAVE_KEY = 'carreira-da-india:save';
 
@@ -44,6 +45,7 @@ export class Ui {
   private port: PortView;
   private audience: AudienceView;
   private court: CourtView;
+  private shore: ShoreView;
   private orders: OrdersView;
   private overlay = el('div', { id: 'overlay' });
   private touch: TouchControls;
@@ -72,6 +74,7 @@ export class Ui {
     this.port = new PortView(back, () => this.setMode('audience'), () => this.setMode('court'));
     this.audience = new AudienceView(() => this.setMode('port'));
     this.court = new CourtView(() => this.setMode('port'));
+    this.shore = new ShoreView(back, () => this.setMode('chart'));
     this.orders = new OrdersView(back, () => this.setMode('chart'));
 
     host.append(this.hud.root, this.touch.root, this.events.root, this.overlay);
@@ -134,6 +137,10 @@ export class Ui {
         this.overlay.append(this.audience.root);
         this.audience.open(g);
         break;
+      case 'shore':
+        this.overlay.append(this.shore.root);
+        this.shore.open(g);
+        break;
       case 'court':
         this.overlay.append(this.court.root);
         this.court.open(g);
@@ -192,6 +199,7 @@ export class Ui {
     }
 
     if (k === 'escape') {
+      if (g.mode === 'shore') { this.setMode('sailing'); return true; }
       if (g.mode === 'audience') { this.setMode('port'); return true; }
       if (g.mode === 'court') { this.setMode('port'); return true; }
       if (g.mode !== 'sailing' && g.mode !== 'gameover' && g.mode !== 'title') {
@@ -220,6 +228,7 @@ export class Ui {
       case 'o': this.setMode('orders'); return true;
       case 'p':
         if (g.dockedAt) { this.setMode('port'); return true; }
+        if (g.anchored && g.shoreHere) { this.setMode('shore'); return true; }
         return false;
       case 'v': this.cb.onCycleCamera(); return true;
       case 'm': {
@@ -245,10 +254,19 @@ export class Ui {
         if (g.anchored) g.pushAlert(g.weighAnchor(), 'note');
         else g.pushAlert(g.letGoAnchor(), 'note');
         if (g.dockedAt && g.anchored) this.setMode('port');
+        else if (g.anchored && g.shoreHere) this.setMode('shore');
         return true;
       }
       case '[': g.clock.cycleScale(-1); return true;
       case ']': g.clock.cycleScale(1); return true;
+      case 'g': {
+        // How close the watch may take her in. Cycled from the deck because it
+        // is wanted exactly when there is land in sight and no time to go and
+        // find a menu.
+        const order = { offing: 'close', close: 'none', none: 'offing' } as const;
+        g.setStandOff(order[g.standOff]);
+        return true;
+      }
       case 'h': {
         // Three states, in the order a captain would want them: give her back to
         // the mark if you have wandered off it, otherwise hand the helm over or

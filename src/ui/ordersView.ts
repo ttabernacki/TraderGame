@@ -4,7 +4,7 @@ import { rivalStanding } from '../progression/rival';
 import { daysLeft, ventureLine } from '../progression/ventures';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
 import { officerOpinion } from '../game/officerEvents';
-import type { Game } from '../game/state';
+import { STAND_OFF_NM, type Game, type StandOff } from '../game/state';
 import { button, card, clear, el, kv } from './dom';
 
 type Tab = 'orders' | 'charters' | 'reports' | 'wardroom' | 'rival';
@@ -70,7 +70,7 @@ export class OrdersView {
       }, counts[t] > 0 ? `${names[t]} (${counts[t]})` : names[t])),
     ));
 
-    if (this.tab === 'orders') this.renderCommission(g);
+    if (this.tab === 'orders') { this.renderCommission(g); this.renderStandOff(g); }
     else if (this.tab === 'charters') this.renderCharters(g);
     else if (this.tab === 'reports') this.renderLeads(g);
     else if (this.tab === 'wardroom') this.renderWardroom(g);
@@ -121,6 +121,49 @@ export class OrdersView {
     ));
 
     this.renderStanding(g);
+  }
+
+  /**
+   * How close the watch may take her to the land.
+   *
+   * The one order in the game that the player could not give, and the one he
+   * most needed: without it the watch keep three and a half miles of water
+   * under her lee whatever he wants, which is correct on a long passage and
+   * makes surveying a coast, closing an anchorage or looking at an island
+   * impossible — they haul her off and announce it, over and over.
+   */
+  private renderStandOff(g: Game): void {
+    const options: [StandOff, string, string][] = [
+      ['offing', 'Keep a good offing',
+        `${STAND_OFF_NM.offing} miles of water between her and the land. What keeps a ship `
+        + 'off a lee shore on a long passage, and what the watch will do unless told otherwise.'],
+      ['close', 'Stand in',
+        `${STAND_OFF_NM.close} miles. For running a coast in sight to survey it, for closing `
+        + 'an anchorage, and for having a look at something. She is in soundings and you '
+        + 'should be on deck.'],
+      ['none', 'I have the helm',
+        'The watch steer the course you give them and say nothing about the land. '
+        + 'Everything that happens to her after that is yours.'],
+    ];
+    const body = el('div', {});
+    body.append(el('p', { class: 'flavour' },
+      'The quartermaster will not sail her ashore. How much room he leaves himself to '
+      + 'avoid it is your order to give.'));
+    const row = el('div', { class: 'difficulty inline' });
+    for (const [id, name] of options) {
+      row.append(el('button', {
+        class: `difficulty-btn${g.standOff === id ? ' active' : ''}`,
+        onclick: () => { g.setStandOff(id); this.render(); },
+      }, el('span', { class: 'difficulty-name' }, name)));
+    }
+    body.append(row);
+    const chosen = options.find(([id]) => id === g.standOff)!;
+    body.append(el('p', { class: 'flavour', style: { marginTop: '8px' } }, chosen[2]));
+    if (g.avoidingLand) {
+      body.append(el('p', { class: 'bad' },
+        'They are weathering something now: she is not on the course you laid off.'));
+    }
+    this.body.append(card('How close she may stand in', body));
   }
 
   private renderStanding(g: Game): void {

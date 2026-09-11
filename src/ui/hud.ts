@@ -318,6 +318,16 @@ export class Hud {
             class: 'v',
             style: { color: g.holdCourse ? '#7fa86a' : '#c8a44e' },
           }, g.holdCourse ? 'kept by the watch' : 'yours (H to hand over)')),
+        // Said on deck, because it is the reason she is not on the course laid
+        // off and the player has no other way of finding that out.
+        el('div', { class: 'hud-row' },
+          el('span', { class: 'k' }, 'Land'),
+          el('span', {
+            class: 'v',
+            style: { color: g.avoidingLand ? '#c8a44e' : g.standOff === 'none' ? '#d4553f' : '#8a9a7a' },
+          }, g.avoidingLand
+            ? 'weathering it — off your course'
+            : { offing: 'a good offing (G)', close: 'standing in (G)', none: 'you have her (G)' }[g.standOff])),
       );
     }
 
@@ -360,7 +370,7 @@ export class Hud {
       this.hint.innerHTML =
         '<b>A</b>/<b>D</b> helm — alter course when the clock is up &nbsp; ' +
         '<b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
-        '<b>O</b> orders &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
+        '<b>G</b> how close to the land &nbsp; <b>O</b> orders &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
         '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>M</b> sound &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
     }
   }

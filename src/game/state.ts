@@ -1,7 +1,7 @@
 import { Clock } from '../core/clock';
 import {
   NM, angleDelta, clamp, cosd, formatBearing, formatLat, formatLon, haversine,
-  lerp, rhumbStep, wrap180, wrap360,
+  lerp, rhumbStep, wrap180, wrap360, type LatLon,
 } from '../core/math';
 import { Rng } from '../core/rng';
 import { Weather, type WeatherSample } from '../world/weather';
@@ -28,6 +28,10 @@ import { newSkills, skill, train, type SkillSet } from '../crew/skills';
 import { Markets } from '../economy/market';
 import { Crown, portName } from '../progression/crown';
 import { newRelations, type Relations } from '../diplomacy/contact';
+import {
+  foragingParty, meetingParty, shorePlaceAt, waterParty, woodParty,
+  type LandingResult, type ShorePlace,
+} from './shore';
 import { Logbook, type LogKind } from './log';
 import { rollSeaEvent, type SeaEvent } from './seaEvents';
 import { rollOfficerEvent } from './officerEvents';
@@ -40,7 +44,8 @@ import { good } from '../economy/goods';
 
 export type GameMode =
   | 'sailing' | 'chart' | 'sight' | 'logbook' | 'crew' | 'port'
-  | 'audience' | 'court' | 'shipyard' | 'menu' | 'title' | 'gameover' | 'orders' | 'epilogue';
+  | 'audience' | 'court' | 'shipyard' | 'menu' | 'title' | 'gameover' | 'orders' | 'epilogue'
+  | 'shore';
 
 /** One mast's sails, as set against how they ought to be. */
 export interface MastTrim {
@@ -82,6 +87,24 @@ export interface Alert {
   t: number;
 }
 
+/**
+ * How much water the watch keep between her and the land.
+ *
+ *   offing  a good offing, three and a half miles: a long passage in open water
+ *   close   stand in, a mile and a quarter: coasting, surveying, making a port
+ *   none    the captain has the helm and the watch say nothing
+ */
+export type StandOff = 'offing' | 'close' | 'none';
+
+/** What a boat's crew can be sent in to do. */
+export type ShoreAction = 'water' | 'wood' | 'food' | 'meet';
+
+export const STAND_OFF_NM: Record<StandOff, number> = {
+  offing: 3.5,
+  close: 1.2,
+  none: 0,
+};
+
 export class Game {
   clock: Clock;
   rng: Rng;
@@ -111,6 +134,17 @@ export class Game {
   rival: RivalState;
   /** What they are saying about the other man in the port she now lies in. */
   portGossip: string | null = null;
+  /**
+   * The stretch of coast she is anchored off, when it is not a port.
+   *
+   * Set when the anchor goes down somewhere nobody has built a town, which
+   * until now produced one line in the log and nothing else at all.
+   */
+  shoreHere: ShorePlace | null = null;
+  /** What the last boat that went in came back with. */
+  shoreReport: string | null = null;
+  /** Landings made here, so a coast cannot be milked by going in ten times. */
+  private shoreVisits = new Map<string, number>();
   private nextVentureId = 1;
   private nextLeadId = 1;
 
@@ -297,10 +331,25 @@ export class Game {
   private avoidCourse = 0;
   private avoidWant = 0;
   private avoidCheckedT = -1e9;
+  /** Where she was when the coast was last probed, so the cache is not timed. */
+  private avoidCheckedAt: LatLon | null = null;
   /** True while the watch are steering off the course to keep her off a shore. */
   avoidingLand = false;
   /** Which way round she is weathering it: +1 starboard, -1 larboard. */
   private avoidSide = 0;
+
+  /**
+   * How much water the watch are told to keep between her and the land.
+   *
+   * This is the captain's order, and it has to be, because there is no single
+   * right answer: a good offing is what keeps a ship off a lee shore on a long
+   * passage, and it is also exactly what stops you surveying a coast, closing
+   * a port, or looking at an island. With only the safe setting available the
+   * watch fought the player the whole way in to every anchorage he tried to
+   * make, hauling her sixty degrees off and announcing it, which is the
+   * "randomly goes way off my heading near land" everybody runs into.
+   */
+  standOff: StandOff = 'offing';
   private lastPortCheck = -1e9;
   private lastCanvasWord = -1e9;
   private lastManualTrim = -1e9;
@@ -708,11 +757,25 @@ export class Game {
     // in if it came on to blow. Testing depth alone had her threading the
     // Moroccan shallows a mile and a half off the beach in eight metres, which
     // is survivable until the first gale and then is not.
-    const safe = this.ship.baseHull.draft * 10;
-    const offingNm = 3.5;
+    // How much water the captain has told them to keep. On the close setting
+    // the depth test comes down with it, or she is refused her offing by the
+    // soundings instead of by the distance and nothing has changed.
+    const offingNm = STAND_OFF_NM[this.standOff];
+    const safe = this.ship.baseHull.draft * (this.standOff === 'close' ? 3.5 : 10);
+
+    // A mark inside the look-ahead is a place she is *trying* to get to, so the
+    // water around it is not an obstacle. Without this the watch fight the
+    // captain the whole way in to every anchorage he tries to make.
+    const dest = this.destination;
+    const markNm = dest
+      ? haversine(from, { lat: dest.lat, lon: dest.lon }) / NM
+      : Infinity;
+
     const probes = 7;
     for (let i = 1; i <= probes; i++) {
       const d = (aheadNm * i) / probes;
+      // Stop probing short of the mark: past it is somebody else's problem.
+      if (d > markNm) break;
       const at = rhumbStep(from, bearing, d * NM);
       // A tight search radius: the question is only whether *this* spot is
       // clear, and nothing far away can make it foul. Asking depthAt directly
@@ -743,6 +806,13 @@ export class Game {
    * she is never further off her course than the coast obliges her to be.
    */
   private clearCourse(want: number): number {
+    // "I have the helm." The watch keep the course they are given and say
+    // nothing about the land, which is the captain's business then.
+    if (this.standOff === 'none') {
+      this.avoidingLand = false;
+      this.avoidSide = 0;
+      return want;
+    }
     const speed = Math.max(Math.abs(this.physics?.speedKnots ?? 0), 2);
     // Three hours of looking ahead, which is about as far as a lookout at the
     // masthead can see anyway.
@@ -750,11 +820,25 @@ export class Game {
 
     // Cached: probing the coast is a spatial query and the steering loop runs
     // up to forty-eight times a frame. The water does not change in two minutes.
-    const fresh = this.clock.t - this.avoidCheckedT < 120
+    // Re-probe when she has moved, not when a hundred and twenty *simulated*
+    // seconds have passed.
+    //
+    // At the fastest clock rates a hundred and twenty simulated seconds go by
+    // in under a frame, so the cache never held, the coast was probed every
+    // frame, and the side-commitment hysteresis below flipped back and forth
+    // with it — which is the course order changing by ninety degrees several
+    // times a second and the ship appearing to jump about at random. Distance
+    // run is the honest measure and it does not care how fast the clock is.
+    const movedNm = this.avoidCheckedAt
+      ? haversine(this.ship.state.pos, this.avoidCheckedAt) / NM
+      : Infinity;
+    const fresh = movedNm < 0.75
+      && this.clock.t - this.avoidCheckedT < 900
       && Math.abs(angleDelta(this.avoidWant, want)) < 4;
     if (fresh) return this.avoidCourse;
 
     this.avoidCheckedT = this.clock.t;
+    this.avoidCheckedAt = { ...this.ship.state.pos };
     this.avoidWant = want;
 
     // Most of a voyage is a long way from anything. If the nearest land is
@@ -1586,6 +1670,133 @@ export class Game {
       'note');
   }
 
+  /**
+   * Change how much water the watch keep under her lee, and say so.
+   *
+   * Re-probing at once matters: the order is usually given because she is
+   * being hauled off something the captain wants to look at, and waiting for
+   * the cache to lapse before obeying it reads as the order being ignored.
+   */
+  setStandOff(to: StandOff): void {
+    if (to === this.standOff) return;
+    this.standOff = to;
+    this.avoidCheckedAt = null;
+    this.avoidCheckedT = -1e9;
+    this.avoidingLand = false;
+    this.avoidSide = 0;
+    this.pushAlert({
+      offing: 'Keep a good offing.',
+      close: 'Stand in, and keep the lead going.',
+      none: 'I have the helm. Nothing from the quartermaster about the land.',
+    }[to], to === 'none' ? 'warning' : 'note');
+  }
+
+  /**
+   * What the boat can be sent in for, where she now lies.
+   *
+   * Water, wood, something green, and who lives here. Those are the four things
+   * a landing party actually went in for, and between them they decide how long
+   * a ship can stay at sea — which is to say they are the whole reason for
+   * closing a strange coast at all.
+   */
+  shoreActions(): { id: ShoreAction; label: string; detail: string; done: boolean }[] {
+    const place = this.shoreHere;
+    if (!place) return [];
+    const folk = place.peopleId ? people(place.peopleId) : null;
+    const key = this.shoreKey();
+    const done = (a: ShoreAction) => (this.shoreVisits.get(`${key}:${a}`) ?? 0) > 0;
+    return [
+      {
+        id: 'water',
+        label: 'Send the casks in',
+        detail: 'A boat, the empty casks, and a dozen men to look for a stream.',
+        done: done('water'),
+      },
+      {
+        id: 'wood',
+        label: 'Cut wood',
+        detail: 'Firewood for the galley, and spars if anything ashore is straight enough.',
+        done: done('wood'),
+      },
+      {
+        id: 'food',
+        label: 'Look for anything green',
+        detail: 'Fruit, greens, shellfish, eggs — whatever will keep the scurvy down.',
+        done: done('food'),
+      },
+      {
+        id: 'meet',
+        label: folk ? 'Walk up the beach' : 'See who is here',
+        detail: folk
+          ? `This is the country of the ${folk.name}, or near enough.`
+          : 'Find out whether anybody lives on this coast.',
+        done: done('meet'),
+      },
+    ];
+  }
+
+  private shoreKey(): string {
+    const p = this.ship.state.pos;
+    // Quarter of a degree: far enough that moving on is a different place, near
+    // enough that swinging at anchor is not.
+    return `${(p.lat * 4).toFixed(0)}:${(p.lon * 4).toFixed(0)}`;
+  }
+
+  /**
+   * Hoist the boat out and send her in.
+   *
+   * Time passes while she is away, which is the cost: a day spent watering is a
+   * day the scurvy is still working and a day the other man is still sailing.
+   */
+  sendBoatAshore(action: ShoreAction): string {
+    const place = this.shoreHere;
+    if (!place) return 'She is not lying off any coast.';
+    if (this.weatherNow.waveHeight > 2.4 || this.weatherNow.wind.speed > 24) {
+      return 'No boat could land on that beach today.';
+    }
+    const key = `${this.shoreKey()}:${action}`;
+    if ((this.shoreVisits.get(key) ?? 0) > 0) {
+      return 'That has been done here already. There is no more of it to be had.';
+    }
+    const hands = ableHands(this.crew);
+    if (hands < 8) return 'There are not enough men fit to pull a boat ashore.';
+    this.shoreVisits.set(key, 1);
+
+    const folk = place.peopleId ? people(place.peopleId) : null;
+    let r: LandingResult;
+    switch (action) {
+      case 'water': r = waterParty(place, this.rng, hands); break;
+      case 'wood': r = woodParty(place, this.rng); break;
+      case 'food': r = foragingParty(place, this.rng); break;
+      default: r = meetingParty(place, this.rng, folk ? folk.name : null); break;
+    }
+
+    // The boat is away, and the ship waits.
+    this.waitDays(r.days);
+
+    const p = this.crew.provisions;
+    if (r.waterDays) p.water = Math.min(p.water + r.waterDays, 160);
+    if (r.freshDays) {
+      p.fresh = Math.min(p.fresh + r.freshDays, 40);
+      this.crew.daysWithoutFresh = 0;
+    }
+    if (r.woodDays) p.biscuit = Math.min(p.biscuit + r.woodDays * 0.25, 160);
+    if (r.moraleDelta) this.crew.morale = clamp(this.crew.morale + r.moraleDelta, 0, 1);
+    if (r.hurt) this.crew.sickness = clamp(this.crew.sickness + r.hurt * 0.02, 0, 1);
+    if (r.metPeople && place.peopleId) {
+      // Meeting people on a beach is worth recording, once per people.
+      const name = folk ? folk.name : 'a people with no name we know';
+      if (this.crown.record('people', `The ${name}`, this.nav.estimated, 14, this.clock.t)) {
+        this.logEvent('contact', `Met the ${name} on an open beach, with no town in sight.`, true);
+      }
+    }
+
+    this.shoreReport = r.text;
+    this.logEvent(action === 'meet' ? 'contact' : 'note', r.text, action === 'meet');
+    if (r.severity && r.severity !== 'note') this.pushAlert(r.text.slice(0, 90), r.severity);
+    return r.text;
+  }
+
   /** Take a merchant's charter, on your own account and at your own risk. */
   acceptVenture(id: string): string {
     const v = this.ventureOffers.find((x) => x.id === id);
@@ -1977,6 +2188,8 @@ export class Game {
     // first noon at sea has something to report.
     const day = Math.floor(this.clock.t / 86400);
     this.lastNoonDay = this.clock.hour < 12 ? day - 1 : day;
+    this.shoreHere = null;
+    this.shoreReport = null;
     // Weighing from a known anchorage is itself a fix, and the land she is
     // dropping astern counts as land seen — otherwise the first headland after
     // a two-day coastal hop is announced as a landfall.
@@ -2001,7 +2214,24 @@ export class Game {
     const near = this.approachablePorts();
     if (near.length > 0) {
       this.enterPort(near[0].def);
+      return 'Anchor let go.';
+    }
+
+    // Anchored off a coast with no town on it. This used to be one line in the
+    // log and nothing else — the land was scenery. It is now a place, with
+    // whatever a boat's crew could actually get out of it.
+    this.lastLandSeenT = this.clock.t;
+    this.landInSight = true;
+    this.shoreReport = null;
+    if (this.sounding.shoreDistNm < 12) {
+      this.shoreHere = shorePlaceAt(this.ship.state.pos);
+      this.logEvent('landfall',
+        `Came to an anchor in ${this.sounding.depth.toFixed(0)} fathoms, `
+        + `${this.sounding.shoreDistNm.toFixed(1)} miles off the beach. ${this.shoreHere.describe}`,
+        true);
+      this.pushAlert('Anchored off the land. The boat can be hoisted out.', 'note');
     } else {
+      this.shoreHere = null;
       this.logEvent('note', `Came to an anchor in ${this.sounding.depth.toFixed(0)} fathoms.`);
     }
     return 'Anchor let go.';
@@ -2541,6 +2771,7 @@ export class Game {
       pumpEffort: this.pumpEffort,
       autoTrim: this.autoTrim,
       difficulty: this.difficulty,
+      standOff: this.standOff,
       orderedCanvas: this.orderedCanvas,
       holdCourse: this.holdCourse,
       helmOrder: this.helmOrder,
@@ -2605,6 +2836,7 @@ export class Game {
     // handed a returning player the hard mode and no explanation for why the
     // watch had stopped working the ship.
     g.difficulty = d.difficulty ?? 'watch';
+    g.standOff = d.standOff ?? 'offing';
     g.orderedCanvas = d.orderedCanvas ?? g.ship.canvasSet;
     g.holdCourse = d.holdCourse ?? false;
     g.helmOrder = d.helmOrder ?? null;
