@@ -904,7 +904,7 @@ export class ChartView {
       // and how much of that ran the one way.
       const sure = clamp(d.hours / 30, 0.15, 1) * clamp(d.steadiness + 0.3, 0.3, 1);
       if (which === 'set' && d.currentKnots < 0.15) continue;
-      const alpha = which === 'wind' ? 0.15 + sure * 0.3 : 0.14 + sure * 0.26;
+      const alpha = which === 'wind' ? 0.11 + sure * 0.19 : 0.10 + sure * 0.16;
       const toward = which === 'wind' ? d.windFrom + 180 : d.currentToward;
       const colour = which === 'wind' ? '58, 104, 168' : '40, 118, 116';
 
@@ -923,18 +923,19 @@ export class ChartView {
           // The set is drawn a little shorter and offset across the wind, so
           // the two layers can be read together without lying on top of
           // each other.
-          const len = clamp(this.scale * stepDeg * 0.36, 5, 14) * (which === 'wind' ? 1 : 0.8);
+          const len = clamp(this.scale * stepDeg * 0.26, 4, 10) * (which === 'wind' ? 1 : 0.8);
           const ox = which === 'wind' ? 0 : -dy * len * 0.5;
           const oy = which === 'wind' ? 0 : dx * len * 0.5;
           const hx = p.x + ox + dx * len, hy = p.y + oy + dy * len;
 
           ctx.strokeStyle = `rgba(${colour}, ${alpha})`;
-          ctx.lineWidth = 0.8 + sure * 0.6;
+          ctx.lineWidth = 0.65 + sure * 0.4;
           ctx.beginPath();
           ctx.moveTo(p.x + ox - dx * len, p.y + oy - dy * len);
           ctx.lineTo(hx, hy);
-          // A small barbed head, so the direction reads at this size.
-          const wing = len * 0.42;
+          // A small barbed head. The shaft is short enough now that the head
+          // has to be a larger share of it for the direction to read at all.
+          const wing = len * 0.52;
           ctx.moveTo(hx, hy);
           ctx.lineTo(hx - dx * wing - dy * wing * 0.55, hy - dy * wing + dx * wing * 0.55);
           ctx.moveTo(hx, hy);
