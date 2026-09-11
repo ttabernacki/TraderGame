@@ -1230,7 +1230,7 @@ export class Game {
           this.pushAlert(`Canvas blown out on the ${mastName.toLowerCase()}.`, 'warning');
           this.logEvent('peril', `Split the sail on the ${mastName.toLowerCase()}. Handed what was left of it.`);
         }
-        this.crew.morale -= 0.06;
+        this.crew.morale = clamp(this.crew.morale - 0.06, 0, 1);
       }
     }
 
@@ -1665,7 +1665,7 @@ export class Game {
       return;
     }
 
-    this.crew.morale -= 0.2;
+    this.crew.morale = clamp(this.crew.morale - 0.2, 0, 1);
     this.pushAlert('Aground!', 'grave');
     this.logEvent('peril',
       speed > 4
@@ -1862,11 +1862,16 @@ export class Game {
     if (last && last.text === text && this.clock.t - last.t < 7200) return;
     this.alerts.push({ id: this.nextAlertId++, text, severity, t: this.clock.t });
     if (this.alerts.length > 6) this.alerts.shift();
-    // Something wants the captain. Bring the clock down so he is on deck to see
-    // it, which is what every game that handles time compression well does: the
-    // fast rate is for the empty ocean, and the moment it stops being empty you
-    // are cut back to the close view at a pace you can act at.
-    if (severity !== 'note' && this.clock.scaleIndex > 4) this.clock.scaleIndex = 4;
+    // Something wants the captain *now*. Bring the clock down so he is on deck
+    // to see it: the fast rate is for the empty ocean, and the moment it stops
+    // being empty he should be at a pace he can act at.
+    //
+    // Only the grave ones. Warnings are common on a passage — the watch taking
+    // a reef in, the pilot wanting an observation, a charter running short —
+    // and knocking the player out of fast time for each of them would make the
+    // fast rates unusable. A grave alert is land under two hours away, the lead
+    // shoaling, or the company dying, and those are worth stopping for.
+    if (severity === 'grave' && this.clock.scaleIndex > 4) this.clock.scaleIndex = 4;
   }
 
   private expireAlerts(): void {

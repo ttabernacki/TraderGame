@@ -55,6 +55,14 @@ export interface Provisions {
   fresh: number;
 }
 
+/**
+ * The company.
+ *
+ * `morale` is a fraction and every write to it must be clamped to [0, 1]. It
+ * was not, in five places, and a long enough passage drove it to minus seven
+ * per cent — which reads as "mutinous" everywhere it is worded and as a
+ * negative number everywhere it is shown.
+ */
 export interface CrewState {
   count: number;
   /** Full complement for this hull. */
@@ -258,7 +266,7 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
     crew.dryDays = 0;
   }
   if (p.water > 0 && p.water < 8) {
-    crew.morale -= d * 0.05;
+    crew.morale = clamp(crew.morale - d * 0.05, 0, 1);
   }
 
   if (p.biscuit <= 0) {
@@ -275,7 +283,7 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
     crew.hungryDays = 0;
   }
   if (p.biscuit > 0 && p.biscuit < 12) {
-    crew.morale -= d * 0.03;
+    crew.morale = clamp(crew.morale - d * 0.03, 0, 1);
   }
 
   // --- Scurvy -------------------------------------------------------------
@@ -334,7 +342,7 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
     if (dead > 0) {
       crew.count -= dead;
       crew.deaths += dead;
-      crew.morale -= dead / men * 0.9;
+      crew.morale = clamp(crew.morale - (dead / men) * 0.9, 0, 1);
       events.push({
         kind: 'death', severity: 'grave',
         message: dead === 1
