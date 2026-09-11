@@ -35,8 +35,8 @@ export class OrdersView {
       ),
       this.body,
       el('div', { class: 'screen-foot' },
-        button('The chart  (C)', () => this.onLayCourse()),
-        button('Close  (O)', () => this.onClose()),
+        button('The chart', () => this.onLayCourse()),
+        button('Shut the book  (Esc)', () => this.onClose()),
       ),
     );
   }

@@ -70,9 +70,9 @@ export class Hud {
     this.root.append(this.tape.root, left, right, this.alerts, this.hint);
     this.hint.innerHTML =
       '<b>A</b>/<b>D</b> helm (alter course above x15) &nbsp; <b>X</b> steady &nbsp; <b>W</b>/<b>S</b> canvas &nbsp; ' +
-      '<b>Q</b>/<b>E</b> trim &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; <b>J</b> the roteiro &nbsp; ' +
-      '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>H</b> hold course &nbsp; ' +
-      '<b>O</b> orders &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
+      '<b>Q</b>/<b>E</b> trim &nbsp; <b>T</b> about ship &nbsp; <b>H</b> hold course &nbsp; ' +
+      '<b>J</b> the book &nbsp; <b>N</b> sight &nbsp; <b>V</b> view &nbsp; ' +
+      '<b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor';
   }
 
   update(g: Game): void {
@@ -441,8 +441,9 @@ export class Hud {
         '<b>A</b>/<b>D</b> helm — alter course when the clock is up &nbsp; ' +
         '<b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
         '<b>T</b> about ship &nbsp; <b>B</b> back her astern &nbsp; ' +
-        '<b>O</b> orders &nbsp; <b>C</b> chart &nbsp; <b>N</b> sight &nbsp; <b>L</b> log &nbsp; ' +
-        '<b>K</b> crew &nbsp; <b>V</b> view &nbsp; <b>M</b> sound &nbsp; <b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor &nbsp; ' +
+        '<b>J</b> the book \u2014 chart, roteiro, log, orders, company &nbsp; ' +
+        '<b>N</b> sight &nbsp; <b>V</b> view &nbsp; <b>M</b> sound &nbsp; ' +
+        '<b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor &nbsp; ' +
         'drag to look about, wheel to close in';
     }
   }

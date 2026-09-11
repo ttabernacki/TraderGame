@@ -4,6 +4,7 @@ import type { Game, GameMode } from '../game/state';
 import { AudienceView } from './audienceView';
 import { ChartView } from './chartView';
 import { RutterView } from './rutterView';
+import { BookView, isBookSection } from './bookView';
 import { CourtView } from './courtView';
 import { CrewView } from './crewView';
 import { clear, el } from './dom';
@@ -41,6 +42,9 @@ export class Ui {
 
   private chart: ChartView;
   private rutter: RutterView;
+  private book: BookView;
+  /** The page the book was last left open at. */
+  private lastSection: GameMode = 'chart';
   private sight: SightView;
   private logbook: LogbookView;
   private crew: CrewView;
@@ -71,6 +75,7 @@ export class Ui {
     const back = () => this.setMode('sailing');
     this.chart = new ChartView(back);
     this.rutter = new RutterView(back);
+    this.book = new BookView((m) => this.setMode(m));
     this.sight = new SightView(back);
     this.logbook = new LogbookView(back);
     this.crew = new CrewView(back);
@@ -101,6 +106,19 @@ export class Ui {
     this.overlay.append(t.root);
   }
 
+  /**
+   * Show one section of the book, and remember it as the page it is left at.
+   *
+   * The page is built before it is bound in, because the chart measures its own
+   * canvas against the element it is sitting in and has to be attached first.
+   */
+  private openBook(mode: GameMode, page: HTMLElement, build: () => void): void {
+    this.lastSection = mode;
+    this.overlay.append(this.book.root);
+    this.book.show(mode, page);
+    build();
+  }
+
   setMode(mode: GameMode): void {
     const g = this.game;
     if (!g) return;
@@ -114,26 +132,26 @@ export class Ui {
     switch (mode) {
       case 'sailing':
         break;
+      // The five sections of the one book. Each is the screen it always was;
+      // the book only binds them and puts tabs on the head.
       case 'rutter':
-        this.overlay.append(this.rutter.root);
-        this.rutter.open(g);
+        this.openBook(mode, this.rutter.root, () => this.rutter.open(g));
         break;
       case 'chart':
-        this.overlay.append(this.chart.root);
-        this.chart.open(g);
-        requestAnimationFrame(() => this.chart.resize());
+        this.openBook(mode, this.chart.root, () => {
+          this.chart.open(g);
+          requestAnimationFrame(() => this.chart.resize());
+        });
         break;
       case 'sight':
         this.overlay.append(this.sight.root);
         this.sight.open(g);
         break;
       case 'logbook':
-        this.overlay.append(this.logbook.root);
-        this.logbook.open(g);
+        this.openBook(mode, this.logbook.root, () => this.logbook.open(g));
         break;
       case 'crew':
-        this.overlay.append(this.crew.root);
-        this.crew.open(g);
+        this.openBook(mode, this.crew.root, () => this.crew.open(g));
         break;
       case 'port':
         if (!g.dockedAt) { this.setMode('sailing'); return; }
@@ -153,8 +171,7 @@ export class Ui {
         this.court.open(g);
         break;
       case 'orders':
-        this.overlay.append(this.orders.root);
-        this.orders.open(g);
+        this.openBook(mode, this.orders.root, () => this.orders.open(g));
         break;
       case 'epilogue':
         this.overlay.append(new EpilogueView(g, () => this.cb.onNewGame(g.difficulty)).root);
@@ -251,8 +268,9 @@ export class Ui {
         return true;
       }
       case 'j':
-        // The book. Open at any time, at sea or ashore.
-        this.setMode('rutter');
+        // The book, open at the page it was left at — which is how a book is
+        // actually used, and means one key reaches everything.
+        this.setMode(isBookSection(this.lastSection) ? this.lastSection : 'rutter');
         return true;
       case 't':
         // About ship. The order a windward passage is made of.

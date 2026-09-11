@@ -53,7 +53,7 @@ export class LogbookView {
         el('div', { class: 'sub' }, 'Kept by the clerk, corrected by the pilot'),
       ),
       this.body,
-      el('div', { class: 'screen-foot' }, button('Close  (L)', () => this.onClose())),
+      el('div', { class: 'screen-foot' }, button('Shut the book  (Esc)', () => this.onClose())),
     );
   }
 

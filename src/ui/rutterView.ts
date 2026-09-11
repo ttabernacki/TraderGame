@@ -74,7 +74,7 @@ export class RutterView {
         this.notice ?? (g.dockedAt
           ? 'Ashore: a page may be laid before the Casa, sold, or entered in your atlas.'
           : 'What to do with it is decided ashore.')),
-      button('Close  (J)', () => this.onClose()),
+      button('Shut the book  (Esc)', () => this.onClose()),
     );
 
     clear(this.body);

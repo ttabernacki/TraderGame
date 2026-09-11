@@ -27,7 +27,7 @@ export class CrewView {
         el('div', { class: 'sub' }, 'Her company, her stores, and her condition'),
       ),
       this.body,
-      el('div', { class: 'screen-foot' }, button('Close  (K)', () => this.onClose())),
+      el('div', { class: 'screen-foot' }, button('Shut the book  (Esc)', () => this.onClose())),
     );
   }
 

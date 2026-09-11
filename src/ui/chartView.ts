@@ -79,7 +79,9 @@ export class ChartView {
       ),
       el('div', { class: 'screen-body', style: { padding: '0', overflow: 'hidden' } }, this.wrap),
       el('div', { class: 'screen-foot' },
-        button('Close  (C)', () => this.onClose()),
+        el('div', { style: { marginRight: 'auto', fontSize: '13px', opacity: '0.7' } },
+          'Drag to move the chart \u00b7 scroll to zoom \u00b7 click to prick off a mark'),
+        button('Shut the book  (Esc)', () => this.onClose()),
       ),
     );
 
