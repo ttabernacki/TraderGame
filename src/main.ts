@@ -17,8 +17,12 @@ const canvas = document.getElementById('scene') as HTMLCanvasElement;
 const uiHost = document.getElementById('ui') as HTMLElement;
 
 let game: Game | null = null;
+/** The ship sailing behind the title screen, which belongs to no campaign. */
+let demo: Game | null = null;
 let renderer: Renderer | null = null;
 let renderedHullId = '';
+/** Seconds the title scene has been running, for the camera's slow sweep. */
+let titleT = 0;
 
 const input = new InputState();
 input.attach(canvas);
@@ -45,7 +49,68 @@ const ui = new Ui(uiHost, {
   onToggleSound: () => { sound.start(); sound.setMuted(!sound.isMuted()); return !sound.isMuted(); },
 });
 
+/**
+ * Put a ship somewhere and let her settle into a steady state there.
+ *
+ * Used both by the title scene and by the development hooks: a scene is only
+ * worth looking at once the sails have taken up, she has way on, and the sea
+ * around her is the sea the weather says it is rather than the one she was
+ * carrying a moment ago.
+ */
+function settle(
+  g: Game, lat: number, lon: number, hour: number, heading: number, canvas = 1,
+): void {
+  g.ship.state.pos = { lat, lon };
+  g.ship.state.heading = heading;
+  g.nav.estimated = { lat, lon };
+  g.clock.t = Math.floor(g.clock.t / 86400) * 86400 + hour * 3600;
+  g.setCanvas(canvas);
+  g.anchored = false;
+  g.dockedAt = null;
+  g.refreshEnvironment();
+  // Take the new weather whole rather than slewing into it over several
+  // seconds, so the first frame is the sea it says it is.
+  renderer?.ocean.reseed();
+
+  for (const s of g.ship.state.sails) {
+    s.side = g.physics.beta >= 0 ? -1 : 1;
+    s.shifting = 0;
+  }
+  for (let i = 0; i < 900; i++) {
+    g.ship.state.heading = heading;
+    g.ship.state.yawRate = 0;
+    g.update(1 / 30);
+  }
+  g.ship.state.heading = heading;
+  g.displayHeading = heading;
+}
+
+/**
+ * The ship sailing behind the title.
+ *
+ * The opening screen of a game about being at sea was a page of prose on a flat
+ * gradient. Everything needed to show the thing itself was already built and
+ * simply was not started until the player pressed Sail. This runs a ship that
+ * belongs to nobody, on a reach in the north-east trades at the end of the
+ * afternoon, with the camera walking slowly round her; the title sits over it
+ * behind a scrim dark enough to read against.
+ */
+function startTitleScene(): void {
+  demo = new Game(1482);
+  demo.mode = 'sailing';
+  demo.clock.paused = false;
+  // Real time. The sea has to move like the sea, not like a time-lapse.
+  demo.clock.scaleIndex = 1;
+  ensureRenderer(demo);
+  if (renderer) {
+    renderer.cameraMode = 'beam';
+    renderer.lookPitch = -6;
+  }
+  settle(demo, 21.5, -22, 17.9, 236, 0.9);
+}
+
 function startNew(difficulty: Difficulty = 'watch'): void {
+  demo = null;
   game = new Game();
   game.difficulty = difficulty;
   game.mode = 'sailing';
@@ -56,10 +121,12 @@ function startNew(difficulty: Difficulty = 'watch'): void {
   // is trying to do it — and choosing between the three on offer is the first
   // decision of the game. Opening on the market instead left a player at anchor
   // in Lisbon with a purse, no orders, and nothing telling him where to go.
+  if (renderer) renderer.cameraMode = 'chase';
   ui.setMode('court');
 }
 
 function continueSaved(): void {
+  demo = null;
   const raw = Ui.loadSave();
   if (!raw) { startNew(); return; }
   try {
@@ -69,6 +136,7 @@ function continueSaved(): void {
     return;
   }
   ensureRenderer(game);
+  if (renderer) renderer.cameraMode = 'chase';
   ui.attach(game);
   ui.setMode(game.dockedAt ? 'port' : 'sailing');
 }
@@ -167,27 +235,39 @@ function frame(now: number): void {
   const realDt = Math.min((now - last) / 1000, 0.1);
   last = now;
 
-  if (game && renderer) {
-    ensureRenderer(game);
-    applyContinuousInput(game, realDt);
+  // The title's ship and the player's ship are drawn by the same code; only
+  // one of them exists at a time.
+  const shown = game ?? demo;
+  if (shown && renderer) {
+    ensureRenderer(shown);
+    // Only the player's ship answers the helm. The title's does not.
+    if (game) applyContinuousInput(game, realDt);
 
-    const before = game.clock.t;
-    game.update(realDt);
-    const simDt = game.clock.t - before;
+    // A slow sweep across her quarter rather than a full circuit: enough that
+    // the frame is never quite still, bounded so she never wanders behind the
+    // column of text and out of the picture.
+    if (!game) {
+      titleT += realDt;
+      renderer.lookYaw = Math.sin(titleT * 0.09) * 15;
+    }
 
-    const frame = buildFrame(game);
+    const before = shown.clock.t;
+    shown.update(realDt);
+    const simDt = shown.clock.t - before;
+
+    const frame = buildFrame(shown);
     renderer.render(frame, realDt, simDt);
     sound.update({
       windKnots: frame.windKnots,
       apparentKnots: frame.apparentKnots,
       speedKnots: frame.speedKnots,
       waveHeight: frame.waveHeight,
-      roll: game.displayHeel + renderer.drawnRoll,
-      rate: game.clock.scale,
-      bells: game.mode === 'sailing' ? game.clock.bells : 0,
+      roll: shown.displayHeel + renderer.drawnRoll,
+      rate: shown.clock.scale,
+      bells: game && game.mode === 'sailing' ? game.clock.bells : 0,
       belowDecks: false,
     });
-    ui.update(game);
+    if (game) ui.update(game);
   }
 
   requestAnimationFrame(frame);
@@ -259,36 +339,11 @@ if (import.meta.env.DEV) {
   Object.defineProperty(window, 'dev', {
     get: () => ({
       game,
+      demo,
       renderer,
       /** Put the ship somewhere, at a time of day, sailing at a steady state. */
       place(lat: number, lon: number, hour: number, heading: number, canvas = 1) {
-        if (!game) return;
-        const g = game;
-        g.ship.state.pos = { lat, lon };
-        g.ship.state.heading = heading;
-        g.nav.estimated = { lat, lon };
-        g.clock.t = Math.floor(g.clock.t / 86400) * 86400 + hour * 3600;
-        g.setCanvas(canvas);
-        g.anchored = false;
-        g.dockedAt = null;
-        g.refreshEnvironment();
-        // Take the new weather whole rather than slewing into it over several
-        // seconds, so a test scene is the sea it says it is on the first frame.
-        renderer?.ocean.reseed();
-
-        // Run the ship forward until she has way on and the sails have settled,
-        // holding the heading so she does not wander off the test course.
-        for (const s of g.ship.state.sails) {
-          s.side = g.physics.beta >= 0 ? -1 : 1;
-          s.shifting = 0;
-        }
-        for (let i = 0; i < 900; i++) {
-          g.ship.state.heading = heading;
-          g.ship.state.yawRate = 0;
-          g.update(1 / 30);
-        }
-        g.ship.state.heading = heading;
-        g.displayHeading = heading;
+        if (game) settle(game, lat, lon, hour, heading, canvas);
       },
       /** Drop her straight into a port, for looking at the port screens. */
       anchorAt(id: string) {
@@ -308,4 +363,9 @@ if (import.meta.env.DEV) {
 }
 
 ui.showTitle();
+// The title's words come up first and the sea follows a frame later. Building
+// the renderer compiles shaders, which is the one genuinely slow thing at load,
+// and doing it in the same task as the first paint holds the whole screen blank
+// while it happens.
+requestAnimationFrame(() => startTitleScene());
 requestAnimationFrame(frame);

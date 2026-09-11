@@ -15,7 +15,12 @@ export class TitleView {
   private blurb = el('div', { class: 'difficulty-blurb' });
 
   constructor(onNew: (d: Difficulty) => void, onContinue: () => void, hasSave: boolean) {
-    this.root.append(
+    // The copy lives in a column down one side so the ship sailing behind the
+    // title has somewhere to be. Centred over the middle of the screen, she
+    // sailed straight through the paragraph.
+    const panel = el('div', { class: 'title-panel' });
+    this.root.append(panel);
+    panel.append(
       el('h1', {}, 'Carreira da Índia'),
       el('div', { class: 'tagline' }, 'Portugal, 1482'),
       el('div', { class: 'blurb' },
