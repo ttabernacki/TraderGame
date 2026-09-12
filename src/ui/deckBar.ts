@@ -33,7 +33,7 @@ interface Item {
 }
 
 const ITEMS: Item[] = [
-  { label: 'The book', key: 'j', cap: 'J', hint: 'Chart, roteiro, log, orders and company' },
+  { label: 'The book', key: 'j', cap: 'J', hint: 'Chart, rutter, log, orders and company' },
   { label: 'Sight', key: 'n', cap: 'N', hint: 'Take the sun or the pole star with the quadrant' },
   { label: '\u266a', key: 'm', cap: 'M', hint: 'Sound on or off' },
   { label: 'View', key: 'v', cap: 'V', hint: 'Shift the view about the ship' },

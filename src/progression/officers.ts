@@ -185,8 +185,19 @@ export function loyaltyWord(l: number): string {
   return 'against you';
 }
 
+/**
+ * What a man is called aboard, in English.
+ *
+ * The roles carry both names — Piloto and Pilot, Contramestre and Boatswain —
+ * and the screens used to lead with the Portuguese. It is the right word and it
+ * is the wrong thing to put in front of somebody deciding whether to hire him:
+ * eight unfamiliar titles is eight things to look up before the choice can be
+ * made at all. The English name leads everywhere the player has to *decide*
+ * something; the Portuguese stays on the man's own card, where it is flavour
+ * rather than an obstacle.
+ */
 export function officerTitle(o: Officer): string {
-  return OFFICER_ROLES.find((r) => r.role === o.role)?.title ?? o.role;
+  return OFFICER_ROLES.find((r) => r.role === o.role)?.english ?? o.role;
 }
 
 /** A one-line description of a man for a list. */

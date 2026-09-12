@@ -36,7 +36,7 @@ export interface Section {
  */
 export const SECTIONS: Section[] = [
   { mode: 'chart', label: 'Chart', key: 'C' },
-  { mode: 'rutter', label: 'Roteiro', key: 'J' },
+  { mode: 'rutter', label: 'Rutter', key: 'J' },
   { mode: 'logbook', label: 'Log', key: 'L' },
   { mode: 'orders', label: 'Orders', key: 'O' },
   { mode: 'crew', label: 'Company', key: 'K' },

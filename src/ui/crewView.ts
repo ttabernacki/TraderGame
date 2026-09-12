@@ -105,7 +105,7 @@ export class CrewView {
               const def = OFFICER_ROLES.find((r) => r.role === o.role)!;
               return el('li', { style: { opacity: o.alive ? '1' : '0.42' } },
                 el('div', { style: { display: 'flex', justifyContent: 'space-between' } },
-                  el('span', {}, `${o.name} — ${def.title}`),
+                  el('span', {}, `${o.name} — ${def.english}`),
                   el('span', { class: 'tag' }, o.alive ? (o.ashoreAt ? 'ashore' : rankOf(o.ability * 100)) : 'dead'),
                 ),
                 el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '3px', lineHeight: '1.5' } },
@@ -189,7 +189,7 @@ export class CrewView {
     const left = el('div', {});
     left.append(card(s.name,
       el('p', {}, hull.blurb),
-      kv('Class', `${hull.name} (${hull.english})`),
+      kv('Class', `${hull.english} (${hull.name})`),
       kv('Burthen', `${hull.tons} tonéis`),
       kv('Length on the waterline', `${hull.lwl} m`),
       kv('Draft', `${hull.draft} m`),
@@ -297,7 +297,7 @@ export class CrewView {
     const own = g.skills[s.id];
     const withOfficers = eff[s.id];
     const bonus = withOfficers - own;
-    return card(`${s.name} — ${s.english}`,
+    return card(`${s.english} (${s.name})`,
       el('p', { style: { fontStyle: 'italic', color: 'var(--ink-soft)' } }, s.blurb),
       kv('Your own', `${own.toFixed(0)} — ${rankOf(own)}`),
       bonus > 0.5 ? kv('With your officers', `${withOfficers.toFixed(0)}`) : null,

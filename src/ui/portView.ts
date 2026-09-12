@@ -237,8 +237,8 @@ export class PortView {
 
       grid.append(el('div', { class: 'trade-row' },
         el('div', { class: 'trade-name' },
-          el('b', {}, gd.name),
-          el('span', {}, `${gd.english} · per ${gd.unit}`),
+          el('b', {}, gd.english),
+          el('span', {}, `${gd.name} · per ${gd.unit}`),
         ),
         el('div', { class: 'trade-fig', 'data-k': 'They ask' },
           l.stock > 0 ? l.ask.toFixed(1) : '—'),
@@ -519,7 +519,7 @@ export class PortView {
         ? el('p', {}, 'Nothing they can do for you that has not been done.')
         : el('ul', { class: 'list' }, ...upgrades.map((u) => el('li', {},
             el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'baseline' } },
-              el('span', {}, u.name, el('span', { style: { color: 'var(--ink-soft)', fontSize: '12px' } }, ` — ${u.english}`)),
+              el('span', {}, u.english, el('span', { style: { color: 'var(--ink-soft)', fontSize: '12px' } }, ` — ${u.name}`)),
               button(`${u.cost} cr · ${u.days}d`, () => this.fitUpgrade(g, u.id), {
                 disabled: g.crown.gold < u.cost || def.refit < 0.4,
               }),
@@ -688,7 +688,7 @@ export class PortView {
             const canHire = r.role !== 'lingua' || def.people !== 'portuguese';
             return el('li', {},
               el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' } },
-                el('span', {}, `${r.title} — ${r.english}`),
+                el('span', {}, `${r.english} — ${r.title}`),
                 button(`${price} cruzados`, () => this.hire(g, r.role, price), {
                   disabled: g.crown.gold < price || !canHire,
                 }),
@@ -748,7 +748,7 @@ export class PortView {
     // how it worked and is the only reason the choice is interesting.
     assignTrait(o, g.rng);
     g.crew.officers.push(o);
-    const title = OFFICER_ROLES.find((r) => r.role === role)!.title;
+    const title = OFFICER_ROLES.find((r) => r.role === role)!.english;
     const t = traitDef(o.trait);
     g.logEvent('crew', `Shipped ${o.name} as ${title.toLowerCase()} at ${def.name}.`);
     this.notice = {

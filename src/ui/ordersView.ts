@@ -253,7 +253,7 @@ export class OrdersView {
       const t = traitDef(o.trait);
       this.body.append(card(o.name,
         el('div', { class: 'sub' },
-          `${officerTitle(o)}${def ? ` — ${def.english}` : ''}${t ? `, ${t.name.toLowerCase()}` : ''}`),
+          `${officerTitle(o)}${def ? ` (${def.title})` : ''}${t ? `, ${t.name.toLowerCase()}` : ''}`),
         !o.alive
           ? el('p', { class: 'bad' }, 'Dead, and buried at sea.')
           : o.ashoreAt

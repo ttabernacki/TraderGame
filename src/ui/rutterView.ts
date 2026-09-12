@@ -60,7 +60,7 @@ export class RutterView {
     clear(this.head);
     const atlas = g.atlas();
     this.head.append(
-      el('h1', {}, 'O Roteiro'),
+      el('h1', {}, 'The rutter'),
       el('div', { class: 'sub' },
         all.length === 0
           ? 'Nothing in it yet. It fills itself as you sail.'

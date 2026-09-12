@@ -59,7 +59,7 @@ export class CourtView {
     left.append(card(monarch.name, el('p', {}, monarch.blurb)));
 
     left.append(card('Your standing',
-      kv('Title', `${title.name} — ${title.english}`),
+      kv('Title', `${title.english} (${title.name})`),
       el('p', { style: { fontSize: '13px', fontStyle: 'italic', color: 'var(--ink-soft)' } }, title.blurb),
       kv('Renown', String(g.crown.lifetimeStanding)),
       next ? kv('Next honour at', `${next.standing} — ${next.name}`) : kv('Next honour', 'There is nothing above this.'),
