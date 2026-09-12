@@ -2,8 +2,19 @@ import * as THREE from 'three';
 import { NM, clamp, cosd, lerp, wrap180, type LatLon } from '../core/math';
 import { LANDMASSES, elevationAt, isLand } from '../world/landmass';
 
-/** Depth of the rendered coastal band inland, in metres. Beyond this nothing is visible from sea level. */
-const BANDS = [0, 320, 1100, 3200, 8000, 17000];
+/**
+ * Depth of each rendered coastal band inland, in metres. Beyond the last of
+ * them nothing is visible from sea level.
+ *
+ * Six bands, the outer ones nine and seventeen kilometres apart, sampled the
+ * height field about twice across a small island — so however much shape the
+ * field had, the mesh could not hold any of it, and the coast came out as one
+ * flat-topped ribbon of a single colour. The normals were all but vertical
+ * everywhere, so there was nothing for the light to model either. Nine bands,
+ * spaced more evenly, give a coast a profile and give the sun something to
+ * catch, at a cost of about four hundred vertices.
+ */
+const BANDS = [0, 200, 550, 1200, 2400, 4200, 7000, 11000, 17000];
 /**
  * How the ground is shaded band by band, from the beach inland.
  *
@@ -15,26 +26,59 @@ const BANDS = [0, 320, 1100, 3200, 8000, 17000];
  * Near ground is now a little the brightest and the interior settles darker, so
  * there is always tone between the land and the sky.
  */
-const BAND_TINT = [0.74, 0.72, 0.69, 0.66, 0.63, 0.60];
+const BAND_TINT = [0.74, 0.73, 0.71, 0.69, 0.67, 0.65, 0.63, 0.61, 0.59];
 
 /**
- * How much the land is drawn higher than it is.
+ * How much *low* land is drawn higher than it is.
  *
- * Every chart and every panorama in the sailing directions does this, for the
- * same reason: at true scale a coast is almost nothing. Two hundred metres of
- * headland eight miles off subtends a quarter of a degree, the curve of the
- * earth has already taken the beach under it, and the whole of Africa arrives
- * as a hairline you cannot see until you are on it — which is exactly how a
- * player ends up aground without ever having been shown the shore. Lifting it
- * two and a half times puts the land back where the eye expects it, and the
- * order in which it rises over the horizon — high ground first, then the
- * shoreline — is unchanged, because the curvature it is sunk by is not touched.
+ * Every chart and every panorama in the sailing directions exaggerates, for the
+ * same reason: at true scale a low coast is almost nothing. Fifty metres of
+ * dune eight miles off subtends a tenth of a degree, the curve of the earth has
+ * already taken the beach under it, and a flat shore arrives as a hairline you
+ * cannot see until you are on it — which is how a player ends up aground
+ * without ever having been shown the shore.
+ *
+ * But it applies to low ground only. It used to be a flat two and a half times
+ * on everything, which was compensating for a height field that was returning
+ * an eighth of the real elevation; with the field fixed, the same multiplier
+ * would put Madeira's peak at four thousand metres. So the exaggeration is now
+ * faded out as the ground rises, and a mountain is drawn very nearly true.
  *
  * The beach itself is never lifted: the shoreline has to meet the water at the
  * water, or the coast stands on a cliff of its own making. The exaggeration
  * comes in over the first band inland.
  */
-const LAND_LIFT = 2.5;
+const LAND_LIFT = 2.4;
+
+/** Above this height the land is drawn at its true scale. */
+const LIFT_FADES_BY = 700;
+
+/**
+ * How far inland the band may run before it has walked off the far side.
+ *
+ * The bands used to march a fixed nine miles inland from every segment of
+ * coast, which is fine for Africa and wrong for everything smaller than
+ * eighteen miles across: on Madeira, twelve miles wide, the band raised off the
+ * north coast and the band raised off the south coast shot straight past each
+ * other and out into the open sea beyond. One vertex in ten of the "land" was
+ * standing over water, which is the thing that looked like a slab floating
+ * above the surface. The band is now measured against the land actually under
+ * it and compressed to fit, so it always stops at the far shore — and a small
+ * island gets all six bands across its real width, which is what finally gives
+ * it a profile.
+ */
+const MIN_BAND_DEPTH = 700;
+
+/**
+ * How much the slope is exaggerated when building the normals.
+ *
+ * The same argument as LAND_LIFT, applied to the shading rather than the
+ * outline: ground that climbs three hundred metres over four miles stands at
+ * two and a half degrees, and two and a half degrees of Lambert is a flat
+ * wash. Steepening what the light sees — not what the silhouette shows — puts
+ * the modelling back without moving the coast.
+ */
+const SLOPE_RELIEF = 7;
 
 const EARTH_RADIUS_M = 6371000;
 
@@ -124,6 +168,7 @@ export class Land {
   private surfMaterial: THREE.MeshBasicMaterial;
   private surf: THREE.Mesh | null = null;
   private inwardCache = new Map<string, number>();
+  private depthCache = new Map<string, number>();
   private lastOrigin: LatLon = { lat: 999, lon: 999 };
   private lastRangeNm = 0;
   /** Height of the eye above the water, which decides where the horizon is. */
@@ -170,6 +215,7 @@ export class Land {
     if (segments.length === 0) return;
 
     const positions: number[] = [];
+    const normals: number[] = [];
     // Four components: the fourth is how much of this vertex the haze has
     // eaten. See `hazeAt`.
     const colors: number[] = [];
@@ -229,8 +275,10 @@ export class Land {
         if (slen < 1e-6) return [nx, nz];
         sx /= slen; sz /= slen;
         // 1/cos(half-angle), capped so a hairpin does not throw the band out
-        // to the far side of the world.
-        const scale = Math.min(1 / Math.max(sx * nx + sz * nz, 1e-3), 3);
+        // to the far side of the world. Kept tight: a long mitre at a sharp
+        // headland slides the inland vertices sideways off the land and leaves
+        // them standing over open water.
+        const scale = Math.min(1 / Math.max(sx * nx + sz * nz, 1e-3), 1.6);
         return [sx * scale, sz * scale];
       };
       const [naX, naZ] = mitre(ax, az, seg.prevLat, seg.prevLon, seg.cornerA, 1);
@@ -239,8 +287,28 @@ export class Land {
       const base = positions.length / 3;
       const relief = LANDMASSES[seg.land].relief;
 
+      // How much of the band this piece of coast has room for. Measured at
+      // both ends and the narrower taken, or the far end of a piece running
+      // onto a point of land walks out over the water beyond it.
+      const depth = Math.min(
+        this.landDepth(seg.aLat, seg.aLon, naX, naZ, mPerDegLat, mPerDegLon),
+        this.landDepth(seg.bLat, seg.bLon, nbX, nbZ, mPerDegLat, mPerDegLon),
+      );
+      const bandScale = clamp(depth / BANDS[BANDS.length - 1], 0, 1);
+
+      // Heights first, then normals from them.
+      //
+      // computeVertexNormals() gave this mesh normals that were all but
+      // straight up: the bands are hundreds of metres apart on the ground and
+      // the ground climbs a few hundred metres over miles, so every face is
+      // within a few degrees of flat and Lambert shaded the whole coast one
+      // even tone — cut paper, with no modelling anywhere on it. The gradient
+      // of the height field is known exactly here, so the normals are built
+      // from it and the slope is exaggerated to the same end as the heights.
+      const strip: { x: number; z: number; h: number; lat: number; lon: number }[] = [];
+
       for (let b = 0; b < BANDS.length; b++) {
-        const inland = BANDS[b];
+        const inland = BANDS[b] * bandScale;
         for (const [px, pz, ex, ez] of [
           [ax, az, naX, naZ], [bx, bz, nbX, nbZ],
         ] as const) {
@@ -250,25 +318,23 @@ export class Land {
           const lat = origin.lat - z / mPerDegLat;
           const lon = origin.lon + x / mPerDegLon;
           const h = b === 0 ? 0.4 : elevationAt({ lat, lon });
-          // The shape of a coast, seen from the sea.
+          // A coast stands up out of the water within the first mile — dunes,
+          // cliffs, the first line of hills — so there is always an edge to see
+          // even where the interior is flat.
           //
-          // The floor used to climb straight from the beach to the interior —
-          // twelve per cent of the peak, spread evenly over nine miles inland —
-          // which put the first two miles of every coast under twenty metres.
-          // From a deck two miles off that is a fifth of a degree of anything to
-          // look at: the land was drawn, correctly, and read as a smudge in the
-          // haze, which is why a player only found a continent by hitting it.
-          //
-          // Real coasts do not do that. They stand up out of the water within
-          // the first mile — dunes, cliffs, the first line of hills — and then
-          // flatten off inland. Saturating the rise over about a mile and a
-          // half gives that profile, so a coast presents an edge from the
-          // moment it lifts over the horizon.
-          const floor = relief * 0.22 * (1 - Math.exp(-inland / 2600));
+          // This used to be twenty-two per cent of the peak, which on Madeira
+          // came to 409 metres and, lifted, to a flat 1022 — a table-top that
+          // beat the real terrain at every point on the island and drew the
+          // whole thing as one level plateau. It is now a coastal bluff and
+          // nothing more: the height field does the work everywhere else.
+          const floor = relief * 0.06 * (1 - Math.exp(-inland / 1200));
+          const raw = Math.max(h, floor);
+          // Low ground is exaggerated and high ground is left nearly true.
+          const exagg = lerp(LAND_LIFT, 1.05, clamp(raw / LIFT_FADES_BY, 0, 1));
           // Eased in over the first band so the shoreline still meets the sea.
-          const lift = 1 + (LAND_LIFT - 1) * Math.min(inland / 900, 1);
-          const height = Math.max(h, floor) * lift;
+          const height = raw * (1 + (exagg - 1) * Math.min(inland / 900, 1));
           positions.push(x, height - curvatureDrop(Math.hypot(x, z), eyeM), z);
+          strip.push({ x, z, h: height, lat, lon });
 
           // The strand: a pale edge where the ground meets the water, so the
           // coastline itself is a thing on the screen rather than the place two
@@ -278,6 +344,35 @@ export class Land {
           // equatorial ones green, southern capes brown and scrubby.
           const c = groundColour(lat, height, relief);
           colors.push(c.r * tint, c.g * tint, c.b * tint, hazeAt(Math.hypot(x, z), rangeNm));
+        }
+      }
+
+      // Normals from the height field's own gradient, inland and alongshore.
+      const alongLen = Math.max(len, 1);
+      for (let b = 0; b < BANDS.length; b++) {
+        for (let side = 0; side < 2; side++) {
+          const here = strip[b * 2 + side];
+          const lo = strip[Math.max(b - 1, 0) * 2 + side];
+          const hi = strip[Math.min(b + 1, BANDS.length - 1) * 2 + side];
+          const run = Math.max(Math.hypot(hi.x - lo.x, hi.z - lo.z), 1);
+          // Slope going inland, and slope running along the shore.
+          const gIn = (hi.h - lo.h) / run;
+          const gAlong = (strip[b * 2 + 1].h - strip[b * 2].h) / alongLen;
+          // The inward and alongshore unit vectors this vertex is measured on.
+          const ix = side === 0 ? naX : nbX;
+          const iz = side === 0 ? naZ : nbZ;
+          const ilen = Math.max(Math.hypot(ix, iz), 1e-6);
+          const ux = ix / ilen, uz = iz / ilen;
+          const sx = dx / alongLen, sz = dz / alongLen;
+          // Exaggerated to match the heights: a real coast at this range slopes
+          // a few degrees, and a few degrees of Lambert is no modelling at all.
+          const k = SLOPE_RELIEF;
+          let nX = -(gIn * k) * ux - (gAlong * k) * sx;
+          let nZ = -(gIn * k) * uz - (gAlong * k) * sz;
+          let nY = 1;
+          const nl = Math.hypot(nX, nY, nZ) || 1;
+          normals.push(nX / nl, nY / nl, nZ / nl);
+          void here;
         }
       }
 
@@ -313,8 +408,8 @@ export class Land {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 4));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     geo.setIndex(indices);
-    geo.computeVertexNormals();
     geo.computeBoundingSphere();
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.renderOrder = 1;
@@ -412,6 +507,44 @@ export class Land {
   }
 
   /**
+   * How far the land runs inland from this point before the far shore, in
+   * metres, capped at the depth of the widest band.
+   *
+   * Marched rather than derived, because the only thing that knows where the
+   * land stops is the ring itself. The march stops at the *first* exit so a bay
+   * or a strait is never jumped: a band that leapt a sound would put ground
+   * across open water a ship can sail through, which is worse than stopping
+   * short.
+   */
+  private landDepth(
+    lat: number, lon: number, nx: number, nz: number,
+    mPerDegLat: number, mPerDegLon: number,
+  ): number {
+    const full = BANDS[BANDS.length - 1];
+    // Cached on a coarse grid — a tenth of a minute of arc, about 200 metres —
+    // because rebuild() runs every quarter mile and asks for the same stretch
+    // of coast each time.
+    const key = `${Math.round(lat * 600)}:${Math.round(lon * 600)}`;
+    const hit = this.depthCache.get(key);
+    if (hit !== undefined) return hit;
+
+    const STEPS = 12;
+    let depth = MIN_BAND_DEPTH;
+    for (let s = 1; s <= STEPS; s++) {
+      const d = (full * s) / STEPS;
+      const q = {
+        lat: lat - (nz * d) / mPerDegLat,
+        lon: lon + (nx * d) / mPerDegLon,
+      };
+      if (!isLand(q)) break;
+      depth = d;
+    }
+    if (this.depthCache.size > 20000) this.depthCache.clear();
+    this.depthCache.set(key, depth);
+    return depth;
+  }
+
+  /**
    * Which perpendicular points into the land. Determined once per segment by
    * probing, because the coastline rings are not wound consistently.
    */
@@ -483,10 +616,23 @@ function groundColour(lat: number, height: number, relief: number): THREE.Color 
     .lerp(jungle, equatorial * 0.8)
     .lerp(green, temperate * 0.6);
 
-  // Bare rock and, on the highest ground, a paler cap.
-  const alt = clamp(height / Math.max(relief * 0.55, 1), 0, 1);
-  c.lerp(new THREE.Color(0.46, 0.42, 0.38), alt * 0.55);
-  if (alt > 0.85) c.lerp(new THREE.Color(0.82, 0.82, 0.84), (alt - 0.85) / 0.15 * 0.6);
+  // Bare rock high up, measured against the land's own peak.
+  //
+  // The divisor used to be 0.55 of the relief, which happened to be exactly the
+  // height of the flat plateau the mesh was building — so every island came out
+  // at the top of this scale and was drawn as bare rock under a snow cap, one
+  // even grey from the beach to the skyline. Against the true peak, rock
+  // appears where there is rock.
+  const alt = clamp(height / Math.max(relief, 1), 0, 1);
+  c.lerp(new THREE.Color(0.46, 0.42, 0.38), clamp((alt - 0.35) / 0.5, 0, 1) * 0.6);
+
+  // Snow, where there is any. On a real summit, not a fraction of one: Madeira
+  // stands 1861 metres over a subtropical sea and has none, and drawing a cap
+  // on it was most of why it read as a white slab.
+  const snowline = 2400 - clamp((Math.abs(lat) - 30) / 30, 0, 1) * 1400;
+  if (height > snowline) {
+    c.lerp(new THREE.Color(0.86, 0.87, 0.9), clamp((height - snowline) / 600, 0, 1) * 0.75);
+  }
 
   return c;
 }

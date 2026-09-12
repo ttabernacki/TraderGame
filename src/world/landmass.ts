@@ -12,6 +12,19 @@ interface PreparedLand {
   ring: number[];
   minLat: number; maxLat: number;
   minLon: number; maxLon: number;
+  /**
+   * How far inland this land climbs before it is up among its own peaks, in
+   * nautical miles.
+   *
+   * The rise used to run on a fixed fourteen-mile scale for everything, which
+   * is about right for Africa and nonsense for an island. Madeira is six miles
+   * from its shore to its spine, so it reached a seventh of the way up its own
+   * relief and came out 225 metres high against a real peak of 1861 — and every
+   * island in the game was therefore a flat plate lying on the water. Scaled to
+   * the land's own width, an island stands up like an island and a continent is
+   * unchanged.
+   */
+  scaleNm: number;
 }
 
 /**
@@ -55,7 +68,13 @@ function build(): void {
       minLat = Math.min(minLat, r[i]); maxLat = Math.max(maxLat, r[i]);
       minLon = Math.min(minLon, r[i + 1]); maxLon = Math.max(maxLon, r[i + 1]);
     }
-    prepared.push({ def, ring: r, minLat, maxLat, minLon, maxLon });
+    // Narrowest way across, halved: the distance from the nearer coast to the
+    // spine, which is where a landmass is as high as it gets.
+    const latSpanNm = (maxLat - minLat) * 60;
+    const lonSpanNm = (maxLon - minLon) * 60 * cosd((minLat + maxLat) / 2);
+    const halfWidthNm = Math.min(latSpanNm, lonSpanNm) / 2;
+    const scaleNm = clamp(halfWidthNm * 0.55, 0.8, 14);
+    prepared.push({ def, ring: r, minLat, maxLat, minLon, maxLon, scaleNm });
 
     const n = r.length / 2;
     for (let i = 0; i < n; i++) {
@@ -198,11 +217,35 @@ export function elevationAt(p: LatLon, shore?: ShoreInfo): number {
   if (s.land < 0 || s.signed > 0) return 0;
   const inlandNm = s.distance / NM;
   const peak = LANDMASSES[s.land].relief;
-  const rise = 1 - Math.exp(-inlandNm / 14);
-  const ridging =
-    0.72 +
-    0.28 * Math.sin(p.lat * 2.7 + p.lon * 1.9) * Math.cos(p.lon * 3.1 - p.lat * 1.3);
-  return peak * rise * ridging * 0.55;
+  const L = prepared[s.land];
+  // Scaled to this land's own width — see PreparedLand.scaleNm.
+  const rise = 1 - Math.exp(-inlandNm / L.scaleNm);
+
+  // Ridge and valley across the interior, so the high ground is a range rather
+  // than a dome.
+  //
+  // The wave used to run on fixed periods in degrees of latitude and longitude
+  // — about two degrees, a hundred and twenty miles. Across Africa that is a
+  // range of hills; across an island twelve miles wide it is a constant, and
+  // every island in the game was therefore multiplied by whatever single value
+  // the sinusoid happened to take at its position. Madeira drew 0.68 and was
+  // rendered two thirds of its own height for no reason but where it sits.
+  //
+  // Measured in miles from the land's own centre and scaled to its own width,
+  // the same wave puts two or three ridges across any landmass, so an island
+  // has a spine and a summit that reaches the peak the data gives it.
+  const northNm = (p.lat - (L.minLat + L.maxLat) / 2) * 60;
+  const eastNm = wrap180(p.lon - (L.minLon + L.maxLon) / 2) * 60 * cosd(p.lat);
+  // Two or three ridges across the land's width. Slower than this and a small
+  // island carries less than one cycle, which is a constant again.
+  const f = 3.2 / L.scaleNm;
+  const ridge = Math.sin(northNm * f * 1.7 + eastNm * f * 0.6)
+    * Math.cos(eastNm * f * 1.3 - northNm * f * 0.9);
+  // It only ever subtracts: the crests reach the land's stated peak and
+  // everything between them sits below it, which is what a peak elevation
+  // means. The whole field used to carry a further 0.55, so the highest ground
+  // in the world was a little over half the height the data said it was.
+  return peak * rise * (0.78 + 0.22 * ridge);
 }
 
 export interface CoastVertex {

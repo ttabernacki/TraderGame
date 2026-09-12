@@ -3,6 +3,9 @@ import { NM, clamp, cosd, wrap180, type LatLon } from '../core/math';
 import { elevationAt, isLand, nearestShore } from '../world/landmass';
 import { anchorageOf, portsNear, type PortDef } from '../world/ports';
 import { people } from '../world/peoples';
+
+/** Highest ground a town's houses may be drawn on, in metres. See groundAt(). */
+const TOWN_CEILING = 150;
 import { Rng } from '../core/rng';
 
 const EARTH_RADIUS_M = 6371000;
@@ -332,10 +335,20 @@ export class Settlements {
     // to sea on half the world's coasts, which is why it is written out.
     const { alongX, alongZ, backX, backZ } = frameOf(town.brg);
 
+    /**
+     * The ground a house stands on.
+     *
+     * Capped, because a harbour is at the water's edge by definition and a few
+     * ports in the data are pinned a little way inside their coastline — Arguim
+     * and Dofar among them. The height field reads those points as interior and
+     * puts them twelve hundred metres up, and the town is then drawn hanging in
+     * the sky over the anchorage. A town may stand on a hillside; it may not
+     * stand on a summit.
+     */
     const groundAt = (x: number, z: number): number => {
       const lat = origin.lat - z / mPerDegLat;
       const lon = origin.lon + x / mPerDegLon;
-      return elevationAt({ lat, lon });
+      return Math.min(elevationAt({ lat, lon }), TOWN_CEILING);
     };
 
     const place = (
@@ -430,7 +443,7 @@ export class Settlements {
     const rng = Rng.fromString(`${town.def.id}:smoke`);
     const { alongX, alongZ, backX, backZ } = frameOf(town.brg);
     // A town on a hill smokes from the hill, not from sea level.
-    const ground = Math.max(elevationAt({ lat: town.lat, lon: town.lon }), 0);
+    const ground = clamp(elevationAt({ lat: town.lat, lon: town.lon }), 0, TOWN_CEILING);
 
     for (let f = 0; f < fires; f++) {
       const alongM = rng.range(-0.7, 0.7) * plan.radius;

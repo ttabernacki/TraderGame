@@ -1,4 +1,4 @@
-import { NM, clamp, haversine, type LatLon } from '../core/math';
+import { NM, clamp, cosd, haversine, sind, type LatLon } from '../core/math';
 import { elevationAt, nearestShore } from '../world/landmass';
 import { PORTS, anchorageOf } from '../world/ports';
 import type { Rng } from '../core/rng';
@@ -58,9 +58,23 @@ function wetness(lat: number): number {
 
 export function shorePlaceAt(at: LatLon): ShorePlace {
   const shore = nearestShore(at, 90);
-  const relief = elevationAt(shore.land >= 0
-    ? { lat: at.lat, lon: at.lon }
-    : at, shore);
+  // What stands behind the beach, sampled behind the beach.
+  //
+  // This used to read the height field at the ship's own position. A ship is on
+  // the water, the field is zero on the water, and so every coast in the world
+  // was reported as "low and flat" — including the ones with a two-thousand
+  // metre wall of rock over them. Stepping a mile and a half inland from the
+  // nearest point of shore asks the question the sentence is actually about.
+  const INLAND_NM = 1.5;
+  const inland = shore.land >= 0
+    ? {
+      lat: at.lat + ((shore.distance / NM + INLAND_NM) * cosd(shore.bearing)) / 60,
+      lon: at.lon
+        + ((shore.distance / NM + INLAND_NM) * sind(shore.bearing))
+          / (60 * Math.max(cosd(at.lat), 1e-6)),
+    }
+    : at;
+  const relief = elevationAt(inland);
 
   let nearestPortId: string | null = null;
   let nearestPortNm = Infinity;
