@@ -4,6 +4,7 @@ import {
   sightOpportunities, takeSight, type SightOpportunity, type SightOutcome,
 } from '../navigation/navigator';
 import { sightError } from '../navigation/instruments';
+import { moonPosition } from '../navigation/celestial';
 import { skill } from '../crew/skills';
 import type { Game } from '../game/state';
 import { button, card, clear, el, kv } from './dom';
@@ -94,7 +95,7 @@ export class SightView {
     const g = this.game;
     if (!g) return 0;
     const inst = g.nav.altitudeInstrument;
-    const sea = clamp(g.weatherNow.waveHeight, 0, 10);
+    const sea = clamp(g.observingSea, 0, 10);
     return sea * inst.motionSensitivity * 0.85;
   }
 
@@ -162,6 +163,7 @@ export class SightView {
           title: 'Heave to and wait for a smoother moment. Costs an hour.',
           disabled: !opp?.available,
         }),
+        g.can('lunars') ? this.lunarButton(g) : null,
       ),
       this.outcome ? this.renderOutcome() : el('div', { class: 'quote', style: { marginTop: '14px' } },
         'Watch the body rise and fall with the ship. Set the index where it stands when she is on an even keel, then mark. The swing is the whole difficulty: a quadrant on a pitching deck is a guess with a brass instrument attached to it.'),
@@ -255,6 +257,68 @@ export class SightView {
     this.render();
   }
 
+  /**
+   * The lunar, which exists only for the captain who has learned it.
+   *
+   * Deliberately not an opportunity in the list beside the sun and the pole
+   * star: those give a latitude, this gives a longitude, and the difference is
+   * the whole reason the node costs four points. It wants the moon well up and
+   * a sky clear enough to measure a distance across, and it costs four hours of
+   * working — which on a good day is fifteen miles of easting given up to learn
+   * where you are within fifteen miles of easting.
+   */
+  private lunarButton(g: Game): HTMLElement {
+    const m = moonPosition(
+      g.ship.state.pos.lat, g.ship.state.pos.lon, g.clock.day, g.clock.hour);
+    const why = m.altitude < 12
+      ? 'The moon is too low to measure a distance from.'
+      : m.phase > 0.96 || m.phase < 0.06
+        ? 'The moon is too near the sun to work a distance.'
+        : g.weatherNow.cloud > 0.55
+          ? 'Too much cloud to bring the moon and a star together.'
+          : null;
+    return button('Work a lunar', () => this.lunar(), {
+      title: why ?? 'Four hours of observation and working, for a longitude.',
+      disabled: !!why,
+    });
+  }
+
+  private lunar(): void {
+    const g = this.game;
+    if (!g || !g.can('lunars')) return;
+    const m = moonPosition(
+      g.ship.state.pos.lat, g.ship.state.pos.lon, g.clock.day, g.clock.hour);
+
+    // A quarter of a degree of lunar distance is half a degree of longitude,
+    // and everything about the sea makes it worse: the moon low, the ship
+    // lively, the instrument coarse.
+    const inst = g.nav.altitudeInstrument;
+    const sigmaNm = clamp(
+      26 * inst.baseError
+        * (1 + inst.motionSensitivity * Math.min(g.observingSea, 8) * 0.2)
+        * (1 + Math.max(0, 40 - m.altitude) / 55),
+      11, 95,
+    );
+    const observed = g.ship.state.pos.lon + this.rng.normal(0, sigmaNm / (60 * Math.max(0.25, Math.cos(g.ship.state.pos.lat * Math.PI / 180))));
+    const before = g.nav.sigmaLon;
+    g.nav.applyLongitude(observed, sigmaNm, g.clock.t);
+    g.clock.t += 4 * 3600;
+    g.crew.fatigue = clamp(g.crew.fatigue + 0.05, 0, 1);
+    g.refreshEnvironment();
+    this.outcome = {
+      ok: true,
+      method: 'Lunar distance',
+      message:
+        `Four hours at the tables. The distance of the moon from the star, worked back to the hour at Lisbon, `
+        + `puts her longitude at ${Math.abs(g.nav.estimated.lon).toFixed(2)}\u00b0 ${g.nav.estimated.lon >= 0 ? 'E' : 'W'}, `
+        + `within some ${sigmaNm.toFixed(0)} miles. The doubt in her easting was ${before.toFixed(0)} miles; it is now ${g.nav.sigmaLon.toFixed(0)}.`,
+    };
+    g.logEvent('navigation',
+      `Lunar distance worked. Longitude by observation ${Math.abs(g.nav.estimated.lon).toFixed(2)}\u00b0 ${g.nav.estimated.lon >= 0 ? 'E' : 'W'}, doubt ${g.nav.sigmaLon.toFixed(0)} miles.`, true);
+    this.refreshOpportunities();
+    this.render();
+  }
+
   private mark(): void {
     const g = this.game;
     const opp = this.opportunities[this.selected];
@@ -267,7 +331,7 @@ export class SightView {
     const eff = g.effectiveSkill;
     const outcome = takeSight(
       g.nav, opp, g.ship.state.pos, g.clock.day, g.clock.hour,
-      g.clock.dayOfYear, g.clock.date.year, g.weatherNow.waveHeight,
+      g.clock.dayOfYear, g.clock.date.year, g.observingSea,
       skill(eff, 'navegacao'), aimError, g.clock.t, this.rng,
     );
 
@@ -275,10 +339,6 @@ export class SightView {
     if (outcome.ok) {
       g.logEvent('navigation',
         `${outcome.method}: ${outcome.message} The reckoning is amended to ${formatLat(g.nav.estimated.lat)}.`);
-      const accuracy = Math.abs(aimError);
-      const reward = clamp(2.2 - accuracy * 0.9, 0.2, 2.2);
-      const before = g.skills.navegacao;
-      g.skills.navegacao = Math.min(100, before + reward);
       g.clock.t += 900;
     }
     g.refreshEnvironment();
@@ -290,6 +350,10 @@ export class SightView {
     const g = this.game!;
     if (!o.ok) {
       return el('div', { class: 'notice grave', style: { marginTop: '14px' } }, o.message);
+    }
+    // A lunar gives a longitude, so none of the latitude talk below applies.
+    if (o.latitude === undefined) {
+      return el('div', { class: 'notice', style: { marginTop: '14px' } }, o.message);
     }
     const err = Math.abs((o.latitude ?? 0) - g.ship.state.pos.lat) * 60;
     return el('div', { class: 'notice', style: { marginTop: '14px' } },

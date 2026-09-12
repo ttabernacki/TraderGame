@@ -5,7 +5,7 @@ import {
   applyMove, applyOutcome, audienceReading, availableMoves, beginAudience, concludeAudience,
   expectedGiftValue, giftCandidates, type AudienceContext, type AudienceState, type GiftOffer,
 } from '../diplomacy/contact';
-import { skill, train } from '../crew/skills';
+import { skill } from '../crew/skills';
 import type { Game } from '../game/state';
 import { button, card, clear, el, kv, meter } from './dom';
 
@@ -42,6 +42,9 @@ export class AudienceView {
       hasPadraoAboard: g.ship.upgrades.includes('padroes'),
       standing: g.crown.lifetimeStanding,
       relations: g.relationsFor(g.dockedAt!),
+      canTreaty: g.can('treaty'),
+      canForce: g.can('force'),
+      canFeitoria: g.can('feitoria'),
       rng: g.rng,
     };
   }
@@ -117,7 +120,6 @@ export class AudienceView {
                 onclick: () => {
                   if (m.id === 'gift') { this.giftMode = true; this.render(); return; }
                   applyMove(s, m.id, this.context(g));
-                  train(g.skills, 'diplomacia', 0.35);
                   this.render();
                 },
               }, el('b', {}, m.label), el('span', {}, m.description)),
@@ -190,7 +192,6 @@ export class AudienceView {
           const gifts: GiftOffer[] = [...this.giftPicks.entries()].map(([goodId, quantity]) => ({ goodId, quantity }));
           for (const gift of gifts) g.ship.removeCargo(gift.goodId, gift.quantity);
           applyMove(this.state!, 'gift', this.context(g), gifts);
-          train(g.skills, 'diplomacia', 0.6);
           this.giftPicks.clear();
           this.giftMode = false;
           this.render();
@@ -214,7 +215,6 @@ export class AudienceView {
     const pe = people(def.people);
 
     g.logEvent('contact', `Audience at ${def.name}. ${outcome.summary}`, true);
-    train(g.skills, 'diplomacia', outcome.mayTrade ? 3.5 : 1.2);
 
     if (outcome.mayTrade && !g.visitedPorts.has(`${def.id}:traded`)) {
       const charted = g.chart.ports.get(def.id);

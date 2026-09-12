@@ -7,7 +7,7 @@ import { hullClass } from '../ship/hull';
 import { Ship } from '../ship/ship';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
 import { makeOfficer, OFFICER_ROLES, type OfficerRole } from '../crew/crew';
-import { skill, train } from '../crew/skills';
+import { skill } from '../crew/skills';
 import { assignTrait, loyaltyWord, officerTitle, traitDef } from '../progression/officers';
 import { daysLeft, ventureLine, ventureTons } from '../progression/ventures';
 import type { Game } from '../game/state';
@@ -265,7 +265,7 @@ export class PortView {
               l.goodId, Math.max(1, Number((e.target as HTMLInputElement).value))),
           }),
           button('Buy', () => this.buy(g, l, this.quantities.get(l.goodId) ?? qty), {
-            disabled: l.stock <= 0 || g.crown.gold < l.ask,
+            disabled: l.stock <= 0 || g.crown.gold + g.creditFree < l.ask,
           }),
           button('Sell', () => this.sell(g, l, this.quantities.get(l.goodId) ?? qty), {
             disabled: held <= 0 || l.appetite <= 0,
@@ -274,23 +274,58 @@ export class PortView {
       ));
     }
 
-    host.append(
+    append(host,
       el('div', { class: 'card' },
         el('div', { class: 'purse-row' },
           el('div', {}, kv('Purse', `${g.crown.gold.toFixed(0)} cruzados`)),
           el('div', {}, kv('Hold free', `${g.ship.holdFree.toFixed(1)} of ${g.ship.holdCapacity} tons`)),
           el('div', {}, kv('Your bargaining', `${g.skills.comercio.toFixed(0)}`)),
+          g.creditLimit > 0
+            ? el('div', {}, kv('Credit',
+                `${g.creditFree.toFixed(0)} to draw` + (g.crown.debt > 0 ? ` · ${g.crown.debt.toFixed(0)} owed` : '')))
+            : null,
         ),
       ),
       grid,
+      this.factorsEye(g),
       el('p', { class: 'quote', style: { marginTop: '16px' } },
         'The Lisbon column is what a quintal fetches on the Tagus. The whole enterprise rests on the difference between that number and what they are asking here — pepper bought at Calicut for two cruzados sold at home for thirty, and one cargo paid for the voyage several times over.'),
     );
   }
 
+  /**
+   * What the same goods fetch at the other ports you know.
+   *
+   * The whole of the trade game was previously played against one number — the
+   * Lisbon column — so every cargo decision was the same decision. A captain
+   * who has taken the factor's eye is buying for a market he can name, which is
+   * what actually made these voyages pay.
+   */
+  private factorsEye(g: Game): HTMLElement | null {
+    const here = g.portHere!.id;
+    const rows: HTMLElement[] = [];
+    for (const lot of g.ship.cargo) {
+      const quotes = g.distantQuotes(lot.goodId, here);
+      if (quotes.length === 0) continue;
+      rows.push(el('li', {},
+        el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px' } },
+          el('span', {}, good(lot.goodId).english),
+          el('span', { style: { color: 'var(--ink-soft)', fontSize: '12.5px' } },
+            quotes.map((q) => `${q.port} ${q.bid.toFixed(1)}`).join('  ·  ')),
+        ),
+      ));
+    }
+    if (rows.length === 0) return null;
+    return card('What they pay elsewhere',
+      el('p', { style: { fontStyle: 'italic', color: 'var(--ink-soft)' } },
+        'From your correspondence, and as stale as the last ship to come this way.'),
+      el('ul', { class: 'list' }, ...rows),
+    );
+  }
+
   private buy(g: Game, l: Listing, qty: number): void {
     const gd = good(l.goodId);
-    const affordable = Math.floor(g.crown.gold / l.ask);
+    const affordable = Math.floor((g.crown.gold + g.creditFree) / l.ask);
     const roomFor = Math.floor(g.ship.holdFree / gd.bulk);
     const take = Math.min(qty, l.stock, affordable, roomFor);
     if (take <= 0) {
@@ -305,6 +340,9 @@ export class PortView {
     // against you while you are doing it.
     const paid = l.ask * Markets.slippage(take, l.stock);
     const cost = take * paid;
+    // A captain with credit draws on it without being asked; the debt is
+    // reported in the log and stands over him until the voyage is settled.
+    if (cost > g.crown.gold) g.drawCredit(cost);
     if (cost > g.crown.gold) {
       const canAfford = Math.floor(g.crown.gold / paid);
       if (canAfford <= 0) {
@@ -317,7 +355,6 @@ export class PortView {
     g.ship.addCargo(l.goodId, take, paid);
     g.crown.gold -= cost;
     g.markets.buy(g.portHere!.id, l.goodId, take);
-    train(g.skills, 'comercio', take * 0.02);
     g.crown.syncCargoObjectives((id) => g.ship.quantityOf(id));
     g.logEvent('trade', `Bought ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} at ${paid.toFixed(1)} the ${gd.unit}, ${cost.toFixed(0)} cruzados in all.`);
     this.notice = { text: `Took aboard ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} for ${cost.toFixed(0)} cruzados.` };
@@ -364,7 +401,6 @@ export class PortView {
     g.ship.removeCargo(l.goodId, take);
     g.crown.gold += revenue;
     g.markets.sell(g.portHere!.id, l.goodId, take);
-    train(g.skills, 'comercio', take * 0.03);
     g.crown.syncCargoObjectives((id) => g.ship.quantityOf(id));
 
     const profit = revenue - paid * take;

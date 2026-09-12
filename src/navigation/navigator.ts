@@ -73,6 +73,16 @@ export class Navigator {
   /** Set once the pilot has been taught to allow for leeway. */
   leewayAllowance = 0;
 
+  /**
+   * How fast the reckoning goes wrong, against an ordinary pilot's rate.
+   *
+   * A captain who keeps the board himself — every heave of the log entered,
+   * every course change timed — is not more accurate per observation, he simply
+   * makes fewer small errors between them. So this scales the systematic errors
+   * and the growth of doubt together, and leaves every sight alone.
+   */
+  driftScale = 1;
+
   private rng: Rng;
   private accumCourse = 0;
   private accumDist = 0;
@@ -114,7 +124,7 @@ export class Navigator {
     // The helmsman does not hold the course exactly, and his error drifts.
     this.helmBias += this.rng.normal(0, 0.02) * Math.sqrt(dt / 60);
     this.helmBias = clamp(this.helmBias, -3, 3);
-    const steerError = this.helmBias * this.compass.error * (1.25 - skill * 0.5);
+    const steerError = this.helmBias * this.compass.error * (1.25 - skill * 0.5) * this.driftScale;
 
     // The compass points at magnetic north, and nobody has a chart of variation.
     const variation = magneticVariation(truePos.lat, truePos.lon);
@@ -127,8 +137,8 @@ export class Navigator {
     this.logBias += this.rng.normal(0, 0.004) * Math.sqrt(dt / 3600);
     const believedSpeed = Math.max(
       0,
-      Math.abs(speedThroughWaterKnots) * this.logBias *
-        (1 + this.rng.normal(0, this.speedInstrument.error * 0.35)),
+      Math.abs(speedThroughWaterKnots) * (1 + (this.logBias - 1) * this.driftScale) *
+        (1 + this.rng.normal(0, this.speedInstrument.error * 0.35 * this.driftScale)),
     );
 
     // Leeway is visible in the wake, so a good pilot allows for some of it.
@@ -155,8 +165,9 @@ export class Navigator {
     // a random walk in the errors of the log, the compass and the helmsman, and
     // a random walk's variance goes as its length.
     const runNm = distM / NM;
-    this.sigmaLat = Math.sqrt(this.sigmaLat * this.sigmaLat + runNm * LAT_DRIFT);
-    this.sigmaLon = Math.sqrt(this.sigmaLon * this.sigmaLon + runNm * LON_DRIFT);
+    const drift = this.driftScale * this.driftScale;
+    this.sigmaLat = Math.sqrt(this.sigmaLat * this.sigmaLat + runNm * LAT_DRIFT * drift);
+    this.sigmaLon = Math.sqrt(this.sigmaLon * this.sigmaLon + runNm * LON_DRIFT * drift);
     this.milesSinceFix += runNm;
 
     this.accumCourse += reckonedCourse * runNm;
@@ -216,6 +227,26 @@ export class Navigator {
     this.lastFixT = t;
     this.milesSinceFix = 0;
     this.fixes.push({ t, latitude: known.lat, method: 'Landfall', sigma: 0.02, body: 'the land' });
+  }
+
+  /**
+   * Longitude by lunar distance.
+   *
+   * The one thing in the game nobody else in 1482 can do — the method was not
+   * published for another two and a half centuries — so it is deliberately the
+   * most expensive node on any tree. It wants a clear moon, it takes hours of
+   * working, and it comes out to a quarter of a degree. That is fifteen miles
+   * of longitude where the alternative is sixty or a hundred, and it turns the
+   * open Atlantic from a thing you survive into a thing you cross on purpose.
+   */
+  applyLongitude(lon: number, sigmaNm: number, t: number): void {
+    const wObs = 1 / (sigmaNm * sigmaNm + 1e-6);
+    const wDr = 1 / (this.sigmaLon * this.sigmaLon + 1e-6);
+    this.estimated.lon = wrap180((lon * wObs + this.estimated.lon * wDr) / (wObs + wDr));
+    this.sigmaLon = Math.sqrt(1 / (wObs + wDr));
+    this.lastFixT = t;
+    this.fixes.push({ t, latitude: this.estimated.lat, method: 'Lunar distance', sigma: sigmaNm / 60, body: 'the moon' });
+    if (this.fixes.length > 200) this.fixes.shift();
   }
 
   /** Error between the reckoning and the truth, in nautical miles. */

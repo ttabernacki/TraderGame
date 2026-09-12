@@ -24,7 +24,10 @@ import { magneticVariation } from '../navigation/celestial';
 import {
   ableHands, crewFactor, enduranceDays, newCrew, officerBonus, updateCrew, type CrewState,
 } from '../crew/crew';
-import { newSkills, skill, train, type SkillSet } from '../crew/skills';
+import {
+  NODE_BY_ID, buyNode, levelsOf, newCaptainSkills, perksOf, skill,
+  type CaptainSkills, type PerkId, type SkillSet,
+} from '../crew/skills';
 import { Markets } from '../economy/market';
 import { Crown, portName } from '../progression/crown';
 import { newRelations, type Relations } from '../diplomacy/contact';
@@ -122,7 +125,17 @@ export class Game {
   rutter = new Rutter();
   crown: Crown;
   markets: Markets;
-  skills: SkillSet;
+  /**
+   * What the captain has bought, and what he has left to spend.
+   *
+   * The levels every system reads are derived from this rather than trained by
+   * repetition: a captain who sails long enough used to end up good at
+   * everything, which is the opposite of a build. Points come from voyages
+   * completed, a career is about thirty of them, and a whole tree costs twelve.
+   */
+  captain: CaptainSkills = newCaptainSkills();
+  /** Cached, because every physics step reads a level off it. */
+  private skillCache: { taken: number; levels: SkillSet; perks: Set<PerkId> } | null = null;
   log = new Logbook();
 
   relations = new Map<string, Relations>();
@@ -403,7 +416,6 @@ export class Game {
     this.chart = new Chart();
     this.crown = new Crown(seed);
     this.markets = new Markets(seed);
-    this.skills = newSkills();
     this.rival = newRival(this.rng);
     this.rival.lastNews = this.clock.t;
     // She begins at a quay, which is as much in sight of land as it gets.
@@ -440,6 +452,147 @@ export class Game {
   // Derived values
   // -------------------------------------------------------------------------
 
+  /** The captain's own levels, from the tree. */
+  get skills(): SkillSet {
+    this.refreshSkillCache();
+    return this.skillCache!.levels;
+  }
+
+  /** The discrete things this captain can do that another cannot. */
+  get perks(): Set<PerkId> {
+    this.refreshSkillCache();
+    return this.skillCache!.perks;
+  }
+
+  /**
+   * What a voyage taught the captain, in points he may spend where he likes.
+   *
+   * Two for coming home and reporting at all, and one more for a commission
+   * discharged clean. Points for *voyages* rather than for activities, because
+   * anything awarded per sight or per mile of coast is a thing a patient player
+   * farms in harbour, and then the build is whoever had the most patience
+   * rather than whoever made the most interesting choices.
+   */
+  awardVoyage(dischargedClean: boolean): number {
+    const points = 2 + (dischargedClean ? 1 : 0);
+    this.captain.points += points;
+    this.logEvent('crown',
+      `The voyage is reported and the voyage is over. ${points} points to spend on yourself.`, true);
+    this.pushAlert(
+      `${points} skill points. ${this.captain.points} unspent \u2014 the book, under Captain.`, 'note');
+    return points;
+  }
+
+  can(perk: PerkId): boolean {
+    return this.perks.has(perk);
+  }
+
+  /**
+   * How the court reads your voyage, which depends on what kind of man you are.
+   *
+   * The Crown's man takes half again in renown and rather less in coin; the
+   * chart-seller the reverse. Renown buys hulls, better commissions and a title;
+   * coin buys cargo and upgrades. Neither is the strong choice, which is what
+   * lets a player build round either.
+   */
+  get settlementBias(): { standing: number; gold: number } {
+    if (this.can('cosmographer')) return { standing: 1.7, gold: 1.35 };
+    if (this.can('crownsMan')) return { standing: 1.6, gold: 0.75 };
+    if (this.can('sheetTrade')) return { standing: 0.8, gold: 1.5 };
+    return { standing: 1, gold: 1 };
+  }
+
+  /**
+   * The private trade in sheets, paid on reporting and then reset.
+   *
+   * Only the man who took that fork has copies to sell — but what they are
+   * worth is the coast he actually ran, so this pays for surveying rather than
+   * for owning the node.
+   */
+  sellCharts(): number {
+    if (!this.can('sheetTrade') && !this.can('cosmographer')) return 0;
+    const rate = this.can('cosmographer') ? 2.6 : 1.7;
+    const paid = Math.round((this.chartedThisPassage + this.correctedNm * 0.6) * rate);
+    this.chartedThisPassage = 0;
+    this.correctedNm = 0;
+    return paid;
+  }
+
+  /**
+   * What the houses will lend you, over and above what is in the purse.
+   *
+   * Credit lends against the cargo, so it is worth most to a captain who is
+   * already loaded and nothing at all to one who is not — the merchant's road.
+   * Merchant prince lends against your name, so it is worth most to a captain
+   * with renown, and it is what lets him fit out a voyage the Crown never asked
+   * for.
+   */
+  get creditLimit(): number {
+    let limit = 0;
+    if (this.can('credit')) limit += this.ship.manifestValue() * 0.8 + 120;
+    if (this.can('ownAccount')) limit += 400 + this.crown.lifetimeStanding * 3;
+    return Math.round(limit);
+  }
+
+  get creditFree(): number {
+    return Math.max(0, this.creditLimit - this.crown.debt);
+  }
+
+  /** Draw against credit so the purse holds at least `need`. Returns what was drawn. */
+  drawCredit(need: number): number {
+    const short = need - this.crown.gold;
+    if (short <= 0) return 0;
+    const draw = Math.min(short, this.creditFree);
+    if (draw <= 0.5) return 0;
+    this.crown.gold += draw;
+    this.crown.debt += draw;
+    this.logEvent('trade',
+      `${Math.round(draw)} cruzados drawn on credit. You owe ${Math.round(this.crown.debt)}, and it is `
+      + 'owed whether the cargo comes home or not.');
+    return draw;
+  }
+
+  /**
+   * What other ports are paying, for a captain who keeps a factor's notes.
+   *
+   * Only ports you have actually traded at, and only the ones your own book
+   * covers — this is not an oracle, it is the correspondence a merchant of the
+   * period really had, and it is stale by however long the passage takes.
+   */
+  distantQuotes(goodId: string, exclude: string): { port: string; bid: number }[] {
+    if (!this.can('factorsEye') && !this.can('ownAccount')) return [];
+    const out: { port: string; bid: number }[] = [];
+    for (const id of this.visitedPorts) {
+      if (id === exclude) continue;
+      const def = PORTS.find((p) => p.id === id);
+      if (!def) continue;
+      const rel = this.relations.get(id);
+      if (!rel?.mayTrade) continue;
+      const l = this.markets.listings(id, this.clock.t, rel.regard, 0.6)
+        .find((x) => x.goodId === goodId);
+      if (l && l.bid > 0) out.push({ port: def.name, bid: l.bid });
+    }
+    return out.sort((a, b) => b.bid - a.bid).slice(0, 4);
+  }
+
+  /** Spend on a node. Returns false if it was barred or unaffordable. */
+  buySkill(id: string): boolean {
+    if (!buyNode(this.captain, id)) return false;
+    this.skillCache = null;
+    const node = NODE_BY_ID.get(id);
+    if (node) this.logEvent('note', `You have learned it: ${node.name}. ${node.effect}`, true);
+    return true;
+  }
+
+  private refreshSkillCache(): void {
+    if (this.skillCache && this.skillCache.taken === this.captain.taken.length) return;
+    this.skillCache = {
+      taken: this.captain.taken.length,
+      levels: levelsOf(this.captain),
+      perks: perksOf(this.captain),
+    };
+  }
+
   get effectiveSkill(): SkillSet {
     const s = { ...this.skills };
     for (const k of Object.keys(s) as (keyof SkillSet)[]) {
@@ -450,6 +603,36 @@ export class Game {
 
   get rules(): DifficultyDef {
     return difficultyDef(this.difficulty);
+  }
+
+  /**
+   * The sea as the man at the instrument finds it.
+   *
+   * A captain who has spent his career at the quadrant does not calm the ocean;
+   * he learns to catch the body at the top of the roll, so a seaway that ruins
+   * another man's sight costs him a fraction of a degree. Expressed as a
+   * smaller effective wave height because that is the one number every part of
+   * the observing model already reads.
+   */
+  get observingSea(): number {
+    const sea = this.weatherNow.waveHeight;
+    return this.can('celestial') ? sea * 0.38 : sea;
+  }
+
+  /**
+   * How much canvas the watch will carry without being told twice.
+   *
+   * Pressing her is the only node in the game that makes the ship *less* safe on
+   * purpose: it raises this ceiling by a reef and a half and roughly doubles
+   * the chance of losing a spar for it, so the fast captain is the one who
+   * arrives with a jury mast up about once a voyage. Sparing her does the
+   * reverse, and the man who takes it will never win a race.
+   */
+  get canvasCeiling(): number {
+    const prudent = prudentCanvas(this.weatherNow.wind.speed);
+    if (this.can('press')) return Math.min(1, prudent + 0.24);
+    if (this.can('spare')) return Math.max(0, prudent - 0.07);
+    return prudent;
   }
 
   get tuning(): ShipTuning {
@@ -1033,7 +1216,7 @@ export class Game {
    * still entirely his.
    */
   private applyAutoCanvas(dt: number): void {
-    const prudent = prudentCanvas(this.weatherNow.wind.speed);
+    const prudent = this.canvasCeiling;
     const now = this.ship.canvasSet;
 
     // Anything she is carrying that the weather allows is taken as the standing
@@ -1163,6 +1346,8 @@ export class Game {
     const eff = this.effectiveSkill;
     const navSkill = skill(eff, 'navegacao');
     this.nav.leewayAllowance = this.skills.navegacao >= 15 ? 0.85 : 0;
+    // The board kept properly is worth more than any instrument aboard.
+    this.nav.driftScale = this.can('deadReckoning') ? 0.5 : 1;
 
     const hours = simDt / 3600;
     this.distanceRun += Math.abs(this.physics.speedKnots) * hours;
@@ -1206,8 +1391,6 @@ export class Game {
           this.crown.progressObjective('chart', undefined, result.milesTaken);
           // Paid in miles of coast, not in ring vertices, for the same reason
           // the commission is.
-          train(this.skills, 'cartografia', result.milesTaken * 0.006);
-          train(this.skills, 'navegacao', result.milesTaken * 0.0018);
           this.chartedThisPassage += result.milesTaken;
           this.correctedNm += result.improvedNm ?? 0;
           this.announceSurvey(result);
@@ -1478,9 +1661,12 @@ export class Game {
       beyondTheKnown: this.beyondTheKnown,
       gold: this.crown.gold,
       rng: this.rng,
+      captainLoved: this.can('loved'),
+      captainFeared: this.can('feared'),
       wardroomMorale: w.morale,
       wardroomUnrest: w.unrest,
-      wardroomFear: w.fear,
+      // A company who would follow you anywhere do not fear anywhere.
+      wardroomFear: w.fear * (this.can('followAnywhere') ? 0.2 : 1),
     });
 
     for (const e of events) {
@@ -1506,7 +1692,9 @@ export class Game {
 
     // Water temperature drives fouling: the worm is far worse in the tropics.
     const tempFactor = lerp(1.9, 0.5, clamp(Math.abs(this.ship.state.pos.lat) / 45, 0, 1));
-    const wear = this.ship.age(days, tempFactor, this.pumpEffort * crewFactor(this.crew, this.ship.baseHull.crewMin));
+    // A ship worked gently wears at half the rate; one pressed hard wears faster.
+    const usage = this.can('spare') ? 0.5 : this.can('press') ? 1.35 : 1;
+    const wear = this.ship.age(days * usage, tempFactor, this.pumpEffort * crewFactor(this.crew, this.ship.baseHull.crewMin));
     if (wear.swamped) {
       this.endGame('She filled faster than the pumps could clear her, and went down by the head.');
       return;
@@ -1520,9 +1708,6 @@ export class Game {
     }
 
     if (!this.anchored) {
-      train(this.skills, 'marinharia', days * 0.35);
-      train(this.skills, 'navegacao', days * 0.22);
-      train(this.skills, 'lideranca', days * 0.12);
     }
 
     this.checkStormDamage(days);
@@ -1534,10 +1719,12 @@ export class Game {
     const carried = this.ship.canvasSet;
     const eff = this.effectiveSkill;
     const seamanship = skill(eff, 'marinharia');
+    // Pressing her is paid for here and nowhere else.
+    const sparHazard = this.can('press') ? 1.85 : this.can('spare') ? 0.4 : 1;
 
     if (carried > prudent + 0.05 && wind > 14) {
       const over = carried - prudent;
-      const risk = clamp(over * over * (wind / 40) * days * 3.2 * (1 - seamanship * 0.55), 0, 0.85);
+      const risk = clamp(over * over * (wind / 40) * days * 3.2 * (1 - seamanship * 0.55) * sparHazard, 0, 0.85);
       if (this.rng.chance(risk)) {
         const idx = this.rng.int(0, this.ship.state.sails.length - 1);
         const lost = this.ship.damageMast(idx, this.rng.range(0.25, 0.8));
@@ -1557,9 +1744,12 @@ export class Game {
     }
 
     if (this.weatherNow.waveHeight > 5.5) {
-      const risk = clamp((this.weatherNow.waveHeight - 5.5) * days * 0.11, 0, 0.7);
+      // Knowing how to lie-to is the difference between a sea that comes aboard
+      // and a sea that passes under her.
+      const handled = this.can('lieTo') ? 0.25 : this.can('spare') ? 0.6 : 1;
+      const risk = clamp((this.weatherNow.waveHeight - 5.5) * days * 0.11 * handled, 0, 0.7);
       if (this.rng.chance(risk)) {
-        const dmg = this.rng.range(0.02, 0.11);
+        const dmg = this.rng.range(0.02, 0.11) * (this.can('spare') ? 0.5 : 1);
         this.ship.damage(dmg);
         this.pushAlert('A sea came aboard and started the seams forward.', 'warning');
         this.logEvent('peril', `A heavy sea broke over the bow and worked the topsides. She is making water. Pumps manned in both watches.`);
@@ -1575,11 +1765,13 @@ export class Game {
   private handleMutiny(): void {
     const eff = this.effectiveSkill;
     const authority = skill(eff, 'lideranca');
-    if (this.rng.next() < authority * 0.8 + 0.15) {
+    // The last node of Leadership is the promise that this never goes the other
+    // way. It is four points, and it is the only thing in the game that buys
+    // certainty about the men.
+    if (this.can('followAnywhere') || this.rng.next() < authority * 0.8 + 0.15) {
       this.crew.unrest = 0.4;
       this.crew.morale = clamp(this.crew.morale + 0.14, 0, 1);
       this.logEvent('crew', 'You put the ringleaders in irons and had the rest back at their stations inside the hour. It is settled. It is not forgotten.', true);
-      train(this.skills, 'lideranca', 2.5);
     } else {
       this.crew.unrest = 0;
       this.crew.morale = 0.42;
@@ -1656,7 +1848,6 @@ export class Game {
       this.logEvent('discovery', l.announce, true);
       this.pushAlert(`${l.name} — ${l.value} renown`, 'note');
       this.crown.progressObjective('reach', l.id);
-      train(this.skills, 'cartografia', l.value * 0.06);
       this.crew.morale = clamp(this.crew.morale + 0.07, 0, 1);
     }
 
@@ -1862,7 +2053,6 @@ export class Game {
     this.leads.push(lead);
     this.logEvent('note', lead.text, true);
     this.pushAlert('You have heard something worth writing down.', 'note');
-    train(this.skills, 'diplomacia', 0.6);
     return true;
   }
 
@@ -2042,7 +2232,6 @@ export class Game {
     }
     this.crown.standing += Math.round(worth.atlas * 0.6);
     this.crown.lifetimeStanding += worth.atlas;
-    train(this.skills, 'cartografia', worth.atlas * 0.05);
     this.logEvent('discovery',
       `Entered ${e.title} in the atlas, under my own name, where it will stand after me. `
       + `${worth.atlas} renown, no money at all, and it is the only kind of this work that lasts.`,
@@ -2089,7 +2278,6 @@ export class Game {
     if (!e) return 'No such page.';
     if (!text.trim()) return 'Nothing written.';
     this.rutter.note(e, text.trim(), 'speculative', this.clock.t, { mine: true });
-    train(this.skills, 'cartografia', 0.05);
     return 'Entered in your own hand.';
   }
 
@@ -2422,7 +2610,6 @@ export class Game {
       const renown = Math.max(1, Math.round(v.fee / 90));
       this.crown.standing += renown;
       this.crown.lifetimeStanding += renown;
-      train(this.skills, 'comercio', 0.9);
       this.crew.morale = clamp(this.crew.morale + 0.04, 0, 1);
       this.pushAlert(`Charter discharged. ${v.fee} cruzados.`, 'note');
       this.logEvent('trade',
@@ -2463,7 +2650,6 @@ export class Game {
         this.logEvent('discovery',
           `Ran down the report we had from ${lead.source}, and it was where he said it was, `
           + 'or near enough that a seaman would call it the same place.', true);
-        train(this.skills, 'cartografia', lead.value * 0.05);
         this.crew.morale = clamp(this.crew.morale + 0.06, 0, 1);
       } else {
         lead.false = true;
@@ -2550,7 +2736,6 @@ export class Game {
     this.crown.progressObjective('name', undefined, 1);
     this.logEvent('discovery',
       `Named this place ${given}, at ${formatLat(place.lat)}, ${formatLon(place.lon)} by the reckoning.`);
-    train(this.skills, 'cartografia', 0.12);
     return {
       ok: true,
       message: fresh
@@ -2616,7 +2801,6 @@ export class Game {
     });
     this.crew.morale = clamp(this.crew.morale + 0.07, 0, 1);
     this.crew.fatigue = clamp(this.crew.fatigue + 0.06, 0, 1);
-    train(this.skills, 'cartografia', 1.2);
     for (const o of this.crew.officers) {
       if (o.alive && !o.ashoreAt) o.loyalty = clamp(o.loyalty + 0.03, 0, 1);
     }
@@ -3016,6 +3200,56 @@ export class Game {
     return 'Anchor let go.';
   }
 
+  /**
+   * What the factor ashore has made while you were somewhere else.
+   *
+   * A feitoria is the whole Portuguese method — Arguim, São Jorge da Mina,
+   * every station down that coast — and until the Ambassador node it is a word
+   * on the relations screen that pays nothing. With it, the place trades on its
+   * own account between your visits and hands you the takings when you call:
+   * real income that arrives whether or not this voyage went well, which is a
+   * different economy from carrying cargo and the reason to build toward it.
+   */
+  private settleFeitoria(def: PortDef): void {
+    if (!this.can('feitoria')) return;
+    const rel = this.relationsFor(def.id);
+    if (!rel.factory) return;
+    const since = rel.factorySettled ?? this.clock.t;
+    rel.factorySettled = this.clock.t;
+    const days = (this.clock.t - since) / 86400;
+    if (days < 20) return;
+    // Capped at a year: a factor left for three years has been dead for two.
+    const earned = Math.round(Math.min(days, 365) * (2.6 + Math.max(0, rel.regard) * 3.4));
+    if (earned <= 0) return;
+    this.crown.gold += earned;
+    this.logEvent('trade',
+      `The factor at ${def.name} has his books ready. ${Math.round(days)} days of trade done in your `
+      + `absence and ${earned} cruzados to your account, less what he has kept for himself, which he `
+      + 'does not itemise.', true);
+    this.pushAlert(`The feitoria at ${def.name} pays ${earned} cruzados.`, 'note');
+  }
+
+  /**
+   * What being feared costs, and the only place it is charged.
+   *
+   * A crew who work through anything at sea have exactly one way to answer for
+   * it, and they take it the moment there is a quay under their feet. So the
+   * feared captain sails harder and arrives short-handed, and has to buy men in
+   * every port — which is money, and which is the balance against a company
+   * that never mutinies.
+   */
+  private runFromTheQuay(def: PortDef): void {
+    if (!this.can('feared') || this.crew.count <= this.ship.baseHull.crewMin * 0.5) return;
+    const hardship = clamp(0.35 + this.crew.fatigue * 0.5 - this.crew.morale * 0.3, 0.1, 0.9);
+    const gone = Math.round(this.crew.count * 0.06 * hardship + (this.rng.chance(hardship) ? 2 : 0));
+    if (gone <= 0) return;
+    this.crew.count -= gone;
+    this.logEvent('crew',
+      `${gone} men did not come back to the boat at ${def.name}. Nobody aboard is surprised and `
+      + 'nobody will say where they went. You are that much short for the run home.', true);
+    this.pushAlert(`${gone} hands run at ${def.name}.`, 'warning');
+  }
+
   enterPort(def: PortDef): void {
     this.dockedAt = def.id;
     this.anchored = true;
@@ -3026,6 +3260,8 @@ export class Game {
     this.markets.refresh(def.id, this.clock.t);
     this.refreshPortBusiness(def);
     this.deliverVentures(def);
+    this.settleFeitoria(def);
+    this.runFromTheQuay(def);
 
     const first = !this.visitedPorts.has(def.id);
     this.visitedPorts.add(def.id);
@@ -3584,7 +3820,8 @@ export class Game {
       scaleIndex: this.clock.scaleIndex,
       ship: this.ship.serialize(),
       crew: this.crew,
-      skills: this.skills,
+      captain: this.captain,
+      debt: this.crown.debt,
       nav: {
         estimated: this.nav.estimated,
         sigmaLat: this.nav.sigmaLat,
@@ -3649,7 +3886,8 @@ export class Game {
     g.clock.scaleIndex = d.scaleIndex ?? 1;
     g.ship = Ship.deserialize(d.ship);
     g.crew = d.crew;
-    g.skills = d.skills;
+    g.captain = d.captain ?? newCaptainSkills();
+    g.refreshSkillCache();
     g.nav.estimated = d.nav.estimated;
     g.nav.sigmaLat = d.nav.sigmaLat;
     g.nav.sigmaLon = d.nav.sigmaLon;
@@ -3658,6 +3896,7 @@ export class Game {
     g.nav.kit = d.nav.kit;
     g.chart = Chart.deserialize(d.chart);
     g.rutter = Rutter.deserialize(d.rutter);
+    g.crown.debt = d.debt ?? 0;
     g.crown.standing = d.crown.standing;
     g.crown.lifetimeStanding = d.crown.lifetimeStanding;
     g.crown.gold = d.crown.gold;

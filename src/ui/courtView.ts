@@ -66,6 +66,9 @@ export class CourtView {
       next ? meter(g.crown.lifetimeStanding / next.standing) : null,
       kv('Your share of a cargo', `${(title.share * 100).toFixed(0)}%`),
       kv('In the purse', `${g.crown.gold.toFixed(0)} cruzados`),
+      g.crown.debt > 0
+        ? kv('Owed to the houses', `${g.crown.debt.toFixed(0)} cruzados`)
+        : null,
     ));
 
     // The other man belongs at the briefing. He is the reason the commission
@@ -99,8 +102,19 @@ export class CourtView {
           ? `You have ${g.crown.discoveries.filter((d) => !d.reported).length} discoveries not yet entered on the padrão real, worth ${unreported} renown.`
           : 'Your commission is discharged and wants only reporting.'),
         button('Present your discoveries', () => {
-          const s = g.crown.settle(g.clock.t);
+          const clean = !!g.crown.patent && g.crown.patentReady;
+          const s = g.crown.settle(g.clock.t, g.settlementBias);
           this.settlement = s;
+          const points = g.awardVoyage(clean);
+          const sold = g.sellCharts();
+          if (sold > 0) {
+            g.crown.gold += sold;
+            s.gold += sold;
+            s.lines.push(
+              `Copies of your sheets, sold quietly to the houses in the Rua Nova. ${sold} cruzados, `
+              + 'and the Casa knows perfectly well where they came from.');
+          }
+          s.lines.push(`${points} points to spend on yourself, in the book under Captain.`);
           g.logEvent('crown',
             `Reported at court. ${s.gold} cruzados and ${s.standing} renown. ${g.crown.title.name}.`, true);
           this.offers = g.crown.patent ? [] : g.crown.offers(g.clock.date.year);

@@ -3,7 +3,10 @@ import { GOOD_BY_ID } from '../economy/goods';
 import {
   OFFICER_ROLES, ableHands, enduranceDays, healthWord, moraleWord,
 } from '../crew/crew';
-import { SKILLS, rankOf, skill, type SkillSet } from '../crew/skills';
+import {
+  SKILLS, blockedReason, nodesOf, rankOf, skill,
+  type CaptainSkills, type SkillNode, type SkillSet,
+} from '../crew/skills';
 import { UPGRADE_BY_ID } from '../ship/upgrades';
 import { sailHandRate } from '../ship/physics';
 import { loyaltyWord, traitDef } from '../progression/officers';
@@ -285,35 +288,110 @@ export class CrewView {
     host.append(el('div', { class: 'cols two' }, left, right));
   }
 
+  /**
+   * The captain's own book: six trees, and points enough for two of them.
+   *
+   * Laid out as trees rather than a list of upgrades because the shape *is* the
+   * decision — a player needs to see that taking the fifth node of Navigation
+   * costs him the whole of Diplomacy, and a flat list hides exactly that.
+   */
   private renderSkills(host: HTMLElement, g: Game): void {
     const eff = g.effectiveSkill;
+    const c = g.captain;
+
+    host.append(el('div', { class: 'card', style: { marginBottom: '12px' } },
+      el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', flexWrap: 'wrap' } },
+        el('h2', { style: { margin: '0' } }, c.points > 0
+          ? `${c.points} point${c.points === 1 ? '' : 's'} to spend`
+          : 'Nothing left to spend'),
+        el('span', { style: { fontSize: '12.5px', color: 'var(--ink-soft)' } },
+          'Two at the end of every voyage, a third if you discharge the commission clean.'),
+      ),
+      el('p', { style: { fontStyle: 'italic', color: 'var(--ink-soft)', margin: '8px 0 0' } },
+        'A career runs to some thirty points and a whole tree costs twelve. You will not see all of this.'),
+    ));
+
     host.append(el('div', { class: 'cols two' },
-      el('div', {}, ...SKILLS.slice(0, 3).map((s) => this.skillCard(g, eff, s))),
-      el('div', {}, ...SKILLS.slice(3).map((s) => this.skillCard(g, eff, s))),
+      el('div', {}, ...SKILLS.slice(0, 3).map((s) => this.treeCard(g, eff, s))),
+      el('div', {}, ...SKILLS.slice(3).map((s) => this.treeCard(g, eff, s))),
     ));
   }
 
-  private skillCard(g: Game, eff: SkillSet, s: typeof SKILLS[number]): HTMLElement {
+  private treeCard(g: Game, eff: SkillSet, s: typeof SKILLS[number]): HTMLElement {
+    const c = g.captain;
     const own = g.skills[s.id];
     const withOfficers = eff[s.id];
     const bonus = withOfficers - own;
+
     return card(`${s.english} (${s.name})`,
       el('p', { style: { fontStyle: 'italic', color: 'var(--ink-soft)' } }, s.blurb),
       kv('Your own', `${own.toFixed(0)} — ${rankOf(own)}`),
       bonus > 0.5 ? kv('With your officers', `${withOfficers.toFixed(0)}`) : null,
       meter(skill(eff, s.id)),
       el('ul', { class: 'list', style: { marginTop: '9px' } },
-        ...s.milestones.map((m) => {
-          const got = own >= m.at;
-          return el('li', { style: { opacity: got ? '1' : '0.42', fontSize: '13px' } },
-            el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px' } },
-              el('span', {}, m.title),
-              el('span', { class: got ? 'tag good' : 'tag' }, got ? 'held' : `at ${m.at}`)),
-            el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '3px', lineHeight: '1.5' } }, m.effect),
-          );
-        }),
+        ...this.treeRows(g, c, s),
       ),
     );
+  }
+
+  /**
+   * One tree's nodes, with the fork announced before it rather than glued onto
+   * the two names. The player needs to know a choice is coming *before* he
+   * reads the first half of it.
+   */
+  private treeRows(g: Game, c: CaptainSkills, s: typeof SKILLS[number]): HTMLElement[] {
+    const nodes = nodesOf(s.id);
+    // The frontier is the lowest tier not yet paid for. Everything above it is
+    // blocked for the same reason, and printing that reason six times turns a
+    // tree into a wall of "comes first".
+    const frontier = nodes.find((n) => !nodes.some(
+      (m) => m.tier === n.tier && c.taken.includes(m.id)))?.tier ?? 99;
+
+    const out: HTMLElement[] = [];
+    let forkAnnounced = false;
+    for (const n of nodes) {
+      if (n.excludes && !forkAnnounced) {
+        forkAnnounced = true;
+        const decided = nodes.some((m) => m.excludes && c.taken.includes(m.id));
+        out.push(el('li', {
+          style: {
+            fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase',
+            color: 'var(--ink-soft)', marginTop: '4px', opacity: '0.75',
+          },
+        }, decided ? 'The road you took' : 'One road or the other, never both'));
+      }
+      out.push(this.nodeRow(g, c, n, frontier));
+    }
+    return out;
+  }
+
+  private nodeRow(g: Game, c: CaptainSkills, n: SkillNode, frontier: number): HTMLElement {
+    const held = c.taken.includes(n.id);
+    const why = blockedReason(c, n);
+    const shut = !held && !!n.excludes && c.taken.includes(n.excludes);
+    const poor = !!why && why.endsWith(`you have ${c.points}.`);
+    // Affordability is the only thing that should not grey a node out: a player
+    // saving for it needs to read it clearly.
+    const dim = held ? '1' : shut ? '0.3' : why && !poor ? '0.5' : '0.85';
+
+    const row = el('li', { style: { opacity: dim, fontSize: '13px' } },
+      el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' } },
+        el('span', {}, n.name),
+        el('span', { class: held ? 'tag good' : 'tag' },
+          held ? 'held' : shut ? 'shut' : `${n.cost} pt${n.cost === 1 ? '' : 's'}`),
+      ),
+      el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', margin: '3px 0 0', lineHeight: '1.5' } }, n.effect),
+    );
+
+    if (held || shut) return row;
+    if (!why) {
+      row.append(button(`Learn it — ${n.cost} ${n.cost === 1 ? 'point' : 'points'}`, () => {
+        if (g.buySkill(n.id)) this.render();
+      }, { ghost: true }));
+    } else if (poor || n.tier === frontier) {
+      row.append(el('div', { style: { fontSize: '12px', color: 'var(--ink-soft)', marginTop: '4px' } }, why));
+    }
+    return row;
   }
 }
 

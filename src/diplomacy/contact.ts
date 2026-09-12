@@ -7,7 +7,7 @@ import { hasInterpreterFor, type CrewState } from '../crew/crew';
 
 export type MoveId =
   | 'signs' | 'interpreter' | 'letter' | 'gift' | 'display' | 'respect'
-  | 'promise' | 'faith' | 'padrao' | 'factory' | 'exclusive' | 'depart';
+  | 'promise' | 'faith' | 'padrao' | 'factory' | 'exclusive' | 'demand' | 'depart';
 
 export interface Move {
   id: MoveId;
@@ -29,6 +29,7 @@ export const MOVES: Move[] = [
   { id: 'padrao', label: 'Ask leave to set a padrão', description: 'Request permission to raise a stone pillar bearing the arms of Portugal.', once: true },
   { id: 'exclusive', label: 'Ask for exclusive trade', description: 'Propose that they deal with Portugal and with no other nation.', once: true },
   { id: 'factory', label: 'Ask leave for a feitoria', description: 'Request ground to build a warehouse and leave men behind to hold it.', once: true },
+  { id: 'demand', label: 'Run out the guns', description: 'Stop asking. Lay the ship broadside to the town and say what you require. It works, and it is remembered for ever.', once: true },
   { id: 'depart', label: 'Take your leave', description: 'End the audience and see where matters stand.', once: false },
 ];
 
@@ -44,6 +45,8 @@ export interface Relations {
   met: boolean;
   /** Times you have called here. */
   visits: number;
+  /** Simulated time the factory here was last settled up. */
+  factorySettled?: number;
 }
 
 export function newRelations(p: People): Relations {
@@ -70,6 +73,8 @@ export interface AudienceState {
   /** Gifts already laid out, by good id. */
   giftsGiven: Record<string, number>;
   giftValue: number;
+  /** Set when the guns settled it instead of the conversation. */
+  forced?: boolean;
 }
 
 export interface AudienceOutcome {
@@ -89,6 +94,19 @@ export interface AudienceContext {
   hasPadraoAboard: boolean;
   /** The player's standing with the Crown, which makes bolder asks plausible. */
   standing: number;
+  /**
+   * The captain's own road through Diplomacy.
+   *
+   * The two are a real fork rather than two flavours of the same thing. Treaty
+   * gets you an exclusive that holds even where the old trade is established
+   * and even where the room is suspicious — the slow, expensive way, and the
+   * only way to a coast that goes on trading with you. Force gets you the same
+   * access in one move, and costs the regard of that coast permanently, which
+   * closes every future audience there and sours its neighbours.
+   */
+  canTreaty?: boolean;
+  canForce?: boolean;
+  canFeitoria?: boolean;
   relations: Relations;
   rng: Rng;
 }
@@ -171,9 +189,11 @@ export function availableMoves(s: AudienceState, ctx: AudienceContext): Move[] {
       case 'padrao':
         return ctx.hasPadraoAboard && s.interest > 30;
       case 'exclusive':
-        return s.interest > 55 && ctx.diplomacy > 0.5;
+        return ctx.canTreaty ? s.interest > 34 : s.interest > 55 && ctx.diplomacy > 0.5;
       case 'factory':
-        return s.interest > 68 && ctx.diplomacy > 0.65;
+        return ctx.canFeitoria ? s.interest > 44 : s.interest > 68 && ctx.diplomacy > 0.65;
+      case 'demand':
+        return !!ctx.canForce && !s.concluded;
       case 'signs':
         return s.comprehension < 0.5;
       default:
@@ -397,6 +417,24 @@ export function applyMove(
       break;
     }
 
+    case 'demand': {
+      // Not a negotiation. The room is not persuaded, it is overruled — which
+      // is exactly what the Portuguese did at Calicut when persuasion failed,
+      // and exactly why they were never trusted on that coast again.
+      s.forced = true;
+      s.interest = Math.max(s.interest, 66);
+      s.suspicion = Math.min(100, s.suspicion + 46);
+      s.log.push({
+        speaker: 'narrator',
+        text: 'The ship warps round until her broadside bears on the landing and the ports come up. '
+          + 'Nobody in the room has seen guns before and everybody in it understands them. You are '
+          + 'given what you asked for, and you are watched out of the harbour by men who will tell '
+          + 'this story to their grandchildren.',
+      });
+      concludeAudience(s, ctx);
+      return;
+    }
+
     case 'depart':
       concludeAudience(s, ctx);
       return;
@@ -473,17 +511,27 @@ export function concludeAudience(s: AudienceState, _ctx: AudienceContext): void 
   const net = s.interest - s.suspicion * 0.85;
   const hostile = s.suspicion > 85 && s.interest < 30;
 
+  const treaty = !!_ctx.canTreaty;
   const outcome: AudienceOutcome = {
-    mayTrade: net > 12,
-    exclusive: net > 62 && s.used.has('exclusive') && !p.rivalNetwork && s.suspicion < 35,
-    factory: net > 74 && s.used.has('factory') && s.suspicion < 32,
-    padrao: s.used.has('padrao') && s.suspicion < 55,
-    regardDelta: clamp(net / 130, -0.55, 0.5),
-    hostile,
+    mayTrade: s.forced || net > 12,
+    exclusive: s.forced
+      || (s.used.has('exclusive')
+        && (treaty
+          ? net > 40 && s.suspicion < 62
+          : net > 62 && !p.rivalNetwork && s.suspicion < 35)),
+    factory: s.used.has('factory')
+      && (_ctx.canFeitoria ? net > 52 && s.suspicion < 52 : net > 74 && s.suspicion < 32),
+    padrao: s.forced || (s.used.has('padrao') && s.suspicion < 55),
+    // What force costs. The access is real and the coast is lost: every later
+    // audience here opens from a ruler who remembers the guns.
+    regardDelta: s.forced ? -0.85 : clamp(net / 130, -0.55, 0.5),
+    hostile: hostile && !s.forced,
     summary: '',
   };
 
-  if (hostile) {
+  if (s.forced) {
+    outcome.summary = 'You have what you came for. You will not get it here a second time by asking.';
+  } else if (hostile) {
     outcome.summary = 'The audience ends badly. You are told to be gone by morning, and there are more armed men on the beach than there were when you landed.';
   } else if (outcome.factory) {
     outcome.summary = 'You have leave to trade, and ground to build a factory on. This is more than your instructions asked for.';

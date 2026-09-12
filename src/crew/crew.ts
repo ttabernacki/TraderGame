@@ -192,6 +192,18 @@ export interface CrewUpdateContext {
   wardroomUnrest?: number;
   /** Multiplies the dread of unsailed water. */
   wardroomFear?: number;
+  /**
+   * The captain's own standing with them, which is a different thing from his
+   * competence.
+   *
+   * A loved captain's company keep their spirits on a passage that would break
+   * another crew, and they cannot be driven: work them past what is reasonable
+   * and they slow down rather than resent it. A feared one's work through
+   * exhaustion and never mutter — and desert the moment there is a quay under
+   * their feet, which is handled at the port and not here.
+   */
+  captainLoved?: boolean;
+  captainFeared?: boolean;
 }
 
 /**
@@ -363,11 +375,13 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
   }
 
   // --- Fatigue ------------------------------------------------------------
-  crew.fatigue = clamp(crew.fatigue + d * (ctx.exertion * 0.22 - 0.14), 0, 1);
+  const drive = ctx.captainFeared ? 0.6 : ctx.captainLoved ? 1.15 : 1;
+  crew.fatigue = clamp(crew.fatigue + d * (ctx.exertion * 0.22 * drive - 0.14), 0, 1);
 
   // --- Morale -------------------------------------------------------------
   let moraleDelta = 0;
-  moraleDelta -= d * 0.007 * clamp(1 - ctx.leadership * 0.8, 0.2, 1);
+  moraleDelta -= d * 0.007 * clamp(1 - ctx.leadership * 0.8, 0.2, 1)
+    * (ctx.captainLoved ? 0.35 : 1);
   moraleDelta -= d * smoothstep(30, 110, crew.daysSinceLandfall) * 0.022;
   moraleDelta -= d * crew.scurvy * 0.05;
   moraleDelta -= d * crew.fatigue * 0.012;
@@ -395,7 +409,7 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
   if (crew.morale < 0.3) {
     crew.unrest = clamp(
       crew.unrest + d * (0.3 - crew.morale) * 0.42 * clamp(1.3 - ctx.leadership, 0.2, 1.3)
-        * (ctx.wardroomUnrest ?? 1),
+        * (ctx.wardroomUnrest ?? 1) * (ctx.captainFeared ? 0.3 : 1),
       0, 2,
     );
     if (crew.unrest > 0.45 && crew.unrest - d * 0.2 <= 0.45) {

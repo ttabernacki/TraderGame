@@ -395,6 +395,16 @@ export class Crown {
   discoveries: Discovery[] = [];
   landmarksFound = new Set<string>();
   patent: Patent | null = null;
+
+  /**
+   * Money drawn against your own name rather than the King's.
+   *
+   * Debt is the one number in the game that follows you through a shipwreck.
+   * It is what makes Credit and Merchant prince a real choice rather than free
+   * capital: the cargo can be lost, the voyage can fail, and the houses in the
+   * Rua Nova still want paying out of whatever the next voyage earns.
+   */
+  debt = 0;
   completedPatents: string[] = [];
   hasKingsLetter = false;
   padroesRaised = 0;
@@ -511,30 +521,53 @@ export class Crown {
     return this.patent.objectives.every((o) => o.complete || o.kind === 'return');
   }
 
-  /** Settle a completed patent at court. */
-  settle(t: number): { gold: number; standing: number; lines: string[] } {
+  /**
+   * Settle a completed patent at court.
+   *
+   * `bias` is what the captain has made of himself. The Crown's man is paid in
+   * the King's regard and hardly in coin; the man who sells his sheets is paid
+   * in coin and watched for it. The two add to about the same total and are
+   * worth entirely different things, which is the point of the fork.
+   */
+  settle(t: number, bias: { standing?: number; gold?: number } = {}):
+  { gold: number; standing: number; lines: string[] } {
     const lines: string[] = [];
     let gold = 0;
     let standing = 0;
+    const kStanding = bias.standing ?? 1;
+    const kGold = bias.gold ?? 1;
 
     for (const d of this.discoveries) {
       if (d.reported) continue;
       d.reported = true;
-      standing += d.value;
-      gold += Math.round(d.value * 1.6);
-      lines.push(`${d.name} — entered on the padrão real. ${d.value} renown.`);
+      const renown = Math.round(d.value * kStanding);
+      standing += renown;
+      gold += Math.round(d.value * 1.6 * kGold);
+      lines.push(`${d.name} — entered on the padrão real. ${renown} renown.`);
     }
 
     if (this.patent && this.patentReady) {
       const ret = this.patent.objectives.find((o) => o.kind === 'return');
       if (ret) { ret.complete = true; ret.progress = 1; }
       this.patent.complete = true;
-      gold += this.patent.reward;
-      standing += this.patent.standingReward;
-      lines.push(`Commission "${this.patent.title}" discharged. ${this.patent.reward} cruzados, ${this.patent.standingReward} renown.`);
+      const pay = Math.round(this.patent.reward * kGold);
+      const renown = Math.round(this.patent.standingReward * kStanding);
+      gold += pay;
+      standing += renown;
+      lines.push(`Commission "${this.patent.title}" discharged. ${pay} cruzados, ${renown} renown.`);
       this.completedPatents.push(this.patent.id);
       if (this.patent.final) this.routeOpened = true;
       this.patent = null;
+    }
+
+    // Debts are settled before anything reaches your purse.
+    if (this.debt > 0) {
+      const repaid = Math.min(this.debt, gold);
+      this.debt -= repaid;
+      gold -= repaid;
+      lines.push(this.debt > 0
+        ? `${repaid} cruzados to your creditors. ${Math.round(this.debt)} still owing, and they are patient rather than forgiving.`
+        : `${repaid} cruzados to your creditors. You owe nobody anything.`);
     }
 
     this.gold += gold;
