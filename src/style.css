@@ -22,6 +22,28 @@
   --safe-r: env(safe-area-inset-right, 0px);
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-l: env(safe-area-inset-left, 0px);
+
+  /* How big the instruments are drawn.
+     
+     Everything on the deck was laid out in fixed pixels against a 1280-wide
+     window, which on a 1920 x 1080 monitor leaves four small panels marooned in
+     the corners with fourteen hundred pixels of nothing between them and type
+     you have to lean in for. The whole head-up display scales off this one
+     number, so a bigger screen gets bigger instruments rather than more empty
+     sea. Phones keep 1: there the problem is the opposite one. */
+  --ui: 1;
+  --hud-w: 258px;
+  --hud-w-r: 238px;
+}
+
+@media (min-width: 1500px) and (pointer: fine) {
+  :root { --ui: 1.12; --hud-w: 288px; --hud-w-r: 268px; }
+}
+@media (min-width: 1850px) and (pointer: fine) {
+  :root { --ui: 1.26; --hud-w: 324px; --hud-w-r: 300px; }
+}
+@media (min-width: 2400px) and (pointer: fine) {
+  :root { --ui: 1.5; --hud-w: 380px; --hud-w-r: 352px; }
 }
 
 * { box-sizing: border-box; }
@@ -124,16 +146,16 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
   /* Safari wants the prefix, and without it the panels are simply transparent
      over the sea, which is where the text stops being readable. */
   -webkit-backdrop-filter: blur(3px);
-  font-size: 13px;
+  font-size: calc(13px * var(--ui));
   line-height: 1.45;
 }
 
 .hud-title {
-  font-size: 10px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-faint);
   margin-bottom: 5px;
+  font-size: calc(10px * var(--ui));
 }
 
 /* A label and a value, and the value is sometimes a sentence ("Close reach,
@@ -160,8 +182,12 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.hud-big { font-size: 26px; line-height: 1.05; font-variant-numeric: tabular-nums; }
-.hud-unit { font-size: 12px; color: var(--ink-faint); margin-left: 3px; }
+.hud-big {
+  font-size: calc(26px * var(--ui));
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+.hud-unit { font-size: calc(12px * var(--ui)); color: var(--ink-faint); margin-left: 3px; }
 
 /* Each side of the view is a column that grows downward from the top, so a
    panel appearing or disappearing moves the ones under it instead of landing
@@ -191,8 +217,8 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
   width: 100%;
   min-width: 0;
 }
-#hud-left { left: calc(14px + var(--safe-l)); width: min(258px, 45vw); }
-#hud-right { right: calc(14px + var(--safe-r)); width: min(238px, 45vw); }
+#hud-left { left: calc(14px + var(--safe-l)); width: min(var(--hud-w), 45vw); }
+#hud-right { right: calc(14px + var(--safe-r)); width: min(var(--hud-w-r), 45vw); }
 /* The alerts, which are messages over the sea and not an instrument panel.
    
    This carried .hud-panel for a long time, and that class sets
@@ -210,8 +236,9 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
 #hud-alerts {
   position: absolute;
   right: 14px;
-  bottom: 54px;
-  width: min(34vw, 330px);
+  /* Clear of the deck bar and the hint line that sit along the bottom. */
+  bottom: calc(102px + var(--safe-b));
+  width: min(34vw, calc(330px * var(--ui)));
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -232,7 +259,7 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
   border-left: none;
   border-right: 3px solid var(--gold);
   border-radius: 2px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--ui));
   animation: fadein 0.35s ease;
 }
 .alert.warning { border-right-color: var(--warn); }
@@ -240,7 +267,12 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
 @keyframes fadein { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; } }
 
 /* Compass rose and wind dial */
-.dial { display: block; margin: 4px auto 2px; }
+.dial {
+  display: block;
+  margin: 4px auto 2px;
+  width: calc(88px * var(--ui));
+  height: calc(88px * var(--ui));
+}
 
 /* Sail trim bar */
 .trim-bar {
@@ -260,7 +292,7 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
   bottom: 22px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 12px;
+  font-size: calc(12px * var(--ui));
   color: #9a8a70;
   background: rgba(15, 11, 7, 0.7);
   padding: 5px 14px;
@@ -280,6 +312,100 @@ button.primary:hover:not(:disabled) { background: #c03d30; }
   transition: opacity 260ms ease, background 260ms ease;
 }
 .hint.idle:hover { opacity: 1; background: rgba(15, 11, 7, 0.78); border-color: var(--deck-edge); }
+
+/* --------------------------------------------------------------------------
+   The deck bar: the mouse's control surface
+   One row along the bottom, sized for a pointer rather than a thumb. Only the
+   things you click once — the clock, the book, the quadrant, the anchor. The
+   things you hold stay on the keys, and the hint line above names them.
+   -------------------------------------------------------------------------- */
+#deckbar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(14px + var(--safe-b));
+  transform: translateX(-50%);
+  display: none;
+  gap: calc(10px * var(--ui));
+  align-items: stretch;
+  max-width: calc(100% - 28px);
+  z-index: 4;
+}
+#deckbar.on { display: flex; }
+
+.deckbar-group {
+  display: flex;
+  gap: calc(4px * var(--ui));
+  align-items: stretch;
+  background: rgba(15, 11, 7, 0.72);
+  border: 1px solid var(--deck-edge);
+  border-radius: calc(4px * var(--ui));
+  padding: calc(4px * var(--ui));
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.deckbar-btn,
+.deckbar-step {
+  font-family: var(--serif);
+  color: var(--cream);
+  background: rgba(52, 42, 30, 0.55);
+  border: 1px solid rgba(196, 176, 136, 0.2);
+  border-radius: calc(3px * var(--ui));
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(5px * var(--ui));
+  padding: calc(6px * var(--ui)) calc(11px * var(--ui));
+  font-size: calc(13px * var(--ui));
+  line-height: 1;
+  white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.deckbar-btn:hover,
+.deckbar-step:hover {
+  background: rgba(86, 70, 48, 0.75);
+  border-color: rgba(196, 176, 136, 0.45);
+}
+.deckbar-btn:active,
+.deckbar-step:active { background: rgba(120, 98, 62, 0.8); }
+/* The key cap on the face of the button, so the keyboard is learned by using
+   the mouse rather than by reading a list nobody reads. */
+.deckbar-btn b {
+  font-weight: normal;
+  font-size: calc(10px * var(--ui));
+  color: var(--gold);
+  border: 1px solid rgba(200, 164, 78, 0.35);
+  border-radius: 2px;
+  padding: 0 calc(4px * var(--ui));
+  opacity: 0.85;
+}
+.deckbar-btn.anchor { color: var(--gold); }
+.deckbar-step {
+  padding: calc(6px * var(--ui)) calc(9px * var(--ui));
+  font-size: calc(12px * var(--ui));
+  letter-spacing: 0.06em;
+}
+.deckbar-rate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: calc(58px * var(--ui));
+  font-size: calc(13px * var(--ui));
+  font-variant-numeric: tabular-nums;
+  color: var(--gold);
+  letter-spacing: 0.04em;
+}
+.deckbar-rate.paused { color: var(--red); }
+
+/* The hint line sits above the bar rather than where the bar now is. */
+#deckbar.on ~ .hint,
+.hint { bottom: calc(62px + var(--safe-b)); }
+
+/* A phone has the thumb pads instead, and no room for both. */
+@media (pointer: coarse), (max-width: 860px) {
+  #deckbar, #deckbar.on { display: none; }
+}
 
 /* --------------------------------------------------------------- Screens */
 
@@ -1478,11 +1604,11 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
 
 #heading-tape {
   position: absolute;
-  top: 62px;
+  top: calc(62px * var(--ui));
   left: 50%;
   transform: translateX(-50%);
-  width: min(760px, calc(100vw - 32px));
-  height: 46px;
+  width: min(calc(760px * var(--ui)), calc(100vw - 32px));
+  height: calc(46px * var(--ui));
   background: linear-gradient(
     to right,
     rgba(15, 11, 7, 0) 0%,
@@ -2042,4 +2168,44 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   .book-tab { padding: 5px 9px 6px; }
   .book-tab b { font-size: 12.5px; }
   .book-tab span { display: none; }
+}
+
+/* --------------------------------------------------------------------------
+   The book, at the size of the screen it is open on
+   The panels on deck scale off --ui; the written screens were still set in
+   fixed pixels against a 1280-wide window, so on a 1080p monitor the chart's
+   own tabs, key and commission stayed the size of a postage stamp in the
+   corner of a very large sheet of paper. These restate the sizes that carry
+   the reading, in terms of the same number. At --ui: 1 every one of them is
+   exactly the value it replaces, so nothing changes on a laptop or a phone.
+   -------------------------------------------------------------------------- */
+button { font-size: calc(14px * var(--ui)); }
+.screen-head h1 { font-size: calc(24px * var(--ui)); }
+.screen-head .sub { font-size: calc(13px * var(--ui)); }
+.card h3 { font-size: calc(12px * var(--ui)); }
+.card p { font-size: calc(14px * var(--ui)); }
+.kv { font-size: calc(13.5px * var(--ui)); }
+table.ledger { font-size: calc(13.5px * var(--ui)); }
+.tabs button { font-size: calc(13px * var(--ui)); }
+.quote { font-size: calc(13.5px * var(--ui)); }
+.chart-legend { font-size: calc(11.5px * var(--ui)); }
+.chart-chip { font-size: calc(11.5px * var(--ui)); }
+.chart-overlay { font-size: calc(12.5px * var(--ui)); }
+.book-spine { font-size: calc(12px * var(--ui)); }
+.book-tab b { font-size: calc(14px * var(--ui)); }
+.book-tab span { font-size: calc(10.5px * var(--ui)); }
+.list li { font-size: calc(14px * var(--ui)); }
+
+/* Back to fixed sizes where the screen is small: there --ui is 1 anyway, and
+   these rules would otherwise outrank the phone block further down. */
+@media (max-width: 860px) {
+  .screen-head h1 { font-size: 21px; }
+  .screen-head .sub { font-size: 12px; }
+  .tabs button { font-size: 12.5px; }
+  table.ledger { font-size: 12.5px; }
+  .quote { font-size: 13.5px; }
+}
+@media (max-width: 560px) {
+  .screen-head h1 { font-size: 18px; }
+  .screen-head .sub { font-size: 11.5px; }
 }

@@ -17,6 +17,7 @@ import { PortView } from './portView';
 import { SightView } from './sightView';
 import { GameOverView, TitleView } from './titleView';
 import { TouchControls } from './touch';
+import { DeckBar } from './deckBar';
 import { ShoreView } from './shoreView';
 
 const SAVE_KEY = 'carreira-da-india:save';
@@ -55,6 +56,7 @@ export class Ui {
   private orders: OrdersView;
   private overlay = el('div', { id: 'overlay' });
   private touch: TouchControls;
+  private bar: DeckBar;
   private events: EventView;
   private game: Game | null = null;
   private cb: UiCallbacks;
@@ -64,6 +66,15 @@ export class Ui {
     this.cb = cb;
     this.touch = new TouchControls({
       setKey: (k, down) => cb.onVirtualKey(k, down),
+      tapKey: (k) => {
+        const g = this.game;
+        if (g) this.handleKey({ key: k, preventDefault() {} } as KeyboardEvent, g);
+      },
+    });
+
+    // The same routing as the thumb controls, so a click and a key press are
+    // the same event as far as everything downstream is concerned.
+    this.bar = new DeckBar({
       tapKey: (k) => {
         const g = this.game;
         if (g) this.handleKey({ key: k, preventDefault() {} } as KeyboardEvent, g);
@@ -85,7 +96,7 @@ export class Ui {
     this.shore = new ShoreView(back, () => this.setMode('chart'));
     this.orders = new OrdersView(back, () => this.setMode('chart'));
 
-    host.append(this.hud.root, this.touch.root, this.events.root, this.overlay);
+    host.append(this.hud.root, this.touch.root, this.bar.root, this.events.root, this.overlay);
     this.hud.setVisible(false);
   }
 
@@ -98,6 +109,7 @@ export class Ui {
     this.game = null;
     this.hud.setVisible(false);
     this.touch.setVisible(false);
+    this.bar.setVisible(false);
     clear(this.overlay);
     // Reading localStorage throws outright in some privacy modes, which would
     // otherwise take the title screen down with it before anything is drawn.
@@ -128,6 +140,7 @@ export class Ui {
     clear(this.overlay);
     this.hud.setVisible(mode === 'sailing');
     this.touch.setVisible(mode === 'sailing');
+    this.bar.setVisible(mode === 'sailing');
 
     switch (mode) {
       case 'sailing':
@@ -200,10 +213,13 @@ export class Ui {
     if (g.mode === 'sailing') {
       this.hud.update(g);
       this.touch.setRate(g.clock.scaleLabel);
+      this.bar.setRate(g.clock.scaleLabel, g.clock.paused || g.clock.scaleIndex === 0);
+      this.bar.setAnchored(g.anchored || !!g.dockedAt);
       this.events.show(g.pendingEvent);
       // The controls go quiet while a decision is outstanding: pressing the
       // helm against a ship whose clock is stopped only reads as a bug.
       this.touch.setVisible(!g.pendingEvent);
+      this.bar.setVisible(!g.pendingEvent);
     } else {
       this.events.show(null);
     }
@@ -238,9 +254,23 @@ export class Ui {
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return false;
 
     if (g.mode !== 'sailing') {
+      const toggles: Record<string, GameMode> = {
+        c: 'chart', j: 'rutter', n: 'sight', l: 'logbook', k: 'crew', p: 'port', o: 'orders',
+      };
+      const want = toggles[k];
       // Toggling the same panel closes it.
-      const toggles: Record<string, GameMode> = { c: 'chart', n: 'sight', l: 'logbook', k: 'crew', p: 'port', o: 'orders' };
-      if (toggles[k] === g.mode) { this.setMode('sailing'); return true; }
+      if (want === g.mode) { this.setMode('sailing'); return true; }
+      // Inside the book, the letter printed on a tab turns to that tab.
+      //
+      // It did not, which made five key caps on the head of the book into a
+      // promise the book did not keep: with the chart open, L and O and K did
+      // nothing at all, and the only way between sections was the mouse. They
+      // are one document — moving about inside it without putting it down is
+      // most of the reason it was bound in the first place.
+      if (want && isBookSection(g.mode) && isBookSection(want)) {
+        this.setMode(want);
+        return true;
+      }
       return false;
     }
 

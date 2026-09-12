@@ -8,16 +8,16 @@ import { append, asideRow, clear, el, hudRow, svg } from './dom';
 import { HeadingTape } from './headingTape';
 
 /**
- * The standing key list. One constant rather than a string built in two places,
- * because the strip has to be able to recognise it to know when to fade.
+ * The standing key list: the controls you *hold*, which is all that is left to
+ * name once the clock, the book, the quadrant and the anchor are buttons on the
+ * deck bar. One constant rather than a string built in two places, because the
+ * strip has to be able to recognise it to know when to fade.
  */
 const KEYS =
   '<b>A</b>/<b>D</b> helm \u2014 alter course when the clock is up &nbsp; ' +
+  '<b>X</b> steady &nbsp; <b>H</b> hold the course &nbsp; ' +
   '<b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
   '<b>T</b> about ship &nbsp; <b>B</b> back her astern &nbsp; ' +
-  '<b>J</b> the book \u2014 chart, roteiro, log, orders, company &nbsp; ' +
-  '<b>N</b> sight &nbsp; <b>V</b> view &nbsp; <b>M</b> sound &nbsp; ' +
-  '<b>[</b>/<b>]</b> time &nbsp; <b>Space</b> anchor &nbsp; ' +
   'drag to look about, wheel to close in';
 
 /**

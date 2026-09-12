@@ -7,6 +7,21 @@ import { AGREED_W } from '../navigation/charts';
 import { REGION, describeSea } from '../game/rutter';
 
 /**
+ * How big the hand on the chart is drawn.
+ *
+ * The cartography was set in fixed pixels, so on a large monitor the whole
+ * chart grew and the writing on it did not — a very big sheet of paper with
+ * very small names on it. Read off the same `--ui` the deck instruments scale
+ * by, so the two halves of the game agree about what size a screen is.
+ */
+function inkScale(): number {
+  if (typeof window === 'undefined' || !window.getComputedStyle) return 1;
+  const v = getComputedStyle(document.documentElement).getPropertyValue('--ui');
+  const n = parseFloat(v);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+/**
  * The chart table.
  *
  * What is drawn here is the pilot's chart, not the world. Coastlines appear
@@ -65,6 +80,8 @@ export class ChartView {
   private naming = false;
   /** What has been typed so far, held across the redraws the chart does. */
   private draftName = 'Cabo de ';
+  /** The scale every letter on the vellum is written at. */
+  private ink = 1;
   private game: Game | null = null;
   private onClose: () => void;
 
@@ -652,6 +669,7 @@ export class ChartView {
     const dpr = Math.min(window.devicePixelRatio, 2);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, rect.width, rect.height);
+    this.ink = inkScale();
 
     // Vellum.
     const grad = ctx.createLinearGradient(0, 0, rect.width, rect.height);
@@ -682,7 +700,7 @@ export class ChartView {
   private drawGraticule(ctx: CanvasRenderingContext2D, rect: DOMRect): void {
     ctx.strokeStyle = 'rgba(120, 96, 60, 0.18)';
     ctx.fillStyle = 'rgba(90, 74, 55, 0.55)';
-    ctx.font = '10px serif';
+    ctx.font = `${(10 * this.ink).toFixed(1)}px serif`;
     ctx.lineWidth = 1;
 
     const step = this.scale > 60 ? 1 : this.scale > 22 ? 2 : this.scale > 9 ? 5 : 10;
@@ -700,7 +718,7 @@ export class ChartView {
         ctx.lineWidth = 1.6;
         ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(rect.width, y); ctx.stroke();
         ctx.fillStyle = 'rgba(168, 50, 40, 0.75)';
-        ctx.font = 'italic 12px serif';
+        ctx.font = `italic ${(12 * this.ink).toFixed(1)}px serif`;
         ctx.fillText('A Linha Equinocial', 60, y - 6);
         ctx.restore();
       }
@@ -722,7 +740,7 @@ export class ChartView {
       if (x < -50 || x > rect.width + 50) continue;
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, rect.height); ctx.stroke();
       ctx.fillStyle = 'rgba(90, 74, 55, 0.55)';
-      ctx.font = '10px serif';
+      ctx.font = `${(10 * this.ink).toFixed(1)}px serif`;
       ctx.fillText(`${Math.abs(wrap180(lon))}° ${wrap180(lon) >= 0 ? 'E' : 'W'}`, x + 3, 12);
     }
   }
@@ -982,7 +1000,7 @@ export class ChartView {
   }
 
   private drawPorts(ctx: CanvasRenderingContext2D, g: Game): void {
-    ctx.font = '11px serif';
+    ctx.font = `${(11 * this.ink).toFixed(1)}px serif`;
     for (const cp of g.chart.ports.values()) {
       const def = portDef(cp.id);
       const s = this.toScreen(cp.lat, cp.lon);
@@ -1039,11 +1057,11 @@ export class ChartView {
 
       // A query mark at the centre: the cartographer's own admission.
       ctx.fillStyle = '#7a4a20';
-      ctx.font = 'italic bold 13px serif';
+      ctx.font = `italic bold ${(13 * this.ink).toFixed(1)}px serif`;
       ctx.textAlign = 'center';
       ctx.fillText('?', s.x, s.y + 4.5);
       ctx.textAlign = 'left';
-      ctx.font = 'italic 10.5px serif';
+      ctx.font = `italic ${(10.5 * this.ink).toFixed(1)}px serif`;
       ctx.fillStyle = 'rgba(122, 74, 32, 0.9)';
       ctx.fillText(shortSource(l.source), s.x + r + 4, s.y + 3.5);
     }
@@ -1066,7 +1084,7 @@ export class ChartView {
       ctx.moveTo(s.x - 3.5, s.y - 5);
       ctx.lineTo(s.x + 3.5, s.y - 5);
       ctx.stroke();
-      ctx.font = '10px serif';
+      ctx.font = `${(10 * this.ink).toFixed(1)}px serif`;
       ctx.fillText(p.name, s.x + 6, s.y + 14);
       ctx.restore();
     }
@@ -1095,13 +1113,13 @@ export class ChartView {
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = 'rgba(110, 34, 92, 0.85)';
-    ctx.font = 'italic 11px serif';
+    ctx.font = `italic ${(11 * this.ink).toFixed(1)}px serif`;
     ctx.fillText(`${r.name} is reported this far`, 12, y - 5);
     ctx.restore();
   }
 
   private drawPlaces(ctx: CanvasRenderingContext2D, g: Game): void {
-    ctx.font = 'italic 11px serif';
+    ctx.font = `italic ${(11 * this.ink).toFixed(1)}px serif`;
     ctx.fillStyle = '#5a4a37';
     for (const p of g.chart.places) {
       // Where the chart now puts the coast this name belongs to, not where the
@@ -1142,7 +1160,7 @@ export class ChartView {
     if (g.route.length === 0) return;
     ctx.save();
     ctx.strokeStyle = 'rgba(140, 60, 40, 0.75)';
-    ctx.font = 'italic 12px Georgia, serif';
+    ctx.font = `italic ${(12 * this.ink).toFixed(1)}px Georgia, serif`;
     ctx.textAlign = 'left';
 
     // The whole passage as one ruled chain, beginning at the reckoning: the
@@ -1216,7 +1234,7 @@ export class ChartView {
     ctx.restore();
 
     ctx.fillStyle = '#a83228';
-    ctx.font = 'italic 11px serif';
+    ctx.font = `italic ${(11 * this.ink).toFixed(1)}px serif`;
     ctx.fillText('by the reckoning', s.x + 10, s.y - 8);
   }
 
@@ -1246,7 +1264,7 @@ export class ChartView {
       const tx = x + (px * i) / 4;
       ctx.beginPath(); ctx.moveTo(tx, y - 3); ctx.lineTo(tx, y + 3); ctx.stroke();
     }
-    ctx.font = '11px serif';
+    ctx.font = `${(11 * this.ink).toFixed(1)}px serif`;
     ctx.fillText(`${leagues} léguas`, x + px / 2 - 24, y - 9);
     ctx.restore();
   }

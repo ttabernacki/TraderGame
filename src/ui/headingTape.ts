@@ -51,6 +51,12 @@ export class HeadingTape {
     const h = this.height;
     ctx.clearRect(0, 0, w, h);
 
+    // The strip is drawn off its own measured height rather than in fixed
+    // pixels, so it grows with the rest of the instruments on a big monitor
+    // instead of staying a 1280-wide ribbon marooned in the middle of it.
+    const k = h / 46;
+    const face = `${(11 * k).toFixed(1)}px Georgia, serif`;
+
     const heading = g.displayHeading;
     const perDeg = w / this.span;
     /** Where a compass bearing falls on the strip, or null when it is off it. */
@@ -86,12 +92,12 @@ export class HeadingTape {
       ctx.strokeStyle = major ? 'rgba(224, 212, 186, 0.85)' : 'rgba(224, 212, 186, 0.35)';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(px + 0.5, h - (major ? 13 : 7));
+      ctx.moveTo(px + 0.5, h - (major ? 13 : 7) * k);
       ctx.lineTo(px + 0.5, h);
       ctx.stroke();
       if (major) {
         ctx.fillStyle = 'rgba(232, 220, 192, 0.9)';
-        ctx.font = '11px Georgia, serif';
+        ctx.font = face;
         ctx.fillText(CARDINALS[bearing] ?? String(Math.round(bearing)).padStart(3, '0'), px, h - 17);
       }
     }
@@ -116,7 +122,7 @@ export class HeadingTape {
     if (onTape(windX)) {
       drawMark(ctx, windX, h, WIND_COLOUR, 'wind');
       ctx.fillStyle = WIND_COLOUR;
-      ctx.font = '11px Georgia, serif';
+      ctx.font = face;
       centred(windLabel, windX, 12);
     } else {
       // Abaft the beam and off the strip. The wind is the one thing that must
@@ -124,7 +130,7 @@ export class HeadingTape {
       // cannot decide anything — so it is pinned to the edge it went off.
       const right = angleDelta(heading, windEye) > 0;
       ctx.fillStyle = WIND_COLOUR;
-      ctx.font = '11px Georgia, serif';
+      ctx.font = face;
       ctx.textAlign = right ? 'right' : 'left';
       const edge = right ? w - 6 : 6;
       ctx.fillText(`${right ? '' : '◄ '}${windLabel}${right ? ' ►' : ''}`, edge, h - 6);
@@ -140,7 +146,7 @@ export class HeadingTape {
       if (onTape(px)) {
         drawMark(ctx, px, h, '#8fbf7a', 'course');
         ctx.fillStyle = '#8fbf7a';
-        ctx.font = '11px Georgia, serif';
+        ctx.font = face;
         centred(`${steer.toFixed(0).padStart(3, '0')}°`, px, 12);
       }
     }
@@ -152,7 +158,7 @@ export class HeadingTape {
       if (onTape(px)) {
         drawMark(ctx, px, h, '#e0b64a', 'course');
         ctx.fillStyle = '#e0b64a';
-        ctx.font = '11px Georgia, serif';
+        ctx.font = face;
         // A narrow tape has room for fewer letters before the name is the whole
         // strip, so the cut is measured against the width rather than fixed.
         const room = w < 520 ? 12 : 18;
@@ -161,7 +167,7 @@ export class HeadingTape {
         // Off the strip: an arrow at the edge saying which way to put the helm.
         const right = angleDelta(heading, dest.bearing) > 0;
         ctx.fillStyle = '#e0b64a';
-        ctx.font = '15px Georgia, serif';
+        ctx.font = `${(15 * k).toFixed(1)}px Georgia, serif`;
         ctx.textAlign = right ? 'right' : 'left';
         ctx.fillText(right ? '›› ' : ' ‹‹', right ? w - 4 : 4, h - 12);
       }
