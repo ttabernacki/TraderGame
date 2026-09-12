@@ -228,6 +228,15 @@ export class Weather {
       rain = Math.max(rain, clamp(strength * 1.4, 0, 1));
     }
 
+    // A squall in the doldrums is a rain cloud first and a wind second. This is
+    // the whole reason a crew wants one: the sails are spread to catch it and
+    // the casks go back up, which is what turned the belt from a place ships
+    // died of thirst into a place they merely suffered.
+    if (base.squall > 0.01) {
+      rain = Math.max(rain, clamp(base.squall * 1.6, 0, 1));
+      cloud = Math.max(cloud, clamp(0.55 + base.squall * 0.5, 0, 1));
+    }
+
     let visibility = lerp(22, 6, cloud) * lerp(1, 0.25, rain);
 
     // Persistent regional fogs: the Benguela coast of Namibia and the harmattan
@@ -246,7 +255,10 @@ export class Weather {
     const swellFrom = lerpAngle(from, base.from, 0.4);
 
     return {
-      wind: { from, speed, steadiness: base.steadiness, doldrums: base.doldrums },
+      wind: {
+        from, speed, steadiness: base.steadiness,
+        doldrums: base.doldrums, squall: base.squall,
+      },
       waveHeight: waveBase,
       swellFrom,
       visibility: clamp(visibility, 0.1, 30),
@@ -256,13 +268,17 @@ export class Weather {
       // (the 1.6 here is only what counts as "there is a storm about" for the
       // log and the HUD, not where its wind stops)
       stormDistanceNm: nearestDist,
-      description: describe(speed, rain, visibility, base.doldrums),
+      description: describe(speed, rain, visibility, base.doldrums, base.squall),
     };
   }
 }
 
-function describe(speed: number, rain: number, vis: number, doldrums: boolean): string {
-  if (doldrums && speed < 4) return 'Becalmed under a white sky';
+function describe(
+  speed: number, rain: number, vis: number, doldrums: boolean, squall = 0,
+): string {
+  if (squall > 0.25) return 'A squall over her — rain and wind together';
+  if (squall > 0.02) return 'A thunderhead standing over the sea close by';
+  if (doldrums && speed < 4) return 'Light airs under a white sky';
   if (speed > 60) return 'A furious storm';
   if (speed > 45) return 'Hard gale, seas breaking aboard';
   if (speed > 33) return 'Gale of wind';

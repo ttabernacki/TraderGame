@@ -52,6 +52,10 @@ export interface EventContext {
   night: boolean;
   /** True when the crew have gone long enough without fresh food to care. */
   crewNeedsFood: boolean;
+  /** How hard it is raining, 0 to 1. A doldrum squall is mostly this. */
+  rain: number;
+  /** The doubt in the reckoned latitude, in minutes. */
+  doubtNm: number;
 }
 
 interface SeaEventDef {
@@ -112,7 +116,7 @@ const EVENTS: SeaEventDef[] = [
   {
     id: 'fish',
     everyDays: 2.6,
-    gate: (c) => c.speedKnots < 7 && c.crewNeedsFood,
+    gate: (c) => c.speedKnots < 7,
     build: (c) => {
       const catchDays = c.rng.range(1.4, 4.5);
       return {
@@ -304,7 +308,7 @@ const EVENTS: SeaEventDef[] = [
   },
   {
     id: 'wreck',
-    everyDays: 90,
+    everyDays: 70,
     gate: (c) => c.shoreNm > 25 && day(c),
     build: (c) => ({
       id: 'wreck', severity: 'warning',
@@ -404,8 +408,8 @@ const EVENTS: SeaEventDef[] = [
   },
   {
     id: 'sailhulldown',
-    everyDays: 24,
-    gate: (c) => c.shoreNm > 120 && day(c),
+    everyDays: 18,
+    gate: (c) => day(c),
     build: (c) => ({
       id: 'sailhulldown', severity: 'note',
       title: 'A sail, hull down',
@@ -453,7 +457,7 @@ const EVENTS: SeaEventDef[] = [
   {
     id: 'argument',
     everyDays: 22,
-    gate: (c) => c.daysOut > 12 && c.shoreNm > 90,
+    gate: (c) => c.daysOut > 8 && c.shoreNm > 60,
     build: (c) => ({
       id: 'argument', severity: 'note',
       title: 'An argument on the fo\u2019c\u2019sle',
@@ -484,7 +488,7 @@ const EVENTS: SeaEventDef[] = [
   {
     id: 'whale',
     everyDays: 5.5,
-    gate: (c) => c.absLat > 18 && day(c),
+    gate: (c) => day(c),
     build: (c) => ({
       id: 'whale', severity: 'note',
       title: 'The watch on deck',
@@ -508,7 +512,7 @@ const EVENTS: SeaEventDef[] = [
   {
     id: 'becalmed',
     everyDays: 3.2,
-    gate: (c) => c.windKnots < 3.5 && c.daysOut > 3,
+    gate: (c) => c.windKnots < 5.5 && c.daysOut > 2,
     build: () => ({
       id: 'becalmed', severity: 'warning',
       title: 'Not a breath',
@@ -551,6 +555,139 @@ const EVENTS: SeaEventDef[] = [
       ],
     }),
   },
+
+  // --- Judgements in blue water ---------------------------------------------
+  //
+  // Three decisions that can only happen out of sight of land, because a
+  // fifty-day passage was measured putting five questions to the captain in
+  // total and four of them were the same squall. There are only so many
+  // judgements in the table and a blue-water day was eligible for almost none
+  // of them, which is not a pacing problem — it is not having written the
+  // content the pacing was meant to deal out.
+  {
+    id: 'rainwater',
+    everyDays: 2.2,
+    // The payoff for the doldrums. A thunder squall is a water cask, and the
+    // belt stops being only a tax the moment a crew can want one.
+    gate: (c) => c.rain > 0.35 && c.g.crew.provisions.water < 70,
+    build: (c) => ({
+      id: 'rainwater', severity: 'note',
+      title: 'Rain',
+      text: 'It is coming down in rods and the scuppers are running fresh. '
+        + `There is ${c.g.crew.provisions.water.toFixed(0)} days\u2019 water in the ground tier.`,
+      choices: [
+        {
+          label: 'Spread the sails and catch it',
+          detail: 'The casks go back up. She lies still while it is done.',
+          resolve: (g) => {
+            const got = g.rng.range(6, 16);
+            g.crew.provisions.water = Math.min(120, g.crew.provisions.water + got);
+            g.handSail(0.2);
+            g.clock.t += 3600 * g.rng.range(2, 5);
+            g.crew.morale = clamp(g.crew.morale + 0.05, 0, 1);
+            return `Unbent the spritsail and spread every awning we had, and filled ${got.toFixed(0)} days\u2019 `
+              + 'water in an afternoon. The men stood in it with their mouths open like boys.';
+          },
+        },
+        {
+          label: 'Let it rain and keep her going',
+          detail: 'Hold the ground you are making.',
+          resolve: () => 'Let it rain on us and held on. The casks are no fuller and we are ten miles further south.',
+        },
+      ],
+    }),
+  },
+  {
+    id: 'pilotdoubt',
+    everyDays: 9,
+    // The pilot says the reckoning has gone wrong, and he is sometimes right.
+    gate: (c) => c.doubtNm > 16 && c.daysOut > 5 && c.shoreNm > 60,
+    build: (c) => {
+      const out = c.rng.range(0.4, 1.6) * (c.rng.chance(0.5) ? 1 : -1);
+      return {
+        id: 'pilotdoubt', severity: 'warning',
+        title: 'The pilot is not happy',
+        text: 'The pilot has been over the traverse board twice and says the reckoning is out. '
+          + `He wants to shift her ${Math.abs(out * 60).toFixed(0)} miles to the `
+          + `${out > 0 ? 'north' : 'south'} on the strength of the way she has been carrying her helm. `
+          + 'He may be right. He has been wrong before.',
+        choices: [
+          {
+            label: 'Amend the reckoning as he says',
+            detail: 'Trust the man who has been watching her all passage.',
+            resolve: (g) => {
+              // He is right about as often as a good pilot was: most of the
+              // time, and the rest of the time he has made it worse.
+              const right = g.rng.chance(0.62);
+              g.nav.estimated.lat += right ? out : -out * 0.8;
+              // The doubt barely moves either way, because nothing has been
+              // *observed*: an amended reckoning is still a reckoning, and if
+              // this bought back confidence the way a sight does it would be a
+              // quadrant that needs no clear sky and no tables.
+              g.nav.sigmaLat = Math.max(4, g.nav.sigmaLat * (right ? 0.88 : 1.25));
+              return right
+                ? 'Shifted her as he asked. Pricked off fresh from the new position and the whole '
+                  + 'board sits better for it.'
+                : 'Shifted her as he asked, and something in the set of his mouth afterwards says '
+                  + 'he is no longer certain either.';
+            },
+          },
+          {
+            label: 'Hold the reckoning as it stands',
+            detail: 'The board is the board. Take a sight and settle it properly.',
+            resolve: (g) => {
+              g.crew.morale = clamp(g.crew.morale - 0.03, 0, 1);
+              return 'Told him the board stands until something better than a feeling comes along. '
+                + 'He said nothing, which is what he does instead of arguing.';
+            },
+          },
+        ],
+      };
+    },
+  },
+  {
+    id: 'nightloom',
+    everyDays: 7,
+    // Something ahead in the dark. The oldest decision at sea.
+    gate: (c) => c.night && c.speedKnots > 2 && c.shoreNm < 300,
+    build: (c) => ({
+      id: 'nightloom', severity: 'warning',
+      title: 'Something ahead in the dark',
+      text: `The lookout has something broad on the ${signBearing(c)} bow \u2014 a loom, or a line `
+        + 'of white water, or nothing at all. It is too dark to say and there is no moon until the '
+        + 'middle watch.',
+      choices: [
+        {
+          label: 'Heave to until it is light',
+          detail: 'A night lost. Nothing hit.',
+          resolve: (g) => {
+            g.handSail(0.15);
+            g.clock.t += 3600 * g.rng.range(4, 7);
+            return 'Backed the main topsail and lay to until the light came, and what the lookout '
+              + 'had was a squall line going away to the west. A night for nothing, which is what '
+              + 'most careful nights are for.';
+          },
+        },
+        {
+          label: 'Stand on, with the lead going',
+          detail: 'Keep the ground. Find out the hard way if he was right.',
+          resolve: (g) => {
+            if (g.rng.chance(0.78)) {
+              g.crew.morale = clamp(g.crew.morale + 0.04, 0, 1);
+              return 'Stood on with a man in the chains all night and never found a bottom. '
+                + 'Whatever he saw, it was not there by morning.';
+            }
+            g.ship.condition.hull = clamp(g.ship.condition.hull - g.rng.range(0.04, 0.12), 0.1, 1);
+            g.ship.condition.leak = clamp(g.ship.condition.leak + g.rng.range(0.1, 0.3), 0, 3);
+            g.crew.morale = clamp(g.crew.morale - 0.12, 0, 1);
+            return 'Stood on, and struck something in the dark that we never saw \u2014 a reef or a '
+              + 'baulk of timber. She is making water forward and the carpenter is at it now.';
+          },
+        },
+      ],
+    }),
+  },
+
 ];
 
 // ---------------------------------------------------------------------------
@@ -582,10 +719,23 @@ export function rollSeaEvent(g: Game, days: number): SeaEvent | null {
     daysOut: g.daysSincePort,
     night: hour < 5 || hour > 20,
     crewNeedsFood: g.crew.daysWithoutFresh > 5,
+    rain: g.weatherNow.rain,
+    doubtNm: g.nav.sigmaLat,
   };
 
   const open = EVENTS.filter((e) => !g.recentEvents.includes(e.id) && e.gate(c));
   if (open.length === 0) return null;
+
+  // Shuffled, because the loop below returns the first event whose die comes
+  // up and the list is in the order somebody wrote them in. Unshuffled, an
+  // event near the top with a short interval wins every race it is entered in:
+  // measured over fifty days at sea, three kinds fired in total and the squall
+  // — fifth in the table, once every five days — was four of the six. The
+  // table is a set of things that can happen, not a priority order.
+  for (let i = open.length - 1; i > 0; i--) {
+    const j = Math.floor(g.rng.next() * (i + 1));
+    [open[i], open[j]] = [open[j], open[i]];
+  }
 
   for (const def of open) {
     if (!g.rng.chance(days / def.everyDays)) continue;
@@ -608,8 +758,10 @@ export function rollSeaEvent(g: Game, days: number): SeaEvent | null {
   // birds, dolphins, fire in the water — keeps the passage from being blank.
   // Decisions are what make it a voyage, and going a fortnight without being
   // asked anything is the failure that matters, so the floor reaches for one
-  // of those first once it has been long enough.
-  if (g.daysSinceDecision > 9) {
+  // of those first once it has been long enough. Nine days was the first
+  // setting and it is far too slack: a player asked for a judgement once a week
+  // and a half is watching a passage, not sailing one.
+  if (g.daysSinceDecision > 4.5) {
     // Not the rarities. A once-a-voyage find like the ambergris is worth
     // something because it is rare; having the floor reach for it four times in
     // three months turns a windfall into a chore.
@@ -626,7 +778,7 @@ export function rollSeaEvent(g: Game, days: number): SeaEvent | null {
     }
   }
 
-  if (g.daysSinceEvent > 3) {
+  if (g.daysSinceEvent > 1.8) {
     const quiet = open.filter((e) => e.everyDays < 60);
     if (quiet.length > 0) {
       const def = g.rng.pick(quiet);

@@ -1,5 +1,5 @@
 import { clamp, lerp, smoothstep, wrap360, type LatLon } from '../core/math';
-import { fbm1 } from '../core/rng';
+import { fbm1, hash2 } from '../core/rng';
 
 export interface Wind {
   /** True direction the wind blows FROM, degrees. */
@@ -137,6 +137,131 @@ export interface WindSample extends Wind {
   steadiness: number;
   /** Convenience flag for the doldrum band. */
   doldrums: boolean;
+  /**
+   * How hard a doldrum squall has hold of her, 0 to 1.
+   *
+   * Reported separately from the wind because the squall is the *event* — it
+   * brings rain to catch and a half-hour of real sailing, and both the weather
+   * and the ship need to know one is on rather than having to infer it from a
+   * wind that got stronger.
+   */
+  squall: number;
+}
+
+/* --------------------------------------------------------------------------
+   The doldrums, and how a ship gets through them
+   -------------------------------------------------------------------------- */
+
+/**
+ * Spacing of the squall lattice, in degrees. About twenty-seven miles, which is
+ * roughly how close the big convective cells stand along the ITCZ — and it has
+ * to be close to the size of a cell, or the lattice leaves lanes between the
+ * rows that no ship on that parallel ever meets a squall in.
+ */
+const SQUALL_CELL_DEG = 0.45;
+/** Hours of one cell's whole life, from first towering up to raining itself out. */
+const SQUALL_PERIOD_H = 3.4;
+/** The share of that life it is actually worth anything. */
+const SQUALL_DUTY = 0.42;
+
+export interface SquallSample {
+  /** 0 outside, 1 in the heart of it. */
+  strength: number;
+  from: number;
+  speed: number;
+}
+
+/**
+ * The squall cells of the intertropical convergence, as a field rather than a
+ * population.
+ *
+ * The doldrums are not a calm. They are a belt of dead air standing under a
+ * line of thunderheads, and a ship crosses them by *working the squalls*: you
+ * keep everything set, you take what each cell gives you as it comes over, and
+ * between them you drift. That is the whole of the seamanship of the passage,
+ * and without it the belt is simply a wall — measured, before this existed, at
+ * a day's run of zero miles for sixty-seven days out of ninety, which is not a
+ * hazard, it is the end of the game.
+ *
+ * Modelled as a drifting lattice rather than as spawned storm systems because
+ * the cells have to be *encountered*. The weather's storm population seeds a
+ * handful of ten-mile cells anywhere within eight hundred miles of the ship,
+ * and the chance she ever sails into one is about nil; that is exactly why the
+ * belt measured dead despite the code that was meant to enliven it. A field is
+ * always there, costs one hash per cell to sample, and needs nothing stored.
+ *
+ * The wind in a cell blows *outward*: it is the downdraft hitting the sea and
+ * spreading, which is what a squall actually is. So which way it serves you
+ * depends on which side of the cell you pass, and steering to take a squall on
+ * the useful quarter is a real decision with a real answer.
+ */
+export function doldrumSquall(p: LatLon, dayOfYear: number, t: number): SquallSample {
+  const y = p.lat - itczLatitude(dayOfYear);
+  // Only under the convergence, and fading out at its edges rather than
+  // stopping at a line. The feather ends at 3.5 because that is where the
+  // doldrum flag ends, and a cell drawn outside it would never be applied.
+  const band = 1 - smoothstep(1.8, 3.5, Math.abs(y));
+  if (band <= 0.01) return { strength: 0, from: 0, speed: 0 };
+
+  const hours = t / 3600;
+  // The whole field walks off to the west-north-west with the flow, about nine
+  // knots. It must move in latitude as well as longitude: the rows of the
+  // lattice are fixed in the grid, so a field that only slid sideways would
+  // leave a ship on an unlucky parallel becalmed for ever while one twenty
+  // miles north of her worked a squall every three hours. Measured exactly
+  // that, at 6°N, before the north component was put in.
+  const driftLon = (hours * 9 * Math.sin((287 * Math.PI) / 180)) / 60;
+  const driftLat = (hours * 9 * Math.cos((287 * Math.PI) / 180)) / 60;
+  const cosLat = Math.max(Math.cos((p.lat * Math.PI) / 180), 0.2);
+  const gx = (p.lon - driftLon) / SQUALL_CELL_DEG;
+  const gy = (p.lat - driftLat) / SQUALL_CELL_DEG;
+  const ci = Math.floor(gx);
+  const cj = Math.floor(gy);
+
+  let best: SquallSample = { strength: 0, from: 0, speed: 0 };
+  for (let di = -1; di <= 1; di++) {
+    for (let dj = -1; dj <= 1; dj++) {
+      const i = ci + di, j = cj + dj;
+      const jitterX = hash2(i, j, 7717);
+      const jitterY = hash2(i, j, 3313);
+      const size = hash2(i, j, 9091);
+      const phase = hash2(i, j, 5501);
+      const vigour = hash2(i, j, 1237);
+
+      // Where in its own life this cell is. They do not all tower up at once.
+      const life = ((hours / SQUALL_PERIOD_H) + phase) % 1;
+      if (life > SQUALL_DUTY) continue;
+      const u = life / SQUALL_DUTY;
+      // Builds fast, rains itself out slowly.
+      const envelope = smoothstep(0, 0.22, u) * (1 - smoothstep(0.55, 1, u));
+      if (envelope <= 0.01) continue;
+
+      // Centre of this cell, in degrees, and how far off it she is in miles.
+      const cLon = (i + 0.15 + jitterX * 0.7) * SQUALL_CELL_DEG + driftLon;
+      const cLat = (j + 0.15 + jitterY * 0.7) * SQUALL_CELL_DEG + driftLat;
+      const dxNm = (p.lon - cLon) * 60 * cosLat;
+      const dyNm = (p.lat - cLat) * 60;
+      const distNm = Math.hypot(dxNm, dyNm);
+      const radiusNm = 6 + size * 10;
+      if (distNm > radiusNm) continue;
+
+      // Hollow in the middle — under the downdraft itself the air goes every
+      // way at once — hardest at about two thirds out, gone at the edge.
+      const r = distNm / radiusNm;
+      const profile = smoothstep(0, 0.35, r) * (1 - smoothstep(0.72, 1, r));
+      const strength = envelope * profile * band;
+      if (strength <= best.strength) continue;
+
+      // Blowing outward from the centre: the wind comes FROM the cell.
+      const fromCentre = wrap360((Math.atan2(dxNm, dyNm) * 180) / Math.PI + 180);
+      best = {
+        strength,
+        from: wrap360(fromCentre + (jitterX - 0.5) * 40),
+        speed: (15 + vigour * 20) * strength,
+      };
+    }
+  }
+  return best;
 }
 
 /**
@@ -219,9 +344,31 @@ export function prevailingWind(p: LatLon, dayOfYear: number, t: number): WindSam
   speed = Math.max(0, speed * (1 + spdNoise * lerp(0.7, 0.25, steadiness)));
 
   const doldrums = Math.abs(y) < 3.5 && mm < 0.5;
-  if (doldrums) speed = Math.min(speed, 6) * (0.4 + 0.6 * Math.abs(dirNoise));
+  let squall = 0;
+  if (doldrums) {
+    // The air between the cells: light, fickle, and hauling round the compass,
+    // but not *dead*. It used to come out at 1.2 knots, which is below what a
+    // nau needs to answer her helm at all, so the belt could only be drifted
+    // through sideways — three hundred and sixty miles of it, with the water
+    // running out at sixty days. A ship with three or four knots over the deck
+    // can at least be steered and can hold what the squalls give her.
+    speed = Math.min(speed, 7) * (0.5 + 0.5 * Math.abs(dirNoise)) + 2.2;
 
-  return { from, speed, steadiness, doldrums };
+    const sq = doldrumSquall(p, dayOfYear, t);
+    if (sq.strength > 0.01) {
+      squall = sq.strength;
+      // Added as vectors, like everything else here: the outflow overwhelms the
+      // light air rather than being averaged with it.
+      const rad = Math.PI / 180;
+      const e = Math.sin(from * rad) * speed + Math.sin(sq.from * rad) * sq.speed;
+      const n = Math.cos(from * rad) * speed + Math.cos(sq.from * rad) * sq.speed;
+      speed = Math.hypot(e, n);
+      if (speed > 1e-4) from = wrap360((Math.atan2(e, n) * 180) / Math.PI);
+      steadiness = lerp(steadiness, 0.55, sq.strength);
+    }
+  }
+
+  return { from, speed, steadiness, doldrums, squall };
 }
 
 /** Beaufort force for a wind speed in knots. */

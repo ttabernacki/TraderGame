@@ -90,6 +90,22 @@ export function fbm1(x: number, octaves = 3, seed = 0): number {
   return sum / norm;
 }
 
+/**
+ * A deterministic [0,1) from a pair of integers — one lattice cell, one field.
+ *
+ * Wanted wherever a world feature has to be laid out on a grid and be the same
+ * every time anybody looks at it, without storing anything: the squall cells in
+ * the doldrums are a field of these.
+ */
+export function hash2(i: number, j: number, seed: number): number {
+  let h = Math.imul(i ^ seed, 0x27d4eb2d);
+  h = Math.imul(h ^ (j + 0x9e3779b9), 0x165667b1);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
+
 function hash1(i: number, seed: number): number {
   let h = Math.imul(i ^ seed, 0x27d4eb2d);
   h ^= h >>> 15;
