@@ -22,7 +22,21 @@ export interface RigView {
   trimSign: number;
   /** Normalised drawing force per sail, negative when taken aback. */
   pressures: number[];
+  /**
+   * The apparent wind off the bow as the pennant and the telltales stream by
+   * it: smoothed, so they do not flick through tens of degrees a frame.
+   */
   apparentBeta: number;
+  /**
+   * The same angle unsmoothed, which is what the canvas bellies by.
+   *
+   * These have to be two numbers. The yards brace to the side the *raw* angle
+   * says, so a sail whose belly followed the smoothed one kept the old side for
+   * the better part of a second after the wind had crossed — the sails came
+   * across in a gybe and the cloth stayed bagged the way it had been, which is
+   * precisely the thing anyone watching a gybe would notice.
+   */
+  trueBeta: number;
   apparentKnots: number;
   /** Helm setting, -1 to +1. */
   rudder: number;
@@ -311,7 +325,7 @@ export class ShipMesh {
       // cloth goes the way the wind is going. The rotation below is the same
       // one Three.js applies to the pivot, and the same one the running rigging
       // is drawn through, so the three can never drift apart.
-      const stream = (v.apparentBeta + 180) * DEG;
+      const stream = (v.trueBeta + 180) * DEG;
       const windX = Math.cos(stream);
       const windZ = -Math.sin(stream);
       const a = m.pivot.rotation.y;
@@ -841,14 +855,24 @@ function buildRaisedDeck(
   deckGeo.computeVertexNormals();
   g.add(new THREE.Mesh(deckGeo, oak));
 
-  // Bulwarks either side, and a capping rail along the top of each.
+  // The side of the castle, either hand: planked from the ship's own sheer all
+  // the way up past the raised deck to the top of the bulwark.
+  //
+  // It used to start a hand's breadth under the raised deck, which left the
+  // whole height of the rise — two thirds of the depth of the hold, aft — as
+  // open air between the castle and the ship. The quarterdeck and the
+  // forecastle both hung over the water with a gap you could see the sea
+  // through, which is what "the stern castle is floating" means. Only the one
+  // bulkhead at the break was closing anything.
   for (const side of [-1, 1]) {
     const pos: number[] = [];
     const idx: number[] = [];
     for (let i = 0; i <= steps; i++) {
       const t = lerp(fromT, toT, i / steps);
       const bw = railHalfBeam(t, B) * 0.96;
-      pos.push(side * bw, level(t) - 0.15, zAt(t));
+      // A little below the sheer, so the castle's planking laps the hull's
+      // instead of meeting it exactly and leaving a hairline of daylight.
+      pos.push(side * bw, sheerAt(t) * D * FREEBOARD - 0.12, zAt(t));
       pos.push(side * bw * 0.97, level(t) + bulwark, zAt(t));
     }
     for (let i = 0; i < steps; i++) {

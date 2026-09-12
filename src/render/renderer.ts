@@ -64,6 +64,8 @@ export interface RenderFrame {
   trimSign: number;
   sailPressures: number[];
   apparentBeta: number;
+  /** The same angle unsmoothed, which is what the canvas bellies by. */
+  trueBeta: number;
   apparentKnots: number;
   speedKnots: number;
   /** Helm setting, -1 to +1, for the rudder. */
@@ -420,6 +422,7 @@ export class Renderer {
       trimSign: f.trimSign,
       pressures: f.sailPressures,
       apparentBeta: f.apparentBeta,
+      trueBeta: f.trueBeta,
       apparentKnots: f.apparentKnots,
       rudder: f.rudder,
       t: this.riggingClock,

@@ -341,6 +341,9 @@ function buildFrame(g: Game): RenderFrame {
     // Shown, not instantaneous: the pennant and the telltales have to agree
     // with the sea they are flying over.
     apparentBeta: g.displayBeta,
+    // Raw, because the yards brace to the raw angle and the cloth has to
+    // agree with the yards.
+    trueBeta: p.beta,
     apparentKnots: g.displayApparent,
     speedKnots: p.speedKnots,
     rudder: g.ship.state.rudder,
