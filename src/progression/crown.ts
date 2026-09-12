@@ -194,6 +194,24 @@ export interface Patent {
   final?: boolean;
 }
 
+/**
+ * What discharging a commission is worth to the captain himself, in skill
+ * points.
+ *
+ * Keyed off the renown the Crown attaches to it, which is already the game's
+ * own measure of how hard a thing it is: the Madeira sugar run and the voyage
+ * that opens the route to India cannot be worth the same, and renown is the
+ * number that already says so. Exported because the court has to print it on
+ * the commission before the player accepts — a choice between commissions is
+ * partly a choice about the captain, and he should be able to see that.
+ */
+export function commissionPoints(standingReward: number): number {
+  if (standingReward >= 250) return 5;
+  if (standingReward >= 100) return 4;
+  if (standingReward >= 50) return 3;
+  return 2;
+}
+
 const PATENT_TEMPLATES: {
   minStanding: number;
   build: (rng: Rng, year: number) => Omit<Patent, 'id' | 'issued' | 'monarch' | 'complete' | 'failed'>;

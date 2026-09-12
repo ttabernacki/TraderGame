@@ -1,4 +1,4 @@
-import { monarchAt, nextTitle, type Patent } from '../progression/crown';
+import { commissionPoints, monarchAt, nextTitle, type Patent } from '../progression/crown';
 import { rivalStanding } from '../progression/rival';
 import type { Game } from '../game/state';
 import { append, button, card, clear, el, kv, meter } from './dom';
@@ -102,11 +102,16 @@ export class CourtView {
           ? `You have ${g.crown.discoveries.filter((d) => !d.reported).length} discoveries not yet entered on the padrão real, worth ${unreported} renown.`
           : 'Your commission is discharged and wants only reporting.'),
         button('Present your discoveries', () => {
-          const clean = !!g.crown.patent && g.crown.patentReady;
+          // Captured before settle(), which marks the discoveries reported and
+          // clears the patent it has just discharged.
+          const discharged = g.crown.patent && g.crown.patentReady ? g.crown.patent : null;
+          // New places and new peoples only: see awardCommission().
+          const beyond = g.crown.discoveries.filter(
+            (d) => !d.reported && d.kind !== 'coast' && d.kind !== 'padrao').length;
+
           const s = g.crown.settle(g.clock.t, g.settlementBias);
           this.settlement = s;
           const sold = g.sellCharts();
-          const points = g.awardVoyage(clean);
           if (sold > 0) {
             g.crown.gold += sold;
             s.gold += sold;
@@ -114,7 +119,17 @@ export class CourtView {
               `Copies of your sheets, sold quietly to the houses in the Rua Nova. ${sold} cruzados, `
               + 'and the Casa knows perfectly well where they came from.');
           }
-          s.lines.push(`${points} points to spend on yourself, in the book under Captain.`);
+
+          // Skill points are the commission's, not the voyage's.
+          if (discharged) {
+            const points = g.awardCommission(discharged, beyond);
+            s.lines.push(`${points} points to spend on yourself, in the book under Captain.`);
+          } else {
+            s.lines.push(
+              'No commission discharged, so nothing learned that the Casa will credit you with. '
+              + 'You are paid for what you brought home and no more.');
+          }
+
           g.logEvent('crown',
             `Reported at court. ${s.gold} cruzados and ${s.standing} renown. ${g.crown.title.name}.`, true);
           this.offers = g.crown.patent ? [] : g.crown.offers(g.clock.date.year);
@@ -136,7 +151,9 @@ export class CourtView {
           ),
         ))),
         el('div', { style: { marginTop: '11px' } },
-          kv('On completion', `${patent.reward} cruzados, ${patent.standingReward} renown`)),
+          kv('On completion',
+            `${patent.reward} cruzados, ${patent.standingReward} renown, `
+            + `${commissionPoints(patent.standingReward)} skill points`)),
       ));
     } else if (this.offers.length > 0) {
       right.append(card('Commissions the Crown will grant',
@@ -148,7 +165,8 @@ export class CourtView {
           el('ul', { class: 'list' }, ...p.objectives.map((o) => el('li', { style: { fontSize: '13.5px' } }, o.description))),
           el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', gap: '12px' } },
             el('span', { style: { fontSize: '13px', color: 'var(--ink-soft)' } },
-              `${p.advance} in advance · ${p.reward} on completion · ${p.standingReward} renown`),
+              `${p.advance} in advance · ${p.reward} on completion · ${p.standingReward} renown · `
+              + `${commissionPoints(p.standingReward)} skill points`),
             button('Take it', () => {
               g.crown.accept(p, g.clock.t);
               g.layCourseForCommission();

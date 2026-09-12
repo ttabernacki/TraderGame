@@ -29,7 +29,7 @@ import {
   type CaptainSkills, type PerkId, type SkillSet,
 } from '../crew/skills';
 import { Markets } from '../economy/market';
-import { Crown, portName } from '../progression/crown';
+import { Crown, commissionPoints, portName, type Patent } from '../progression/crown';
 import { newRelations, type Relations } from '../diplomacy/contact';
 import {
   foragingParty, meetingParty, shorePlaceAt, waterParty, woodParty,
@@ -465,23 +465,43 @@ export class Game {
   }
 
   /**
-   * What a voyage taught the captain, in points he may spend where he likes.
+   * What a discharged commission taught the captain.
    *
-   * Two for coming home and reporting at all, and one more for a commission
-   * discharged clean. Points for *voyages* rather than for activities, because
-   * anything awarded per sight or per mile of coast is a thing a patient player
-   * farms in harbour, and then the build is whoever had the most patience
-   * rather than whoever made the most interesting choices.
+   * Points come from *finishing the thing you undertook to do* \u2014 not from
+   * sailing, not from taking sights, and not from casting off and coming back.
+   * A voyage-for-returning award turns the strongest build into whoever was
+   * willing to bounce off Funchal the most times, and none of those trips is a
+   * decision: the interesting captain is the one who took a hard commission and
+   * got it discharged.
+   *
+   * Size matters because the commissions are a ladder. The Madeira sugar run is
+   * a fortnight of fair wind; the one that opens the route to India is two
+   * years and most of a career's nerve, and they cannot be worth the same.
    */
-  awardVoyage(dischargedClean: boolean): number {
-    const points = 2 + (dischargedClean ? 1 : 0);
+  awardCommission(patent: Patent, beyondTheContract: number): number {
+    const base = commissionPoints(patent.standingReward);
+    // One more for coming home with something the Crown never asked for.
+    //
+    // Counted in new places and new peoples only \u2014 not in capes you named or
+    // pillars you set up, both of which a patient captain can manufacture by
+    // running twelve miles down a coast and doing it again. There is a fixed
+    // number of ports and peoples on the map, so this is bounded by the world
+    // rather than by patience, which is the whole point.
+    const bonus = beyondTheContract >= 2 ? 1 : 0;
+    const points = base + bonus;
+
     // Reporting at court ends the passage, so the passage's tally starts again.
     // Called after sellCharts(), which is paid on it.
     this.chartedThisPassage = 0;
     this.correctedNm = 0;
     this.captain.points += points;
+
     this.logEvent('crown',
-      `The voyage is reported and the voyage is over. ${points} points to spend on yourself.`, true);
+      `"${patent.title}" is discharged and entered at the Casa. ${points} points to spend on `
+      + `yourself` + (bonus > 0
+        ? `, one of them for the ${beyondTheContract} places and peoples you brought home that `
+          + 'nobody asked you for.'
+        : '.'), true);
     this.pushAlert(
       `${points} skill points. ${this.captain.points} unspent \u2014 the book, under Captain.`, 'note');
     return points;

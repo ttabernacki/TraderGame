@@ -308,12 +308,20 @@ export class Hud {
             // Say how much of the plan is still ahead of her, or a passage laid
             // off in four legs looks from the deck exactly like one laid off in
             // one and the captain forgets he has corners coming.
-            : g.route.length > 1 ? `Bound for \u2014 mark 1 of ${g.route.length}`
-              : 'Bound for'),
+            : dest
+              ? (g.route.length > 1 ? `Bound for \u2014 mark 1 of ${g.route.length}` : 'Bound for')
+              : 'Standing on'),
         el('div', { class: 'hud-big' },
+          // She can be under way with neither a mark laid off nor a course
+          // ordered \u2014 the helm simply holds the last course she was given \u2014 and
+          // this block runs on `steer` alone, so there is no destination to
+          // name. Reading `dest.name` there threw, and took the whole HUD with
+          // it on the next frame.
           g.helmOrder !== null
             ? `${g.helmOrder.toFixed(0).padStart(3, '0')}°`
-            : dest!.name),
+            : dest
+              ? dest.name
+              : `${(steer ?? g.displayHeading).toFixed(0).padStart(3, '0')}°`),
         // Where she is actually being steered, which is not the bearing of the
         // mark when the mark lies inside the no-go.
         steer !== null

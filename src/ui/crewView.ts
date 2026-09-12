@@ -305,10 +305,14 @@ export class CrewView {
           ? `${c.points} point${c.points === 1 ? '' : 's'} to spend`
           : 'Nothing left to spend'),
         el('span', { style: { fontSize: '12.5px', color: 'var(--ink-soft)' } },
-          'Two at the end of every voyage, a third if you discharge the commission clean.'),
+          'Earned by discharging a commission — two to five, by the size of it.'),
       ),
       el('p', { style: { fontStyle: 'italic', color: 'var(--ink-soft)', margin: '8px 0 0' } },
-        'A career runs to some thirty points and a whole tree costs twelve. You will not see all of this.'),
+        'Nothing is paid for sailing, and nothing for coming home without finishing what you '
+        + 'undertook. One more point for a voyage that brought home two places or peoples the '
+        + 'Crown never asked for. A career runs to twenty points if you take the great commissions '
+        + 'and go straight there, and half again as many if you work every one of them and look '
+        + 'about you on the way. A whole tree costs twelve. You will not see all of this.'),
     ));
 
     host.append(el('div', { class: 'cols two' },
