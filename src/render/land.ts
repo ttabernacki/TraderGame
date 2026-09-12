@@ -4,7 +4,18 @@ import { LANDMASSES, elevationAt, isLand } from '../world/landmass';
 
 /** Depth of the rendered coastal band inland, in metres. Beyond this nothing is visible from sea level. */
 const BANDS = [0, 320, 1100, 3200, 8000, 17000];
-const BAND_TINT = [0.55, 0.62, 0.72, 0.84, 0.95, 1.0];
+/**
+ * How the ground is shaded band by band, from the beach inland.
+ *
+ * This used to brighten with distance — the interior nearly white — which is
+ * the wrong way round for the one thing the picture has to do. A coast is read
+ * against the sky, and at dawn or dusk the sun sits low behind it and the land
+ * is a silhouette; brightening the far ground turned that silhouette into
+ * something the same value as the haze it stood in, and the coast disappeared.
+ * Near ground is now a little the brightest and the interior settles darker, so
+ * there is always tone between the land and the sky.
+ */
+const BAND_TINT = [0.74, 0.72, 0.69, 0.66, 0.63, 0.60];
 
 /**
  * How much the land is drawn higher than it is.
@@ -239,14 +250,30 @@ export class Land {
           const lat = origin.lat - z / mPerDegLat;
           const lon = origin.lon + x / mPerDegLon;
           const h = b === 0 ? 0.4 : elevationAt({ lat, lon });
-          // Guarantee the band rises even where the elevation field is flat.
-          const floor = relief * 0.12 * (inland / 17000);
+          // The shape of a coast, seen from the sea.
+          //
+          // The floor used to climb straight from the beach to the interior —
+          // twelve per cent of the peak, spread evenly over nine miles inland —
+          // which put the first two miles of every coast under twenty metres.
+          // From a deck two miles off that is a fifth of a degree of anything to
+          // look at: the land was drawn, correctly, and read as a smudge in the
+          // haze, which is why a player only found a continent by hitting it.
+          //
+          // Real coasts do not do that. They stand up out of the water within
+          // the first mile — dunes, cliffs, the first line of hills — and then
+          // flatten off inland. Saturating the rise over about a mile and a
+          // half gives that profile, so a coast presents an edge from the
+          // moment it lifts over the horizon.
+          const floor = relief * 0.22 * (1 - Math.exp(-inland / 2600));
           // Eased in over the first band so the shoreline still meets the sea.
           const lift = 1 + (LAND_LIFT - 1) * Math.min(inland / 900, 1);
           const height = Math.max(h, floor) * lift;
           positions.push(x, height - curvatureDrop(Math.hypot(x, z), eyeM), z);
 
-          const tint = BAND_TINT[b];
+          // The strand: a pale edge where the ground meets the water, so the
+          // coastline itself is a thing on the screen rather than the place two
+          // shades of haze happen to meet.
+          const tint = b === 0 ? BAND_TINT[0] * 1.5 : BAND_TINT[b];
           // Vegetation and rock tinted by latitude: desert coasts are pale,
           // equatorial ones green, southern capes brown and scrubby.
           const c = groundColour(lat, height, relief);
@@ -268,7 +295,7 @@ export class Land {
       // headland behind it does — and it is not drawn at all beyond a few
       // miles, because surf is not visible from a few miles and a bright line
       // of it along a hazed-out coast is the whole pop-in problem again.
-      if (Math.min(Math.hypot(ax, az), Math.hypot(bx, bz)) > 9 * 1852) continue;
+      if (Math.min(Math.hypot(ax, az), Math.hypot(bx, bz)) > 15 * 1852) continue;
       const sBase = surfPositions.length / 3;
       const outward = 130;
       const cx = ax - nx * outward, cz = az - nz * outward;
@@ -346,20 +373,39 @@ export class Land {
         const t1 = Math.min((-b2 + root) / lenSq, 1);
         if (t1 <= t0) continue;
 
-        const [clipALat, clipALon] = toLatLon(ax + dx * t0, ay + dy * t0);
-        const [clipBLat, clipBLon] = toLatLon(ax + dx * t1, ay + dy * t1);
-
         const h = (i + n - 1) % n;
         const k = (j + 1) % n;
-        out.push({
-          aLat: clipALat, aLon: clipALon, bLat: clipBLat, bLon: clipBLon, land: li,
-          // Taken from the whole segment, whose orientation clipping does not change.
-          inward: this.inwardFor(li, i, aLat, aLon, bLat, bLon),
-          prevLat: ring[h * 2], prevLon: ring[h * 2 + 1],
-          nextLat: ring[k * 2], nextLon: ring[k * 2 + 1],
-          cornerA: t0 <= 1e-9,
-          cornerB: t1 >= 1 - 1e-9,
-        });
+        const inward = this.inwardFor(li, i, aLat, aLon, bLat, bLon);
+
+        // Cut the visible piece into lengths the eye can read.
+        //
+        // A coastline ring runs for whole degrees between vertices — forty
+        // miles and more — and each piece was drawn as one quad per band. So a
+        // continent was four flat ribbons, its elevation sampled at two points
+        // forty miles apart, and there was no coast *shape* anywhere in it: no
+        // bay, no headland, nothing for the eye to fix on. Cut to about a mile
+        // and a half, the same ring becomes ground with a profile, and the
+        // height field it is already sampling starts to show.
+        const spanNm = Math.hypot(dx, dy) * (t1 - t0);
+        const pieces = clamp(Math.ceil(spanNm / 1.5), 1, 80);
+        for (let q = 0; q < pieces; q++) {
+          const u0 = t0 + ((t1 - t0) * q) / pieces;
+          const u1 = t0 + ((t1 - t0) * (q + 1)) / pieces;
+          const [pALat, pALon] = toLatLon(ax + dx * u0, ay + dy * u0);
+          const [pBLat, pBLon] = toLatLon(ax + dx * u1, ay + dy * u1);
+          out.push({
+            aLat: pALat, aLon: pALon, bLat: pBLat, bLon: pBLon, land: li,
+            // Taken from the whole segment, whose orientation clipping does not change.
+            inward,
+            prevLat: ring[h * 2], prevLon: ring[h * 2 + 1],
+            nextLat: ring[k * 2], nextLon: ring[k * 2 + 1],
+            // Only the true ends of the ring segment are corners of the coast;
+            // the cuts between pieces are straight through and must not be
+            // mitred, or every one of them kinks the band.
+            cornerA: q === 0 && u0 <= 1e-9,
+            cornerB: q === pieces - 1 && u1 >= 1 - 1e-9,
+          });
+        }
       }
     }
     return out;

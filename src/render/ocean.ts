@@ -177,6 +177,7 @@ vec3 wakeAt(vec2 rel) {
 
 const vertexShader = /* glsl */ `
 uniform vec2 uNoiseOrigin;
+uniform float uEyeM;
 uniform vec2 uDir[${WAVE_COUNT}];
 uniform float uAmp[${WAVE_COUNT}];
 uniform float uLen[${WAVE_COUNT}];
@@ -205,6 +206,19 @@ void main() {
   float crest = 0.0;
 
   float d = length(pos.xz);
+
+  // The sea falls away over the curve of the earth, by exactly the formula the
+  // land is sunk by.
+  //
+  // Without this the water is a flat disc and the land is not, and the disc
+  // wins: every coast more than a few miles off was drawn *below* the sea
+  // surface and simply painted over, so a continent two miles ahead was
+  // invisible until the ship hit it. Sinking both by the same curve gives them
+  // one shared horizon, which is the only way a shoreline can be in the right
+  // place on the screen.
+  float horizon = sqrt(2.0 * 6371000.0 * max(uEyeM, 1.5));
+  float beyond = max(d - horizon, 0.0);
+  float curveDrop = (beyond * beyond) / (2.0 * 6371000.0);
 
   // How far apart this ring's vertices are. The grid is dense under the ship and
   // opens out geometrically toward the horizon, so a wave the mesh can carry
@@ -258,6 +272,7 @@ void main() {
   // Only near the ship: the wake search is a loop over the whole track, and the
   // far field has hundreds of vertices that will never be within a mile of her.
   if (d < 320.0) pos.y += wakeAt(position.xz).y;
+  pos.y -= curveDrop;
   vLocal = position.xz;
 
   vNormal = normalize(cross(binormal, tangent));
@@ -615,6 +630,7 @@ export class Ocean {
       uniforms: {
         uNoiseTime: { value: 0 },
         uNoiseOrigin: { value: new THREE.Vector2(0, 0) },
+        uEyeM: { value: 20 },
         uDir: { value: this.dirs },
         uAmp: { value: this.amps },
         uLen: { value: this.lens },
@@ -742,6 +758,15 @@ export class Ocean {
    * the origin and the sea slides past her, so every point already laid down is
    * carried astern by her own motion over the ground.
    */
+  /**
+   * Where the eye is above the water, which is what decides where the horizon
+   * falls and therefore how far out the sea starts curving away. The land is
+   * sunk by the same number, so the two share one horizon.
+   */
+  setEye(eyeM: number): void {
+    this.material.uniforms.uEyeM.value = Math.max(eyeM, 1.5);
+  }
+
   updateTrack(velocityE: number, velocityN: number, dt: number): void {
     if (dt <= 0) return;
     const dx = -velocityE * dt;

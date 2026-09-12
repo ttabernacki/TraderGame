@@ -453,6 +453,9 @@ export class Renderer {
     // to the masthead really does open the land, which is what a masthead was
     // for.
     const eyeM = clamp(this.camera.position.y, 2, 60);
+    // The sea curves away from the same eye the land is sunk by, so the two
+    // meet at one horizon instead of the flat water painting over the coast.
+    this.ocean.setEye(eyeM);
     if (this.land.needsRebuild(f.pos, landRange, eyeM)) {
       this.land.rebuild(f.pos, landRange, eyeM);
     }
