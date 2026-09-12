@@ -68,6 +68,42 @@ interface SailBuild {
 }
 
 /**
+ * Where the wind is *going*, in the ship's own frame, given its angle off her
+ * bow.
+ *
+ * This existed twice, written the same wrong way both times, and it is the
+ * reason the sails bagged into the wind and the pennant lay across the ship.
+ * The ship is built with her bow down +Z and her port side down +X; `beta` is
+ * the bearing of the wind's source off the bow, positive to starboard. So the
+ * wind blows *from* `forward·cos β + starboard·sin β`, which with starboard at
+ * −X is (−sin β, +cos β), and it blows *towards* the reciprocal of that:
+ *
+ *     downwind = (sin β, −cos β)
+ *
+ * Running dead before it, β = 180, and that is (0, +1): straight over the bow,
+ * which is where a pennant lies and which way the canvas bags. The old
+ * expression gave (−1, 0) there — square athwartships — because it was written
+ * as a compass bearing rotated into a frame it does not belong to, and the two
+ * conventions are ninety degrees and a reflection apart.
+ */
+function downwindInShip(beta: number): { x: number; z: number } {
+  const b = beta * DEG;
+  return { x: Math.sin(b), z: -Math.cos(b) };
+}
+
+/**
+ * The rotation about Y that lays a thing built along +X — the pennant, a
+ * telltale — down the wind. Derived from the same vector, so the flags and the
+ * canvas can never again disagree about which way the wind is blowing.
+ */
+function streamRotation(beta: number): number {
+  const d = downwindInShip(beta);
+  // A rotation of θ about Y carries +X to (cos θ, −sin θ) in (x, z). Setting
+  // that equal to the downwind vector gives cos θ = d.x and sin θ = −d.z.
+  return Math.atan2(-d.z, d.x);
+}
+
+/**
  * One rope of the running rigging: an end made fast to something that swings
  * with the yard, and an end made fast to the ship.
  */
@@ -325,9 +361,9 @@ export class ShipMesh {
       // cloth goes the way the wind is going. The rotation below is the same
       // one Three.js applies to the pivot, and the same one the running rigging
       // is drawn through, so the three can never drift apart.
-      const stream = (v.trueBeta + 180) * DEG;
-      const windX = Math.cos(stream);
-      const windZ = -Math.sin(stream);
+      const blow = downwindInShip(v.trueBeta);
+      const windX = blow.x;
+      const windZ = blow.z;
       const a = m.pivot.rotation.y;
       // The belly axis of this sail, in the ship's frame.
       const axX = b.axis === 0 ? Math.cos(a) : Math.sin(a);
@@ -390,7 +426,7 @@ export class ShipMesh {
     // The banner streams away from the masthead, downwind. `apparentBeta` is the
     // angle of the wind off her bow, so the pennant lies along the reciprocal:
     // it points where the wind is *going*, which is what a flag does.
-    const stream = (v.apparentBeta + 180) * DEG;
+    const stream = streamRotation(v.apparentBeta);
     this.flag.rotation.y = stream;
     const gust = clamp(v.apparentKnots / 20, 0.06, 1);
     const fpos = this.flagGeo.getAttribute('position') as THREE.BufferAttribute;
