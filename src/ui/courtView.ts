@@ -105,8 +105,8 @@ export class CourtView {
           const clean = !!g.crown.patent && g.crown.patentReady;
           const s = g.crown.settle(g.clock.t, g.settlementBias);
           this.settlement = s;
-          const points = g.awardVoyage(clean);
           const sold = g.sellCharts();
+          const points = g.awardVoyage(clean);
           if (sold > 0) {
             g.crown.gold += sold;
             s.gold += sold;

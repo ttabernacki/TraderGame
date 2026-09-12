@@ -475,6 +475,10 @@ export class Game {
    */
   awardVoyage(dischargedClean: boolean): number {
     const points = 2 + (dischargedClean ? 1 : 0);
+    // Reporting at court ends the passage, so the passage's tally starts again.
+    // Called after sellCharts(), which is paid on it.
+    this.chartedThisPassage = 0;
+    this.correctedNm = 0;
     this.captain.points += points;
     this.logEvent('crown',
       `The voyage is reported and the voyage is over. ${points} points to spend on yourself.`, true);
@@ -512,10 +516,7 @@ export class Game {
   sellCharts(): number {
     if (!this.can('sheetTrade') && !this.can('cosmographer')) return 0;
     const rate = this.can('cosmographer') ? 2.6 : 1.7;
-    const paid = Math.round((this.chartedThisPassage + this.correctedNm * 0.6) * rate);
-    this.chartedThisPassage = 0;
-    this.correctedNm = 0;
-    return paid;
+    return Math.round((this.chartedThisPassage + this.correctedNm * 0.6) * rate);
   }
 
   /**
