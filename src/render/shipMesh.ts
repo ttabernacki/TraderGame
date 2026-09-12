@@ -296,7 +296,40 @@ export class ShipMesh {
 
       const b = m.build;
       const pos = b.geometry.getAttribute('position') as THREE.BufferAttribute;
-      const depth = pressure * b.scale * 0.26;
+
+      // Which way the cloth bellies, worked out from where the wind is and
+      // where the yard has actually swung to.
+      //
+      // It used to come from the sign of the angle of attack, decided in the
+      // physics, while the yard's angle came from `trimSign`, decided
+      // separately — two independent sign conventions that have to agree for
+      // the picture to be right, and on one tack they did not. The sail bellied
+      // *into* the wind, which is the one thing canvas never does.
+      //
+      // There is no convention to get wrong here. The wind blows towards a
+      // direction; the sail's belly axis points somewhere in the ship; the
+      // cloth goes the way the wind is going. The rotation below is the same
+      // one Three.js applies to the pivot, and the same one the running rigging
+      // is drawn through, so the three can never drift apart.
+      const stream = (v.apparentBeta + 180) * DEG;
+      const windX = Math.cos(stream);
+      const windZ = -Math.sin(stream);
+      const a = m.pivot.rotation.y;
+      // The belly axis of this sail, in the ship's frame.
+      const axX = b.axis === 0 ? Math.cos(a) : Math.sin(a);
+      const axZ = b.axis === 0 ? -Math.sin(a) : Math.cos(a);
+      const downwind = windX * axX + windZ * axZ;
+
+      // And how hard. A sail with wind in it is never a flat sheet: the cloth
+      // stands in a curve from the moment there is any air at all, and drawing
+      // it flat whenever the load happened to pass through zero was most of
+      // what read as "the sails go wrong". The floor rises with the breeze, so
+      // she is only ever slack in a calm.
+      const fill = Math.max(
+        Math.abs(pressure),
+        clamp(v.apparentKnots / 14, 0, 1) * 0.42,
+      );
+      const depth = Math.sign(downwind || 1) * fill * b.scale * 0.26;
 
       for (let k = 0; k < pos.count; k++) {
         const bx = b.base[k * 3];
