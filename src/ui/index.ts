@@ -321,30 +321,18 @@ export class Ui {
       case '[': g.clock.cycleScale(-1); return true;
       case ']': g.clock.cycleScale(1); return true;
       case 'h': {
-        // Three states, in the order a captain would want them: give her back to
-        // the mark if you have wandered off it, otherwise hand the helm over or
-        // take it back.
+        // One thing now: give up your own course and let her go back to steering
+        // for the mark. The helm is never "yours" to hand over — the watch have
+        // it always — so the only question H can answer is whether she is
+        // steering the captain's course or the chart's.
         if (g.helmOrder !== null && g.destination) {
           g.resumeCourseForMark();
           g.pushAlert(`The watch will keep her for ${g.destination.name}.`, 'note');
           return true;
         }
-        if (!g.destination && g.helmOrder === null) {
-          g.steadyAsSheGoes();
-          g.pushAlert(
-            `The watch will hold her at ${g.helmOrder!.toFixed(0).padStart(3, '0')}°.`, 'note');
-          return true;
-        }
-        g.holdCourse = !g.holdCourse;
-        if (!g.holdCourse) g.helmOrder = null;
+        g.steadyAsSheGoes();
         g.pushAlert(
-          g.holdCourse
-            ? g.destination
-              ? `The watch will keep her for ${g.destination.name}.`
-              : 'The watch have the course.'
-            : 'You have the helm.',
-          'note',
-        );
+          `Steady at ${(g.helmOrder ?? 0).toFixed(0).padStart(3, '0')}\u00b0.`, 'note');
         return true;
       }
       case 't': g.autoTrim = !g.autoTrim;

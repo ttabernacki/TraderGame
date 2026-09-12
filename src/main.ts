@@ -217,36 +217,29 @@ function applyContinuousInput(g: Game, dt: number): void {
   // The helm holds where it is put, as a tiller does when the helmsman is told
   // to keep her so. Letting it spring back to amidships makes a sustained turn
   // impossible without holding a key down for a minute.
-  // Two ways of steering the same ship, and which one you get depends on how
-  // fast the clock is running.
+  // One way of steering the ship, at every rate of the clock.
   //
-  // Below about a quarter of an hour to the second the wheel is a wheel: the
-  // helm goes over and stays where it is put. Above that, holding a rudder over
-  // is meaningless — a frame covers minutes, she would be round and round
-  // before the player let go — but *conning* her is not. The same keys then
-  // give the order a captain actually gave: so many degrees to starboard, which
-  // the quartermaster puts on and holds. She answers at once, she stays where
-  // she is put, and the clock does not have to stop for it.
-  const conning = g.clock.scaleIndex > 3;
+  // There used to be two, and which one you got depended on a number in the
+  // corner of the screen: below about a quarter of an hour to the second the
+  // wheel was a wheel and the helm stayed where it was put, and above that the
+  // same keys conned her by course instead. Two different controls on two keys
+  // that never said which they were being, swapping over silently whenever the
+  // clock was wound on or back — and touching them at the wrong moment took the
+  // ship off the watch, after which she wandered and nothing on screen said
+  // why.
+  //
+  // A captain does not steer. He says "two points to starboard", the
+  // quartermaster puts her there and holds her there, and that is the same
+  // order whether the watch takes four seconds or four hours to run. So it is
+  // the only order there is: the keys alter the course, she answers at once,
+  // she stays where she is put, and the clock never has to stop for it.
   const helm = input.helmAxis();
   if (helm !== 0) {
-    if (conning) {
-      // Degrees a second of real time, so a press is a nudge and a hold is a
-      // deliberate alteration.
-      g.alterCourse(helm * dt * 26);
-    } else {
-      // Touching the wheel takes the ship back off the watch. Anything else
-      // means the player pulls the helm over, the quartermaster quietly pulls
-      // it back, and the ship appears to ignore him.
-      if (g.holdCourse) {
-        g.holdCourse = false;
-        g.pushAlert('You have the helm.', 'note');
-      }
-      g.setHelm(clamp(g.ship.state.rudder + helm * dt * 1.6, -1, 1));
-    }
+    // Degrees a second of real time, so a press is a nudge and a hold is a
+    // deliberate alteration.
+    g.alterCourse(helm * dt * 26);
   } else if (input.isDown('x')) {
-    if (conning) g.steadyAsSheGoes();
-    else g.setHelm(clamp(g.ship.state.rudder * Math.max(0, 1 - dt * 5), -1, 1));
+    g.steadyAsSheGoes();
   }
 
   const canvasAxis = input.canvasAxis();

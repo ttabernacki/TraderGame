@@ -314,15 +314,20 @@ export class Game {
   /** True when the crew trim the sails without being told. */
   autoTrim = true;
   /**
-   * True when the quartermaster is keeping her on the laid-off course.
+   * The course she keeps when nothing else is ordered and no mark is laid.
    *
-   * A three-month passage cannot be steered by hand, and a player holding a key
-   * down for an hour to make a two-degree correction is not being challenged, he
-   * is being punished. What the game is actually about is deciding *which*
-   * course to steer and what canvas to carry — so once the course is decided,
-   * the helm can be given to the watch, as it always was aboard.
+   * There is exactly one way to steer this ship: you give a course and the
+   * watch hold it. There used to be two — below a quarter of an hour to the
+   * second you held the rudder over yourself, above it you conned her by course
+   * — and the game swapped between them silently on the clock rate, so the same
+   * two keys did two different things depending on a number in the corner of
+   * the screen, and touching them at the wrong moment took the ship off the
+   * watch without the player knowing why she had started wandering.
+   *
+   * A captain does not steer. He says "north-north-west" and somebody else
+   * stands at the wheel for six hours. That is the whole of the model now.
    */
-  holdCourse = false;
+  private standingCourse: number | null = null;
 
   /** Simulated seconds when she dropped down the Tagus, for the epilogue. */
   startT = 0;
@@ -732,8 +737,9 @@ export class Game {
     // The course-keeper is a control loop closed round the ship, and a control
     // loop stepped more slowly than its plant responds oscillates however it is
     // integrated. Measured, it is clean at a second and starts sawing at a
-    // second and a half — so when the watch have the helm, the step is a second.
-    const maxStep = this.holdCourse ? 1 : 2;
+    // second and a half. The watch always have the helm, so it is always a
+    // second.
+    const maxStep = 1;
     const maxSteps = 48;
     let step = 0.25;
     if (simDt / step > maxSteps) step = clamp(simDt / maxSteps, 0.25, maxStep);
@@ -751,7 +757,10 @@ export class Game {
 
     while (remaining > 0) {
       const dt = Math.min(step, remaining);
-      if (this.holdCourse) this.steerToCourse(dt);
+      // Backing her astern is the one time nobody is steering to a course:
+      // she is being walked out of trouble stern-first and the rudder is no
+      // use to her at all.
+      if (!this.backing) this.steerToCourse(dt);
       // On the relaxed setting a captain who reaches for the sheets gets them,
       // and the watch quietly take them back a few minutes later. Otherwise one
       // stray keypress silently switches the game into the hard mode and the
@@ -795,8 +804,7 @@ export class Game {
    */
   private advancePassage(dt: number): void {
     const s = this.ship.state;
-    const wanted = this.holdCourse ? this.courseToSteer() : null;
-    const want = wanted;
+    const want = this.courseToSteer();
 
     if (want !== null) {
       // She comes round at a rate a ship actually turns, not instantly, so a
@@ -849,9 +857,21 @@ export class Game {
    * bearing of the mark unless the mark lies inside the no-go — in which case
    * it is as close as she will lie on the tack she is already on.
    */
+  /**
+   * The course the watch are keeping her on.
+   *
+   * Never nothing, because there is always an answer to "what are you
+   * steering?" aboard a ship under way. The captain's own order comes first;
+   * failing that the bearing of the mark she is laid off for; failing that the
+   * last course she was steadied on, which is what a watch does when the
+   * quarterdeck has stopped saying anything.
+   */
   courseToSteer(): number | null {
     const dest = this.courseToDestination();
-    const wanted = this.helmOrder ?? dest?.bearing ?? null;
+    if (this.helmOrder === null && !dest && this.standingCourse === null) {
+      this.standingCourse = wrap360(this.ship.state.heading);
+    }
+    const wanted = this.helmOrder ?? dest?.bearing ?? this.standingCourse;
     if (wanted === null) return null;
     const windEye = this.weatherNow.wind.from;
     const noGo = this.noGoAngle;
@@ -1786,7 +1806,10 @@ export class Game {
         true);
       return;
     }
-    this.holdCourse = false;
+    // The passage is sailed out. She stands on as she is until she is told
+    // otherwise, which is what a ship does when she has arrived and nobody has
+    // yet said what next.
+    this.standingCourse = wrap360(this.ship.state.heading);
     this.pushAlert(`Up with ${d.name}.`, 'note');
     this.logEvent('note', `Made ${d.name} by the reckoning, and there it was.`, true);
   }
@@ -2664,8 +2687,8 @@ export class Game {
     this.backing = !this.backing;
     if (!this.backing) return 'Belay backing her.';
     this.setCanvas(0);
-    this.holdCourse = false;
     this.helmOrder = null;
+    this.standingCourse = null;
     this.logEvent('note',
       'Got the sweeps and the boat ahead with a line to the stern, and walked her back off it.');
     return 'Backing her astern. B again to stop.';
@@ -2720,12 +2743,6 @@ export class Game {
   // Player actions
   // -------------------------------------------------------------------------
 
-  /** Put the wheel over yourself. Only meaningful at the slower clock rates. */
-  setHelm(v: number): void {
-    this.ship.state.rudder = clamp(v, -1, 1);
-    this.helmOrder = null;
-  }
-
   /**
    * Con her by course: "so many degrees to starboard", which the watch then
    * hold. Works at any clock rate and does not stop the clock, because giving
@@ -2734,13 +2751,13 @@ export class Game {
   alterCourse(deg: number): void {
     const from = this.helmOrder ?? this.courseToSteer() ?? this.ship.state.heading;
     this.helmOrder = wrap360(from + deg);
-    this.holdCourse = true;
+    this.standingCourse = null;
   }
 
   /** Steady on the course she is heading now. */
   steadyAsSheGoes(): void {
     this.helmOrder = wrap360(this.ship.state.heading);
-    this.holdCourse = true;
+    this.standingCourse = null;
     this.ship.state.rudder = 0;
   }
 
@@ -2782,7 +2799,7 @@ export class Game {
     if (beta > 125) {
       // Running. Gybe her: bring the wind across the stern to the other quarter.
       this.helmOrder = wrap360(windEye - side * beta);
-      this.holdCourse = true;
+      this.standingCourse = null;
       this.pushAlert(
         `Stand by to gybe \u2014 the wind onto the ${ontoStarboard ? 'starboard' : 'port'} quarter.`,
         'note');
@@ -2795,7 +2812,7 @@ export class Game {
     const noGo = this.noGoAngle;
     const newBeta = clamp(beta, noGo, 120);
     this.helmOrder = wrap360(windEye - side * newBeta);
-    this.holdCourse = true;
+    this.standingCourse = null;
     // Her head has to go through the wind, so she loses her way while she does
     // it: the watch let her run up, the sails come aback, and she pays off on
     // the other bow with the speed of a walking man.
@@ -2877,7 +2894,7 @@ export class Game {
   resumeCourseForMark(): boolean {
     if (!this.destination) return false;
     this.helmOrder = null;
-    this.holdCourse = true;
+    this.standingCourse = null;
     return true;
   }
 
@@ -3299,8 +3316,8 @@ export class Game {
   /** Lay off a fresh course for somewhere, striking whatever was laid before. */
   setDestination(name: string, lat: number, lon: number, portId?: string): void {
     this.route = [{ name, lat, lon, portId }];
-    this.holdCourse = true;
     this.helmOrder = null;
+    this.standingCourse = null;
     this.markLaidAt = { ...this.nav.estimated };
     this.markDistNm = haversine(this.nav.estimated, { lat, lon }) / NM;
     this.logEvent('note', `Laid off a course for ${name}.`);
@@ -3319,7 +3336,6 @@ export class Game {
     }
     if (this.route.length >= 12) return;
     this.route.push({ name, lat, lon, portId });
-    this.holdCourse = true;
     this.pushAlert(`${name} added to the passage \u2014 ${this.route.length} marks.`, 'note');
   }
 
@@ -3328,7 +3344,9 @@ export class Game {
     if (index < 0 || index >= this.route.length) return;
     const gone = this.route.splice(index, 1)[0];
     if (this.route.length === 0) {
-      this.holdCourse = false;
+      // Nothing laid off any more, so she stands on as she is rather than
+      // falling off wherever the sea puts her.
+      this.standingCourse = wrap360(this.ship.state.heading);
       this.markLaidAt = null;
     } else if (index === 0) {
       // The leg she was actually steering has been struck out, so the next one
@@ -3342,7 +3360,8 @@ export class Game {
 
   clearDestination(): void {
     this.route = [];
-    this.holdCourse = false;
+    this.standingCourse = wrap360(this.ship.state.heading);
+    this.helmOrder = null;
     this.markLaidAt = null;
   }
 
@@ -3603,7 +3622,6 @@ export class Game {
       difficulty: this.difficulty,
       voltaAdvised: this.voltaAdvised,
       orderedCanvas: this.orderedCanvas,
-      holdCourse: this.holdCourse,
       helmOrder: this.helmOrder,
       route: this.route,
       daysSincePort: this.daysSincePort,
@@ -3669,7 +3687,6 @@ export class Game {
     g.difficulty = d.difficulty ?? 'watch';
     (g as any).voltaAdvised = d.voltaAdvised ?? false;
     g.orderedCanvas = d.orderedCanvas ?? g.ship.canvasSet;
-    g.holdCourse = d.holdCourse ?? false;
     g.helmOrder = d.helmOrder ?? null;
     // Saves from before a passage could have more than one mark carry a single
     // destination; it becomes a route of one.

@@ -14,8 +14,8 @@ import { HeadingTape } from './headingTape';
  * strip has to be able to recognise it to know when to fade.
  */
 const KEYS =
-  '<b>A</b>/<b>D</b> helm \u2014 alter course when the clock is up &nbsp; ' +
-  '<b>X</b> steady &nbsp; <b>H</b> hold the course &nbsp; ' +
+  '<b>A</b>/<b>D</b> alter course &nbsp; <b>X</b> steady as she goes &nbsp; ' +
+  '<b>H</b> steer for the mark &nbsp; ' +
   '<b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
   '<b>T</b> about ship &nbsp; <b>B</b> back her astern &nbsp; ' +
   'drag to look about, wheel to close in';
@@ -339,12 +339,16 @@ export class Hud {
         // that answers "am I getting anywhere", and at the fast clock rates it
         // is the only one that visibly moves.
         dest && g.markDistNm > 1 ? progressBar(1 - dest.distNm / g.markDistNm) : null,
-        el('div', { class: 'hud-row' },
-          el('span', { class: 'k' }, 'The helm'),
-          el('span', {
-            class: 'v',
-            style: { color: g.holdCourse ? '#7fa86a' : '#c8a44e' },
-          }, g.holdCourse ? 'kept by the watch' : 'yours (H to hand over)')),
+        // Whose course she is on. The watch always have the helm, so the only
+        // thing worth saying is whether they are keeping the chart's course or
+        // one the captain has given over the top of it. When it is his own, the
+        // row above is already saying where the mark bears and which key gives
+        // her back to it, so this one holds its tongue.
+        g.helmOrder === null
+          ? el('div', { class: 'hud-row' },
+              el('span', { class: 'k' }, 'Steering'),
+              el('span', { class: 'v', style: { color: '#7fa86a' } }, 'for the mark'))
+          : null,
       );
 
       // Beating: which board makes the better ground, and by how much.

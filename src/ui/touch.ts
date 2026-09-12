@@ -57,10 +57,10 @@ export class TouchControls {
     });
 
     const helm = this.pad('touch-helm', [
-      { label: '❮', key: 'a', hold: true, hint: 'Port — alters course when the clock is up' },
+      { label: '❮', key: 'a', hold: true, hint: 'Alter course to port' },
       { label: '■', key: 'x', hold: true, hint: 'Steady as she goes' },
-      { label: 'Hold', key: 'h', hint: 'Give the helm to the watch, or resume for the mark' },
-      { label: '❯', key: 'd', hold: true, hint: 'Starboard — alters course when the clock is up' },
+      { label: 'Mark', key: 'h', hint: 'Give up your own course and steer for the mark' },
+      { label: '❯', key: 'd', hold: true, hint: 'Alter course to starboard' },
     ]);
 
     const rig = this.pad('touch-rig', [
