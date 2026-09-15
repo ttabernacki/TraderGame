@@ -398,7 +398,24 @@ const PATENT_TEMPLATES: {
 ];
 
 export class Crown {
-  standing = 0;
+  /**
+   * Renown in hand, which the court spends against and the captain can lose.
+   *
+   * Clamped where it lives rather than at every place that takes some away.
+   * Most of the call sites wrote Math.max(0, standing - n) and four of them —
+   * three in the officers' arcs and one where the rival talks you into
+   * something — simply subtracted, so a captain who was already at nothing went
+   * below it. A randomised career of two hundred and eighty-eight port calls
+   * found standing at minus twelve, which titleFor() and the commission ladder
+   * both read as a number on a scale that starts at zero.
+   *
+   * A setter fixes every one of them at once, including the next one somebody
+   * writes without thinking about it. Renown is a reputation: the worst it gets
+   * is that nobody has heard of you.
+   */
+  private standingHeld = 0;
+  get standing(): number { return this.standingHeld; }
+  set standing(v: number) { this.standingHeld = Math.max(0, v); }
   /**
    * What the captain has of his own, which is not much.
    *
@@ -458,9 +475,30 @@ export class Crown {
     const monarch = monarchAt(year);
     return PATENT_TEMPLATES
       .filter((t) => this.lifetimeStanding >= t.minStanding)
+      // A voyage that opens the route is made once.
+      //
+      // completedPatents was written, saved, restored, and never once read —
+      // and what went into it was the per-offer id, which is minted fresh every
+      // time the Crown draws up a patent and so could never have identified the
+      // commission anyway. The live consequence was that the two climaxes of
+      // the whole game — the road to the Indies and the pepper fleet — could be
+      // taken again the moment they were discharged, paying nine thousand
+      // cruzados a time, and the King went on asking a man who had been to
+      // India to go and find out whether there was a way to India.
+      //
+      // The ordinary coast work is deliberately left repeatable: running a
+      // stretch of Guinea again for the Casa is honest bread-and-butter, it is
+      // how a captain earns between the big voyages, and making every
+      // commission one-shot could leave him with no work and no way to raise
+      // the standing that unlocks the next tier.
+      // Built once each, then filtered and narrowed — building inside the
+      // filter as well as the map drew on the Crown's rng twice per template
+      // and handed the captain a patent that was not the one it had just
+      // looked at.
+      .map((t) => t.build(this.rng, year))
+      .filter((body) => !body.final || !this.completedPatents.includes(body.title))
       .slice(-3)
-      .map((t) => {
-        const body = t.build(this.rng, year);
+      .map((body) => {
         return {
           ...body,
           id: `pat${this.nextId++}`,
@@ -573,7 +611,8 @@ export class Crown {
       gold += pay;
       standing += renown;
       lines.push(`Commission "${this.patent.title}" discharged. ${pay} cruzados, ${renown} renown.`);
-      this.completedPatents.push(this.patent.id);
+      // By title, so it identifies the commission and not the sheet of paper.
+      this.completedPatents.push(this.patent.title);
       if (this.patent.final) this.routeOpened = true;
       this.patent = null;
     }
