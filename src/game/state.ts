@@ -16,7 +16,7 @@ import {
   KNOTS, prudentCanvas, stepShip, type Environment, type ShipTuning, type StepResult,
 } from '../ship/physics';
 import {
-  RIG_PROFILES, closestPointing, optimalTrim, pointOfSail, sailForce, tackName, trimBand,
+  RIG_PROFILES, optimalTrim, pointOfSail, sailForce, tackName, trimBand,
 } from '../ship/rig';
 import { Navigator } from '../navigation/navigator';
 import { Chart, sightingRangeNm, type SurveyResult } from '../navigation/charts';
@@ -4271,14 +4271,40 @@ export class Game {
    * to without tacking, and the player has to be able to see where that is.
    */
   get noGoAngle(): number {
-    let best = 90;
-    for (const m of this.ship.hull.masts) {
-      const sail = this.ship.state.sails[this.ship.hull.masts.indexOf(m)];
-      if (sail && sail.condition <= 0.05) continue;
-      best = Math.min(best, closestPointing(RIG_PROFILES[m.rig]));
+    // How close the *whole rig* will lie, not the best single mast on it.
+    //
+    // This used to take the minimum across the masts, so one lateen anywhere in
+    // the ship decided the answer for her. Every hull in the game carries a
+    // lateen mizzen — it is what a mizzen was for — so every hull got the
+    // lateen's figure, and a four-hundred-ton Indiaman with three square
+    // courses and one small fore-and-aft sail right aft pointed exactly as high
+    // as a caravel. That erased the one distinction the ships are *for*: the
+    // whole reason the caravel is called the instrument of discovery, and the
+    // whole reason the nau is described as a ship you plan the passage around
+    // rather than fight the wind in, is that one of them goes to windward and
+    // the other does not.
+    //
+    // A ship goes to windward when everything hanging on her, added up, pulls
+    // her forward. So the masts are summed, each weighted by its own area, and
+    // the answer is the first angle at which the total turns positive. A nau's
+    // hundred-and-thirty-metre mizzen cannot drag six hundred and eighty metres
+    // of backed square canvas up into the wind, and now it does not pretend to.
+    const masts = this.ship.hull.masts.filter((_m, i) => {
+      const sail = this.ship.state.sails[i];
+      return !sail || sail.condition > 0.05;
+    });
+    if (masts.length === 0) return 88;
+    for (let beta = 5; beta <= 90; beta += 1) {
+      let drive = 0;
+      for (const m of masts) {
+        const p = RIG_PROFILES[m.rig];
+        drive += sailForce(10, beta, optimalTrim(beta, p), m.area, p).drive;
+      }
+      // She also crabs sideways, so her course made good is worse than she
+      // points.
+      if (drive > 0) return clamp(beta + 7, 20, 88);
     }
-    // She also crabs sideways, so her course made good is worse than she points.
-    return clamp(best + 7, 20, 88);
+    return 88;
   }
 
   /**
