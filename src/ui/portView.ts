@@ -1,5 +1,5 @@
 import { clamp } from '../core/math';
-import { good } from '../economy/goods';
+import { good, unitOf } from '../economy/goods';
 import { Markets, provisioningCost, type Listing } from '../economy/market';
 import { people } from '../world/peoples';
 import { availableUpgrades, UPGRADE_BY_ID } from '../ship/upgrades';
@@ -242,6 +242,7 @@ export class PortView {
       const qty = this.quantities.get(l.goodId) ?? 10;
       const margin = gd.lisbon / Math.max(l.ask, 0.01);
       const onCharter = consignedOf(g, l.goodId);
+      const forCrown = commissionNeed(g, l.goodId);
 
       grid.append(el('div', { class: 'trade-row' },
         el('div', { class: 'trade-name' },
@@ -265,10 +266,14 @@ export class PortView {
           l.stock > 0 ? l.stock.toFixed(0) : '—'),
         el('div', {
           class: 'trade-fig', 'data-k': 'In hold',
-          title: onCharter > 0 ? 'Part of this is on charter' : undefined,
+          title: onCharter > 0 ? 'Part of this is on charter'
+            : forCrown > 0 ? 'The King is expecting this cargo' : undefined,
+          style: forCrown > 0 && held < forCrown ? { color: 'var(--warn)' } : undefined,
         },
-          held > 0
-            ? onCharter > 0 ? `${held.toFixed(0)} (${onCharter} on charter)` : held.toFixed(0)
+          held > 0 || forCrown > 0
+            ? onCharter > 0 ? `${held.toFixed(0)} (${onCharter} on charter)`
+              : forCrown > 0 ? `${held.toFixed(0)} of ${forCrown} for the King`
+                : held.toFixed(0)
             : '—'),
         el('div', { class: 'trade-act' },
           el('input', {
@@ -399,6 +404,34 @@ export class PortView {
         return;
       }
     }
+
+    // And cargo the King is expecting, which is worse.
+    //
+    // A cargo objective is checked against what is actually in the hold when
+    // you walk into court, so selling it puts the commission back to nought —
+    // and the most obvious thing in the world to do with a hold full of Madeira
+    // sugar is to sell it in the Lisbon market, which is the room you are
+    // standing in. The charter had a warning and this had none, so a player
+    // could lose a commission, its reward, its renown and its skill point by
+    // doing the single most natural thing available to him, and nothing on the
+    // screen would connect the two. Selling it anyway is still allowed: there
+    // are voyages where the coin now is worth more than the King's good
+    // opinion, and that is the captain's call to make knowingly.
+    const owed = commissionNeed(g, l.goodId);
+    if (owed > 0 && held - take < owed - 0.01) {
+      const short = Math.ceil(owed - (held - take));
+      if (this.confirmSale !== l.goodId) {
+        this.confirmSale = l.goodId;
+        this.notice = {
+          text: `The King is expecting ${owed.toFixed(0)} ${unitOf(gd, owed)} of this, and selling would `
+            + `leave you ${short} short. Your commission cannot be discharged until it is made `
+            + 'good. Press Sell again to do it anyway.',
+          grave: true,
+        };
+        this.render();
+        return;
+      }
+    }
     this.confirmSale = null;
 
     const lot = g.ship.cargo.find((c) => c.goodId === l.goodId);
@@ -512,12 +545,27 @@ export class PortView {
         return el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' } },
           el('span', {}, `${d} days for ${g.crew.count} men`),
           button(`${cost} cruzados`, () => {
-            if (g.crown.gold < cost) { this.notice = { text: 'Not enough in the purse.', grave: true }; this.render(); return; }
+            // Draw on the Casa if the purse is short, exactly as the market
+            // does. Water and victuals were the one thing a captain could
+            // always get on the Crown's account, and refusing him credit here
+            // while extending it for a cargo of pepper had it precisely the
+            // wrong way round — a man who had spent his purse could buy trade
+            // goods and could not buy the water to carry them anywhere.
+            if (g.crown.gold < cost) g.drawCredit(cost);
+            if (g.crown.gold < cost) {
+              this.notice = {
+                text: 'Not enough in the purse, and nothing left to draw on. '
+                  + 'Sell something out of the hold.',
+                grave: true,
+              };
+              this.render();
+              return;
+            }
             g.provision(d, cost);
             g.clock.t += 86400 * clamp(d / 90, 0.5, 3);
             this.notice = { text: `Watered and victualled for ${d} days.` };
             this.render();
-          }, { disabled: g.crown.gold < cost }),
+          }, { disabled: g.crown.gold + g.creditFree < cost }),
         );
       }),
     ));
@@ -833,6 +881,15 @@ export class PortView {
 
     host.append(el('div', { class: 'cols two' }, left, right));
   }
+}
+
+/** How much of a good the commission in hand requires you to bring home. */
+function commissionNeed(g: Game, goodId: string): number {
+  const p = g.crown.patent;
+  if (!p || p.complete || p.failed) return 0;
+  return p.objectives
+    .filter((o) => o.kind === 'cargo' && o.target === goodId)
+    .reduce((sum, o) => sum + (o.amount ?? 0), 0);
 }
 
 /** How much of a good in the hold belongs to a merchant rather than to you. */

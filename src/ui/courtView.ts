@@ -154,6 +154,31 @@ export class CourtView {
           kv('On completion',
             `${patent.reward} cruzados, ${patent.standingReward} renown, `
             + `${commissionPoints(patent.standingReward)} skill points`)),
+        // What is actually standing between him and being paid.
+        //
+        // A cargo objective is measured against the hold at the moment he walks
+        // in here, so a captain who sold the King's sugar in the Lisbon market
+        // arrives to find the objective back at nought with no explanation, and
+        // no way to take another commission either, because the Crown will not
+        // grant a second while the first is outstanding. Both of those facts
+        // were true and neither was written anywhere.
+        ...(() => {
+          if (g.crown.patentReady) return [];
+          const short = patent.objectives.filter((o) => !o.complete && o.kind === 'cargo');
+          const other = patent.objectives.filter((o) => !o.complete && o.kind !== 'cargo'
+            && o.kind !== 'return');
+          return [el('div', { class: 'notice', style: { marginTop: '11px' } },
+            short.length > 0
+              ? `She must be carrying it when you report. ${short.map((o) =>
+                `${Math.max(0, (o.amount ?? 0) - Math.floor(o.progress))} ${o.target}`).join(', ')} `
+                + 'still wanted in the hold — buy it wherever it can be had and bring it here.'
+              : other.length > 0
+                ? `Not yet discharged: ${other.map((o) => o.description.toLowerCase()).join('; ')}.`
+                : 'Not yet discharged.',
+            el('div', { style: { marginTop: '5px', fontSize: '12.5px', opacity: '0.85' } },
+              'The Crown will not grant another while this one is outstanding.'),
+          )];
+        })(),
       ));
     } else if (this.offers.length > 0) {
       right.append(card('Commissions the Crown will grant',

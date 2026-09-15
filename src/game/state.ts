@@ -659,6 +659,19 @@ export class Game {
    */
   get creditLimit(): number {
     let limit = 0;
+    // The Casa victualled the ship.
+    //
+    // A captain carrying the King's commission was not a private trader
+    // risking his own money: the Casa da Mina had fitted him out, wanted its
+    // voyage finished, and would advance against a reward it was already
+    // committed to paying. Without that floor a captain who spent his purse and
+    // lost his cargo had no way at all to buy the thirty days of water it takes
+    // to get anywhere — no credit, nothing to sell, and a hold he could not
+    // fill. It is a small line, deliberately: enough to victual her and get her
+    // home, nowhere near enough to trade on, and it is gone the moment the
+    // commission is discharged.
+    const p = this.crown.patent;
+    if (p && !p.complete && !p.failed) limit += Math.round(p.reward * 0.4) + 90;
     if (this.can('credit')) limit += this.ship.manifestValue() * 0.8 + 120;
     if (this.can('ownAccount')) limit += 400 + this.crown.lifetimeStanding * 3;
     return Math.round(limit);

@@ -85,3 +85,20 @@ export const GIFT_GOODS = [
   'panos', 'la', 'linho', 'manilhas', 'bacias', 'contas', 'espelhos',
   'ferramenta', 'coral', 'porcelana', 'seda', 'acucar', 'vinho',
 ];
+
+/**
+ * The plural of a trading unit, for the places that count them out.
+ *
+ * Portuguese weights do not take an English -s: a hundredweight is a quintal
+ * and two are quintais, and a ship's books that said "40 quintals" would have
+ * been written by somebody who had never seen one.
+ */
+const PLURALS: Record<string, string> = {
+  quintal: 'quintais', arrátel: 'arráteis', arroba: 'arrobas', marco: 'marcos',
+  moio: 'moios', pipe: 'pipes', lot: 'lots', chest: 'chests', piece: 'pieces',
+  head: 'head', dozen: 'dozen',
+};
+
+export function unitOf(g: Good, quantity: number): string {
+  return quantity === 1 ? g.unit : (PLURALS[g.unit] ?? `${g.unit}s`);
+}

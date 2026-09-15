@@ -244,7 +244,7 @@ const PATENT_TEMPLATES: {
         'A short run and an easy one, and the Casa gives it to men it has not made up its mind about. Madeira is five hundred miles south-west and the wind will put you there in a week without your having to think about it. Load sugar and bring it home. The Contador will tell you it is a fortnight’s work. The Contador has never tried to beat back up this coast in July.',
       objectives: [
         { kind: 'reach', description: 'Call at Funchal', target: 'funchal', progress: 0, complete: false },
-        { kind: 'cargo', description: 'Bring home 25 caixas of sugar', target: 'acucar', amount: 25, progress: 0, complete: false },
+        { kind: 'cargo', description: 'Bring home 25 arrobas of sugar', target: 'acucar', amount: 25, progress: 0, complete: false },
         { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },
       ],
     }),
