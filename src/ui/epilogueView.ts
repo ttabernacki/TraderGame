@@ -4,6 +4,7 @@ import { officerTitle, traitDef } from '../progression/officers';
 import { rivalEnding } from '../progression/rivalEvents';
 import { BONDS } from '../progression/arcs';
 import { originDef } from '../progression/origins';
+import { casaEnding } from '../progression/casa';
 import type { Game } from '../game/state';
 import { button, card, el, kv } from './dom';
 
@@ -179,6 +180,13 @@ export class EpilogueView {
 
         // Who he was, which the whole career was an answer to.
         card(originDef(g.origin).name, el('p', {}, originDef(g.origin).epilogue)),
+
+        // The shore end. The rival is what the sea made of you; this is what
+        // the building made of you, and it is the version that survives.
+        ...(() => {
+          const c = casaEnding(g);
+          return c ? [card(c.title, el('p', {}, c.text))] : [];
+        })(),
 
         // How this captain actually navigated, which after a career of noon
         // sights is a real portrait: a man who took three hundred of them and

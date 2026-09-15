@@ -52,6 +52,7 @@ import { rollRivalMeeting } from '../progression/rivalEvents';
 import { beyondScene, landmarkScene } from './discovery';
 import { castLead, landfallScene, type LeadCast } from './soundings';
 import { mutinyScene } from './mutiny';
+import { newCasa, rollCasaScene, type CasaState } from '../progression/casa';
 import { TEMPER, aboardHands, musterHands, shiftAll, type Hand } from '../crew/hands';
 import { originDef, type OriginId } from '../progression/origins';
 import { assignTraits, wardroom, type TraitEffects } from '../progression/officers';
@@ -626,10 +627,16 @@ export class Game {
     // A man starting from further back is worth more to himself for the same
     // service, because the same service moves him further.
     const k = this.standingScale;
-    if (this.can('cosmographer')) return { standing: 1.7 * k, gold: 1.35 };
-    if (this.can('crownsMan')) return { standing: 1.6 * k, gold: 0.75 };
-    if (this.can('sheetTrade')) return { standing: 0.8 * k, gold: 1.5 };
-    return { standing: k, gold: 1 };
+    // The contador writes the figure. What he thinks of you is worth about as
+    // much as a skill node, which is the point of him.
+    const c = this.casa;
+    const casaGold = c.pact ? 1.15 : c.regard < -0.3 ? 0.9 : 1;
+    const casaStanding = c.patron ? 1.15 : c.broke ? 0.92 : 1;
+    const b = this.can('cosmographer') ? { standing: 1.7 * k, gold: 1.35 }
+      : this.can('crownsMan') ? { standing: 1.6 * k, gold: 0.75 }
+        : this.can('sheetTrade') ? { standing: 0.8 * k, gold: 1.5 }
+          : { standing: k, gold: 1 };
+    return { standing: b.standing * casaStanding, gold: b.gold * casaGold };
   }
 
   /**
@@ -740,6 +747,21 @@ export class Game {
    * counter.
    */
   hands: Hand[] = [];
+
+  /**
+   * The Casa da Mina, and the contador who decides what a voyage was worth.
+   * See progression/casa — the shore end of the career, opposite the rival.
+   */
+  casa: CasaState = newCasa();
+
+  /** Whatever the Casa has ready for him at court, once each in a career. */
+  checkCasa(): boolean {
+    if (this.pendingEvent) return false;
+    const scene = rollCasaScene(this);
+    if (!scene) return false;
+    this.pendingEvent = scene;
+    return true;
+  }
 
   awardBond(id: BondId, o: Officer): void {
     if (this.bonds.has(id)) return;
@@ -4492,6 +4514,7 @@ export class Game {
       ship: this.ship.serialize(),
       crew: this.crew,
       hands: this.hands,
+      casa: this.casa,
       captain: this.captain,
       bonds: [...this.bonds],
       origin: this.origin,
@@ -4564,6 +4587,7 @@ export class Game {
     g.ship = Ship.deserialize(d.ship);
     g.crew = d.crew;
     g.hands = d.hands ?? musterHands(g.rng);
+    g.casa = d.casa ?? newCasa();
     g.captain = d.captain ?? newCaptainSkills();
     g.bonds = new Set<BondId>(d.bonds ?? []);
     g.origin = d.origin ?? 'segundo';

@@ -22,6 +22,8 @@ export class CourtView {
     this.settlement = null;
     g.crown.syncCargoObjectives((id) => g.ship.quantityOf(id));
     this.offers = g.crown.patent ? [] : g.crown.offers(g.clock.date.year);
+    // The Casa has its own business with him, and it is transacted here.
+    g.checkCasa();
     this.render();
   }
 
@@ -111,6 +113,20 @@ export class CourtView {
 
           const s = g.crown.settle(g.clock.t, g.settlementBias);
           this.settlement = s;
+          // The contador's hand on the figure, so the number is never a mystery.
+          const casaNote = g.casa.pact
+            ? 'Your private returns were entered generously, as arranged, and the contador’s '
+              + 'share is already out of it.'
+            : g.casa.patron
+              ? 'Aires Tinoco worked the account himself and entered every doubtful line your way.'
+              : g.casa.broke
+                ? 'The clerk who did your account is new to the Guinea books and took no chances '
+                  + 'with any of it.'
+                : g.casa.regard < -0.3
+                  ? 'Every figure is exact. Not one of them is generous, and none of them is '
+                    + 'anything you could complain about.'
+                  : null;
+          if (casaNote) s.lines.push(casaNote);
           const sold = g.sellCharts();
           if (sold > 0) {
             g.crown.gold += sold;

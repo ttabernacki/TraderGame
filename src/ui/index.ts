@@ -221,6 +221,10 @@ export class Ui {
       // helm against a ship whose clock is stopped only reads as a bug.
       this.touch.setVisible(!g.pendingEvent);
       this.bar.setVisible(!g.pendingEvent);
+    } else if (g.mode === 'court') {
+      // The Casa's scenes are played at court, so the card has to be able to
+      // come up over it — it only ever rendered on the sailing screen before.
+      this.events.show(g.pendingEvent);
     } else {
       this.events.show(null);
     }
