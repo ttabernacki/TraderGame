@@ -1,6 +1,7 @@
 import { formatLat, formatLon } from '../core/math';
 import type { Game } from '../game/state';
 import { DIFFICULTIES, difficultyDef, type Difficulty } from '../game/difficulty';
+import { ORIGINS, originDef, type OriginId } from '../progression/origins';
 import { button, card, clear, el, kv } from './dom';
 
 export class TitleView {
@@ -13,8 +14,16 @@ export class TitleView {
   private difficulty: Difficulty = 'watch';
   private choices = el('div', { class: 'difficulty' });
   private blurb = el('div', { class: 'difficulty-blurb' });
+  /**
+   * Who the captain is, which is not a difficulty setting: it decides what he
+   * starts with, what the Casa will forgive him, and how the career reads at
+   * the end. See progression/origins.
+   */
+  private origin: OriginId = 'segundo';
+  private origins = el('div', { class: 'difficulty' });
+  private originBlurb = el('div', { class: 'difficulty-blurb' });
 
-  constructor(onNew: (d: Difficulty) => void, onContinue: () => void, hasSave: boolean) {
+  constructor(onNew: (d: Difficulty, o: OriginId) => void, onContinue: () => void, hasSave: boolean) {
     // The copy lives in a column down one side so the ship sailing behind the
     // title has somewhere to be. Centred over the middle of the screen, she
     // sailed straight through the paragraph.
@@ -28,11 +37,14 @@ export class TitleView {
         'You have a lateen caravel, a crew who have heard what happens south of the line, a quadrant, and a set of tables that do not run past the equator. ' +
         'The wind belts will carry you south whether you like it or not, and will not carry you back the way you came. ' +
         'Your latitude you can find from the sun and the pole star. Your longitude nobody on earth can find, and will not for another two hundred and sixty years.'),
+      el('div', { class: 'difficulty-head' }, 'Who are you?'),
+      this.origins,
+      this.originBlurb,
       el('div', { class: 'difficulty-head' }, 'How is she to be worked?'),
       this.choices,
       this.blurb,
       el('div', { class: 'actions' },
-        button('Sail', () => onNew(this.difficulty), { primary: true }),
+        button('Sail', () => onNew(this.difficulty, this.origin), { primary: true }),
         hasSave ? button('Continue the voyage', onContinue) : null,
       ),
       el('div', { style: { marginTop: '30px', fontSize: '12px', color: '#6f8296', maxWidth: '560px', lineHeight: '1.7' } },
@@ -55,6 +67,18 @@ export class TitleView {
       ));
     }
     this.blurb.textContent = difficultyDef(this.difficulty).blurb;
+
+    clear(this.origins);
+    for (const o of ORIGINS) {
+      this.origins.append(el('button', {
+        class: `difficulty-btn${this.origin === o.id ? ' active' : ''}`,
+        onclick: () => { this.origin = o.id; this.renderChoices(); },
+      },
+        el('span', { class: 'difficulty-name' }, o.name),
+        el('span', { class: 'difficulty-english' }, o.english),
+      ));
+    }
+    this.originBlurb.textContent = originDef(this.origin).blurb;
   }
 }
 

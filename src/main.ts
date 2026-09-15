@@ -4,6 +4,7 @@ import { DEG, clamp } from './core/math';
 import { Game } from './game/state';
 import { portDef } from './world/ports';
 import type { Difficulty } from './game/difficulty';
+import type { OriginId } from './progression/origins';
 import { rollOfficerEvent } from './game/officerEvents';
 import { rollSeaEvent } from './game/seaEvents';
 import { sightOpportunities, takeSight } from './navigation/navigator';
@@ -64,7 +65,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 const ui = new Ui(uiHost, {
-  onNewGame: (difficulty) => startNew(difficulty),
+  onNewGame: (difficulty, origin) => startNew(difficulty, origin),
   onContinue: () => continueSaved(),
   onCycleCamera: () => {
     if (!renderer || !game) return;
@@ -138,10 +139,11 @@ function startTitleScene(): void {
   settle(demo, 21.5, -22, 17.9, 236, 0.9);
 }
 
-function startNew(difficulty: Difficulty = 'watch'): void {
+function startNew(difficulty: Difficulty = 'watch', origin: OriginId = 'segundo'): void {
   demo = null;
   game = new Game();
   game.difficulty = difficulty;
+  game.setOrigin(origin);
   game.mode = 'sailing';
   ensureRenderer(game);
   ui.attach(game);

@@ -49,6 +49,7 @@ import { daysLeft, offerVentures, ventureLine, type Venture } from '../progressi
 import { advanceRival, newRival, rivalGossip, type RivalState } from '../progression/rival';
 import { rollRivalMeeting } from '../progression/rivalEvents';
 import { beyondScene, landmarkScene } from './discovery';
+import { originDef, type OriginId } from '../progression/origins';
 import { assignTraits, wardroom, type TraitEffects } from '../progression/officers';
 import { good } from '../economy/goods';
 
@@ -542,10 +543,13 @@ export class Game {
    * lets a player build round either.
    */
   get settlementBias(): { standing: number; gold: number } {
-    if (this.can('cosmographer')) return { standing: 1.7, gold: 1.35 };
-    if (this.can('crownsMan')) return { standing: 1.6, gold: 0.75 };
-    if (this.can('sheetTrade')) return { standing: 0.8, gold: 1.5 };
-    return { standing: 1, gold: 1 };
+    // A man starting from further back is worth more to himself for the same
+    // service, because the same service moves him further.
+    const k = this.standingScale;
+    if (this.can('cosmographer')) return { standing: 1.7 * k, gold: 1.35 };
+    if (this.can('crownsMan')) return { standing: 1.6 * k, gold: 0.75 };
+    if (this.can('sheetTrade')) return { standing: 0.8 * k, gold: 1.5 };
+    return { standing: k, gold: 1 };
   }
 
   /**
@@ -558,7 +562,10 @@ export class Game {
   sellCharts(): number {
     if (!this.can('sheetTrade') && !this.can('cosmographer') && !this.has('theDraughtsman')) return 0;
     const rate = (this.can('cosmographer') ? 2.6 : 1.7)
-      * (this.has('theDraughtsman') ? 1.5 : 1);
+      * (this.has('theDraughtsman') ? 1.5 : 1)
+      // A new Christian selling the Crown's charts out of the back door is not
+      // doing the same thing a fidalgo is doing, and the file says so.
+      * (originDef(this.origin).watched ? 0.6 : 1);
     return Math.round((this.chartedThisPassage + this.correctedNm * 0.6) * rate);
   }
 
@@ -2109,6 +2116,28 @@ export class Game {
     this.crew.officers.push(o);
     this.wardroomCache = null;
     return o;
+  }
+
+  /**
+   * Who this captain is. See progression/origins — it is not a difficulty
+   * setting: it decides what he starts with, what the Casa will forgive him,
+   * and what the last page of his life says.
+   */
+  origin: OriginId = 'segundo';
+
+  setOrigin(id: OriginId): void {
+    this.origin = id;
+    const o = originDef(id);
+    this.crown.gold = o.gold;
+    this.crown.standing = o.standing;
+    this.crown.lifetimeStanding = o.standing;
+    this.captain.points = o.points;
+    this.logEvent('note', o.detail, true);
+  }
+
+  /** What the court is worth to a man starting from where this one started. */
+  get standingScale(): number {
+    return originDef(this.origin).standingScale;
   }
 
   /** How many peoples this captain has actually met, for the chaplain's arc. */
@@ -3989,6 +4018,7 @@ export class Game {
       crew: this.crew,
       captain: this.captain,
       bonds: [...this.bonds],
+      origin: this.origin,
       debt: this.crown.debt,
       nav: {
         estimated: this.nav.estimated,
@@ -4057,6 +4087,7 @@ export class Game {
     g.crew = d.crew;
     g.captain = d.captain ?? newCaptainSkills();
     g.bonds = new Set<BondId>(d.bonds ?? []);
+    g.origin = d.origin ?? 'segundo';
     g.refreshSkillCache();
     g.nav.estimated = d.nav.estimated;
     g.nav.sigmaLat = d.nav.sigmaLat;

@@ -3,6 +3,7 @@ import { OFFICER_ROLES } from '../crew/crew';
 import { officerTitle, traitDef } from '../progression/officers';
 import { rivalEnding } from '../progression/rivalEvents';
 import { BONDS } from '../progression/arcs';
+import { originDef } from '../progression/origins';
 import type { Game } from '../game/state';
 import { button, card, el, kv } from './dom';
 
@@ -125,6 +126,9 @@ export class EpilogueView {
                 : null,
             )
           : null,
+
+        // Who he was, which the whole career was an answer to.
+        card(originDef(g.origin).name, el('p', {}, originDef(g.origin).epilogue)),
 
         // How this captain actually navigated, which after a career of noon
         // sights is a real portrait: a man who took three hundred of them and
