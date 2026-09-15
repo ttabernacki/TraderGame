@@ -290,6 +290,16 @@ export interface SightOpportunity {
   reason?: string;
   /** Name of the star, when the body is a star. */
   star?: string;
+  /**
+   * Minutes until the sun is on the meridian, as the pilot reckons it.
+   *
+   * He is not guessing: he had yesterday's noon and he knows roughly how far
+   * the ship has run since, so he can say within a few minutes when to be at
+   * the rail. Without this the player has no way to know when to start and the
+   * meridian hunt becomes a clicking exercise — which is not the thing it is
+   * supposed to be about. It is deliberately approximate.
+   */
+  minutesToNoon?: number;
 }
 
 export interface SightOutcome {
@@ -322,11 +332,24 @@ export function sightOpportunities(
   const hazy = visibility < 3;
 
   const nearNoon = Math.abs(hourLocal - 12) < 0.85;
+
+  // When she will be highest, found by looking rather than by formula: sample
+  // the altitude forward and back and take the turn. Cheap, and it cannot
+  // disagree with the ephemeris the sight itself is worked from.
+  let bestH = hourLocal;
+  let bestAlt = -99;
+  for (let h = 10.5; h <= 13.5; h += 1 / 60) {
+    const a = sunPosition(truePos.lat, truePos.lon, dayFromEpoch, h, dayOfYear).altitude;
+    if (a > bestAlt) { bestAlt = a; bestH = h; }
+  }
+  const minutesToNoon = Math.round((bestH - hourLocal) * 60);
+
   out.push({
     body: 'sun',
     label: 'Meridian altitude of the sun',
     altitude: sun.altitude,
     azimuth: sun.azimuth,
+    minutesToNoon,
     available: sun.altitude > 6 && nearNoon && !overcast && !hazy,
     reason: sun.altitude <= 6
       ? 'The sun is not high enough'
@@ -407,6 +430,139 @@ export function sightOpportunities(
   });
 
   return out;
+}
+
+/**
+ * One altitude in a meridian session.
+ */
+export interface MeridianReading {
+  /** Local hour it was taken at. */
+  hour: number;
+  /** What the observer read off the instrument, with all his error in it. */
+  observed: number;
+  /** What the altitude actually was, kept for scoring the session. */
+  truth: number;
+}
+
+export interface MeridianResult extends SightOutcome {
+  /** Readings that went into it. */
+  count?: number;
+  /** True when the sun was seen to rise and then fall, so noon was caught. */
+  bracketed?: boolean;
+  /** Highest altitude observed, which is the meridian altitude if bracketed. */
+  peak?: number;
+  /** The working, line by line, for the screen. */
+  working?: string[];
+}
+
+/**
+ * Work a meridian altitude from a series of observations.
+ *
+ * Local noon is not a moment anybody is told: it is the moment the sun stops
+ * climbing, and the only way to find it is to keep measuring until it does. So
+ * the sight is a hunt rather than a guess. Take too few altitudes and you stop
+ * while the sun is still rising, and your latitude is wrong in a direction you
+ * cannot detect from the figures — which is the single most instructive mistake
+ * in the whole of celestial navigation and is why this is worth playing at all.
+ *
+ * Accuracy comes from two places, and they pull against each other. Every extra
+ * reading averages down the observer's hand, so the scatter of the set is a
+ * better estimate of the truth than any one of them. But every reading costs
+ * minutes of a window that is not very wide, and the sun waits for nobody.
+ *
+ * The scatter also *reports itself*: three altitudes that agree closely are
+ * evidence that all three are good, and one that disagrees with two others is
+ * visibly the rogue. A pilot with three readings knows how much to trust them.
+ * A pilot with one never does.
+ */
+export function workMeridian(
+  nav: Navigator,
+  readings: MeridianReading[],
+  truePos: LatLon,
+  dayOfYear: number,
+  sunBoreSouth: boolean,
+  t: number,
+  rng: Rng,
+): MeridianResult {
+  if (readings.length === 0) {
+    return { ok: false, message: 'No altitude was taken.' };
+  }
+  const alm = nav.almanac;
+  if (alm.solarError === null) {
+    return {
+      ok: false,
+      message:
+        'You have the altitudes and they tell you nothing. The Regimento do Norte is a rule for '
+        + 'the pole star; there is no declination of the sun in it for this day or any other.',
+    };
+  }
+  if (truePos.lat < 0 && !alm.southern) {
+    return {
+      ok: false,
+      message: 'Your tables do not run south of the line. Without a declination you cannot turn '
+        + 'an altitude into a latitude.',
+    };
+  }
+
+  // The meridian altitude is the highest one observed.
+  let peakIdx = 0;
+  for (let i = 1; i < readings.length; i++) {
+    if (readings[i].observed > readings[peakIdx].observed) peakIdx = i;
+  }
+  const peak = readings[peakIdx].observed;
+
+  // Was the sun seen to turn? Only if something was measured on each side of
+  // the highest reading. Without that you stopped while she was still rising.
+  const bracketed = peakIdx > 0 && peakIdx < readings.length - 1;
+
+  // How much the set disagrees with itself, near the top. This is the pilot's
+  // own evidence about his own accuracy and it is the honest sigma.
+  const near = readings.filter((r) => peak - r.observed < 0.9);
+  const mean = near.reduce((s, r) => s + r.observed, 0) / near.length;
+  const scatter = near.length > 1
+    ? Math.sqrt(near.reduce((s, r) => s + (r.observed - mean) ** 2, 0) / (near.length - 1))
+    : 0;
+
+  const inst = nav.altitudeInstrument;
+  // Averaging down: n readings of independent hand error are worth sqrt(n).
+  const handSigma = Math.max(scatter, inst.baseError * 0.5) / Math.sqrt(readings.length);
+
+  const trueDec = solarDeclination(dayOfYear);
+  const tableDec = trueDec + rng.normal(0, alm.solarError);
+  const lat = latitudeFromNoonSun(peak, tableDec, sunBoreSouth);
+  const sigma = Math.hypot(handSigma, alm.solarError, bracketed ? 0 : 0.35);
+
+  nav.applyLatitude(lat, sigma, 'Meridian sun', 'the sun', t);
+
+  const zenith = 90 - peak;
+  const working = [
+    `${readings.length} altitude${readings.length === 1 ? '' : 's'} taken, the greatest ${peak.toFixed(2)}\u00b0`,
+    `Zenith distance  90\u00b0 \u2212 ${peak.toFixed(2)}\u00b0 = ${zenith.toFixed(2)}\u00b0`,
+    `Declination this day, from the tables  ${tableDec >= 0 ? 'N' : 'S'} ${Math.abs(tableDec).toFixed(2)}\u00b0`,
+    `Latitude  ${zenith.toFixed(2)}\u00b0 ${sunBoreSouth ? '\u2212' : '+'} ${Math.abs(tableDec).toFixed(2)}\u00b0 `
+      + `= ${Math.abs(lat).toFixed(2)}\u00b0 ${lat >= 0 ? 'N' : 'S'}`,
+    near.length > 1
+      ? `The top ${near.length} agree to within ${(scatter * 60).toFixed(0)}\u2032, so the sight is worth about ${(sigma * 60).toFixed(0)}\u2032`
+      : 'One altitude only. Nothing to check it against.',
+  ];
+
+  return {
+    ok: true,
+    latitude: lat,
+    sigma,
+    measured: peak,
+    method: 'Meridian sun',
+    count: readings.length,
+    bracketed,
+    peak,
+    working,
+    message: bracketed
+      ? `You saw her turn. Latitude by observation ${Math.abs(lat).toFixed(2)}\u00b0 ${lat >= 0 ? 'N' : 'S'}.`
+      : 'She was still rising when you stopped. What you have is the altitude at the moment you '
+        + 'gave up, which is lower than the meridian altitude — so the zenith distance is too '
+        + 'great and the latitude comes out further from the sun than the ship really is. There '
+        + 'is nothing in the figures to tell you so.',
+  };
 }
 
 /**

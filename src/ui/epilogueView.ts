@@ -126,6 +126,27 @@ export class EpilogueView {
             )
           : null,
 
+        // How this captain actually navigated, which after a career of noon
+        // sights is a real portrait: a man who took three hundred of them and
+        // a man who took nine are not the same captain.
+        g.nav.fixes.length > 0
+          ? card('The reckoning',
+              kv('Observations worked', `${g.nav.fixes.length}`),
+              kv('Meridian sights', `${g.nav.fixes.filter((f) => f.method === 'Meridian sun').length}`),
+              kv('Longitudes by lunar', `${g.nav.fixes.filter((f) => f.method === 'Lunar distance').length}`),
+              kv('Landfalls made', `${g.nav.fixes.filter((f) => f.method === 'Landfall').length}`),
+              el('p', { class: 'flavour' },
+                g.nav.fixes.length > 120
+                  ? 'You were at the rail at noon for most of the days of your life, and the '
+                    + 'pilots who came after you sailed on the latitudes you settled.'
+                  : g.nav.fixes.length > 40
+                    ? 'A competent reckoning, kept up when the weather allowed and let go when it '
+                      + 'did not, which is what everybody did.'
+                    : 'You sailed mostly on the board and on the smell of the water, and got away '
+                      + 'with it more often than the arithmetic says you should have.'),
+            )
+          : null,
+
         // What passed between the two of you personally, which is a different
         // question from who got further south and is answered by the choices
         // made at the four meetings rather than by the standings.

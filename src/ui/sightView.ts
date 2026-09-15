@@ -1,13 +1,14 @@
 import { clamp, formatLat } from '../core/math';
 import { Rng } from '../core/rng';
 import {
-  sightOpportunities, takeSight, type SightOpportunity, type SightOutcome,
+  sightOpportunities, takeSight, workMeridian,
+  type MeridianReading, type SightOpportunity, type SightOutcome,
 } from '../navigation/navigator';
 import { sightError } from '../navigation/instruments';
 import { moonPosition } from '../navigation/celestial';
 import { skill } from '../crew/skills';
 import type { Game } from '../game/state';
-import { button, card, clear, el, kv } from './dom';
+import { append, button, card, clear, el, kv } from './dom';
 
 /**
  * Taking a sight.
@@ -28,6 +29,13 @@ export class SightView {
   private selected = 0;
   private index = 30;
   private outcome: SightOutcome | null = null;
+  /**
+   * The meridian session: altitudes taken so far on this run at the sun.
+   *
+   * Local noon is the moment the sun stops climbing and nobody is told when
+   * that is. The session is the hunt for it — see workMeridian.
+   */
+  private readings: MeridianReading[] = [];
   private raf = 0;
   private phase = 0;
   private rng = new Rng(7);
@@ -148,7 +156,7 @@ export class SightView {
     );
 
     const left = el('div', {});
-    left.append(
+    append(left,
       this.stage,
       el('div', { style: { marginBottom: '12px' } },
         el('label', { style: { fontSize: '12px', color: 'var(--ink-soft)' } }, 'Index'),
@@ -157,16 +165,36 @@ export class SightView {
           oninput: (e: Event) => { this.index = Number((e.target as HTMLInputElement).value); },
         }),
       ),
-      el('div', { style: { display: 'flex', gap: '9px' } },
-        button('Mark!', () => this.mark(), { primary: true, disabled: !opp?.available }),
-        button('Steady her first', () => this.steady(), {
-          title: 'Heave to and wait for a smoother moment. Costs an hour.',
-          disabled: !opp?.available,
-        }),
-        g.can('lunars') ? this.lunarButton(g) : null,
-      ),
+      opp?.body === 'sun'
+        ? el('div', { style: { display: 'flex', gap: '9px', flexWrap: 'wrap' } },
+            button('Take an altitude', () => this.takeReading(), {
+              primary: true, disabled: !opp?.available,
+              title: 'Five minutes. The sun will be a little higher when you look again \u2014 until she is not.',
+            }),
+            button(`Work the sight (${this.readings.length})`, () => this.workIt(), {
+              disabled: this.readings.length === 0,
+              title: 'Take the greatest altitude you have and turn it into a latitude.',
+            }),
+            this.readings.length > 0
+              ? button('Start again', () => { this.readings = []; this.outcome = null; this.render(); }, { ghost: true })
+              : null,
+            g.can('lunars') ? this.lunarButton(g) : null,
+          )
+        : el('div', { style: { display: 'flex', gap: '9px' } },
+            button('Mark!', () => this.mark(), { primary: true, disabled: !opp?.available }),
+            button('Steady her first', () => this.steady(), {
+              title: 'Heave to and wait for a smoother moment. Costs an hour.',
+              disabled: !opp?.available,
+            }),
+            g.can('lunars') ? this.lunarButton(g) : null,
+          ),
+      this.readings.length > 0 ? this.renderLadder() : null,
       this.outcome ? this.renderOutcome() : el('div', { class: 'quote', style: { marginTop: '14px' } },
-        'Watch the body rise and fall with the ship. Set the index where it stands when she is on an even keel, then mark. The swing is the whole difficulty: a quadrant on a pitching deck is a guess with a brass instrument attached to it.'),
+        opp?.body === 'sun'
+          ? 'Noon is not a time anybody can tell you. It is the moment the sun stops climbing, '
+            + 'and the only way to find it is to keep measuring until she does. Take altitudes '
+            + 'until one comes out lower than the last \u2014 that one before it was the meridian.'
+          : 'Watch the body rise and fall with the ship. Set the index where it stands when she is on an even keel, then mark. The swing is the whole difficulty: a quadrant on a pitching deck is a guess with a brass instrument attached to it.'),
     );
 
     // Why this is worth doing right now, in miles rather than in sigmas.
@@ -222,7 +250,7 @@ export class SightView {
 
   private renderOpportunity(o: SightOpportunity, i: number): HTMLElement {
     const selected = i === this.selected;
-    return el('div', {
+    const row = el('div', {
       style: {
         padding: '8px 10px',
         marginBottom: '5px',
@@ -240,10 +268,29 @@ export class SightView {
         this.render();
       },
     },
+    );
+    append(row,
       el('div', { style: { fontSize: '13.5px' } }, o.label),
       el('div', { style: { fontSize: '11.5px', color: 'var(--ink-soft)', marginTop: '2px' } },
         o.available ? `Standing ${o.altitude.toFixed(1)}° above the horizon` : (o.reason ?? '')),
+      // The pilot had yesterday's noon and knows how far she has run since, so
+      // he can say when to be at the rail. Without it the player cannot know
+      // when to start and the hunt becomes a clicking exercise.
+      o.body === 'sun' && o.minutesToNoon !== undefined
+        ? el('div', {
+            style: {
+              fontSize: '11.5px', marginTop: '3px',
+              color: Math.abs(o.minutesToNoon) < 6 ? 'var(--green)' : 'var(--ink-soft)',
+            },
+          },
+          o.minutesToNoon > 1
+            ? `The pilot makes it about ${o.minutesToNoon} minutes to the meridian.`
+            : o.minutesToNoon < -1
+              ? `She turned about ${-o.minutesToNoon} minutes ago and is falling.`
+              : 'She is on the meridian now.')
+        : null,
     );
+    return row;
   }
 
   private steady(): void {
@@ -319,6 +366,97 @@ export class SightView {
     this.render();
   }
 
+  /**
+   * One altitude, and five minutes gone.
+   *
+   * The reading is what the player judged — the index against a body that is
+   * swinging — and the truth at that instant is kept beside it so the session
+   * can be scored honestly afterwards. Time passes, which is the whole cost:
+   * the meridian window is not wide and the sun does not wait.
+   */
+  private takeReading(): void {
+    const g = this.game;
+    const opp = this.opportunities[this.selected];
+    if (!g || !opp?.available) return;
+
+    this.readings.push({
+      hour: g.clock.hour,
+      observed: this.index,
+      truth: opp.altitude,
+    });
+
+    // Five minutes with the instrument, and the sun has moved.
+    g.clock.t += 5 * 60;
+    g.refreshEnvironment();
+    this.refreshOpportunities();
+    this.outcome = null;
+    this.render();
+  }
+
+  /** Turn the session into a latitude. */
+  private workIt(): void {
+    const g = this.game;
+    if (!g || this.readings.length === 0) return;
+    const sun = this.opportunities.find((o) => o.body === 'sun');
+    const boreSouth = (sun?.azimuth ?? 180) > 90 && (sun?.azimuth ?? 180) < 270;
+
+    const outcome = workMeridian(
+      g.nav, this.readings, g.ship.state.pos, g.clock.dayOfYear,
+      boreSouth, g.clock.t, this.rng,
+    );
+    this.outcome = outcome;
+    if (outcome.ok) {
+      g.logEvent('navigation',
+        `${outcome.method}: ${this.readings.length} altitudes, the greatest `
+        + `${(outcome.peak ?? 0).toFixed(1)}\u00b0. The reckoning is amended to `
+        + `${formatLat(g.nav.estimated.lat)}.`);
+      // Working the figures takes a while, on top of the observing.
+      g.clock.t += 20 * 60;
+    }
+    this.readings = [];
+    g.refreshEnvironment();
+    this.refreshOpportunities();
+    this.render();
+  }
+
+  /**
+   * The altitudes so far, as a ladder.
+   *
+   * Reading down it is the whole skill: while the numbers keep rising the sun
+   * is still climbing and noon has not come. The moment one comes out lower
+   * than the one before, the previous one was the meridian, and stopping before
+   * that has put your latitude out in a direction the figures will not show.
+   */
+  private renderLadder(): HTMLElement {
+    const peak = Math.max(...this.readings.map((r) => r.observed));
+    const turned = this.readings.length > 1
+      && this.readings[this.readings.length - 1].observed < peak - 0.02;
+    return el('div', { class: 'card', style: { marginTop: '14px' } },
+      el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' } },
+        el('h2', { style: { margin: 0, fontSize: '15px' } }, 'The altitudes'),
+        el('span', { style: { fontSize: '12.5px', color: 'var(--ink-soft)' } },
+          `${(this.readings.length * 5)} minutes at the rail`),
+      ),
+      el('table', { class: 'ledger', style: { marginTop: '8px' } },
+        el('tbody', {}, ...this.readings.map((r, i) => {
+          const prev = i > 0 ? this.readings[i - 1].observed : null;
+          const rising = prev === null ? null : r.observed > prev;
+          return el('tr', {},
+            el('td', {}, `${Math.floor(r.hour)}h${String(Math.round((r.hour % 1) * 60)).padStart(2, '0')}`),
+            el('td', { class: 'num', style: { fontWeight: r.observed === peak ? '600' : '400' } },
+              `${r.observed.toFixed(1)}\u00b0`),
+            el('td', { style: { color: 'var(--ink-soft)', fontSize: '12.5px' } },
+              rising === null ? 'the first' : rising ? 'higher' : 'lower \u2014 she has turned'),
+          );
+        })),
+      ),
+      el('p', { style: { fontSize: '12.5px', marginTop: '8px', color: turned ? 'var(--green)' : 'var(--ink-soft)' } },
+        turned
+          ? 'She has turned. The greatest of these is the meridian altitude and the sight is good.'
+          : 'Still climbing. Stop now and your latitude will be out, and the figures will not say so.'),
+    );
+  }
+
   private mark(): void {
     const g = this.game;
     const opp = this.opportunities[this.selected];
@@ -356,8 +494,21 @@ export class SightView {
       return el('div', { class: 'notice', style: { marginTop: '14px' } }, o.message);
     }
     const err = Math.abs((o.latitude ?? 0) - g.ship.state.pos.lat) * 60;
-    return el('div', { class: 'notice', style: { marginTop: '14px' } },
+    // The working, which is what turns a dice roll into navigation. A player
+    // who can see the zenith distance and the declination go into the answer
+    // is doing the sight; one who is shown a number is being told a result.
+    const working = (o as { working?: string[] }).working;
+    const box = el('div', { class: 'notice', style: { marginTop: '14px' } });
+    append(box,
       el('div', { style: { marginBottom: '6px' } }, o.message),
+      working
+        ? el('div', {
+            style: {
+              margin: '8px 0', padding: '8px 10px', fontSize: '12.5px', lineHeight: '1.7',
+              borderLeft: '2px solid rgba(90,74,55,0.35)', fontVariantNumeric: 'tabular-nums',
+            },
+          }, ...working.map((l) => el('div', {}, l)))
+        : null,
       el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)' } },
         `Latitude now reckoned ${formatLat(g.nav.estimated.lat)}, with a doubt of ${g.nav.sigmaLat.toFixed(0)} miles. ` +
         (err < 8
@@ -366,5 +517,6 @@ export class SightView {
             ? 'Serviceable, though the swing beat you a little.'
             : 'A poor sight. Take another when she is steadier, or with a better instrument.')),
     );
+    return box;
   }
 }
