@@ -68,6 +68,56 @@ export class EpilogueView {
             `${o.name} was put ashore among strangers and has not been heard of since.`)),
         ),
 
+        // What kind of captain the fo'c'sle decided he was. Not a score: three
+        // counters that only exist because he did those things, each of which
+        // was a choice made in front of everybody at the worst hour of a
+        // voyage, and which is what the men would actually have told you about
+        // him in a tavern twenty years later.
+        (g.crew.floggings ?? 0) + (g.crew.conceded ?? 0) + (g.crew.turnedBack ?? 0) > 0
+          ? card('What they said of you forward',
+              (g.crew.floggings ?? 0) > 0
+                ? el('p', {}, `You hanged ${g.crew.floggings === 1 ? 'a man' : `${g.crew.floggings} men`} `
+                  + 'at the yardarm in front of the ship’s company. Every hand who saw it worked '
+                  + 'the ship well afterwards and none of them ever forgot which sort you were.')
+                : null,
+              (g.crew.conceded ?? 0) > 0
+                ? el('p', {}, `${g.crew.conceded === 1 ? 'Once' : `${g.crew.conceded} times`} you `
+                  + 'stood at the break of the quarterdeck and told a man off the fo’c’sle that '
+                  + 'he was right. It cost you something every time and it is the reason men '
+                  + 'signed for your ship when they had a choice.')
+                : null,
+              (g.crew.turnedBack ?? 0) > 0
+                ? el('p', {}, `${g.crew.turnedBack === 1 ? 'Once' : `${g.crew.turnedBack} times`} you `
+                  + 'put the helm up and took them home rather than bury the rest of them. The '
+                  + 'Casa da Mina wrote it down. So did they.')
+                : null,
+              g.crew.taken
+                ? el('p', { class: 'bad' }, 'And once they took her off you, and you came up the '
+                  + 'Tagus as a passenger in your own ship.')
+                : null,
+            )
+          : null,
+
+        // The men forward, by name. The figure above is the one the Casa
+        // recorded; this is the one that was actually paid.
+        g.hands.some((h) => !h.alive)
+          ? card('Names',
+              el('p', { class: 'flavour' },
+                'The muster roll went to the Casa da Mina and was filed. These are the ones off '
+                + 'the fo’c’sle you could still have named twenty years later, which is '
+                + 'not all of them, and you know it is not.'),
+              ...g.hands.filter((h) => !h.alive).map((h) => el('p', {},
+                el('b', {}, h.name), `, of ${h.from}. `, h.fate ?? 'Lost.')),
+              ...(() => {
+                const back = g.hands.filter((h) => h.alive && h.aboard);
+                return back.length > 0
+                  ? [el('p', { class: 'good' },
+                      `Came up the Tagus with you: ${back.map((h) => h.name).join(', ')}.`)]
+                  : [];
+              })(),
+            )
+          : null,
+
         // What the company gave you, which is the part that outlasted them.
         g.bonds.size > 0
           ? card('What they left you',

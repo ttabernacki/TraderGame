@@ -50,6 +50,8 @@ import { advanceRival, newRival, rivalGossip, type RivalState } from '../progres
 import { rollRivalMeeting } from '../progression/rivalEvents';
 import { beyondScene, landmarkScene } from './discovery';
 import { castLead, landfallScene, type LeadCast } from './soundings';
+import { mutinyScene } from './mutiny';
+import { TEMPER, aboardHands, musterHands, shiftAll, type Hand } from '../crew/hands';
 import { originDef, type OriginId } from '../progression/origins';
 import { assignTraits, wardroom, type TraitEffects } from '../progression/officers';
 import { good } from '../economy/goods';
@@ -518,6 +520,7 @@ export class Game {
     this.rival.lastNews = this.clock.t;
     // She begins at a quay, which is as much in sight of land as it gets.
     this.lastLandSeenT = this.clock.t;
+    this.hands = musterHands(this.rng);
     this.shipTheCompany();
     assignTraits(this.crew, this.rng);
 
@@ -714,6 +717,15 @@ export class Game {
    * held here and not on the officer.
    */
   bonds = new Set<BondId>();
+
+  /**
+   * The men forward the captain knows by name. See crew/hands.
+   *
+   * A handful out of the complement, not all of them — which is honest, and
+   * which is what makes a death among them land rather than decrement a
+   * counter.
+   */
+  hands: Hand[] = [];
 
   awardBond(id: BondId, o: Officer): void {
     if (this.bonds.has(id)) return;
@@ -1858,15 +1870,22 @@ export class Game {
       captainLoved: this.can('loved'),
       captainFeared: this.can('feared'),
       wardroomMorale: w.morale,
-      wardroomUnrest: w.unrest,
+      // Authority conceded in front of the ship's company is authority spent.
+      // A captain who has given the men what they came aft for finds them
+      // coming aft again sooner, which is the cost of the easy answer and is
+      // what the scene promises will happen.
+      wardroomUnrest: w.unrest * (1 + (this.crew.conceded ?? 0) * 0.22),
       // A company who would follow you anywhere do not fear anywhere.
       wardroomFear: w.fear * (this.can('followAnywhere') ? 0.2 : 1),
     });
+
+    this.driftRegard(days);
 
     for (const e of events) {
       this.pushAlert(e.message, e.severity);
       this.logEvent('crew', e.message, e.severity === 'grave');
       if (e.kind === 'mutiny') this.handleMutiny();
+      if (e.kind === 'death') this.buryTheNamed();
     }
 
     // A ship is not lost when the last man dies; she is lost when there are not
@@ -1956,23 +1975,112 @@ export class Game {
     }
   }
 
-  private handleMutiny(): void {
-    const eff = this.effectiveSkill;
-    const authority = skill(eff, 'lideranca');
-    // The last node of Leadership is the promise that this never goes the other
-    // way. It is four points, and it is the only thing in the game that buys
-    // certainty about the men.
-    if (this.can('followAnywhere') || this.rng.next() < authority * 0.8 + 0.15) {
-      this.crew.unrest = 0.4;
-      this.crew.morale = clamp(this.crew.morale + 0.14, 0, 1);
-      this.logEvent('crew', 'You put the ringleaders in irons and had the rest back at their stations inside the hour. It is settled. It is not forgotten.', true);
-    } else {
-      this.crew.unrest = 0;
-      this.crew.morale = 0.42;
-      this.ship.state.heading = wrap360(this.ship.state.heading + 180);
-      this.logEvent('crew', 'They would not be talked round. The helm is up and she is heading north, and you are captain in name only until she smells Portugal.', true);
-      this.pushAlert('The crew have taken the ship and put her head for home.', 'grave');
+  /**
+   * What the men forward make of the voyage, a day at a time.
+   *
+   * Every man's regard walks toward a target set by the conditions he is
+   * actually living in — the ration he is on, when he last stood on ground, how
+   * long since anything fresh, how many of them are sick, and whether the
+   * captain is a man they have decided they would follow. Doing it as a drift
+   * rather than as a hook on every event means a bad passage is felt as a bad
+   * passage, cumulatively, which is how a crew really turns: not because of one
+   * thing but because of ten weeks of it.
+   *
+   * A brittle man falls further and faster on the same conditions, so the
+   * sullen hand is the one who has stopped believing in you months before the
+   * steady one has, and he is the one who ends up out in front when they come
+   * aft.
+   */
+  private driftRegard(days: number): void {
+    const live = aboardHands(this.hands);
+    if (live.length === 0) return;
+    const p = this.crew.provisions;
+
+    let target = 0.55;
+    if (this.ration < 1) target -= (1 - this.ration) * 0.45;
+    if (p.water < 20) target -= clamp((20 - p.water) / 20, 0, 1) * 0.35;
+    if (p.biscuit < 20) target -= clamp((20 - p.biscuit) / 20, 0, 1) * 0.25;
+    if (this.crew.daysWithoutFresh > 45) {
+      target -= clamp((this.crew.daysWithoutFresh - 45) / 70, 0, 1) * 0.3;
     }
+    if (this.crew.daysSinceLandfall > 50) {
+      target -= clamp((this.crew.daysSinceLandfall - 50) / 80, 0, 1) * 0.3;
+    }
+    target -= clamp(this.crew.scurvy, 0, 1) * 0.25;
+    target -= clamp(this.crew.fatigue - 0.5, 0, 0.5) * 0.3;
+    // A captain the men have decided about. Loved and feared pull opposite ways
+    // here on purpose: fear keeps the ship working and does not buy affection.
+    if (this.can('loved')) target += 0.14;
+    if (this.can('feared')) target -= 0.06;
+    if (this.has('cureOfSouls')) target += 0.06;
+    target = clamp(target, 0.05, 0.95);
+
+    // Slow. Ten weeks of a bad passage, not ten days.
+    const k = 1 - Math.exp(-days / 26);
+    for (const h of live) {
+      const pull = h.regard < target ? 1 : TEMPER[h.temper].brittle;
+      h.regard = clamp(h.regard + (target - h.regard) * k * pull, 0, 1);
+    }
+  }
+
+  /**
+   * When the mortality takes men, decide whether it took one you knew.
+   *
+   * The chance is the named men's share of the whole complement, so this adds
+   * no deaths and removes none — it only decides, honestly, whether the number
+   * that just went down had a name attached to it. A ship of twenty-four with
+   * eight named men reports a name about a third of the time, which is what it
+   * should be, and the other two thirds are the men the captain genuinely did
+   * not know, which is also true and is most of why the figure is horrifying.
+   */
+  private buryTheNamed(): void {
+    const live = aboardHands(this.hands);
+    if (live.length === 0) return;
+    const share = live.length / Math.max(live.length, this.crew.count + 1);
+    if (!this.rng.chance(share)) return;
+    const man = live[Math.floor(this.rng.next() * live.length)];
+    man.alive = false;
+    man.aboard = false;
+    man.fate = this.crew.scurvy > 0.3
+      ? 'Died of the scurvy and was put over the side.'
+      : 'Died at sea and was put over the side after the Salve.';
+    man.fateT = this.clock.t;
+    // A man they all knew. The ones who are left take it personally, and a
+    // little of it attaches to the captain who brought them out here.
+    shiftAll(this.hands, -0.04, `${man.name} died at sea.`);
+    this.logEvent('crew',
+      `${man.name}, of ${man.from}, is dead. He was sewn into his hammock with a shot at his feet `
+      + 'and put over the side, and the ship was hove to for as long as it took, which was not long.',
+      true);
+    this.pushAlert(`${man.name} is dead.`, 'grave');
+  }
+
+  /**
+   * They have come aft. See game/mutiny — this is a scene with a named man in
+   * front of it now, not a roll against Leadership.
+   */
+  private handleMutiny(): void {
+    // One at a time. Unrest stays over the line until the scene is answered, so
+    // without this every crew tick queued another mutiny behind the one already
+    // on screen — a queue that grows for as long as the player is reading it.
+    if (this.pendingEvent?.id === 'mutiny'
+        || this.pendingScenes.some((s) => s.id === 'mutiny')) {
+      return;
+    }
+    const scene = mutinyScene(this);
+    if (scene) {
+      this.pendingScenes.push(scene);
+      return;
+    }
+    // Nobody aboard is willing to lead one. That is not nothing happening: it
+    // is the reward for a career of keeping them fed and landing them, and it
+    // deserves to be said out loud rather than passed over in silence.
+    this.crew.unrest = 0.35;
+    this.crew.morale = clamp(this.crew.morale + 0.06, 0, 1);
+    this.logEvent('crew',
+      'There was a good deal of talk forward and it came to nothing, because when it came to it '
+      + 'there was nobody willing to be the man standing in front. The boatswain reports it as a '
+      + 'grumble. It is more than that, and it is also less.', true);
   }
 
   private checkWorldEvents(): void {
@@ -4225,6 +4333,7 @@ export class Game {
       scaleIndex: this.clock.scaleIndex,
       ship: this.ship.serialize(),
       crew: this.crew,
+      hands: this.hands,
       captain: this.captain,
       bonds: [...this.bonds],
       origin: this.origin,
@@ -4296,6 +4405,7 @@ export class Game {
     g.clock.scaleIndex = d.scaleIndex ?? 1;
     g.ship = Ship.deserialize(d.ship);
     g.crew = d.crew;
+    g.hands = d.hands ?? musterHands(g.rng);
     g.captain = d.captain ?? newCaptainSkills();
     g.bonds = new Set<BondId>(d.bonds ?? []);
     g.origin = d.origin ?? 'segundo';

@@ -45,7 +45,11 @@ export class EventView {
 
     this.root.replaceChildren(el('div', { class: `event-card ${event.severity}` },
       el('div', { class: 'event-title' }, event.title),
-      el('p', { class: 'event-text' }, event.text),
+      // A blank line in the written text is a paragraph break and has to survive
+      // as one. HTML collapses it, so a scene written in three beats — what
+      // happened, who is standing where, what they are waiting for — arrived on
+      // screen as a single grey slab.
+      ...event.text.split(/\n\s*\n/).map((para) => el('p', { class: 'event-text' }, para.trim())),
       choices,
     ));
     // So a keyboard player can answer without reaching for the mouse.

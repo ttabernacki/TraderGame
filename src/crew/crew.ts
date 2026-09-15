@@ -95,6 +95,14 @@ export interface CrewState {
   /** Days the casks have been dry, so the horror is reported once and not daily. */
   dryDays?: number;
   hungryDays?: number;
+  /** Men hanged or flogged. The company counts, so the game had better too. */
+  floggings?: number;
+  /** Times the captain has publicly given the men what they came aft for. */
+  conceded?: number;
+  /** Times a voyage was abandoned to save the company. */
+  turnedBack?: number;
+  /** Set when they have the ship and the captain does not. */
+  taken?: boolean;
 }
 
 const FIRST_NAMES = [
