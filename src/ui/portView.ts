@@ -4,7 +4,6 @@ import { Markets, provisioningCost, type Listing } from '../economy/market';
 import { people } from '../world/peoples';
 import { availableUpgrades, UPGRADE_BY_ID } from '../ship/upgrades';
 import { hullClass } from '../ship/hull';
-import { Ship } from '../ship/ship';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
 import { OFFICER_ROLES } from '../crew/crew';
 import { skill } from '../crew/skills';
@@ -628,14 +627,33 @@ export class PortView {
     // A larger ship, once the Crown thinks you are worth one.
     const hulls = g.crown.availableHulls().filter((h) => h.id !== g.ship.hullId);
     if (def.id === 'lisboa' && hulls.length > 0) {
+      const tradeIn = g.tradeInValue();
+      const tons = g.ship.cargoTons;
       right.append(card('Ships lying in the river',
-        el('ul', { class: 'list' }, ...hulls.map((h) => el('li', {},
-          el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'baseline' } },
-            el('span', {}, `${h.name} — ${h.tons} tonéis`),
-            button(`${h.cost} cruzados`, () => this.buyShip(g, h.id), { disabled: g.crown.gold < h.cost }),
-          ),
-          el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '4px', lineHeight: '1.55' } }, h.blurb),
-        ))),
+        el('p', { class: 'quote' },
+          `The yard will allow ${tradeIn} cruzados against the ${hullClass(g.ship.hullId).name} `
+          + 'and everything fitted into her. What is bolted to this hull stays with it — you are '
+          + 'buying a ship, not moving one.'),
+        el('ul', { class: 'list' }, ...hulls.map((h) => {
+          const price = Math.max(0, h.cost - tradeIn);
+          const tooFull = tons > h.hold + 0.001;
+          return el('li', {},
+            el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'baseline' } },
+              el('span', {}, `${h.name} — ${h.tons} tonéis, ${h.hold}t hold`),
+              button(price > 0 ? `${price} cruzados` : 'no more to pay', () => this.buyShip(g, h.id), {
+                disabled: g.crown.gold + g.creditFree < price || tooFull,
+                title: tooFull
+                  ? `She has ${tons.toFixed(1)} tons in her and this one holds ${h.hold}.`
+                  : `${h.cost} less ${tradeIn} allowed for the old ship`,
+              }),
+            ),
+            el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '4px', lineHeight: '1.55' } }, h.blurb),
+            tooFull
+              ? el('div', { style: { fontSize: '12.5px', color: 'var(--warn)', marginTop: '3px' } },
+                  `Your hold has ${tons.toFixed(1)} tons in it and hers holds ${h.hold}. Sell down first.`)
+              : null,
+          );
+        })),
       ));
     }
 
@@ -700,19 +718,9 @@ export class PortView {
   }
 
   private buyShip(g: Game, hullId: string): void {
-    const h = hullClass(hullId);
-    if (g.crown.gold < h.cost) return;
-    g.crown.gold -= h.cost;
-
-    const old = g.ship;
-    const next = new Ship(old.name, hullId, old.state.pos, old.state.heading);
-    for (const lot of old.cargo) next.addCargo(lot.goodId, lot.quantity, lot.cost);
-    g.ship = next;
-    g.crew.complement = h.crewFull;
-    g.crew.count = Math.min(g.crew.count, h.crewFull);
-    g.refreshEnvironment();
-    g.logEvent('crown', `Shifted your flag into the ${h.name}. ${h.blurb}`, true);
-    this.notice = { text: `She is yours. ${h.blurb}` };
+    const refused = g.shiftFlag(hullId);
+    if (refused) { this.notice = { text: refused, grave: true }; this.render(); return; }
+    this.notice = { text: `She is yours. ${hullClass(hullId).blurb}` };
     this.render();
   }
 

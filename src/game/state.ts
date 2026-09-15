@@ -11,6 +11,7 @@ import { PORTS, anchorageOf, portDef, portsNear, type PortDef } from '../world/p
 import { people } from '../world/peoples';
 import { Ship } from '../ship/ship';
 import { hullClass } from '../ship/hull';
+import { UPGRADE_BY_ID } from '../ship/upgrades';
 import {
   KNOTS, prudentCanvas, stepShip, type Environment, type ShipTuning, type StepResult,
 } from '../ship/physics';
@@ -3092,6 +3093,68 @@ export class Game {
         `Landed ${ventureLine(v)} for ${v.patron}, within his time, and was paid ${v.fee} `
         + 'cruzados on the quay without argument.', true);
     }
+  }
+
+  /**
+   * What the yard will allow against the old ship when you shift your flag.
+   *
+   * She used to evaporate. A captain buying a nau paid six thousand eight
+   * hundred for it while a caravel worth nine hundred, with thirteen hundred
+   * cruzados of lead sheathing and chain pumps and reinforced frames fitted
+   * into her, simply ceased to exist — the new hull was constructed with no
+   * upgrades and the old object was dropped on the floor. Every penny a captain
+   * had spent making his ship better was destroyed the moment he got a better
+   * one, silently, which taught the exactly wrong lesson: never improve
+   * anything you might replace.
+   *
+   * A ship is an asset. The yard takes her in against the new one at what she
+   * is worth second-hand — hull and fitting-out both, discounted for the wear
+   * on her, because a hauled-out hull with her seams open is not worth what a
+   * sound one is.
+   */
+  tradeInValue(): number {
+    const hull = hullClass(this.ship.hullId);
+    const fitted = this.ship.upgrades.reduce(
+      (sum, id) => sum + (UPGRADE_BY_ID.get(id)?.cost ?? 0), 0);
+    const wear = clamp(this.ship.condition.hull, 0.35, 1);
+    return Math.round((hull.cost + fitted) * 0.55 * wear);
+  }
+
+  /**
+   * Shift your flag into another ship.
+   *
+   * Returns why it cannot be done, or null when it is done. The hold is the
+   * reason it usually cannot: cargo that will not fit used to be dropped on the
+   * floor with the old hull, which quietly destroyed a hundred and sixty-seven
+   * quintais of pepper on a downgrade, and would just as quietly have destroyed
+   * a merchant's consignment or the cargo the King is expecting, failing both
+   * without a word.
+   */
+  shiftFlag(hullId: string): string | null {
+    const h = hullClass(hullId);
+    const price = Math.max(0, h.cost - this.tradeInValue());
+    if (this.crown.gold + this.creditFree < price) return 'There is not enough in the purse.';
+    const tons = this.ship.cargoTons;
+    if (tons > h.hold + 0.001) {
+      return `She has ${tons.toFixed(1)} tons in her and the ${h.name} holds ${h.hold}. `
+        + 'Sell down the hold before you shift your flag — nothing is going over the side for this.';
+    }
+    if (this.crown.gold < price) this.drawCredit(price);
+    this.crown.gold -= price;
+
+    const old = this.ship;
+    const next = new Ship(old.name, hullId, old.state.pos, old.state.heading);
+    for (const lot of old.cargo) next.addCargo(lot.goodId, lot.quantity, lot.cost);
+    next.state.heading = old.state.heading;
+    this.ship = next;
+    this.crew.complement = h.crewFull;
+    this.crew.count = Math.min(this.crew.count, h.crewFull);
+    this.refreshEnvironment();
+    this.logEvent('crown',
+      `Shifted your flag into the ${h.name}. ${h.blurb} The yard allowed `
+      + `${this.tradeInValue()} against the old ship and her fitting-out, so she cost `
+      + `${price} on the day.`, true);
+    return null;
   }
 
   /** Charters still running, for the orders panel. */
