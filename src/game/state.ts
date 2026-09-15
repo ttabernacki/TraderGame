@@ -273,6 +273,59 @@ export class Game {
    */
   route: { name: string; lat: number; lon: number; portId?: string }[] = [];
 
+  /**
+   * How far to one side of the mark she is deliberately being steered, in
+   * nautical miles. Positive is north of it.
+   *
+   * The great technique of the age, and the game had no way to express it.
+   * Longitude cannot be measured, so a captain steering straight for a harbour
+   * raises the coast not knowing whether he is north or south of it, and has a
+   * coin-flip and possibly a fortnight of beating the wrong way along a lee
+   * shore. So he does not steer for the harbour. He steers thirty miles up the
+   * coast of it on purpose, and when the land comes up he knows, with
+   * certainty, which way to turn.
+   *
+   * It costs the extra distance, and it converts an unsolvable two-dimensional
+   * problem into a solvable one-dimensional one, which is exactly the trade the
+   * period actually made.
+   */
+  aimOffNm = 0;
+
+  /** The point she is really being steered at, with the offing applied. */
+  get aimedMark(): { name: string; lat: number; lon: number } | null {
+    const d = this.destination;
+    if (!d) return null;
+    if (Math.abs(this.aimOffNm) < 0.5) return d;
+    return { name: d.name, lat: d.lat + this.aimOffNm / 60, lon: d.lon };
+  }
+
+  /**
+   * Which way to run along the coast once it is raised, and how sure of it.
+   *
+   * A captain who aimed off knows. One who steered straight at it is guessing,
+   * and the guess is only as good as his longitude — which is to say not good
+   * at all after three weeks of blue water.
+   */
+  landfallAdvice(): { text: string; sure: boolean } | null {
+    const d = this.destination;
+    if (!d) return null;
+    if (Math.abs(this.aimOffNm) < 0.5) {
+      return {
+        sure: false,
+        text: `You steered straight for ${d.name}. The coast is up, and whether she lies north or `
+          + 'south of us from here is a question the reckoning cannot answer to better than '
+          + `${this.nav.sigmaLon.toFixed(0)} miles. Somebody has to choose.`,
+      };
+    }
+    const north = this.aimOffNm > 0;
+    return {
+      sure: true,
+      text: `You laid the course ${Math.abs(this.aimOffNm).toFixed(0)} miles to the `
+        + `${north ? 'north' : 'south'} of ${d.name} on purpose. The coast is up, so ${d.name} is `
+        + `to the ${north ? 'south' : 'north'} of us. Put the helm over and run down along it.`,
+    };
+  }
+
   /** The mark she is steering for now, which is the first one left on the list. */
   get destination(): { name: string; lat: number; lon: number } | null {
     return this.route[0] ?? null;
@@ -1894,7 +1947,19 @@ export class Game {
       const inSight = this.sounding.shoreDistNm < range;
       if (inSight && !this.landInSight) {
         const away = (this.clock.t - this.lastLandSeenT) / 86400;
-        if (away > 0.6) this.cryLandRaised(bearing, away);
+        if (away > 0.6) {
+          this.cryLandRaised(bearing, away);
+          // Whether the offing paid. A captain who aimed thirty miles up the
+          // coast on purpose now knows which way to turn; one who steered
+          // straight at the harbour has a coin to flip.
+          const advice = this.landfallAdvice();
+          if (advice && away > 2) {
+            this.logEvent('landfall', advice.text, true);
+            this.pushAlert(advice.sure
+              ? 'You know which way to run. That is what the offing was for.'
+              : 'Which way along the coast? Nobody aboard can say.', advice.sure ? 'note' : 'warning');
+          }
+        }
       }
       if (inSight) this.lastLandSeenT = this.clock.t;
       this.landInSight = inSight;
@@ -3748,6 +3813,7 @@ export class Game {
   /** Lay off a fresh course for somewhere, striking whatever was laid before. */
   setDestination(name: string, lat: number, lon: number, portId?: string): void {
     this.route = [{ name, lat, lon, portId }];
+    this.aimOffNm = 0;
     this.helmOrder = null;
     this.standingCourse = null;
     this.markLaidAt = { ...this.nav.estimated };
@@ -3804,7 +3870,8 @@ export class Game {
   courseToDestination(): {
     name: string; bearing: number; distNm: number; hours: number; off: number;
   } | null {
-    const d = this.destination;
+    // Steered at the offing, not at the harbour: see aimOffNm.
+    const d = this.aimedMark;
     if (!d) return null;
     const from = this.nav.estimated;
     const dLat = d.lat - from.lat;
@@ -4019,6 +4086,7 @@ export class Game {
       captain: this.captain,
       bonds: [...this.bonds],
       origin: this.origin,
+      aimOffNm: this.aimOffNm,
       debt: this.crown.debt,
       nav: {
         estimated: this.nav.estimated,
@@ -4088,6 +4156,7 @@ export class Game {
     g.captain = d.captain ?? newCaptainSkills();
     g.bonds = new Set<BondId>(d.bonds ?? []);
     g.origin = d.origin ?? 'segundo';
+    g.aimOffNm = d.aimOffNm ?? 0;
     g.refreshSkillCache();
     g.nav.estimated = d.nav.estimated;
     g.nav.sigmaLat = d.nav.sigmaLat;

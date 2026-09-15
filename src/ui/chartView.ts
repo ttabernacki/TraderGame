@@ -192,6 +192,23 @@ export class ChartView {
           { title: 'Add this to the end of the passage instead of replacing it' },
         )
         : null,
+      // Aiming off. The one control on this chart that is a *plan* rather than a
+      // command: it costs miles now to buy certainty at the landfall, which is
+      // the trade the whole period made because longitude could not be had.
+      hasRoute && g
+        ? el('div', { class: 'chart-chips', style: { alignItems: 'baseline' } },
+            el('span', { style: { fontSize: '12px', color: 'var(--ink-soft)' } }, 'Aim off'),
+            ...([-40, -20, 0, 20, 40] as const).map((n) => this.chip(
+              n === 0 ? 'straight at it' : `${Math.abs(n)}\u2032 ${n > 0 ? 'N' : 'S'}`,
+              Math.round(g.aimOffNm) === n,
+              () => { g.aimOffNm = n; },
+              n === 0
+                ? 'Steer for the harbour itself, and guess which way to turn when the land comes up.'
+                : `Raise the coast ${Math.abs(n)} miles ${n > 0 ? 'north' : 'south'} of it on `
+                  + `purpose, so you know without doubt which way to run.`,
+            )),
+          )
+        : null,
       hasRoute
         ? button('Clear course', () => {
           this.game?.clearDestination(); this.buildTools(); this.buildVoyage(); this.draw();
