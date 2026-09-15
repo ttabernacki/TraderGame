@@ -22,7 +22,8 @@ import { Chart, sightingRangeNm, type SurveyResult } from '../navigation/charts'
 import { sightOpportunities, type SightBody } from '../navigation/navigator';
 import { magneticVariation } from '../navigation/celestial';
 import {
-  ableHands, crewFactor, enduranceDays, newCrew, officerBonus, updateCrew, type CrewState,
+  ableHands, crewFactor, enduranceDays, makeOfficer, newCrew, officerBonus, updateCrew,
+  type CrewState, type Officer,
 } from '../crew/crew';
 import {
   NODE_BY_ID, buyNode, levelsOf, newCaptainSkills, perksOf, skill,
@@ -30,6 +31,7 @@ import {
 } from '../crew/skills';
 import { Markets } from '../economy/market';
 import { Crown, commissionPoints, portName, type Patent } from '../progression/crown';
+import { ARCS, ARC_BY_ID, BONDS, dueBeat, type BondId } from '../progression/arcs';
 import { newRelations, type Relations } from '../diplomacy/contact';
 import {
   foragingParty, meetingParty, shorePlaceAt, waterParty, woodParty,
@@ -534,8 +536,9 @@ export class Game {
    * for owning the node.
    */
   sellCharts(): number {
-    if (!this.can('sheetTrade') && !this.can('cosmographer')) return 0;
-    const rate = this.can('cosmographer') ? 2.6 : 1.7;
+    if (!this.can('sheetTrade') && !this.can('cosmographer') && !this.has('theDraughtsman')) return 0;
+    const rate = (this.can('cosmographer') ? 2.6 : 1.7)
+      * (this.has('theDraughtsman') ? 1.5 : 1);
     return Math.round((this.chartedThisPassage + this.correctedNm * 0.6) * rate);
   }
 
@@ -594,6 +597,31 @@ export class Game {
       if (l && l.bid > 0) out.push({ port: def.name, bid: l.bid });
     }
     return out.sort((a, b) => b.bid - a.bid).slice(0, 4);
+  }
+
+  /**
+   * A bond struck with one of the written officers.
+   *
+   * Bonds sit alongside the captain's own perks and are earned a completely
+   * different way: not by spending points on yourself but by carrying one man's
+   * story to its end. A captain who never looks at his officers can fill his
+   * skill trees and will never hold one of these; a captain who does can reach
+   * parts of the game the trees do not cover. They survive the man — what he
+   * taught you does not go ashore when he does — which is why the effect is
+   * held here and not on the officer.
+   */
+  bonds = new Set<BondId>();
+
+  awardBond(id: BondId, o: Officer): void {
+    if (this.bonds.has(id)) return;
+    this.bonds.add(id);
+    const b = BONDS[id];
+    this.logEvent('crew', `${o.name}: ${b.name}. ${b.effect}`, true);
+    this.pushAlert(`${b.name} \u2014 ${o.name}.`, 'note');
+  }
+
+  has(id: BondId): boolean {
+    return this.bonds.has(id);
   }
 
   /** Spend on a node. Returns false if it was barred or unaffordable. */
@@ -660,7 +688,8 @@ export class Game {
     const eff = this.effectiveSkill;
     return {
       fouling: 1 + this.ship.condition.fouling * 0.85,
-      crewFactor: crewFactor(this.crew, this.ship.baseHull.crewMin) * this.wardroom.handling,
+      crewFactor: crewFactor(this.crew, this.ship.baseHull.crewMin) * this.wardroom.handling
+        * (this.has('trueSecond') ? 1.18 : 1),
       seamanship: skill(eff, 'marinharia'),
       keel: this.ship.effects.keel,
       integrity: this.ship.condition.hull,
@@ -1367,8 +1396,10 @@ export class Game {
     const eff = this.effectiveSkill;
     const navSkill = skill(eff, 'navegacao');
     this.nav.leewayAllowance = this.skills.navegacao >= 15 ? 0.85 : 0;
-    // The board kept properly is worth more than any instrument aboard.
-    this.nav.driftScale = this.can('deadReckoning') ? 0.5 : 1;
+    // The board kept properly is worth more than any instrument aboard, and
+    // what an old pilot taught you stacks with it.
+    this.nav.driftScale = (this.can('deadReckoning') ? 0.5 : 1)
+      * (this.has('oldPilotsHand') ? 0.67 : 1);
 
     const hours = simDt / 3600;
     this.distanceRun += Math.abs(this.physics.speedKnots) * hours;
@@ -1682,6 +1713,8 @@ export class Game {
       beyondTheKnown: this.beyondTheKnown,
       gold: this.crown.gold,
       rng: this.rng,
+      // The surgeon's book, if he ever finished it.
+      surgeonBook: this.has('theRemedy'),
       captainLoved: this.can('loved'),
       captainFeared: this.can('feared'),
       wardroomMorale: w.morale,
@@ -1974,9 +2007,12 @@ export class Game {
     this.checkVentures(days);
     this.advanceRival(days);
 
-    // The quarterdeck first: a man asking for a judgement outranks a shoal of
-    // fish, and the two must never arrive in the same breath.
-    const event = rollOfficerEvent(this, days) ?? rollSeaEvent(this, days);
+    // A beat of somebody's story outranks everything: these are the moments the
+    // voyage is actually about, they are written rather than rolled, and each
+    // one is only ever offered once in a career.
+    const event = this.rollArcBeat()
+      ?? rollOfficerEvent(this, days)
+      ?? rollSeaEvent(this, days);
     if (!event) return;
 
     this.eventCooldown = event.choices ? 1.6 : 0.55;
@@ -1991,6 +2027,70 @@ export class Game {
     }
     this.pushAlert(event.text, event.severity);
     this.logEvent(event.severity === 'note' ? 'note' : 'peril', event.text, event.severity !== 'note');
+  }
+
+  /**
+   * The next beat of a written officer's story, if one is due.
+   *
+   * Beats are conditions rather than dice: a man's story advances when the
+   * voyage has actually put him in the position the beat is about, which is why
+   * two captains never see the same arc at the same time and why skipping past
+   * one is impossible. A degredado's second beat waits until he is over the
+   * side; the surgeon's first waits until there is scurvy aboard to have a
+   * theory about.
+   */
+  private rollArcBeat(): SeaEvent | null {
+    for (const o of this.crew.officers) {
+      if (!o.arc || !o.alive) continue;
+      const served = (this.clock.t - (o.joined ?? this.startT)) / 86400;
+      const due = dueBeat({ g: this, o, served });
+      if (!due) continue;
+      // Marked resolved as it is offered, so a player who shuts the window
+      // without answering does not see it again on the next step.
+      o.arcStage = due.index + 1;
+      return due.beat.build({ g: this, o, served });
+    }
+    return null;
+  }
+
+  /**
+   * Put one of the written officers aboard, if he is not already.
+   *
+   * They are finite and they are the point: a career has room for four or five
+   * of these men, and which of them you sailed with is most of what makes one
+   * captain's story different from another's.
+   */
+  recruitArc(arcId: string): Officer | null {
+    const arc = ARC_BY_ID.get(arcId);
+    if (!arc) return null;
+    if (this.crew.officers.some((o) => o.arc === arcId)) return null;
+    const o = makeOfficer(arc.role, this.rng, arc.ability, arc.languages ?? []);
+    o.name = arc.name;
+    o.trait = arc.trait;
+    o.wage = arc.wage;
+    o.arc = arc.id;
+    o.arcStage = 0;
+    o.arcFlags = [];
+    o.joined = this.clock.t;
+    // He takes the berth: a ship carries one pilot, not two.
+    this.crew.officers = this.crew.officers.filter((x) => x.role !== arc.role || !x.alive);
+    this.crew.officers.push(o);
+    this.wardroomCache = null;
+    return o;
+  }
+
+  /** Miles from the ship to a named port, for arcs that wait on a landfall. */
+  nearPortNm(portId: string): number {
+    const def = PORTS.find((p) => p.id === portId);
+    if (!def) return Infinity;
+    return haversine(this.ship.state.pos, anchorageOf(def)) / NM;
+  }
+
+  /** The written officers this port could offer, given who is already aboard. */
+  arcsAvailable(): typeof ARCS {
+    return ARCS.filter((a) =>
+      a.standing <= this.crown.lifetimeStanding
+      && !this.crew.officers.some((o) => o.arc === a.id));
   }
 
   /**
@@ -3842,6 +3942,7 @@ export class Game {
       ship: this.ship.serialize(),
       crew: this.crew,
       captain: this.captain,
+      bonds: [...this.bonds],
       debt: this.crown.debt,
       nav: {
         estimated: this.nav.estimated,
@@ -3908,6 +4009,7 @@ export class Game {
     g.ship = Ship.deserialize(d.ship);
     g.crew = d.crew;
     g.captain = d.captain ?? newCaptainSkills();
+    g.bonds = new Set<BondId>(d.bonds ?? []);
     g.refreshSkillCache();
     g.nav.estimated = d.nav.estimated;
     g.nav.sigmaLat = d.nav.sigmaLat;

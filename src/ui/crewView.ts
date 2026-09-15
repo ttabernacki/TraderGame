@@ -7,6 +7,8 @@ import {
   SKILLS, blockedReason, nodesOf, rankOf, skill,
   type CaptainSkills, type SkillNode, type SkillSet,
 } from '../crew/skills';
+import { BONDS, ARC_BY_ID } from '../progression/arcs';
+import type { Officer } from '../crew/crew';
 import { UPGRADE_BY_ID } from '../ship/upgrades';
 import { sailHandRate } from '../ship/physics';
 import { loyaltyWord, traitDef } from '../progression/officers';
@@ -109,7 +111,8 @@ export class CrewView {
               return el('li', { style: { opacity: o.alive ? '1' : '0.42' } },
                 el('div', { style: { display: 'flex', justifyContent: 'space-between' } },
                   el('span', {}, `${o.name} — ${def.english}`),
-                  el('span', { class: 'tag' }, o.alive ? (o.ashoreAt ? 'ashore' : rankOf(o.ability * 100)) : 'dead'),
+                  el('span', { class: o.bonded ? 'tag good' : 'tag' },
+                    !o.alive ? 'dead' : o.ashoreAt ? 'ashore' : o.bonded ? 'yours' : rankOf(o.ability * 100)),
                 ),
                 el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '3px', lineHeight: '1.5' } },
                   traitDef(o.trait)?.blurb ?? def.blurb),
@@ -120,6 +123,7 @@ export class CrewView {
                 o.languages.length > 0
                   ? el('div', { style: { fontSize: '12px', marginTop: '3px' } }, `Speaks: ${o.languages.join(', ')}`)
                   : null,
+                arcLine(o),
               );
             }),
           ),
@@ -137,6 +141,19 @@ export class CrewView {
       kv('Issuing', `${(g.ration * 100).toFixed(0)}% of full allowance`),
       kv('Stores will last', `${enduranceDays(g.crew, g.ration).toFixed(0)} days`),
     ));
+
+    const bonds = [...g.bonds].map((b) => BONDS[b]);
+    if (bonds.length > 0) {
+      right.append(card('What they have given you',
+        el('p', { style: { fontStyle: 'italic', color: 'var(--ink-soft)' } },
+          'Earned by carrying one man\u2019s story to its end rather than by spending anything on '
+          + 'yourself. It stays with you after he is gone.'),
+        el('ul', { class: 'list' }, ...bonds.map((b) => el('li', {},
+          el('div', {}, b.name),
+          el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '3px', lineHeight: '1.5' } }, b.effect),
+        ))),
+      ));
+    }
 
     host.append(el('div', { class: 'cols two' }, left, right));
   }
@@ -401,4 +418,28 @@ export class CrewView {
 
 function GOODS_BY_ID(id: string): { name: string; unit: string } {
   return GOOD_BY_ID.get(id) ?? { name: id, unit: 'unit' };
+}
+
+/**
+ * Where this man's story has got to.
+ *
+ * Deliberately vague about what comes next — a list of remaining beats would
+ * turn a character into a quest log — but never silent about whether the thread
+ * is live, finished, or cut.
+ */
+function arcLine(o: Officer): HTMLElement | null {
+  if (!o.arc) return null;
+  const arc = ARC_BY_ID.get(o.arc);
+  if (!arc) return null;
+  const stage = o.arcStage ?? 0;
+  const text = o.bonded
+    ? `${BONDS[arc.bond].name} \u2014 he is yours.`
+    : stage >= 99
+      ? 'Whatever there was between you is finished. He does his work.'
+      : stage === 0
+        ? 'You have not sailed far enough with him to know him.'
+        : `You are ${stage} of the way into whatever this is.`;
+  return el('div', {
+    style: { fontSize: '12px', marginTop: '4px', color: o.bonded ? 'var(--green)' : 'var(--ink-soft)' },
+  }, text);
 }

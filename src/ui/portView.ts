@@ -737,6 +737,37 @@ export class PortView {
           })),
     ));
 
+    // The written officers. Finite, named, and the reason one career reads
+    // differently from another.
+    const arcs = g.arcsAvailable();
+    if (arcs.length > 0 && def.people === 'portuguese') {
+      right.append(card('Men who are asking after a berth',
+        el('p', { class: 'quote' },
+          'Not off the crimp\u2019s list. These are men with a name on the quay and a reason for '
+          + 'wanting this voyage in particular, and there are not many of them in the kingdom.'),
+        el('ul', { class: 'list' }, ...arcs.map((a) => {
+          const role = OFFICER_ROLES.find((r) => r.role === a.role)!;
+          const price = Math.round(officerCost(a.role, def.wealth) * 1.6);
+          return el('li', {},
+            el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' } },
+              el('span', {}, el('b', {}, a.name), ` \u2014 ${role.english}`),
+              button(`${price} cruzados`, () => {
+                if (g.crown.gold < price) return;
+                g.crown.gold -= price;
+                const o = g.recruitArc(a.id);
+                if (!o) return;
+                g.logEvent('crew', `Shipped ${o.name} as ${role.english.toLowerCase()} at ${def.name}. `
+                  + 'He came recommended, which on this quay means somebody owed somebody a favour.', true);
+                this.notice = { text: `${o.name} is aboard.` };
+                this.render();
+              }, { disabled: g.crown.gold < price }),
+            ),
+            el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '4px', lineHeight: '1.55' } }, a.hook),
+          );
+        })),
+      ));
+    }
+
     if (g.crew.officers.some((o) => o.role === 'degredado' && o.alive && !o.ashoreAt) && def.people !== 'portuguese') {
       right.append(card('Put a man ashore',
         el('p', { class: 'quote' },
@@ -752,8 +783,11 @@ export class PortView {
       ));
     }
 
+    // A written officer's return is a scene of its own — he comes off in a canoe
+    // as you stand in — so he is not collected off a list here.
     const returning = g.crew.officers.filter(
-      (o) => o.ashoreAt === def.id && o.alive && o.ashoreSince !== undefined && g.clock.t - o.ashoreSince > 300 * 86400,
+      (o) => o.ashoreAt === def.id && o.alive && !o.arc
+        && o.ashoreSince !== undefined && g.clock.t - o.ashoreSince > 300 * 86400,
     );
     for (const o of returning) {
       right.append(el('div', { class: 'notice' },

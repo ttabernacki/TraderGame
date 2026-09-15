@@ -43,6 +43,16 @@ export interface Officer {
   trait?: string;
   /** Things the captain has done that this man remembers, newest first. */
   memory?: string[];
+  /** Id in progression/arcs, for the written characters. Hired men have none. */
+  arc?: string;
+  /** Which beat of his arc comes next. 99 means the thread was cut. */
+  arcStage?: number;
+  /** What he has decided about the captain along the way. */
+  arcFlags?: string[];
+  /** Set when his arc reached its end well. He will not leave you. */
+  bonded?: boolean;
+  /** Simulated seconds he came aboard, for measuring service. */
+  joined?: number;
 }
 
 export interface Provisions {
@@ -202,6 +212,8 @@ export interface CrewUpdateContext {
    * exhaustion and never mutter — and desert the moment there is a quay under
    * their feet, which is handled at the port and not here.
    */
+  /** The surgeon worked out what fruit does. Scurvy comes on at half the rate. */
+  surgeonBook?: boolean;
   captainLoved?: boolean;
   captainFeared?: boolean;
 }
@@ -312,7 +324,9 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
     // so whatever the delay cost, and it has to be frightening by the second
     // month or none of those decisions mean anything.
     const over = crew.daysWithoutFresh - 34;
-    const rateScurvy = d * (0.004 + over * 0.00115) * (1 - ctx.surgeonQuality * 0.18);
+    const rateScurvy = d * (0.004 + over * 0.00115) * (1 - ctx.surgeonQuality * 0.18)
+      // A ship stored on the surgeon's principle rather than the Casa's.
+      * (ctx.surgeonBook ? 0.5 : 1);
     const before = crew.scurvy;
     crew.scurvy = clamp(crew.scurvy + rateScurvy, 0, 1);
     if (before < 0.12 && crew.scurvy >= 0.12) {
