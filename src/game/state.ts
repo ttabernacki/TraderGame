@@ -3956,7 +3956,15 @@ export class Game {
   /** Take on water, provisions and fresh food. Returns the cost. */
   provision(days: number, cost: number): void {
     const p = this.crew.provisions;
-    p.water = Math.max(p.water, days) + this.ship.effects.water;
+    // The extra casks raise what she can stow, they do not refill themselves.
+    //
+    // This added the upgrade's forty-five days on top of *every* purchase
+    // rather than to her capacity, so thirty days of water bought six times at
+    // the same quay came to three hundred days. Water is the hard limit on
+    // every passage in this game — it is the reason the volta do mar is a
+    // gamble and the reason a captain turns for home — and a hundred and twenty
+    // cruzados of casks turned it off altogether.
+    p.water = Math.max(p.water, days + this.ship.effects.water);
     p.biscuit = Math.max(p.biscuit, days);
     p.saltMeat = Math.max(p.saltMeat, days * 0.9);
     p.wine = Math.max(p.wine, days * 0.7);
