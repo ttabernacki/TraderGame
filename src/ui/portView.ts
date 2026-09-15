@@ -894,7 +894,7 @@ function commissionNeed(g: Game, goodId: string): number {
 
 /** How much of a good in the hold belongs to a merchant rather than to you. */
 function consignedOf(g: Game, goodId: string): number {
-  return g.activeVentures
+  return g.consignedVentures
     .filter((v) => v.loaded && v.goodId === goodId)
     .reduce((sum, v) => sum + v.quantity, 0);
 }

@@ -3099,6 +3099,50 @@ export class Game {
     return this.ventures.filter((v) => !v.delivered && !v.failed);
   }
 
+  /**
+   * Cargo aboard that belongs to a merchant, whether the charter is still
+   * running or not.
+   *
+   * A charter that runs out of time used to drop out of `activeVentures`, and
+   * with it out of every check that knew the goods were not yours — so the
+   * cargo stopped being consigned the instant the contract voided and could be
+   * sold free and clear. Measured across every charter the game can offer, that
+   * made fifty of eighty-six of them worth more stolen than delivered: 240 lots
+   * of Diu gemstones are worth 50,400 and letting the charter lapse cost 2,978.
+   * Breaking a charter deliberately is meant to be a real option — money now
+   * against a forfeit later — but it is supposed to be *theft*, with the
+   * merchant's goods leaving your hold when his factor catches up with you, and
+   * not a discount on a shipment of diamonds.
+   */
+  get consignedVentures(): Venture[] {
+    return this.ventures.filter((v) => v.loaded && !v.delivered);
+  }
+
+  /**
+   * His factor comes aboard and takes what is still his.
+   *
+   * Called on entering any port: a voided charter does not transfer ownership,
+   * and the merchants of the Rua Nova have correspondents everywhere the ship
+   * can put in. Whatever is left of the consignment goes over the side into his
+   * boat; whatever the captain already sold is gone, and was paid for in the
+   * penalty he has already taken.
+   */
+  private reclaimBrokenCharters(): void {
+    for (const v of this.ventures) {
+      if (!v.failed || !v.loaded) continue;
+      const held = this.ship.quantityOf(v.goodId);
+      const took = Math.min(held, v.quantity);
+      v.loaded = false;
+      if (took <= 0.01) continue;
+      this.ship.removeCargo(v.goodId, took);
+      this.logEvent('trade',
+        `${v.patron}’s factor came off with two boats and a notary and took back `
+        + `${took.toFixed(0)} ${good(v.goodId).unit} of ${good(v.goodId).name.toLowerCase()}. `
+        + 'He was within his rights and had the paper to prove it.', true);
+      this.pushAlert(`${v.patron}’s factor has taken his cargo back.`, 'warning');
+    }
+  }
+
   /** Rumours heard and not yet run down. */
   get openLeads(): Lead[] {
     return this.leads.filter((l) => !l.followed);
@@ -3153,6 +3197,9 @@ export class Game {
           + `and ${v.penalty} cruzados besides, and will tell the Rua Nova about it.`, true);
       }
     }
+    // A charter that runs out while she is lying at a quay is reclaimed there
+    // and then; the factor does not wait for her to sail and come back.
+    if (this.dockedAt) this.reclaimBrokenCharters();
   }
 
   /** The other captain works his way down the coast whether you sail or not. */
@@ -3782,6 +3829,7 @@ export class Game {
     this.markets.refresh(def.id, this.clock.t);
     this.refreshPortBusiness(def);
     this.deliverVentures(def);
+    this.reclaimBrokenCharters();
     this.settleFeitoria(def);
     this.runFromTheQuay(def);
 
