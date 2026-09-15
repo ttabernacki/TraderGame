@@ -1,3 +1,4 @@
+import { clamp } from '../core/math';
 import type { Officer } from '../crew/crew';
 import type { SeaEvent } from '../game/seaEvents';
 import type { Game } from '../game/state';
@@ -239,7 +240,7 @@ export const ARCS: Arc[] = [
               detail: 'Every word, into the roteiro, in his name.',
               resolve: (g) => {
                 g.logEvent('navigation', `Forty years of ${o.name}'s reckoning, written into the roteiro in his name.`, true);
-                return bond(g, o, ARCS[0]);
+                return bond(g, o, ARC_BY_ID.get('correia')!);
               },
             },
             {
@@ -247,7 +248,7 @@ export const ARCS: Arc[] = [
               detail: 'Some of it is his own, and he has not offered it to the Casa.',
               resolve: (g) => {
                 void game;
-                return bond(g, o, ARCS[0]);
+                return bond(g, o, ARC_BY_ID.get('correia')!);
               },
             },
           ],
@@ -359,14 +360,14 @@ export const ARCS: Arc[] = [
             {
               label: 'Give him your word',
               detail: 'It costs nothing today and everything if you break it.',
-              resolve: (g) => bond(g, o, ARCS[1]),
+              resolve: (g) => bond(g, o, ARC_BY_ID.get('sousa')!),
             },
             {
               label: 'Tell him the truth: you cannot promise it',
               detail: 'Honest, and he is a man who can tell the difference.',
               resolve: (g) => {
                 regard(o, 0.1, 'would not promise him a ship he could not give');
-                return bond(g, o, ARCS[1]);
+                return bond(g, o, ARC_BY_ID.get('sousa')!);
               },
             },
           ],
@@ -477,7 +478,7 @@ export const ARCS: Arc[] = [
                 o.ashoreSince = undefined;
                 o.languages = [...new Set([...o.languages, 'coast'])];
                 o.ability = Math.min(0.95, o.ability + 0.3);
-                return bond(g, o, ARCS[2]);
+                return bond(g, o, ARC_BY_ID.get('gaspar')!);
               },
             },
             {
@@ -594,7 +595,7 @@ export const ARCS: Arc[] = [
                 g.crown.standing = Math.max(0, g.crown.standing - 10);
                 g.crown.lifetimeStanding += 20;
                 g.logEvent('crew', `${o.name}'s book is copied out for anybody on the quay who asks. The Casa is not pleased.`, true);
-                return bond(g, o, ARCS[3]);
+                return bond(g, o, ARC_BY_ID.get('dinis')!);
               },
             },
             {
@@ -605,6 +606,252 @@ export const ARCS: Arc[] = [
                 g.crown.standing += 25;
                 regard(o, -0.3, 'sold his book to the Casa to be locked in a cupboard');
                 return breakArc(o, 'saw his life\'s work locked in a cupboard at the Casa da Mina');
+              },
+            },
+          ],
+        }),
+      },
+    ],
+  },
+
+  // ----------------------------------------------------------- the boatswain
+  {
+    id: 'sintra', role: 'contramestre', name: 'Fernão de Sintra', trait: 'curious',
+    ability: 0.55, standing: 0, wage: 22,
+    hook: 'Draws everything: coasts, fish, the faces of strangers. Half of it is useless. The other half is better than anything the Casa has on paper, and he is a boatswain, so nobody has ever looked at it.',
+    bond: 'theDraughtsman',
+    beats: [
+      {
+        when: (c) => c.served > 20 && c.g.chartedThisPassage > 60,
+        build: ({ o }) => ({
+          id: `arc:sintra:1:${o.id}`,
+          title: 'What the boatswain has been drawing',
+          severity: 'note',
+          text:
+            `A boy drops ${o.name}'s roll on the deck and it comes open, and there are forty `
+            + 'coastal views in it. Not the schematic profiles the pilots draw — the actual look of '
+            + 'the land: the way the light sits on it in the afternoon, which hill is behind which, '
+            + 'what you would see if you came in from the north instead of the west. A man could '
+            + 'make this coast from these. He is a boatswain. Nobody has ever asked him for one.',
+          choices: [
+            {
+              label: 'Have him draw for the ship, on the ship\u2019s time',
+              detail: 'Take him off some of the deck work. The boatswain\u2019s mate will not be pleased.',
+              resolve: (g) => {
+                regard(o, 0.18, 'took him off deck work to draw the coast');
+                setFlag(o, 'drawing');
+                g.chartedThisPassage += 60;
+                return 'Two hours of every afternoon at the weather rail with a board on his knees. '
+                  + 'The sheets that come off it are the best thing in the ship.';
+              },
+            },
+            {
+              label: 'Admire them and hand them back',
+              detail: 'He is the boatswain. The ship needs a boatswain more than a draughtsman.',
+              resolve: (g) => {
+                void g;
+                regard(o, -0.04, 'looked at his drawings and gave them back without a word');
+                return 'He rolls them up and puts them away and is on the forecastle inside a '
+                  + 'minute, driving the watch exactly as hard as before.';
+              },
+            },
+          ],
+        }),
+      },
+      {
+        when: (c) => flag(c.o, 'drawing') && c.served > 70,
+        build: ({ o }) => ({
+          id: `arc:sintra:2:${o.id}`,
+          title: 'Whose name goes on them',
+          severity: 'warning',
+          text:
+            'The clerk has been copying the coastal views into the ship\u2019s book, which is his '
+            + 'job, and signing them, which is not — or rather, which is exactly how it has always '
+            + 'been done, because a boatswain is not a person who signs things. '
+            + `${o.name} has not complained. He has simply stopped bringing the new ones aft.`,
+          choices: [
+            {
+              label: 'His name on every sheet',
+              detail: 'Overrule the clerk in front of the wardroom. It will be noticed.',
+              resolve: (g) => {
+                regard(o, 0.3, 'put his name on his own drawings over the clerk\u2019s objection');
+                setFlag(o, 'named');
+                g.crown.standing -= 4;
+                return 'The clerk writes to the Casa about it, at length. '
+                  + `${o.name} says nothing at all and brings the new ones aft that evening.`;
+              },
+            },
+            {
+              label: 'Leave it as it is',
+              detail: 'The sheets get to Lisbon either way, which is what matters.',
+              resolve: (g) => {
+                void g;
+                regard(o, -0.2, 'let the clerk sign the drawings a boatswain had made');
+                return 'The views go home under the clerk\u2019s name. They are very well received. '
+                  + 'Nobody in Lisbon ever hears of the man who drew them.';
+              },
+            },
+          ],
+        }),
+      },
+      {
+        when: (c) => flag(c.o, 'named') && c.served > 120,
+        build: ({ o }) => ({
+          id: `arc:sintra:3:${o.id}`,
+          title: 'A place that does not exist',
+          severity: 'note',
+          text:
+            `${o.name} wants to be the ship's cosmographer. There is no such rating. There is no `
+            + 'such rating on any ship in the fleet, and the men who do that work at the Casa are '
+            + 'gentlemen with Latin, and he is a boatswain from a fishing village who cannot read '
+            + 'as fast as he can draw. He knows all of this. He is asking anyway, because you are '
+            + 'the only man who has ever looked at the drawings and seen what they were.',
+          choices: [
+            {
+              label: 'Rate him cosmographer and let the Casa argue',
+              detail: 'Write it in the ship\u2019s book as though it were ordinary.',
+              resolve: (g) => {
+                g.crown.standing -= 8;
+                g.logEvent('crew', `${o.name} is rated cosmographer of this ship, a rating which does not exist.`, true);
+                return bond(g, o, ARC_BY_ID.get('sintra')!);
+              },
+            },
+            {
+              label: 'Take him to the Casa yourself and make them look',
+              detail: 'Costs you a favour you were saving. He would never get through the door alone.',
+              resolve: (g) => {
+                g.crown.standing -= 20;
+                g.crown.gold = Math.max(0, g.crown.gold - 60);
+                return bond(g, o, ARC_BY_ID.get('sintra')!);
+              },
+            },
+            {
+              label: 'Tell him it is not possible',
+              detail: 'True, and he knows it is true, and he asked anyway.',
+              resolve: (g) => {
+                void g;
+                regard(o, -0.25, 'told him what he already knew about what he was allowed to be');
+                return breakArc(o, 'was told there was no rating in the fleet for what he could do');
+              },
+            },
+          ],
+        }),
+      },
+    ],
+  },
+
+  // ------------------------------------------------------------- the chaplain
+  {
+    id: 'anselmo', role: 'capelao', name: 'Padre Anselmo', trait: 'pious',
+    ability: 0.58, standing: 25, wage: 24,
+    hook: 'Volunteered for this. Believes the whole enterprise is for the saving of souls and has never met anybody who disagreed with him in a language he could understand.',
+    bond: 'cureOfSouls',
+    beats: [
+      {
+        when: (c) => c.g.relationsMetCount() > 0 && c.served > 24,
+        build: ({ o }) => ({
+          id: `arc:anselmo:1:${o.id}`,
+          title: 'The chaplain wants to begin',
+          severity: 'note',
+          text:
+            `${o.name} has been ashore twice now and has come back both times with the same `
+            + 'request, more urgently each time: he wants to baptise. Not to preach, not to '
+            + 'explain — to baptise, at once, as many as will stand still for it, because in his '
+            + 'understanding every hour you delay is a quantity of souls going into the fire on '
+            + 'your account and his. He is not a fanatic. He is entirely sincere and he has done '
+            + 'the arithmetic.',
+          choices: [
+            {
+              label: 'Let him, at the towns that will have it',
+              detail: 'Some coasts will take it well. Others will close to you for a generation.',
+              resolve: (g) => {
+                setFlag(o, 'preaching');
+                regard(o, 0.2, 'let him baptise on the coast');
+                g.crew.morale = clamp(g.crew.morale + 0.06, 0, 1);
+                return 'It goes beautifully in one place and catastrophically in the next, which '
+                  + 'is roughly what the pilot predicted and exactly what the chaplain did not.';
+              },
+            },
+            {
+              label: 'Forbid it until the trade is settled',
+              detail: 'Souls after cargo. He will take it very badly and will be right to.',
+              resolve: (g) => {
+                void g;
+                setFlag(o, 'forbidden');
+                regard(o, -0.2, 'forbade him to baptise until the trading was done');
+                return 'He obeys. He says the mass every morning as though nothing had happened '
+                  + 'and does not speak to you outside it for three weeks.';
+              },
+            },
+          ],
+        }),
+      },
+      {
+        when: (c) => c.g.relationsMetCount() > 2 && c.served > 70,
+        build: ({ o }) => ({
+          id: `arc:anselmo:2:${o.id}`,
+          title: 'A faith with books in it',
+          severity: 'note',
+          text:
+            `${o.name} has spent four days with the scholars of the town and has come back quiet. `
+            + 'They have a faith of their own with a literature, a law, a calendar and eight '
+            + 'hundred years of argument in it, and they were extremely courteous to him, and one '
+            + 'of them asked him a question about the nature of the soul that he could not answer '
+            + 'and has not stopped thinking about since. He asks you, carefully, what you think '
+            + 'the ship is actually for.',
+          choices: [
+            {
+              label: 'Tell him you do not know either',
+              detail: 'Honest. It is also not what a captain is supposed to say to his chaplain.',
+              resolve: (g) => {
+                void g;
+                regard(o, 0.25, 'admitted to his chaplain that he did not know what any of it was for');
+                setFlag(o, 'doubting');
+                return 'He is enormously relieved. They talk until the middle watch and solve '
+                  + 'nothing whatever, and he says the mass in the morning like a man who has put '
+                  + 'something down.';
+              },
+            },
+            {
+              label: 'Tell him it is for the Crown, and that is enough',
+              detail: 'Give him the answer the Casa would give. It will hold him for a while.',
+              resolve: (g) => {
+                void g;
+                regard(o, -0.1, 'told him the ship was for the Crown and to leave it there');
+                setFlag(o, 'hardened');
+                return 'He accepts it. Over the next months he becomes markedly more certain about '
+                  + 'everything, which is not the same as being happier.';
+              },
+            },
+          ],
+        }),
+      },
+      {
+        when: (c) => flag(c.o, 'doubting') && c.served > 120,
+        build: ({ o }) => ({
+          id: `arc:anselmo:3:${o.id}`,
+          title: 'What the chaplain has decided',
+          severity: 'note',
+          text:
+            `${o.name} has worked out what he thinks, and he tells you on a Sunday after the mass `
+            + 'with nobody else on deck. He still believes every word of it. He has simply stopped '
+            + 'believing that it can be done to people at speed, by strangers, off a ship, with '
+            + 'the guns run out. What he wants now is to stay with this company, bury them '
+            + 'properly when they die, and learn enough of one coast\u2019s language to have a '
+            + 'conversation in it. He is aware this is not what he was sent for.',
+          choices: [
+            {
+              label: 'Tell him to do exactly that',
+              detail: 'He will be the best chaplain in the fleet and the Casa will never know why.',
+              resolve: (g) => bond(g, o, ARC_BY_ID.get('anselmo')!),
+            },
+            {
+              label: 'Report it to the Casa when you get home',
+              detail: 'What he has just said is, technically, several things at once.',
+              resolve: (g) => {
+                g.crown.standing += 20;
+                regard(o, -0.6, 'reported his own chaplain to the Casa for what he said on a Sunday');
+                return breakArc(o, 'was reported to the Casa by his own captain');
               },
             },
           ],

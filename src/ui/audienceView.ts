@@ -42,6 +42,7 @@ export class AudienceView {
       hasPadraoAboard: g.ship.upgrades.includes('padroes'),
       standing: g.crown.lifetimeStanding,
       relations: g.relationsFor(g.dockedAt!),
+      temperedFaith: g.has('cureOfSouls'),
       canTreaty: g.can('treaty'),
       canForce: g.can('force'),
       canFeitoria: g.can('feitoria'),

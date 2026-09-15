@@ -214,6 +214,8 @@ export interface CrewUpdateContext {
    */
   /** The surgeon worked out what fruit does. Scurvy comes on at half the rate. */
   surgeonBook?: boolean;
+  /** Added to daily morale drift, from a bond rather than a trait. */
+  wardroomMoraleBonus?: number;
   captainLoved?: boolean;
   captainFeared?: boolean;
 }
@@ -415,7 +417,7 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
   if (crew.daysWithoutFresh > 20) {
     moraleDelta -= d * clamp((crew.daysWithoutFresh - 20) / 90, 0, 1) * 0.018;
   }
-  moraleDelta += d * (ctx.wardroomMorale ?? 0);
+  moraleDelta += d * ((ctx.wardroomMorale ?? 0) + (ctx.wardroomMoraleBonus ?? 0));
 
   crew.morale = clamp(crew.morale + moraleDelta, 0, 1);
 

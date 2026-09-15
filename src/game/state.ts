@@ -1735,6 +1735,9 @@ export class Game {
       rng: this.rng,
       // The surgeon's book, if he ever finished it.
       surgeonBook: this.has('theRemedy'),
+      // A chaplain who has made his peace with a larger world is worth more to
+      // the men than one who is certain about everything.
+      wardroomMoraleBonus: this.has('cureOfSouls') ? 0.004 : 0,
       captainLoved: this.can('loved'),
       captainFeared: this.can('feared'),
       wardroomMorale: w.morale,
@@ -2106,6 +2109,20 @@ export class Game {
     this.crew.officers.push(o);
     this.wardroomCache = null;
     return o;
+  }
+
+  /** How many peoples this captain has actually met, for the chaplain's arc. */
+  relationsMetCount(): number {
+    let n = 0;
+    const seen = new Set<string>();
+    for (const [id, rel] of this.relations) {
+      if (!rel.met) continue;
+      const def = PORTS.find((p) => p.id === id);
+      if (!def || seen.has(def.people)) continue;
+      seen.add(def.people);
+      n++;
+    }
+    return n;
   }
 
   /** Miles from the ship to a named port, for arcs that wait on a landfall. */

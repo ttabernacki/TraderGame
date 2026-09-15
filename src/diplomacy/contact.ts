@@ -104,6 +104,11 @@ export interface AudienceContext {
    * access in one move, and costs the regard of that coast permanently, which
    * closes every future audience there and sours its neighbours.
    */
+  /**
+   * A chaplain who has stopped trying to do it at speed, off a ship, with the
+   * guns run out. Speaking of your faith then costs nothing anywhere.
+   */
+  temperedFaith?: boolean;
   canTreaty?: boolean;
   canForce?: boolean;
   canFeitoria?: boolean;
@@ -361,8 +366,8 @@ export function applyMove(
           text: 'The question is taken up with genuine and unfeigned curiosity, and the conversation runs long past what you intended. They want priests, and books, and masons. What they are actually asking for is the whole apparatus of your world, and they have no idea what it will cost them.',
         });
       } else if (p.faith === 'muslim') {
-        s.suspicion += 22;
-        s.interest -= 10;
+        s.suspicion += ctx.temperedFaith ? 2 : 22;
+        s.interest += ctx.temperedFaith ? 6 : -10;
         s.log.push({
           speaker: 'them',
           text: 'The subject is closed courteously and completely. What is left unsaid is that they know exactly who you are, and what happened at Ceuta, and where the Portuguese have been going for eighty years.',
