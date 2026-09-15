@@ -294,8 +294,16 @@ export class Hud {
     clear(this.course);
     this.course.style.display = dest || steer !== null ? '' : 'none';
     if (dest || steer !== null) {
-      const off = dest ? dest.off : steer !== null ? angleDelta(g.displayHeading, steer) : 0;
-      const near = dest ? dest.distNm < 3 : false;
+      // Running down a parallel is its own regime: she is not steering at the
+      // mark and the mark's bearing is not what the helm is being held on, so
+      // everything that reads off the mark — how far off the course she is,
+      // how far there is to go, when she arrives — would be describing a
+      // passage she is deliberately not making.
+      const lat = g.helmOrder === null ? g.latitudeOrder : null;
+      const off = lat
+        ? (steer !== null ? angleDelta(g.displayHeading, steer) : 0)
+        : dest ? dest.off : steer !== null ? angleDelta(g.displayHeading, steer) : 0;
+      const near = !lat && dest ? dest.distNm < 3 : false;
       const helm = near
         ? 'you are up with it'
         : Math.abs(off) < 2.5
@@ -305,6 +313,7 @@ export class Hud {
       append(this.course,
         el('div', { class: 'hud-title' },
           g.helmOrder !== null ? 'Course ordered'
+            : lat ? 'Running down the latitude'
             // Say how much of the plan is still ahead of her, or a passage laid
             // off in four legs looks from the deck exactly like one laid off in
             // one and the captain forgets he has corners coming.
@@ -319,9 +328,11 @@ export class Hud {
           // it on the next frame.
           g.helmOrder !== null
             ? `${g.helmOrder.toFixed(0).padStart(3, '0')}°`
-            : dest
-              ? dest.name
-              : `${(steer ?? g.displayHeading).toFixed(0).padStart(3, '0')}°`),
+            : lat
+              ? `${Math.abs(lat.lat).toFixed(1)}° ${lat.lat >= 0 ? 'N' : 'S'}`
+              : dest
+                ? dest.name
+                : `${(steer ?? g.displayHeading).toFixed(0).padStart(3, '0')}°`),
         // Where she is actually being steered, which is not the bearing of the
         // mark when the mark lies inside the no-go.
         steer !== null
@@ -330,29 +341,48 @@ export class Hud {
         g.helmOrder !== null && dest
           ? hudRow('The mark bears', `${dest.bearing.toFixed(0).padStart(3, '0')}° — H to resume`)
           : null,
+        // How far off the parallel the reckoning has her, which is the one
+        // number the whole technique lives or dies by — and it is the
+        // *reckoned* figure, because that is all anybody aboard has until the
+        // next noon sight says otherwise.
+        lat
+          ? hudRow('Off the parallel', (() => {
+            const e = (g.nav.estimated.lat - lat.lat) * 60;
+            return Math.abs(e) < 1
+              ? 'on it, by the reckoning'
+              : `${Math.abs(e).toFixed(0)}′ ${e > 0 ? 'north' : 'south'} of it`;
+          })())
+          : null,
+        lat
+          ? hudRow('Making', `${lat.eastward ? 'easting' : 'westing'}${dest ? ' — H to steer direct' : ''}`)
+          : null,
         el('div', { class: 'hud-row' },
           el('span', { class: 'k' }, 'Put the helm'),
           el('span', {
             class: 'v',
             style: { color: Math.abs(off) < 2.5 ? '#7fa86a' : '#c8a44e' },
           }, helm)),
-        dest ? hudRow('Distance', dest.distNm < 1
+        // Distance and time to the mark are meaningless while she is running a
+        // parallel: she is not closing it on that bearing and the arithmetic
+        // that says when she arrives divides by a speed made good toward a
+        // place she is deliberately not steering at.
+        dest && !lat ? hudRow('Distance', dest.distNm < 1
           ? 'less than a mile'
           : `${dest.distNm.toFixed(0)} miles`) : null,
-        dest ? hudRow('At this rate', formatEta(dest.hours)) : null,
+        dest && !lat ? hudRow('At this rate', formatEta(dest.hours)) : null,
         g.route.length > 1
           ? hudRow('Then', g.route[1].name + (g.route.length > 2 ? `, and ${g.route.length - 2} more` : ''))
           : null,
         // How much of the passage is behind her. This is the single readout
         // that answers "am I getting anywhere", and at the fast clock rates it
         // is the only one that visibly moves.
-        dest && g.markDistNm > 1 ? progressBar(1 - dest.distNm / g.markDistNm) : null,
+        dest && !lat && g.markDistNm > 1 ? progressBar(1 - dest.distNm / g.markDistNm) : null,
         // Whose course she is on. The watch always have the helm, so the only
         // thing worth saying is whether they are keeping the chart's course or
         // one the captain has given over the top of it. When it is his own, the
         // row above is already saying where the mark bears and which key gives
         // her back to it, so this one holds its tongue.
-        g.helmOrder === null
+        g.helmOrder === null && !lat
           ? el('div', { class: 'hud-row' },
               el('span', { class: 'k' }, 'Steering'),
               el('span', { class: 'v', style: { color: '#7fa86a' } }, 'for the mark'))

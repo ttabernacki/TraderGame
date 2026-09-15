@@ -6,16 +6,17 @@ import { availableUpgrades, UPGRADE_BY_ID } from '../ship/upgrades';
 import { hullClass } from '../ship/hull';
 import { Ship } from '../ship/ship';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
-import { makeOfficer, OFFICER_ROLES, type OfficerRole } from '../crew/crew';
+import { OFFICER_ROLES } from '../crew/crew';
 import { skill } from '../crew/skills';
-import { assignTrait, loyaltyWord, officerTitle, traitDef } from '../progression/officers';
+import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
+import { ARC_BY_ID } from '../progression/arcs';
 import { daysLeft, ventureLine, ventureTons } from '../progression/ventures';
 import type { Game } from '../game/state';
 import { append, button, card, clear, el, kv } from './dom';
 
 type Tab = 'town' | 'market' | 'freight' | 'stores' | 'yard' | 'hands';
 
-/** Everything that happens at anchor: the market, the yard, and the crimp house. */
+/** Everything that happens at anchor: the market, the yard, and the wardroom. */
 export class PortView {
   root = el('div', { class: 'screen' });
   private body = el('div', { class: 'screen-body' });
@@ -204,7 +205,13 @@ export class PortView {
     // the page has their language, what they will take, who their king is, and
     // a man who has all that is not a stranger on the beach.
     const known = g.diplomaticEdge(def.people);
-    const listings = g.markets.listings(def.id, g.clock.t, rel.regard + known, tradeSkill);
+    // Whatever is in the hold is on the counter too, even where the town never
+    // asked for it — otherwise a cargo bought for one market is dead weight
+    // everywhere else in the world and the captain cannot even see that it is.
+    const listings = g.markets.listings(
+      def.id, g.clock.t, rel.regard + known, tradeSkill,
+      g.ship.cargo.map((c) => c.goodId),
+    );
 
     // Not a table.
     //
@@ -242,8 +249,13 @@ export class PortView {
         ),
         el('div', { class: 'trade-fig', 'data-k': 'They ask' },
           l.stock > 0 ? l.ask.toFixed(1) : '—'),
-        el('div', { class: 'trade-fig', 'data-k': 'They offer' },
-          l.appetite > 0 ? l.bid.toFixed(1) : '—'),
+        el('div', {
+          class: 'trade-fig', 'data-k': 'They offer',
+          style: l.appetite > 0 && !l.wanted ? { opacity: '0.62', fontStyle: 'italic' } : undefined,
+          title: l.wanted ? undefined
+            : 'Nobody here wants it. One merchant will take a parcel off your hands to '
+              + 'move on elsewhere, and prices it accordingly.',
+        }, l.appetite > 0 ? l.bid.toFixed(1) : '—'),
         el('div', {
           class: 'trade-fig', 'data-k': 'At Lisbon',
           style: { color: margin > 3 ? 'var(--green)' : 'inherit' },
@@ -685,14 +697,19 @@ export class PortView {
     const aboard = g.crew.officers.filter((o) => o.alive && !o.ashoreAt);
     left.append(card('Your officers',
       ...aboard.map((o) => {
-        const t = traitDef(o.trait);
+        // A written man is described by what was written for him. Falling back
+        // to the trait blurb put the same sentence under two different officers
+        // — Gaspar and Sintra are both curious men, and the wardroom read as
+        // though somebody had pasted the line twice.
+        const arc = o.arc ? ARC_BY_ID.get(o.arc) : undefined;
+        const line = arc?.hook ?? traitDef(o.trait)?.blurb;
         return el('div', { style: { marginBottom: '9px' } },
           el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px' } },
             el('span', {}, `${o.name} — ${officerTitle(o).toLowerCase()}`),
             el('span', { style: { color: 'var(--ink-soft)', fontSize: '12.5px' } }, loyaltyWord(o.loyalty)),
           ),
-          t
-            ? el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', lineHeight: '1.5' } }, t.blurb)
+          line
+            ? el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', lineHeight: '1.5' } }, line)
             : null,
         );
       }),
@@ -715,56 +732,27 @@ export class PortView {
     ));
 
     const right = el('div', {});
-    const missing = OFFICER_ROLES.filter((r) => !g.crew.officers.some((o) => o.alive && o.role === r.role));
-    right.append(card('Officers to be had',
-      missing.length === 0
-        ? el('p', {}, 'Every berth is filled.')
-        : el('ul', { class: 'list' }, ...missing.map((r) => {
-            const price = officerCost(r.role, def.wealth);
-            const canHire = r.role !== 'lingua' || def.people !== 'portuguese';
-            return el('li', {},
-              el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' } },
-                el('span', {}, `${r.english} — ${r.title}`),
-                button(`${price} cruzados`, () => this.hire(g, r.role, price), {
-                  disabled: g.crown.gold < price || !canHire,
-                }),
-              ),
-              el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '4px', lineHeight: '1.55' } }, r.blurb),
-              r.role === 'lingua' && canHire
-                ? el('div', { style: { fontSize: '12px', marginTop: '3px' } }, `Would bring you ${pe.language}.`)
-                : null,
-            );
-          })),
-    ));
 
-    // The written officers. Finite, named, and the reason one career reads
-    // differently from another.
-    const arcs = g.arcsAvailable();
-    if (arcs.length > 0 && def.people === 'portuguese') {
-      right.append(card('Men who are asking after a berth',
+    // Berths standing empty.
+    //
+    // There is no list of officers for sale here any more. The company is the
+    // one she sailed with out of the Tagus, and when one of them is gone the
+    // berth is simply empty — which is worth saying plainly, because the ship
+    // then works slightly worse in a way the captain ought to be able to
+    // account for.
+    const empty = OFFICER_ROLES.filter(
+      (r) => r.role !== 'lingua' && r.role !== 'degredado'
+        && !g.crew.officers.some((o) => o.alive && o.role === r.role));
+    if (empty.length > 0) {
+      right.append(card('Berths standing empty',
         el('p', { class: 'quote' },
-          'Not off the crimp\u2019s list. These are men with a name on the quay and a reason for '
-          + 'wanting this voyage in particular, and there are not many of them in the kingdom.'),
-        el('ul', { class: 'list' }, ...arcs.map((a) => {
-          const role = OFFICER_ROLES.find((r) => r.role === a.role)!;
-          const price = Math.round(officerCost(a.role, def.wealth) * 1.6);
-          return el('li', {},
-            el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' } },
-              el('span', {}, el('b', {}, a.name), ` \u2014 ${role.english}`),
-              button(`${price} cruzados`, () => {
-                if (g.crown.gold < price) return;
-                g.crown.gold -= price;
-                const o = g.recruitArc(a.id);
-                if (!o) return;
-                g.logEvent('crew', `Shipped ${o.name} as ${role.english.toLowerCase()} at ${def.name}. `
-                  + 'He came recommended, which on this quay means somebody owed somebody a favour.', true);
-                this.notice = { text: `${o.name} is aboard.` };
-                this.render();
-              }, { disabled: g.crown.gold < price }),
-            ),
-            el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '4px', lineHeight: '1.55' } }, a.hook),
-          );
-        })),
+          'These men were not engaged off a list and cannot be replaced off one. What they knew '
+          + 'has gone with them.'),
+        el('ul', { class: 'list' }, ...empty.map((r) => el('li', {},
+          el('div', {}, `${r.english} \u2014 ${r.title}`),
+          el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '4px', lineHeight: '1.55' } },
+            r.blurb),
+        ))),
       ));
     }
 
@@ -805,28 +793,6 @@ export class PortView {
 
     host.append(el('div', { class: 'cols two' }, left, right));
   }
-
-  private hire(g: Game, role: OfficerRole, price: number): void {
-    const def = g.portHere!;
-    const pe = people(def.people);
-    if (g.crown.gold < price) return;
-    g.crown.gold -= price;
-    const languages = role === 'lingua' ? [pe.language] : [];
-    const o = makeOfficer(role, g.rng, undefined, languages);
-    // What sort of man he turns out to be is not on the quay to be inspected.
-    // You engage him on a recommendation and find out at sea, which is exactly
-    // how it worked and is the only reason the choice is interesting.
-    assignTrait(o, g.rng);
-    g.crew.officers.push(o);
-    const title = OFFICER_ROLES.find((r) => r.role === role)!.english;
-    const t = traitDef(o.trait);
-    g.logEvent('crew', `Shipped ${o.name} as ${title.toLowerCase()} at ${def.name}.`);
-    this.notice = {
-      text: `${o.name} has joined as your ${title.toLowerCase()}.`
-        + (t ? ` They say of him: ${t.blurb.toLowerCase()}` : ''),
-    };
-    this.render();
-  }
 }
 
 /** How much of a good in the hold belongs to a merchant rather than to you. */
@@ -834,14 +800,6 @@ function consignedOf(g: Game, goodId: string): number {
   return g.activeVentures
     .filter((v) => v.loaded && v.goodId === goodId)
     .reduce((sum, v) => sum + v.quantity, 0);
-}
-
-function officerCost(role: OfficerRole, wealth: number): number {
-  const base: Record<OfficerRole, number> = {
-    piloto: 220, mestre: 160, contramestre: 90, escrivao: 80,
-    cirurgiao: 190, capelao: 70, lingua: 260, degredado: 25,
-  };
-  return Math.round(base[role] * (0.75 + wealth * 0.6));
 }
 
 /**

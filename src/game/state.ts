@@ -347,6 +347,27 @@ export class Game {
   helmOrder: number | null = null;
 
   /**
+   * Running down the latitude.
+   *
+   * The technique the whole century actually navigated a landfall by, and the
+   * one the aiming-off system does not replace: aiming off still steers for a
+   * point fixed by longitude, which is a guess dressed up as a plan. This
+   * throws longitude away entirely. Run north or south to the latitude of
+   * where you are bound, well clear of the coast so a bad noon sight does not
+   * put you ashore, then hold that parallel — by the sun each day, nothing
+   * else — making easting or westing until the coast comes up under the bow.
+   * There is no doubt to resolve at the landfall, because there is no
+   * question: the parallel runs to the place.
+   *
+   * What it costs is the dogleg down to the latitude, whatever a current sets
+   * you off the parallel between sights, and the fact that it is *slower* to
+   * correct than steering direct — a ship days off her latitude corrects
+   * gently rather than turning square onto it, because turning square would
+   * throw away all the easting or westing she is making at the same time.
+   */
+  latitudeOrder: { lat: number; eastward: boolean } | null = null;
+
+  /**
    * How far she has actually come.
    *
    * A ship held at the origin with the sea streaming past her gives the eye
@@ -497,6 +518,7 @@ export class Game {
     this.rival.lastNews = this.clock.t;
     // She begins at a quay, which is as much in sight of land as it gets.
     this.lastLandSeenT = this.clock.t;
+    this.shipTheCompany();
     assignTraits(this.crew, this.rng);
 
     for (const p of PORTS) {
@@ -1216,10 +1238,10 @@ export class Game {
    */
   courseToSteer(): number | null {
     const dest = this.courseToDestination();
-    if (this.helmOrder === null && !dest && this.standingCourse === null) {
+    if (this.helmOrder === null && !dest && this.standingCourse === null && !this.latitudeOrder) {
       this.standingCourse = wrap360(this.ship.state.heading);
     }
-    const wanted = this.helmOrder ?? dest?.bearing ?? this.standingCourse;
+    const wanted = this.helmOrder ?? this.latitudeCourse() ?? dest?.bearing ?? this.standingCourse;
     if (wanted === null) return null;
     const windEye = this.weatherNow.wind.from;
     const noGo = this.noGoAngle;
@@ -2210,6 +2232,39 @@ export class Game {
    * of these men, and which of them you sailed with is most of what makes one
    * captain's story different from another's.
    */
+  /**
+   * The company she sails with, put aboard before the first voyage.
+   *
+   * There used to be a chandler's list of officers at every port — a pilot for
+   * ninety cruzados, a surgeon for sixty — and three anonymous men aboard at
+   * the start who existed to be replaced by them. That is a shop, and a shop is
+   * the wrong shape for the thing this game is actually about: these six are
+   * the people the twenty years happen to, each with a name on the quay, a
+   * reason for wanting this voyage, and three scenes of his own that will not
+   * play for anybody who never carried him. Rolling a fresh pilot out of the
+   * dice every time one died made all of that optional, and optional story is
+   * story most players never see.
+   *
+   * So the cast is fixed and it is aboard from the first morning. What it costs
+   * is that these men are now irreplaceable: a pilot who dies off the Cape is
+   * gone, the berth stays empty, and whatever he knew goes over the side with
+   * him. That is the right price. It is also what actually happened.
+   *
+   * The escrivão is the exception, and deliberately: he is the only man in the
+   * wardroom the captain did not choose, because the Casa da Mina appointed him
+   * and he writes to them.
+   */
+  private shipTheCompany(): void {
+    for (const a of ARCS) this.recruitArc(a.id);
+    // The Crown's own clerk. Not hired, not refusable, and not your friend.
+    const clerk = makeOfficer('escrivao', this.rng, 0.58);
+    clerk.name = 'Diogo Pais';
+    clerk.wage = 20;
+    clerk.joined = this.clock.t;
+    this.crew.officers.push(clerk);
+    this.wardroomCache = null;
+  }
+
   recruitArc(arcId: string): Officer | null {
     const arc = ARC_BY_ID.get(arcId);
     if (!arc) return null;
@@ -2270,13 +2325,6 @@ export class Game {
     const def = PORTS.find((p) => p.id === portId);
     if (!def) return Infinity;
     return haversine(this.ship.state.pos, anchorageOf(def)) / NM;
-  }
-
-  /** The written officers this port could offer, given who is already aboard. */
-  arcsAvailable(): typeof ARCS {
-    return ARCS.filter((a) =>
-      a.standing <= this.crown.lifetimeStanding
-      && !this.crew.officers.some((o) => o.arc === a.id));
   }
 
   /**
@@ -3385,8 +3433,54 @@ export class Game {
   resumeCourseForMark(): boolean {
     if (!this.destination) return false;
     this.helmOrder = null;
+    this.latitudeOrder = null;
     this.standingCourse = null;
     return true;
+  }
+
+  /**
+   * The course held while running down a latitude: not pure east or west, but
+   * biased toward the parallel by however far off it she has drifted.
+   *
+   * The bias is a heading correction, not a fix — it comes from the reckoning,
+   * which is exactly as good as the reckoning is, and it is why the whole
+   * technique still wants a noon sight every day it can get one. A ship this
+   * makes turn square onto the parallel the moment she is a mile off it would
+   * spend her whole passage crabbing back and forth across it and make no
+   * easting at all; capping the bias keeps her always gaining ground the way
+   * she is bound, correcting harder the further off she has been let run.
+   */
+  private latitudeCourse(): number | null {
+    const o = this.latitudeOrder;
+    if (!o) return null;
+    const errNm = (this.nav.estimated.lat - o.lat) * 60;
+    const GAIN = 2.2;
+    const MAX_BIAS = 55;
+    const bias = clamp(errNm * GAIN, -MAX_BIAS, MAX_BIAS);
+    const base = o.eastward ? 90 : 270;
+    const sign = o.eastward ? 1 : -1;
+    return wrap360(base + sign * bias);
+  }
+
+  /**
+   * Give up the direct passage and run down a parallel instead.
+   *
+   * `eastward` is fixed at the order rather than worked out fresh each frame,
+   * because the whole point is committing to a direction and holding it — a
+   * captain who let the game decide which way to turn every time the
+   * reckoning twitched would never actually reach the coast he is aiming for.
+   */
+  runDownTheLatitude(eastward: boolean): void {
+    const at = this.aimedMark ?? this.destination;
+    if (!at) return;
+    this.latitudeOrder = { lat: at.lat, eastward };
+    this.helmOrder = null;
+    this.standingCourse = null;
+  }
+
+  /** Give it up, and go back to steering direct for the mark. */
+  stopRunningTheLatitude(): void {
+    this.latitudeOrder = null;
   }
 
   /**
@@ -3861,6 +3955,7 @@ export class Game {
     this.route = [{ name, lat, lon, portId }];
     this.aimOffNm = 0;
     this.helmOrder = null;
+    this.latitudeOrder = null;
     this.standingCourse = null;
     this.markLaidAt = { ...this.nav.estimated };
     this.markDistNm = haversine(this.nav.estimated, { lat, lon }) / NM;
@@ -3906,6 +4001,7 @@ export class Game {
     this.route = [];
     this.standingCourse = wrap360(this.ship.state.heading);
     this.helmOrder = null;
+    this.latitudeOrder = null;
     this.markLaidAt = null;
   }
 
@@ -4172,6 +4268,7 @@ export class Game {
       voltaAdvised: this.voltaAdvised,
       orderedCanvas: this.orderedCanvas,
       helmOrder: this.helmOrder,
+      latitudeOrder: this.latitudeOrder,
       route: this.route,
       daysSincePort: this.daysSincePort,
       distanceRun: this.distanceRun,
@@ -4243,6 +4340,7 @@ export class Game {
     (g as any).voltaAdvised = d.voltaAdvised ?? false;
     g.orderedCanvas = d.orderedCanvas ?? g.ship.canvasSet;
     g.helmOrder = d.helmOrder ?? null;
+    g.latitudeOrder = d.latitudeOrder ?? null;
     // Saves from before a passage could have more than one mark carry a single
     // destination; it becomes a route of one.
     g.route = d.route ?? (d.destination ? [d.destination] : []);

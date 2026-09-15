@@ -326,7 +326,7 @@ export class Ui {
         // for the mark. The helm is never "yours" to hand over — the watch have
         // it always — so the only question H can answer is whether she is
         // steering the captain's course or the chart's.
-        if (g.helmOrder !== null && g.destination) {
+        if ((g.helmOrder !== null || g.latitudeOrder) && g.destination) {
           g.resumeCourseForMark();
           g.pushAlert(`The watch will keep her for ${g.destination.name}.`, 'note');
           return true;

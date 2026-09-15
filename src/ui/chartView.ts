@@ -209,6 +209,42 @@ export class ChartView {
             )),
           )
         : null,
+      // Running down the latitude. The other half of the same trade as aiming
+      // off, and the older half: aiming off still steers for a point fixed by
+      // a longitude nobody has. This gives longitude up altogether and buys a
+      // landfall with no question in it at all.
+      hasRoute && g
+        ? el('div', { class: 'chart-chips', style: { alignItems: 'baseline' } },
+            el('span', { style: { fontSize: '12px', color: 'var(--ink-soft)' } }, 'Run the latitude'),
+            ...([true, false] as const).map((east) => this.chip(
+              east ? 'easting' : 'westing',
+              !!g.latitudeOrder && g.latitudeOrder.eastward === east,
+              () => {
+                if (g.latitudeOrder && g.latitudeOrder.eastward === east) {
+                  g.stopRunningTheLatitude();
+                  g.pushAlert('Steering direct for the mark again.', 'note');
+                } else {
+                  g.runDownTheLatitude(east);
+                  const o = g.latitudeOrder;
+                  if (o) {
+                    g.pushAlert(
+                      `Running down ${Math.abs(o.lat).toFixed(1)}° `
+                      + `${o.lat >= 0 ? 'north' : 'south'}, making `
+                      + `${east ? 'easting' : 'westing'}.`, 'note');
+                    g.logEvent('navigation',
+                      `Gave up the direct course and laid her on the parallel of `
+                      + `${Math.abs(o.lat).toFixed(1)}° ${o.lat >= 0 ? 'N' : 'S'}, to run it down to the `
+                      + `${east ? 'eastward' : 'westward'} until the land comes up. The pilot approves, `
+                      + 'which he does not often do.');
+                  }
+                }
+              },
+              east
+                ? 'Hold the parallel of the mark and make easting along it until the land is raised.'
+                : 'Hold the parallel of the mark and make westing along it until the land is raised.',
+            )),
+          )
+        : null,
       hasRoute
         ? button('Clear course', () => {
           this.game?.clearDestination(); this.buildTools(); this.buildVoyage(); this.draw();

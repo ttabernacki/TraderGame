@@ -126,7 +126,7 @@ export function makeOfficer(role: OfficerRole, rng: Rng, ability?: number, langu
   };
 }
 
-export function newCrew(complement: number, rng: Rng): CrewState {
+export function newCrew(complement: number, _rng?: Rng): CrewState {
   return {
     count: complement,
     complement,
@@ -136,11 +136,11 @@ export function newCrew(complement: number, rng: Rng): CrewState {
     daysWithoutFresh: 0,
     daysSinceLandfall: 0,
     fatigue: 0,
-    officers: [
-      makeOfficer('piloto', rng, 0.5),
-      makeOfficer('mestre', rng, 0.5),
-      makeOfficer('contramestre', rng, 0.42),
-    ],
+    // Empty. The company is written rather than rolled — see progression/arcs
+    // and Game.shipTheCompany, which puts the named men aboard before she
+    // sails. There is no crimp's list any more and no three anonymous
+    // placeholders to be quietly replaced by better ones later.
+    officers: [],
     provisions: { water: 90, biscuit: 120, saltMeat: 90, wine: 70, fresh: 20 },
     unrest: 0,
   deaths: 0,

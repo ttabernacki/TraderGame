@@ -15,6 +15,13 @@ export interface Listing {
   bid: number;
   /** True when this is a local product rather than an import. */
   local: boolean;
+  /**
+   * True when the town actually wants the stuff. False means the only buyer is
+   * a merchant taking it off your hands to move on somewhere else, and the
+   * price says so — worth showing, because otherwise a middleman's offer looks
+   * exactly like a market that has collapsed.
+   */
+  wanted: boolean;
 }
 
 export interface MarketState {
@@ -64,6 +71,55 @@ export class Markets {
     return Math.round(abundance * scale * bulkiness * 45 * (0.5 + def.wealth));
   }
 
+  /**
+   * How much of a thing nobody here asked for the town can absorb anyway, and
+   * at what fraction of its worth.
+   *
+   * Every port in the game used to buy exactly the three or four goods written
+   * into its `wants`, and *nothing else at all* — a good it had no appetite for
+   * was not merely unprofitable, it was not on the screen. A captain who came
+   * out of the Indian Ocean with a hold of cinnamon and put into a Guinea
+   * factory for water could not sell an ounce of it, could not see that he
+   * could not, and had no way to find out but sailing to the next place and
+   * trying again. Across fifty-two ports and forty-two goods that is nine
+   * tenths of every cargo unsellable at nine tenths of the world.
+   *
+   * That is not how a port works. There is always a merchant who will take a
+   * parcel off your hands, because he is not buying it to use — he is buying it
+   * to move on to somebody who wants it, and he prices in the voyage, the risk
+   * and his own profit before he opens his mouth. So he pays badly: a third of
+   * what the thing is worth in a rich emporium that can actually shift it, a
+   * sixth at a beach where the only buyer is one factor with a shed. That is
+   * far below what a port which genuinely wants the cargo will pay, and it is
+   * meant to be. It is a way out of a hold full of the wrong thing, not a
+   * route.
+   */
+  private middlemanFactor(def: PortDef, abundance: number): number {
+    const scale = { anchorage: 0.55, village: 0.68, town: 0.85, city: 1, emporium: 1.1 }[def.size];
+    // A place that grows the stuff itself has least reason of all to buy yours.
+    const glutted = abundance > 0 ? 0.45 : 1;
+    return (0.26 + def.wealth * 0.22) * scale * glutted;
+  }
+
+  /**
+   * What the town will take, wanted or not. One number, so that the price on
+   * the screen and the glut a sale leaves behind cannot drift apart.
+   */
+  private appetiteFor(def: PortDef, g: Good, hunger: number, abundance: number): number {
+    if (hunger > 0) return this.baseAppetite(def, g, hunger);
+    // A middleman's shed, not a city's hunger: a small parcel, and scaled to
+    // the same bulk and size terms as everything else so a village cannot
+    // swallow four hundred tons of pepper out of politeness.
+    const scale = { anchorage: 0.12, village: 0.35, town: 0.9, city: 2, emporium: 4 }[def.size];
+    const bulkiness = clamp(0.06 / Math.max(g.bulk, 0.001), 0.4, 14);
+    const own = abundance > 0 ? 0.4 : 1;
+    // Big enough to be worth walking up the quay for. At seven this came out at
+    // six quintais of pepper in a market town — one per cent of a caravel's
+    // hold — so a captain with the wrong cargo could technically sell and might
+    // as well not have been able to.
+    return Math.max(1, Math.round(scale * bulkiness * 22 * (0.4 + def.wealth) * own));
+  }
+
   private baseAppetite(def: PortDef, g: Good, hunger: number): number {
     const scale = { anchorage: 0.12, village: 0.35, town: 0.9, city: 2, emporium: 4 }[def.size];
     const bulkiness = clamp(0.06 / Math.max(g.bulk, 0.001), 0.4, 14);
@@ -106,10 +162,17 @@ export class Markets {
    * Current listings. `relation` is how well they regard you, -1 to 1, and
    * `tradeSkill` is the captain's bargaining, 0-1.
    */
-  listings(portId: string, t: number, relation: number, tradeSkill: number): Listing[] {
+  listings(
+    portId: string, t: number, relation: number, tradeSkill: number,
+    carrying: Iterable<string> = [],
+  ): Listing[] {
     const def = portDef(portId);
     const s = this.stateFor(portId);
     const out: Listing[] = [];
+    // What is in the hold is always on the counter, whether the town asked for
+    // it or not. Listing all forty-two goods at every port instead would answer
+    // the same complaint with a wall of rows nobody wants to read.
+    const held = new Set(carrying);
 
     // Slow seasonal drift so prices are never quite the same twice.
     const season = fbm1(t / (86400 * 40) + hashPort(portId), 2, 3) * 0.14;
@@ -117,7 +180,7 @@ export class Markets {
     for (const g of GOODS) {
       const abundance = def.produces[g.id] ?? 0;
       const hunger = def.wants[g.id] ?? 0;
-      if (abundance <= 0 && hunger <= 0) continue;
+      if (abundance <= 0 && hunger <= 0 && !held.has(g.id)) continue;
 
       const baseStock = abundance > 0 ? this.baseStock(def, g, abundance) : 0;
       const stock = abundance > 0 ? clamp(s.stock[g.id] ?? baseStock, 0, baseStock * 1.4) : 0;
@@ -147,13 +210,28 @@ export class Markets {
       // The spread narrows as they come to trust you and as you learn to haggle.
       const spread = clamp(0.30 - tradeSkill * 0.14 - relation * 0.07, 0.07, 0.36);
 
+      // What they will give for it. A town that wants the thing bids off the
+      // price it is worth here; a town that does not bids what a merchant with
+      // a long voyage ahead of him and no particular need would offer, which is
+      // a fraction of what the thing fetches where somebody actually wants it.
+      const bid = hunger > 0
+        ? mid * (1 - spread)
+        : g.lisbon * this.middlemanFactor(def, abundance) * (1 + season) / (1 + glut * 1.5);
+
       out.push({
         goodId: g.id,
         stock: Math.floor(stock),
-        appetite: hunger > 0 ? Math.max(0, Math.floor(this.baseAppetite(def, g, hunger) * (1 - glut))) : 0,
+        // Never quite zero. A market sated to the eyebrows still has somebody
+        // who will take a little more if the price is bad enough, and a hard
+        // stop at nought is how a captain ends up with a hold he can never
+        // empty anywhere — which is the thing this whole section exists to
+        // prevent. The price at full glut is a fraction of the good's worth, so
+        // this is a way to cut a loss and never a way to make money.
+        appetite: Math.max(1, Math.floor(this.appetiteFor(def, g, hunger, abundance) * (1 - glut))),
         ask: Math.max(0.4, mid * (1 + spread)),
-        bid: Math.max(0.2, mid * (1 - spread)),
+        bid: Math.max(0.2, bid),
         local: abundance > 0,
+        wanted: hunger > 0,
       });
     }
 
@@ -191,7 +269,8 @@ export class Markets {
     const s = this.stateFor(portId);
     const def = portDef(portId);
     const g = good(goodId);
-    const appetite = Math.max(1, this.baseAppetite(def, g, def.wants[goodId] ?? 0));
+    const appetite = Math.max(1, this.appetiteFor(
+      def, g, def.wants[goodId] ?? 0, def.produces[goodId] ?? 0));
     s.glut[goodId] = clamp((s.glut[goodId] ?? 0) + quantity / appetite, 0, 3);
     if (def.produces[goodId]) {
       const base = this.baseStock(def, g, def.produces[goodId]);
