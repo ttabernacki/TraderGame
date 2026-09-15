@@ -336,9 +336,21 @@ export class Ui {
           `Steady at ${(g.helmOrder ?? 0).toFixed(0).padStart(3, '0')}\u00b0.`, 'note');
         return true;
       }
-      case 't': g.autoTrim = !g.autoTrim;
+      case 'y': g.autoTrim = !g.autoTrim;
         g.pushAlert(g.autoTrim ? 'The watch will keep her trimmed.' : 'You have the sheets yourself.', 'note');
         return true;
+      case 'g': {
+        // Heave the lead. A quarter of an hour of the ship's day for a position
+        // line the sky cannot give you.
+        const cast = g.heaveTheLead();
+        g.pushAlert(cast.message, cast.ok ? 'note' : 'warning');
+        if (cast.recognised) {
+          g.pushAlert(`The pilot knows this ground: ${cast.recognised}. She is fixed.`, 'note');
+        } else if (cast.ok && (cast.movedNm ?? 0) > 3) {
+          g.pushAlert(`The board is corrected ${(cast.movedNm ?? 0).toFixed(0)} miles by the lead.`, 'note');
+        }
+        return true;
+      }
       case 'f5':
         this.save(g); return true;
       default:

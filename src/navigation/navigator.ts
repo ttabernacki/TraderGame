@@ -230,6 +230,67 @@ export class Navigator {
   }
 
   /**
+   * A position line by the lead.
+   *
+   * The lead does not give a position. It gives a *distance from the coast*,
+   * and the coast is a line, so what comes out is a line parallel to the shore
+   * with the ship somewhere on it. That corrects the reckoning across the coast
+   * and tells it nothing at all along the coast — which off Africa is almost
+   * pure longitude, and is therefore the one correction the century otherwise
+   * has no way to make.
+   *
+   * `shoreBearing` is the direction of the land from the ship. The correction
+   * runs along that axis and nowhere else: a ship that finds herself ten miles
+   * further off than she reckoned moves ten miles *away from the coast*, and
+   * her doubt shrinks in that direction only. The doubt she carries up and down
+   * the coast is untouched, because nothing she has just done bears on it.
+   */
+  applySounding(
+    shoreBearing: number, measuredOffNm: number, believedOffNm: number,
+    sigmaNm: number, t: number, note: string,
+  ): { movedNm: number } {
+    const rad = Math.PI / 180;
+    // Unit vector from the ship toward the land, in north and east.
+    const cN = Math.cos(shoreBearing * rad);
+    const eE = Math.sin(shoreBearing * rad);
+
+    // Positive means she is further off than the reckoning had her, so she must
+    // move away from the land.
+    const delta = measuredOffNm - believedOffNm;
+
+    // The reckoning's own doubt resolved onto that axis. A ship whose error is
+    // all in longitude, closing a coast that runs north and south, has all of
+    // its doubt on this axis and the sounding is worth a great deal to her; the
+    // same ship closing a coast that runs east and west learns almost nothing.
+    const varAxis = this.sigmaLat * this.sigmaLat * cN * cN
+      + this.sigmaLon * this.sigmaLon * eE * eE;
+    const varObs = sigmaNm * sigmaNm;
+    const k = varAxis / (varAxis + varObs);
+    const move = k * delta;
+
+    this.estimated.lat -= (move * cN) / 60;
+    this.estimated.lon = wrap180(
+      this.estimated.lon - (move * eE) / 60 / Math.max(cosd(this.estimated.lat), 0.2),
+    );
+
+    // Variance on the axis after the observation, spread back over the two
+    // components in proportion to how much of each the axis was made of.
+    const after = 1 / (1 / Math.max(varAxis, 1e-9) + 1 / Math.max(varObs, 1e-9));
+    const shrink = Math.sqrt(after / Math.max(varAxis, 1e-9));
+    this.sigmaLat *= 1 + (shrink - 1) * cN * cN;
+    this.sigmaLon *= 1 + (shrink - 1) * eE * eE;
+    this.sigmaLat = Math.max(this.sigmaLat, 0.5);
+    this.sigmaLon = Math.max(this.sigmaLon, 0.5);
+
+    this.lastFixT = t;
+    this.fixes.push({
+      t, latitude: this.estimated.lat, method: 'By the lead', sigma: sigmaNm / 60, body: note,
+    });
+    if (this.fixes.length > 200) this.fixes.shift();
+    return { movedNm: Math.abs(move) };
+  }
+
+  /**
    * Longitude by lunar distance.
    *
    * The one thing in the game nobody else in 1482 can do — the method was not

@@ -209,6 +209,134 @@ export function depthAt(p: LatLon, shore?: ShoreInfo): number {
 }
 
 /**
+ * How deep the lead will reach, in metres.
+ *
+ * A hundred fathoms on a deep-sea line, which is what a caravel carried and
+ * about the practical limit of a man hauling it in by hand. It is also the
+ * figure that decides where the game's soundings begin: on this coast a hundred
+ * fathoms is twenty-odd miles off, so "in soundings" means a day's sail from
+ * the land — which is exactly the distance at which knowing your offing is
+ * worth most and knowing it by eye is impossible.
+ */
+export const LEAD_REACH_M = 183;
+
+/**
+ * Distance off the coast implied by a depth — the depth profile run backwards.
+ *
+ * This is the whole of why the lead is a navigational instrument and not a
+ * safety device. `depthAt` is monotone in the offing, so a depth *is* a
+ * distance, and a distance from a coast whose shape you know is a position line
+ * running along that coast. It is the only fix in this century that can be had
+ * in fog, at night, and with the sky shut, and the Channel was run on it for
+ * three hundred years.
+ *
+ * The inverse is exact against {@link depthAt}, so every error in the offing
+ * comes from the things that really cause it: the tide, the stretch of the
+ * line, and the fact that a real bottom is not a smooth ramp.
+ */
+export function offingFromDepth(depth: number): number {
+  if (depth <= 3) return 0;
+  if (depth < 10) return (depth - 3) / 14;
+  if (depth < 40) return 0.5 + (depth - 10) / 12;
+  if (depth < 94) return 3 + (depth - 40) / 6;
+  if (depth < 278) return 12 + (depth - 94) / 8;
+  return 35 + (depth - 278) / 60;
+}
+
+/**
+ * What comes up on the tallow.
+ *
+ * The lead was hollowed at the bottom and filled with tallow, and what stuck to
+ * it was half the information. Depth alone says how far off you are; depth and
+ * ground together say *where*, because a pilot's book records both and the
+ * bottom does not move. "Sixty fathoms, fine white sand" is a different place
+ * from "sixty fathoms, black ooze" though the two are on the same depth line.
+ *
+ * Deterministic in position, so a stretch of bottom has a character that holds
+ * for the whole career and can be written down and recognised twenty years
+ * later. Cells are about a fifth of a degree — twelve miles — which is fine
+ * enough to distinguish two capes and coarse enough that a sounding taken a
+ * mile from the last one says the same thing.
+ */
+export type Ground =
+  | 'fine white sand' | 'grey sand' | 'black sand and mud' | 'sand and broken shells'
+  | 'coral and shells' | 'soft ooze' | 'coarse sand and small stones' | 'rock, and no hold'
+  | 'weed and gravel';
+
+const GROUND_CELL = 0.2;
+
+/**
+ * Identity of a patch of bottom, so a sounding can be written in the book and
+ * recognised when the ship comes over the same ground again years later.
+ */
+export function groundCellKey(p: LatLon): string {
+  return `${Math.floor(p.lat / GROUND_CELL)}:${Math.floor(wrap180(p.lon) / GROUND_CELL)}`;
+}
+
+function groundHash(lat: number, lon: number): number {
+  const a = Math.floor(lat / GROUND_CELL) + 5000;
+  const b = Math.floor(lon / GROUND_CELL) + 5000;
+  let h = (a * 73856093) ^ (b * 19349663);
+  h = Math.imul(h ^ (h >>> 15), 2246822507);
+  h = Math.imul(h ^ (h >>> 13), 3266489909);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/**
+ * The ground at a place, given the depth over it.
+ *
+ * The depth is an argument rather than something this works out for itself
+ * because the caller has always just measured it, and because the bottom really
+ * does follow it: the surf grinds shell and stone in the shallows, the shelf is
+ * sand, and below the shelf everything is the fine mud that settles where
+ * nothing disturbs it.
+ */
+export function bottomAt(p: LatLon, depth: number): Ground {
+  const h = groundHash(p.lat, p.lon);
+  const tropical = Math.abs(p.lat) < 27;
+
+  if (depth > 150) {
+    return h < 0.7 ? 'soft ooze' : 'fine white sand';
+  }
+  if (depth > 55) {
+    if (h < 0.34) return 'fine white sand';
+    if (h < 0.58) return 'grey sand';
+    if (h < 0.78) return 'sand and broken shells';
+    return 'soft ooze';
+  }
+  if (depth > 18) {
+    if (h < 0.2) return 'sand and broken shells';
+    if (h < 0.4) return 'grey sand';
+    if (h < 0.55) return 'coarse sand and small stones';
+    if (h < 0.7) return 'black sand and mud';
+    if (h < 0.84) return tropical ? 'coral and shells' : 'weed and gravel';
+    return 'fine white sand';
+  }
+  if (h < 0.18) return 'rock, and no hold';
+  if (h < 0.34) return 'coarse sand and small stones';
+  if (h < 0.5) return tropical ? 'coral and shells' : 'weed and gravel';
+  if (h < 0.7) return 'fine white sand';
+  if (h < 0.86) return 'black sand and mud';
+  return 'sand and broken shells';
+}
+
+/** Whether ground the book records and ground on the tallow are the same thing. */
+export function groundAgrees(a: Ground, b: Ground): boolean {
+  if (a === b) return true;
+  // A tired man in the dark calls grey sand white and shells gravel. These pair
+  // up because a pilot would not have hanged anybody for confusing them.
+  const near: Record<string, string> = {
+    'fine white sand': 'grey sand',
+    'grey sand': 'fine white sand',
+    'sand and broken shells': 'coral and shells',
+    'coral and shells': 'sand and broken shells',
+    'weed and gravel': 'coarse sand and small stones',
+    'coarse sand and small stones': 'weed and gravel',
+  };
+  return near[a] === b;
+}
+
+/**
  * Height of land above sea level at a point inside a landmass, tapering up from
  * the coast so rendered terrain meets the water cleanly.
  */

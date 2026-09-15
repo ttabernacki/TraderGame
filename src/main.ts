@@ -6,6 +6,7 @@ import { portDef } from './world/ports';
 import type { Difficulty } from './game/difficulty';
 import type { OriginId } from './progression/origins';
 import { rollOfficerEvent } from './game/officerEvents';
+import { castLead, landfallScene } from './game/soundings';
 import { rollSeaEvent } from './game/seaEvents';
 import { sightOpportunities, takeSight } from './navigation/navigator';
 import { KNOTS } from './ship/physics';
@@ -414,6 +415,8 @@ if (import.meta.env.DEV) {
       rollSeaEvent,
       sightOpportunities,
       takeSight,
+      castLead,
+      landfallScene,
     }),
   });
 }

@@ -409,6 +409,35 @@ export class Hud {
         );
       }
 
+      // What came up on the tallow last time the line went over, and what it
+      // was worth. A depth is a warning; a depth with the ground beside it is a
+      // position, and the deck should say which one the ship has.
+      const cast = g.lastCast;
+      if (cast && cast.ok && cast.ground) {
+        append(this.course,
+          el('div', { class: 'hud-row' },
+            el('span', { class: 'k' }, 'On the tallow'),
+            el('span', { class: 'v', style: { opacity: '0.85' } },
+              `${(cast.fathoms ?? 0).toFixed(0)} fm, ${cast.ground}`)),
+          el('div', { class: 'hud-row' },
+            el('span', { class: 'k' }, ''),
+            el('span', {
+              class: 'v',
+              style: { fontSize: '12px', color: cast.recognised ? '#8fbf7a' : '#9aa89a' },
+            },
+              cast.recognised
+                ? `Known ground — ${cast.recognised}`
+                : `Puts her ${(cast.offingNm ?? 0).toFixed(0)} miles off the land`)),
+        );
+      } else if (g.inSoundings) {
+        append(this.course,
+          el('div', { class: 'hud-row' },
+            el('span', { class: 'k' }, 'Soundings'),
+            el('span', { class: 'v', style: { fontSize: '12px', opacity: '0.7' } },
+              'She is on the shelf. G to heave the lead.')),
+        );
+      }
+
       // The man at the masthead, once the coast is up: which way the town lies.
       // Steering for the charted position of a port is steering for a place the
       // chart has in the wrong longitude, and without this there was no way at

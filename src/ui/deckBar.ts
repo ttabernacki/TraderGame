@@ -35,6 +35,7 @@ interface Item {
 const ITEMS: Item[] = [
   { label: 'The book', key: 'j', cap: 'J', hint: 'Chart, rutter, log, orders and company' },
   { label: 'Sight', key: 'n', cap: 'N', hint: 'Take the sun or the pole star with the quadrant' },
+  { label: 'Lead', key: 'g', cap: 'G', hint: 'Heave the lead — depth, ground, and how far off the land she is' },
   { label: '\u266a', key: 'm', cap: 'M', hint: 'Sound on or off' },
   { label: 'View', key: 'v', cap: 'V', hint: 'Shift the view about the ship' },
   { label: 'Padrão', key: 'u', cap: 'U', hint: 'Land a pillar and claim the place for the Crown' },

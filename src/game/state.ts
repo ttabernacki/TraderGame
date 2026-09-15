@@ -6,7 +6,7 @@ import {
 import { Rng } from '../core/rng';
 import { Weather, type WeatherSample } from '../world/weather';
 import { currentAt, dominantCurrentName, tidalStream, tideHeight } from '../world/currents';
-import { depthAt, isLand, nearestShore } from '../world/landmass';
+import { LEAD_REACH_M, depthAt, isLand, nearestShore } from '../world/landmass';
 import { PORTS, anchorageOf, portDef, portsNear, type PortDef } from '../world/ports';
 import { people } from '../world/peoples';
 import { Ship } from '../ship/ship';
@@ -49,6 +49,7 @@ import { daysLeft, offerVentures, ventureLine, type Venture } from '../progressi
 import { advanceRival, newRival, rivalGossip, type RivalState } from '../progression/rival';
 import { rollRivalMeeting } from '../progression/rivalEvents';
 import { beyondScene, landmarkScene } from './discovery';
+import { castLead, landfallScene, type LeadCast } from './soundings';
 import { originDef, type OriginId } from '../progression/origins';
 import { assignTraits, wardroom, type TraitEffects } from '../progression/officers';
 import { good } from '../economy/goods';
@@ -839,6 +840,40 @@ export class Game {
         ? `${(this.sounding.depth / 1.8288).toFixed(0)} fathoms`
         : null,
     };
+  }
+
+  /** The last cast of the lead, kept so the deck can show what came up on it. */
+  private lastCastRaw: LeadCast | null = null;
+  private lastCastT = -1e9;
+
+  /**
+   * What the lead said, while it is still worth anything.
+   *
+   * A sounding is a statement about where the ship was when it was taken, and
+   * she has been sailing ever since. Half a day later it is history, and
+   * leaving it on the deck display would be telling the captain his offing on
+   * the strength of a line that went over the side sixty miles back.
+   */
+  get lastCast(): LeadCast | null {
+    if (!this.lastCastRaw) return null;
+    return this.clock.t - this.lastCastT < 10 * 3600 ? this.lastCastRaw : null;
+  }
+
+  /**
+   * Heave the lead.
+   *
+   * The one navigational act available when the sky is shut, which on this
+   * coast in winter is most of it.
+   */
+  heaveTheLead(): LeadCast {
+    const cast = castLead(this);
+    if (cast.ok) { this.lastCastRaw = cast; this.lastCastT = this.clock.t; }
+    return cast;
+  }
+
+  /** Whether there is any point putting the line over the side from here. */
+  get inSoundings(): boolean {
+    return !this.dockedAt && this.sounding.depth <= LEAD_REACH_M;
   }
 
   /**
@@ -1959,6 +1994,13 @@ export class Game {
               ? 'You know which way to run. That is what the offing was for.'
               : 'Which way along the coast? Nobody aboard can say.', advice.sure ? 'note' : 'warning');
           }
+          // And the question the log line never asked: which coast is this?
+          // Answering it is the best fix in the game and answering it wrong is
+          // the worst thing that can happen to a reckoning.
+          if (away > 2) {
+            const scene = landfallScene(this);
+            if (scene) this.pendingScenes.push(scene);
+          }
         }
       }
       if (inSight) this.lastLandSeenT = this.clock.t;
@@ -2102,7 +2144,11 @@ export class Game {
     this.daysSinceEvent += days;
     this.daysSinceDecision += days;
     this.eventCooldown = Math.max(0, this.eventCooldown - days);
-    if (this.eventCooldown > 0) return;
+    // A written scene jumps the queue. The cooldown exists to keep rolled
+    // incidents from arriving on top of each other; a landfall or a landmark is
+    // a thing that is happening *now*, and holding it back a day and a half
+    // meant the identification of a coast was offered after she had run past it.
+    if (this.eventCooldown > 0 && this.pendingScenes.length === 0) return;
 
     this.checkArrival();
     this.checkLeads();
