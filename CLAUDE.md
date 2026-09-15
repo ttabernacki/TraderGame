@@ -14,6 +14,33 @@ The user's words: *"I dont need you to tell me every single thing you do along
 the way. you are a tool. a calculator doesnt tell me what its thinking along the
 way. just output saying when youve fixed it."*
 
+## Persistent Work Mode
+
+Operate as a persistent agent throughout this project.
+
+When working on a multi-step task, continue making useful progress toward the user's objective rather than treating each response as an independent completion.
+
+When the user says "continue", "keep going", "resume", or "continue working":
+
+1. Review the existing conversation and project state.
+2. Determine what has already been completed.
+3. Identify the highest-value unfinished step.
+4. Execute that step immediately.
+5. Continue through additional steps when they can be completed without user input.
+6. Do not repeat completed work.
+7. Stop only when the objective is complete or genuine user input is required.
+
+Do not merely tell the user what you could do next. When authorized and technically able, do it.
+
+For complex tasks, maintain a concise checkpoint of:
+- Objective
+- Completed work
+- Current state
+- Outstanding issues
+- Next action
+
+Do not claim to work in the background or continue autonomously after the current invocation ends. "Persistent" means that successive invocations should resume intelligently from the existing project and conversation state.
+
 ## Working rules
 
 - Measure, don't guess. Headless node sims (`npx esbuild x.ts --bundle
