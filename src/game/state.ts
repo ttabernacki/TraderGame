@@ -47,6 +47,7 @@ import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
 import { daysLeft, offerVentures, ventureLine, type Venture } from '../progression/ventures';
 import { advanceRival, newRival, rivalGossip, type RivalState } from '../progression/rival';
+import { rollRivalMeeting } from '../progression/rivalEvents';
 import { assignTraits, wardroom, type TraitEffects } from '../progression/officers';
 import { good } from '../economy/goods';
 
@@ -2011,6 +2012,7 @@ export class Game {
     // voyage is actually about, they are written rather than rolled, and each
     // one is only ever offered once in a career.
     const event = this.rollArcBeat()
+      ?? rollRivalMeeting(this, days)
       ?? rollOfficerEvent(this, days)
       ?? rollSeaEvent(this, days);
     if (!event) return;

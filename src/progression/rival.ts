@@ -29,6 +29,21 @@ export interface RivalState {
   standing: number;
   /** True once the player has decisively outdone him. */
   eclipsed: boolean;
+  /**
+   * How the two of you stand personally, from -1 to 1.
+   *
+   * Separate from standing, which is what the court thinks. This is what *he*
+   * thinks, and it is the only thing that decides which ending the rivalry
+   * gets — see progression/rivalEvents.
+   */
+  regard?: number;
+  met?: boolean;
+  /** Ids of the meetings that have already happened. */
+  metEvents?: string[];
+  /** A private agreement to divide the coast between you. */
+  compact?: boolean;
+  /** You destroyed him with his own letter. */
+  ruined?: boolean;
 }
 
 const RIVALS = [
@@ -49,6 +64,9 @@ export function newRival(rng: Rng): RivalState {
     lastNews: 0,
     standing: 20,
     eclipsed: false,
+    regard: 0,
+    met: false,
+    metEvents: [],
   };
 }
 

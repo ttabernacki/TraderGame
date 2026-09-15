@@ -1,6 +1,8 @@
 import { formatLat } from '../core/math';
 import { OFFICER_ROLES } from '../crew/crew';
 import { officerTitle, traitDef } from '../progression/officers';
+import { rivalEnding } from '../progression/rivalEvents';
+import { BONDS } from '../progression/arcs';
 import type { Game } from '../game/state';
 import { button, card, el, kv } from './dom';
 
@@ -65,6 +67,18 @@ export class EpilogueView {
             `${o.name} was put ashore among strangers and has not been heard of since.`)),
         ),
 
+        // What the company gave you, which is the part that outlasted them.
+        g.bonds.size > 0
+          ? card('What they left you',
+              el('p', { class: 'flavour' },
+                'None of this came out of anything you were taught at the Casa. It came from four '
+                + 'or five men who decided, at some point and for their own reasons, that you were '
+                + 'worth it.'),
+              ...[...g.bonds].map((b) => el('p', {},
+                el('b', {}, BONDS[b].name), ' \u2014 ', BONDS[b].effect)),
+            )
+          : null,
+
         card('The men who came back',
           ...g.crew.officers.filter((o) => o.alive && !o.ashoreAt).map((o) => {
             const def = OFFICER_ROLES.find((r) => r.role === o.role);
@@ -110,6 +124,13 @@ export class EpilogueView {
                     + 'remind each other with.')
                 : null,
             )
+          : null,
+
+        // What passed between the two of you personally, which is a different
+        // question from who got further south and is answered by the choices
+        // made at the four meetings rather than by the standings.
+        g.rival.met
+          ? card(rivalEnding(g).title, el('p', {}, rivalEnding(g).text))
           : null,
 
         card('The other man',
