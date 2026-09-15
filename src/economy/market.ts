@@ -64,11 +64,44 @@ export class Markets {
     return s;
   }
 
+  /**
+   * What a place could plausibly have lying in its warehouses, in money.
+   *
+   * Stock is counted in units and scaled by how little room a unit takes, so
+   * that a hold is filled by a sane number of them — you need a great many
+   * quintais of pepper and very few lots of pearls. That multiplier tops out at
+   * fourteen, and every valuable good in the game is light, so every one of
+   * them collected the ceiling: Ormuz was found holding six hundred thousand
+   * cruzados of precious stones, Columbo a hundred and thirty-seven thousand,
+   * against thirty-odd thousand for the dearest *bulk* cargo anywhere. The
+   * entire purchasable contents of the game come to thirty-six thousand. There
+   * were towns on this coast with twenty shiploads of treasure in a shed.
+   *
+   * It made one trade — buy gold at Mina, sell it at Lisbon — worth a hundred
+   * and eight thousand a year against nine hundred for the sugar run, because
+   * the two have the same margin and only one of them lets you put eighteen
+   * thousand cruzados on the table at once. Nothing else in the game was
+   * capping the size of the bet.
+   *
+   * So a port's holding of any one thing is also capped by what the place is
+   * worth. The figures are set above the dearest ordinary cargo, so bulk trade
+   * is untouched to the last quintal; it bites only where a village was sitting
+   * on a fortune in diamonds.
+   */
+  private valueCeiling(def: PortDef): number {
+    const bySize = {
+      anchorage: 900, village: 2500, town: 7000, city: 16000, emporium: 35000,
+    }[def.size];
+    return bySize * (0.5 + def.wealth);
+  }
+
   /** Baseline quantity a port keeps of a good it produces. */
   private baseStock(def: PortDef, g: Good, abundance: number): number {
     const scale = { anchorage: 0.15, village: 0.4, town: 1, city: 2.2, emporium: 4.5 }[def.size];
     const bulkiness = clamp(0.06 / Math.max(g.bulk, 0.001), 0.4, 14);
-    return Math.round(abundance * scale * bulkiness * 45 * (0.5 + def.wealth));
+    const units = abundance * scale * bulkiness * 45 * (0.5 + def.wealth);
+    const affordable = (this.valueCeiling(def) * abundance) / Math.max(g.lisbon, 0.01);
+    return Math.round(Math.min(units, affordable));
   }
 
   /**
