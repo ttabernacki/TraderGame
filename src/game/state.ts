@@ -48,8 +48,16 @@ import { checkLead, hearRumour, type Lead } from '../progression/leads';
 import { daysLeft, offerVentures, ventureLine, type Venture } from '../progression/ventures';
 import { advanceRival, newRival, rivalGossip, type RivalState } from '../progression/rival';
 import { rollRivalMeeting } from '../progression/rivalEvents';
+import { beyondScene, landmarkScene } from './discovery';
 import { assignTraits, wardroom, type TraitEffects } from '../progression/officers';
 import { good } from '../economy/goods';
+
+/**
+ * Latitude of the deepest Portuguese penetration at the start of play.
+ *
+ * Diogo Cão's second padrão at Cape Cross, 1486. South of this the rutters stop.
+ */
+const BEYOND_LAT = -21.8;
 
 export type GameMode =
   | 'sailing' | 'chart' | 'sight' | 'logbook' | 'crew' | 'port'
@@ -351,6 +359,17 @@ export class Game {
   private accumDays = 0;
   /** Furthest south she has ever been, which is how a captain is measured. */
   private deepestSouth = 90;
+  /** Set once she has been south of everything anyone out of Lisbon has seen. */
+  private passedTheKnown = false;
+  /**
+   * Scenes waiting to be put to the captain.
+   *
+   * A landfall can raise a landmark and pass the edge of the known world in the
+   * same step, and two decision windows arriving on the same frame means the
+   * second one is never seen. They queue, and are handed out one at a time as
+   * the previous one is answered.
+   */
+  private pendingScenes: SeaEvent[] = [];
   private lastLat = 0;
   private lastSurveyT = -1e9;
   /** Miles of coast drawn or corrected since she last lay in a port. */
@@ -1899,11 +1918,18 @@ export class Game {
     if (pos.lat < this.deepestSouth) this.deepestSouth = pos.lat;
     for (const l of landmarks) {
       this.writeCoast(l.name, this.nav.estimated, l.announce);
-      this.crown.record('coast', l.name, this.nav.estimated, l.value, this.clock.t);
       this.logEvent('discovery', l.announce, true);
-      this.pushAlert(`${l.name} — ${l.value} renown`, 'note');
-      this.crown.progressObjective('reach', l.id);
-      this.crew.morale = clamp(this.crew.morale + 0.07, 0, 1);
+      // These are the peaks of the whole game. Reaching one is a decision about
+      // what to do with it — claim it, survey it, or spend nothing and press on
+      // — rather than a line in the log and seven per cent of morale. The
+      // renown and the objective are awarded by whichever is chosen.
+      this.pendingScenes.push(landmarkScene(this, l));
+    }
+
+    // The first time she is south of anything in the Portuguese record.
+    if (!this.passedTheKnown && pos.lat < BEYOND_LAT) {
+      this.passedTheKnown = true;
+      this.pendingScenes.push(beyondScene(this));
     }
 
     // Ports coming into view.
@@ -2011,7 +2037,8 @@ export class Game {
     // A beat of somebody's story outranks everything: these are the moments the
     // voyage is actually about, they are written rather than rolled, and each
     // one is only ever offered once in a career.
-    const event = this.rollArcBeat()
+    const event = this.pendingScenes.shift()
+      ?? this.rollArcBeat()
       ?? rollRivalMeeting(this, days)
       ?? rollOfficerEvent(this, days)
       ?? rollSeaEvent(this, days);
@@ -3993,6 +4020,7 @@ export class Game {
       markLaidAt: this.markLaidAt,
       markDistNm: this.markDistNm,
       deepestSouth: this.deepestSouth,
+      passedTheKnown: this.passedTheKnown,
       startT: this.startT,
       leads: this.leads,
       ventures: this.ventures,
@@ -4063,6 +4091,7 @@ export class Game {
     g.markLaidAt = d.markLaidAt ?? null;
     g.markDistNm = d.markDistNm ?? 0;
     g.deepestSouth = d.deepestSouth ?? 90;
+    g.passedTheKnown = d.passedTheKnown ?? false;
     g.startT = d.startT ?? 0;
     g.leads = d.leads ?? [];
     g.ventures = d.ventures ?? [];
