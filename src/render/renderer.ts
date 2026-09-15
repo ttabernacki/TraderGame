@@ -1,12 +1,13 @@
 import * as THREE from 'three';
-import { DEG, clamp, lerp, type LatLon } from '../core/math';
+import { DEG, NM, clamp, cosd, lerp, wrap180, type LatLon } from '../core/math';
 import { Land } from './land';
 import { Settlements } from './settlement';
 import { Ocean } from './ocean';
 import { Sky, type SkyLighting } from './sky';
 import { ShipMesh } from './shipMesh';
 import { Spray } from './spray';
-import type { HullClass } from '../ship/hull';
+import { hullClass, type HullClass } from '../ship/hull';
+import { initialSails } from '../ship/physics';
 import type { SailState } from '../ship/physics';
 
 export type CameraMode = 'chase' | 'deck' | 'masthead' | 'beam';
@@ -83,6 +84,15 @@ export interface RenderFrame {
   simTime: number;
   /** How far the lookout can see land, in nautical miles. */
   sightingRangeNm: number;
+  /**
+   * The strange sail, when there is one in sight.
+   *
+   * Drawn as a real hull at her real range and bearing, which at fourteen miles
+   * is three pixels of topsail on the rim of the world and is the whole point:
+   * she gets bigger, and a player watching her get bigger is reading the chase
+   * off the sea instead of off a panel.
+   */
+  stranger: { hullId: string; pos: LatLon; heading: number; beta: number } | null;
 }
 
 /**
@@ -109,6 +119,9 @@ export class Renderer {
   settlements = new Settlements();
   spray = new Spray();
   ship: ShipMesh;
+  /** The strange sail's hull, built the first time one is raised. */
+  private stranger: ShipMesh | null = null;
+  private strangerHullId: string | null = null;
 
   cameraMode: CameraMode = 'chase';
   /** User look offsets, in degrees. */
@@ -238,6 +251,71 @@ export class Renderer {
     this.sun.shadow.normalBias = 0.06;
 
     this.resize();
+  }
+
+  /**
+   * The other ship, placed on the same water as the land is.
+   *
+   * The world is drawn around the player's own hull at the origin, so she goes
+   * where the coastline goes: east in +x, north in -z, metres, from the same
+   * scale factors. Her rig is set to what a ship on that point of sail would be
+   * carrying rather than simulated — nobody at this range can see her trim, and
+   * nobody at any range needs a second integrator running to be told that a
+   * ship close-hauled has her yards braced up.
+   */
+  private drawStranger(f: RenderFrame): void {
+    const s = f.stranger;
+    if (!s) {
+      if (this.stranger) this.stranger.group.visible = false;
+      return;
+    }
+    if (this.strangerHullId !== s.hullId) {
+      if (this.stranger) {
+        this.scene.remove(this.stranger.group);
+        this.stranger.dispose();
+      }
+      this.stranger = new ShipMesh(hullClass(s.hullId));
+      this.strangerHullId = s.hullId;
+      this.scene.add(this.stranger.group);
+    }
+    const mesh = this.stranger;
+    if (!mesh) return;
+    mesh.group.visible = true;
+
+    const mPerDegLat = NM * 60;
+    const mPerDegLon = mPerDegLat * Math.max(cosd(f.pos.lat), 1e-6);
+    mesh.group.position.set(
+      wrap180(s.pos.lon - f.pos.lon) * mPerDegLon,
+      0,
+      -(s.pos.lat - f.pos.lat) * mPerDegLat,
+    );
+    mesh.group.rotation.order = 'YXZ';
+    mesh.group.rotation.y = Math.PI - s.heading * DEG;
+
+    // What she would be carrying, close-hauled or squared away.
+    const hull = hullClass(s.hullId);
+    const sails = initialSails(hull);
+    const beta = Math.abs(wrap180(s.beta));
+    for (let i = 0; i < sails.length; i++) {
+      sails[i].set = 1;
+      sails[i].condition = 1;
+      sails[i].trim = clamp(beta - 20, 5, 90);
+      sails[i].side = wrap180(s.beta) >= 0 ? -1 : 1;
+    }
+    // She heels the way a ship on that point of sail heels, which at this
+    // distance is the only cue that tells you which tack she is on.
+    const heel = Math.sin(beta * DEG) * 7;
+    mesh.setHeel(wrap180(s.beta) >= 0 ? -heel : heel, 0);
+    mesh.update({
+      sails,
+      trimSign: wrap180(s.beta) >= 0 ? -1 : 1,
+      pressures: sails.map(() => 0.7),
+      apparentBeta: wrap180(s.beta),
+      trueBeta: wrap180(s.beta),
+      apparentKnots: f.windKnots,
+      rudder: 0,
+      t: this.riggingClock,
+    });
   }
 
   /** Swap the ship model, for when the Crown grants a different hull. */
@@ -416,6 +494,8 @@ export class Renderer {
     this.ship.group.rotation.order = 'YXZ';
     this.ship.group.rotation.y = Math.PI - hdg + this.shipYaw * DEG;
     this.ship.setHeel(this.drawnHeel + this.shipRoll, this.shipPitch);
+
+    this.drawStranger(f);
 
     this.ship.update({
       sails: f.sails,

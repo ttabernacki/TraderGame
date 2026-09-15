@@ -340,6 +340,11 @@ export class Ui {
           `Steady at ${(g.helmOrder ?? 0).toFixed(0).padStart(3, '0')}\u00b0.`, 'note');
         return true;
       }
+      // The strange sail. Three keys because a chase is three decisions and
+      // they are all taken at the rail with a glass, not in a menu.
+      case 'f': if (g.encounter) { g.orderChase('close'); return true; } return false;
+      case 'r': if (g.encounter) { g.orderChase('avoid'); return true; } return false;
+      case 'i': if (g.encounter) { g.orderChase('hold'); return true; } return false;
       case 'y': g.autoTrim = !g.autoTrim;
         g.pushAlert(g.autoTrim ? 'The watch will keep her trimmed.' : 'You have the sheets yourself.', 'note');
         return true;

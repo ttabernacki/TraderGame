@@ -1,7 +1,7 @@
 import { Clock } from '../core/clock';
 import {
-  NM, angleDelta, clamp, cosd, formatBearing, formatLat, formatLon, haversine,
-  lerp, rhumbStep, wrap180, wrap360, type LatLon,
+  NM, angleDelta, bearingTo, clamp, compassPoint, cosd, formatBearing, formatLat, formatLon,
+  haversine, lerp, rhumbStep, wrap180, wrap360, type LatLon,
 } from '../core/math';
 import { Rng } from '../core/rng';
 import { Weather, type WeatherSample } from '../world/weather';
@@ -43,6 +43,12 @@ import {
   Rutter, compass, regionKey, seaSentence, type Confidence, type Damage,
 } from './rutter';
 import { rollSeaEvent, type SeaEvent } from './seaEvents';
+import {
+  bestCourse, newSeaRecord, raiseASail, readOf, sailStranger, strangerThinks, trafficAt,
+  type ChaseOrder, type SeaRecord, type Stranger,
+} from './encounter';
+import { hailScene } from './hailing';
+import { polarAt } from '../ship/polars';
 import { rollOfficerEvent } from './officerEvents';
 import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty';
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
@@ -370,6 +376,21 @@ export class Game {
    * throw away all the easting or westing she is making at the same time.
    */
   latitudeOrder: { lat: number; eastward: boolean } | null = null;
+
+  /**
+   * The strange sail, if there is one in sight. See game/encounter.
+   *
+   * At most one at a time, on purpose. Two sails on the horizon is a fleet
+   * action and this is not that game; one sail is a question, and a question is
+   * what the long passages are short of.
+   */
+  encounter: Stranger | null = null;
+  /** What the watch have been told to do about her. */
+  chaseOrder: ChaseOrder = 'hold';
+  /** What a career of meetings at sea came to. See encounter/SeaRecord. */
+  seaRecord: SeaRecord = newSeaRecord();
+  /** Days since the last sail was raised, so they do not come in pairs. */
+  private daysSinceSail = 3;
 
   /**
    * How far she has actually come.
@@ -994,6 +1015,48 @@ export class Game {
     return r;
   }
 
+  /**
+   * Something done to one of a people is done to all of them.
+   *
+   * Relations are kept per port, because trading rights are granted by a place
+   * and not by a nation. But a thing done on the open sea — a ship taken, a
+   * ship helped, a ransom paid without a shot — is not done at a port at all,
+   * and word of it travels along the flag rather than along the coast. So it
+   * moves every port of that people at once, which is the only honest way to
+   * record it and is also why taking a Castilian prize is a decision rather
+   * than a windfall.
+   */
+  shiftPeopleRegard(peopleId: string, delta: number): void {
+    for (const p of PORTS) {
+      if (p.people !== peopleId) continue;
+      const r = this.relationsFor(p.id);
+      r.regard = clamp(r.regard + delta, -1, 1);
+    }
+  }
+
+  /**
+   * Men killed all at once, which is not the same as men dying one at a time.
+   *
+   * The daily attrition takes a named man occasionally and by chance. An action
+   * takes several in an afternoon, and the ones it takes are named first,
+   * because the whole point of having written the fo'c'sle down is that the
+   * cost of a decision has somebody's name on it.
+   */
+  killHands(n: number, fate: string): void {
+    if (n <= 0) return;
+    this.crew.count = Math.max(0, this.crew.count - n);
+    this.crew.deaths += n;
+    const live = aboardHands(this.hands);
+    for (let i = 0; i < Math.min(n, live.length); i++) {
+      const man = live[Math.floor(this.rng.next() * live.length)];
+      if (!man.alive) continue;
+      man.alive = false;
+      man.aboard = false;
+      man.fate = fate;
+      man.fateT = this.clock.t;
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Simulation
   // -------------------------------------------------------------------------
@@ -1136,6 +1199,12 @@ export class Game {
     this.updateCrewAndShip(simDt);
     this.checkNoon();
     this.checkWorldEvents();
+    // Outside rollIncidents on purpose. A sail on the horizon is not an
+    // incident competing for the event slot — it is a thing that is there — and
+    // while it lived behind the incident cooldown the busiest water in the
+    // world produced one sighting a month instead of one a week.
+    this.checkForSails(simDt / 86400);
+    this.updateEncounter(simDt);
     this.rollIncidents(simDt);
     this.expireAlerts();
   }
@@ -1289,7 +1358,8 @@ export class Game {
     if (this.helmOrder === null && !dest && this.standingCourse === null && !this.latitudeOrder) {
       this.standingCourse = wrap360(this.ship.state.heading);
     }
-    const wanted = this.helmOrder ?? this.latitudeCourse() ?? dest?.bearing ?? this.standingCourse;
+    const wanted = this.helmOrder ?? this.chaseCourse() ?? this.latitudeCourse()
+      ?? dest?.bearing ?? this.standingCourse;
     if (wanted === null) return null;
     const windEye = this.weatherNow.wind.from;
     const noGo = this.noGoAngle;
@@ -3429,7 +3499,7 @@ export class Game {
     this.pendingEvent = null;
     if (!choice) return;
     const outcome = choice.resolve(this);
-    this.logEvent('peril', outcome, true);
+    this.logEvent(event.severity === 'note' ? 'note' : 'peril', outcome, true);
     this.pushAlert(outcome, event.severity);
     this.refreshEnvironment();
   }
@@ -3736,6 +3806,181 @@ export class Game {
     this.latitudeOrder = null;
   }
 
+  // -------------------------------------------------------------------------
+  // The strange sail
+  // -------------------------------------------------------------------------
+
+  /**
+   * The course the watch steer while there is a sail in sight and an order
+   * about her.
+   *
+   * Deliberately the *best* course for the order rather than a bearing: told to
+   * close a ship dead to windward, a caravel does not point at her, she works
+   * up to her on the tack that pays. That is `bestCourse`, which is the same
+   * calculation the stranger's own master is doing about you, out of the same
+   * table, so neither ship has an advantage the rig does not give her.
+   */
+  private chaseCourse(): number | null {
+    const s = this.encounter;
+    if (!s || this.chaseOrder === 'hold') return null;
+    const w = this.weatherNow.wind;
+    const toHer = bearingTo(this.ship.state.pos, s.pos);
+    const want = this.chaseOrder === 'close' ? toHer : wrap360(toHer + 180);
+    return bestCourse(this.ship.hull.id, w.from, w.speed, want).heading;
+  }
+
+  /** Nautical miles to the strange sail, or null when there is not one. */
+  rangeToSail(): number | null {
+    if (!this.encounter) return null;
+    return haversine(this.ship.state.pos, this.encounter.pos) / NM;
+  }
+
+  /**
+   * The pilot, once in a career, on how a chase is actually decided.
+   *
+   * The same reason the volta do mar is said out loud: it is a real piece of
+   * seamanship that a player will not arrive at by reasoning from anything on
+   * the screen, and a captain of this period would have known it before he was
+   * twenty. Which way to run is read off both ships' polars at the wind that is
+   * actually blowing — so the advice is never generic, and it is never wrong.
+   */
+  private chaseAdvice(): string | null {
+    const s = this.encounter;
+    if (!s || this.chaseToldOnce) return null;
+    const w = this.weatherNow.wind;
+    const onTheWind = 55;
+    const beforeIt = 160;
+    const myClose = polarAt(this.ship.hull.id, w.speed, onTheWind);
+    const myRun = polarAt(this.ship.hull.id, w.speed, beforeIt);
+    const herClose = polarAt(s.hullId, w.speed, onTheWind);
+    const herRun = polarAt(s.hullId, w.speed, beforeIt);
+    const closeEdge = myClose - herClose;
+    const runEdge = myRun - herRun;
+    if (Math.abs(closeEdge - runEdge) < 0.35) return null;
+    this.chaseToldOnce = true;
+    return closeEdge > runEdge
+      ? 'The pilot: "Haul your wind, senhor. She will not lie as close as we will, and every '
+        + 'hour on this tack is half a mile she cannot get back."'
+      : 'The pilot: "Square away and run, senhor. She points better than we do and we will not '
+        + 'beat her to windward — but before it she is the slower ship."';
+  }
+
+  /** Whether the pilot has explained a chase. Once a career is enough. */
+  private chaseToldOnce = false;
+
+  /** Tell the watch what to do about her. */
+  orderChase(order: ChaseOrder): void {
+    if (!this.encounter) return;
+    this.chaseOrder = order;
+    const advice = this.chaseAdvice();
+    if (advice) {
+      this.pushAlert(advice, 'note');
+      this.logEvent('note', advice, true);
+    }
+    // A chase is conned, not run off. Dropping out of the fast rates is the
+    // difference between a three-hour pursuit and one frame.
+    if (order !== 'hold') this.easeTheClock(2);
+    this.pushAlert(order === 'close'
+      ? 'Hands to the braces — we are going down to her.'
+      : order === 'avoid'
+        ? 'Put the helm up. We want nothing to do with her.'
+        : 'Hold your course and let her do as she likes.', 'note');
+  }
+
+  /**
+   * Raise a sail, occasionally, where there is shipping to raise one in.
+   *
+   * The roll is per day of simulated time and scales with how busy the water
+   * is, so the Gulf of Cádiz produces one every few days and the water below
+   * the frontier produces none at all — which is the fact the whole voyage is
+   * about and which nothing in the game said out loud before.
+   */
+  private checkForSails(days: number): void {
+    this.daysSinceSail += days;
+    if (this.encounter || this.pendingEvent || this.dockedAt || this.anchored) return;
+    if (this.daysSinceSail < 3) return;
+    const busy = trafficAt(this.ship.state.pos);
+    if (busy < 0.04) return;
+    // Nobody sights anything in a fog.
+    const vis = this.weatherNow.visibility;
+    if (vis < 4) return;
+    // Sub-linear in the traffic, because what is being modelled is not how many
+    // ships are out there but how often one comes over your particular horizon,
+    // and the second is a much flatter function of the first. Measured: about
+    // one a week in the Gulf of Cádiz, one a fortnight off the Canaries, one in
+    // five weeks on the Guinea run, and none at all in blue water.
+    const chance = clamp(Math.sqrt(busy) * 0.09 * days, 0, 0.4);
+    if (!this.rng.chance(chance)) return;
+
+    const range = clamp(sightingRangeNm(this.ship.mastHeight, vis, 28), 5, 22);
+    const s = raiseASail(this, range * this.rng.range(0.75, 1));
+    if (!s) return;
+    this.encounter = s;
+    this.chaseOrder = 'hold';
+    this.seaRecord.sighted++;
+    this.daysSinceSail = 0;
+    this.easeTheClock(3);
+    this.pushAlert('Sail ho! — a strange sail, and nobody aboard knows whose.', 'warning');
+    this.logEvent('note',
+      `A sail raised from the masthead, ${range.toFixed(0)} miles off. She is the first thing `
+      + `anybody aboard has seen that was not water in ${this.crew.daysSinceLandfall.toFixed(0)} days.`,
+      true);
+  }
+
+  /** She is not there any more: the ship has come to an anchor or gone in. */
+  private partCompany(): void {
+    this.encounter = null;
+    this.chaseOrder = 'hold';
+  }
+
+  /** Sail her, and see what the two of you have made of each other. */
+  private updateEncounter(simDt: number): void {
+    const s = this.encounter;
+    if (!s) return;
+    // A sail in sight is the one thing in this game that must not be sailed in
+    // one step. At the fastest rates a frame is half an hour, in which two
+    // converging ships cover three miles — so the hail range is stepped clean
+    // over and the two of them pass through each other without a word. Two
+    // minutes a step is a cable and a half, which nothing can hide in.
+    let remaining = simDt;
+    let range = haversine(this.ship.state.pos, s.pos) / NM;
+    while (remaining > 0) {
+      const step = Math.min(120, remaining);
+      sailStranger(this, s, step);
+      remaining -= step;
+      range = haversine(this.ship.state.pos, s.pos) / NM;
+      if (range < 0.55) break;
+    }
+    strangerThinks(this, s, range);
+    s.read = Math.max(s.read, readOf(range));
+
+    // Hull down and going away. Three hours of watching a topsail get smaller
+    // is the commonest outcome of a sighting and it should be allowed to be.
+    const gone = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility, 28) + 3;
+    if (range > gone) {
+      this.pushAlert(s.spoken
+        ? `${s.name} is hull down to the ${compassPoint(bearingTo(this.ship.state.pos, s.pos))}.`
+        : 'She is gone. Nobody aboard will ever know whose she was.', 'note');
+      this.logEvent('note', s.spoken
+        ? `Parted company with ${s.name}. She is hull down and going her own way.`
+        : 'The strange sail is below the horizon and has not been spoken. Whose she was, and '
+          + 'what she was doing out here, are two questions this ship will not be answering.');
+      this.partCompany();
+      return;
+    }
+
+    // Within hail. Both ships have to be willing, or one of them simply is not
+    // there when the other arrives: a ship running from you that you cannot
+    // catch is not spoken, however close you get.
+    if (range < 0.55 && !s.spoken && !this.pendingEvent) {
+      s.spoken = true;
+      this.seaRecord.spoken++;
+      this.chaseOrder = 'hold';
+      this.easeTheClock(1);
+      this.pendingEvent = hailScene(this, s);
+    }
+  }
+
   /**
    * Order a quantity of canvas. Making and shortening sail is an order given
    * from the quarterdeck, not something the captain does with his own hands, so
@@ -3911,6 +4156,8 @@ export class Game {
     this.lastLandSeenT = this.clock.t;
     this.landInSight = true;
     this.recentEvents = [];
+    // Whatever was on the horizon is somebody else's business now.
+    this.partCompany();
     this.markets.refresh(def.id, this.clock.t);
     this.refreshPortBusiness(def);
     this.deliverVentures(def);
@@ -4559,6 +4806,10 @@ export class Game {
       orderedCanvas: this.orderedCanvas,
       helmOrder: this.helmOrder,
       latitudeOrder: this.latitudeOrder,
+      encounter: this.encounter,
+      seaRecord: this.seaRecord,
+      chaseOrder: this.chaseOrder,
+      chaseToldOnce: this.chaseToldOnce,
       route: this.route,
       daysSincePort: this.daysSincePort,
       distanceRun: this.distanceRun,
@@ -4633,6 +4884,10 @@ export class Game {
     g.orderedCanvas = d.orderedCanvas ?? g.ship.canvasSet;
     g.helmOrder = d.helmOrder ?? null;
     g.latitudeOrder = d.latitudeOrder ?? null;
+    g.encounter = d.encounter ?? null;
+    g.seaRecord = { ...newSeaRecord(), ...(d.seaRecord ?? {}) };
+    g.chaseOrder = d.chaseOrder ?? 'hold';
+    g.chaseToldOnce = d.chaseToldOnce ?? false;
     // Saves from before a passage could have more than one mark carry a single
     // destination; it becomes a route of one.
     g.route = d.route ?? (d.destination ? [d.destination] : []);

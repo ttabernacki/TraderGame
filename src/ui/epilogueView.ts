@@ -181,6 +181,37 @@ export class EpilogueView {
         // Who he was, which the whole career was an answer to.
         card(originDef(g.origin).name, el('p', {}, originDef(g.origin).epilogue)),
 
+        // Who you turned out to be when there was nobody watching but the men
+        // on your own deck and the men on the other one.
+        g.seaRecord.sighted > 0
+          ? card('Ships spoken',
+              kv('Sails raised', String(g.seaRecord.sighted)),
+              kv('Ships spoken', String(g.seaRecord.spoken)),
+              g.seaRecord.prizes > 0 ? kv('Taken by boarding', String(g.seaRecord.prizes)) : null,
+              g.seaRecord.repulsed > 0 ? kv('Boardings beaten off you', String(g.seaRecord.repulsed)) : null,
+              g.seaRecord.ransoms > 0 ? kv('Bought off', String(g.seaRecord.ransoms)) : null,
+              g.seaRecord.succoured > 0
+                ? el('p', { class: 'good' },
+                  `${g.seaRecord.succoured === 1 ? 'One ship' : `${g.seaRecord.succoured} ships`} `
+                  + 'in distress that you went alongside. The men who were aboard them are the '
+                  + 'only people who will ever tell that story, and they will tell it for the '
+                  + 'rest of their lives to anybody who will sit still.')
+                : null,
+              g.seaRecord.abandoned > 0
+                ? el('p', { class: 'bad' },
+                  `${g.seaRecord.abandoned === 1 ? 'One ship' : `${g.seaRecord.abandoned} ships`} `
+                  + 'in distress that you held your course past. Nobody ever raised it with you. '
+                  + 'It is in the escrivão’s book with the time she was sighted and the time she '
+                  + 'was lost sight of, and that is the whole of the entry.')
+                : null,
+              g.seaRecord.spoken === 0
+                ? el('p', { class: 'flavour' },
+                  'Not one of them was ever spoken. On this ocean, in this century, that is a '
+                  + 'choice and not an accident.')
+                : null,
+            )
+          : null,
+
         // The shore end. The rival is what the sea made of you; this is what
         // the building made of you, and it is the version that survives.
         ...(() => {

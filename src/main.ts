@@ -1,12 +1,14 @@
 import './style.css';
 
-import { DEG, clamp } from './core/math';
+import { DEG, clamp, wrap180 } from './core/math';
 import { Game } from './game/state';
 import { portDef } from './world/ports';
 import type { Difficulty } from './game/difficulty';
 import type { OriginId } from './progression/origins';
 import { rollOfficerEvent } from './game/officerEvents';
 import { castLead, landfallScene } from './game/soundings';
+import { raiseASail } from './game/encounter';
+import { hailScene } from './game/hailing';
 import { mutinyScene } from './game/mutiny';
 import { rollSeaEvent } from './game/seaEvents';
 import { sightOpportunities, takeSight } from './navigation/navigator';
@@ -332,7 +334,16 @@ function buildFrame(g: Game): RenderFrame {
     return clamp((coefficient / 1.8) * sign, -1, 1);
   });
 
+  const other = g.encounter;
   return {
+    stranger: other
+      ? {
+        hullId: other.hullId,
+        pos: other.pos,
+        heading: other.heading,
+        beta: wrap180(g.weatherNow.wind.from - other.heading),
+      }
+      : null,
     pos: g.ship.state.pos,
     // The shown attitude, not the simulated one: see Game.displayHeading.
     heading: g.displayHeading,
@@ -414,6 +425,14 @@ if (import.meta.env.DEV) {
       },
       rollOfficerEvent,
       rollSeaEvent,
+      /** Raise a strange sail on demand, at a range in miles. */
+      raiseASail(rangeNm = 6) {
+        if (!game) return null;
+        game.encounter = raiseASail(game, rangeNm);
+        game.chaseOrder = 'hold';
+        return game.encounter;
+      },
+      hailScene,
       sightOpportunities,
       takeSight,
       castLead,

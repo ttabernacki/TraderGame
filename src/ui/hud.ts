@@ -1,8 +1,10 @@
-import { angleDelta, clamp, compassPoint, formatBearing, wrap360 } from '../core/math';
+import { angleDelta, bearingTo, clamp, compassPoint, formatBearing, wrap360 } from '../core/math';
+import { describeStranger, strangerIntentText } from '../game/encounter';
 import { beaufortName } from '../world/wind';
 import { moraleWord } from '../crew/crew';
 import { enduranceDays } from '../crew/crew';
 import { daysLeft } from '../progression/ventures';
+import type { ChaseOrder } from '../game/encounter';
 import type { Game, MastTrim } from '../game/state';
 import { append, asideRow, clear, el, hudRow, svg } from './dom';
 import { HeadingTape } from './headingTape';
@@ -37,6 +39,24 @@ export class Hud {
   private alerts = el('div', { id: 'hud-alerts' });
   private course = el('div', { class: 'hud-panel', id: 'hud-course' });
   private orders = el('div', { class: 'hud-panel', id: 'hud-orders' });
+  private sail = el('div', { class: 'hud-panel', id: 'hud-sail' });
+  // The one interactive panel on the head-up display, so the one that cannot be
+  // thrown away and rebuilt sixty times a second: a button replaced under the
+  // pointer between the press and the release is a button that never fires.
+  private sailWhat = el('span', { class: 'v sail-what', style: { fontStyle: 'italic' } });
+  private sailRange = el('span', { class: 'v' });
+  private sailBearing = el('span', { class: 'v' });
+  private sailIntent = el('span', {
+    class: 'k sail-intent', style: { fontStyle: 'italic', whiteSpace: 'normal' },
+  });
+  private sailButtons: [ChaseOrder, HTMLElement][] = [];
+  /** The game the buttons act on, set each frame so the handlers stay bound. */
+  private sailGame: Game | null = null;
+  /** Last range read, so closing speed comes off the panel's own number. */
+  private lastRange: number | null = null;
+  private lastRangeT: number | null = null;
+  /** Closing speed, held between samples so the line does not churn per frame. */
+  private closingKn = 0;
   tape = new HeadingTape();
   private hint = el('div', { class: 'hint' });
   /** The alert ids currently drawn, so the panel is only rebuilt when they change. */
@@ -62,6 +82,29 @@ export class Hud {
     this.windShip = w.ship;
     this.windCurrent = w.current;
 
+    this.sailButtons = ([
+      ['close', 'Stand towards her', 'F'],
+      ['avoid', 'Haul off', 'R'],
+      ['hold', 'Take no notice', 'I'],
+    ] as [ChaseOrder, string, string][]).map(([order, label, key]) => {
+      const b = el('button', { class: 'sail-order' },
+        label, el('span', { class: 'sail-key' }, key)) as HTMLElement;
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.sailGame?.orderChase(order);
+      });
+      return [order, b] as [ChaseOrder, HTMLElement];
+    });
+    this.sail.append(
+      el('div', { class: 'hud-title' }, 'A strange sail'),
+      el('div', { class: 'hud-row aside' }, this.sailWhat),
+      el('div', { class: 'hud-row' }, el('span', { class: 'k' }, 'Range'), this.sailRange),
+      el('div', { class: 'hud-row' }, el('span', { class: 'k' }, 'Bearing'), this.sailBearing),
+      el('div', { class: 'hud-row aside' }, this.sailIntent),
+      el('div', { class: 'sail-orders' }, ...this.sailButtons.map(([, b]) => b)),
+    );
+    this.sail.style.display = 'none';
+
     // One flowing column down each side, rather than six panels pinned to fixed
     // offsets from the top and the bottom.
     //
@@ -79,7 +122,7 @@ export class Hud {
     const left = el('div', { class: 'hud-col', id: 'hud-left' },
       this.nav, this.course, this.ship);
     const right = el('div', { class: 'hud-col', id: 'hud-right' },
-      this.wind, this.orders, this.time);
+      this.wind, this.sail, this.orders, this.time);
     this.root.append(this.tape.root, left, right, this.alerts, this.hint);
     this.hint.innerHTML = KEYS;
     this.hint.classList.add('idle');
@@ -493,6 +536,11 @@ export class Hud {
     // not been in front of the player for a week.
     this.renderOrders(g);
 
+    // --- The strange sail --------------------------------------------------
+    // Above the orders, because for as long as there is one in sight she is the
+    // only thing on this screen that is going to change in the next hour.
+    this.renderSail(g);
+
     // --- Alerts ------------------------------------------------------------
     //
     // Rebuilt only when the list actually changes, not every frame.
@@ -563,6 +611,56 @@ export class Hud {
    * the whole of any of them — that is what the orders screen is for — but
    * enough that the reason for the passage is never more than a glance away.
    */
+  /**
+   * What the masthead has of her, and what the watch have been told to do.
+   *
+   * Everything here is what the lookout can honestly say at the range she is
+   * at — a topsail at fourteen miles is a topsail and nothing else, and the
+   * flag is the last thing anybody learns. The one hard number is the range,
+   * because a lookout with a horizon and a masthead really could give you that
+   * within a mile or two, and because whether it is opening or closing is the
+   * entire question.
+   */
+  private renderSail(g: Game): void {
+    const s = g.encounter;
+    const range = g.rangeToSail();
+    if (!s || range === null) {
+      this.sail.style.display = 'none';
+      this.lastRange = null;
+      this.lastRangeT = null;
+      return;
+    }
+    this.sail.style.display = '';
+
+    const bearing = bearingTo(g.ship.state.pos, s.pos);
+    const off = angleDelta(g.ship.state.heading, bearing);
+    // Knots of closing, from the range itself rather than from the two
+    // velocities, so it is the number the player can check against the panel.
+    // Sampled every five minutes of ship time and then held. Recomputed every
+    // frame it read out to a new tenth of a knot sixty times a second, which
+    // reflowed the line, which moved the buttons under the pointer.
+    if (this.lastRangeT === null || g.clock.t - this.lastRangeT > 300) {
+      if (this.lastRange !== null && this.lastRangeT !== null && g.clock.t > this.lastRangeT) {
+        this.closingKn = ((this.lastRange - range) * 3600) / (g.clock.t - this.lastRangeT);
+      }
+      this.lastRange = range;
+      this.lastRangeT = g.clock.t;
+    }
+    const closing = this.closingKn;
+
+    this.sailWhat.textContent = describeStranger(s, range, off);
+    this.sailRange.textContent =
+      `${range < 1 ? `${(range * 10).toFixed(1)} cables` : `${range.toFixed(1)} miles`}`
+      + `${Math.abs(closing) > 0.15
+        ? `, ${closing > 0 ? 'closing' : 'opening'} ${Math.abs(closing).toFixed(1)} kn` : ''}`;
+    this.sailBearing.textContent = `${bearing.toFixed(0).padStart(3, '0')}° ${compassPoint(bearing)}`;
+    this.sailIntent.textContent = strangerIntentText(s, closing);
+    for (const [order, b] of this.sailButtons) {
+      b.classList.toggle('on', g.chaseOrder === order);
+    }
+    this.sailGame = g;
+  }
+
   private renderOrders(g: Game): void {
     const lines: { k: string; v: string; urgent?: boolean }[] = [];
 

@@ -473,6 +473,53 @@ export class Chart {
   }
 
   /** Vertices drawn at all, whether well or badly. */
+  /**
+   * Somebody else's sheet, copied onto yours.
+   *
+   * This is not surveying and it must not feel like it. A pilot who lets you
+   * copy his coast hands you his errors along with his coast: what you get is a
+   * drawing good to within `accuracyNm` and no better, laid down in one
+   * afternoon over a stretch you may never have seen. It is worth having — it
+   * is how most of what Portugal knew travelled — and it is exactly why the
+   * Casa forbade it, and why a sheet of the Mina coast was worth killing for.
+   *
+   * It is deliberately weaker than running the coast yourself: the copy is
+   * entered at a fixed modest weight, so one honest pass of your own over the
+   * same headland will move it, and it never overwrites something you already
+   * know better.
+   *
+   * Returns the number of vertices the copy actually added or improved.
+   */
+  copyFrom(centre: LatLon, rangeNm: number, accuracyNm: number, t: number): number {
+    const w = 1 / (accuracyNm * accuracyNm + 0.25);
+    let gained = 0;
+    for (const v of coastVerticesNear(centre, rangeNm)) {
+      const key = `${v.land}:${v.index}`;
+      const have = this.points.get(key);
+      if (have && have.errorNm <= accuracyNm) continue;
+      // His error, not yours, and the same every time you copy the same sheet.
+      const ang = hash(key + 'copy') * Math.PI * 2;
+      const off = accuracyNm * (0.35 + 0.65 * hash(key + 'copyr'));
+      const lat = v.lat + (off * Math.cos(ang)) / 60;
+      const lon = v.lon + (off * Math.sin(ang)) / (60 * Math.max(cosd(v.lat), 1e-6));
+      if (have) {
+        have.lat = lat;
+        have.lon = lon;
+        have.wLat = Math.min(Math.max(have.wLat, w), WEIGHT_CAP);
+        have.wLon = Math.min(Math.max(have.wLon, w), WEIGHT_CAP);
+        have.errorNm = errorOf(lat, lon, v);
+        have.t = t;
+      } else {
+        this.points.set(key, {
+          key, lat, lon, wLat: w, wLon: w, passes: 0, obsT: -1e9,
+          errorNm: errorOf(lat, lon, v), land: v.land, t,
+        });
+      }
+      gained++;
+    }
+    return gained;
+  }
+
   drawn(): number {
     return this.points.size;
   }

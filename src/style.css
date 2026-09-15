@@ -2209,3 +2209,53 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
   .screen-head h1 { font-size: 18px; }
   .screen-head .sub { font-size: 11.5px; }
 }
+
+/* The three orders about a strange sail.
+
+   Buttons rather than a key list, because the chase is the one situation in
+   this game where the decision is taken under time pressure with a glass in one
+   hand, and because it is the only way the thing works on a phone at all. The
+   key letter rides on the button so nobody has to learn two interfaces. */
+.sail-orders {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 7px;
+}
+.sail-order {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--deck-edge);
+  border-radius: 3px;
+  background: rgba(24, 19, 14, 0.35);
+  color: var(--cream);
+  font: inherit;
+  font-size: calc(12.5px * var(--ui));
+  text-align: left;
+  cursor: pointer;
+}
+.sail-order:hover { background: rgba(60, 48, 34, 0.55); }
+.sail-order.on {
+  background: rgba(120, 82, 32, 0.5);
+  border-color: #d4a53f;
+  color: #f3e3c4;
+}
+.sail-key {
+  color: var(--ink-faint);
+  font-size: calc(10.5px * var(--ui));
+  letter-spacing: 0.08em;
+  border: 1px solid var(--deck-edge);
+  border-radius: 2px;
+  padding: 0 4px;
+}
+.sail-order.on .sail-key { color: #e6c98a; border-color: #a8763a; }
+
+/* Both of these lines change as the range closes and both of them wrap, so
+   without a floor the panel grows and shrinks a line at a time and the order
+   buttons walk up and down the screen under the pointer. */
+.sail-what { min-height: calc(2.9em); display: block; }
+.sail-intent { min-height: calc(2.9em); display: block; }
