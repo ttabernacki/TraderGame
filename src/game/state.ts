@@ -53,6 +53,9 @@ import {
   pilotOnTheMonsoon, readMonsoon, setsAgainst, type MonsoonRead,
 } from '../navigation/monsoon';
 import {
+  groundingOutlook, pilotOnTheTide, readTide, tideClock, type TideRead,
+} from '../navigation/tides';
+import {
   ERRAND_BY_ID, backingFor, journeyScene, newJourneyRecord, outfitCost,
   type Journey, type JourneyRecord,
 } from '../progression/inland';
@@ -1588,6 +1591,14 @@ export class Game {
 
   /** Whether the pilot has explained the monsoon. Once a career is enough. */
   private monsoonToldOnce = false;
+  /** And the tide, likewise. */
+  private tideToldOnce = false;
+
+  /** What the water is doing under her, when she is where it matters. */
+  tideNow(): TideRead | null {
+    if (this.sounding.shoreDistNm > 30) return null;
+    return readTide(this.ship.state.pos, this.clock.t);
+  }
   /** So the warning about sailing against the season is given once a season. */
   private monsoonWarnedT = -1e9;
 
@@ -1628,6 +1639,24 @@ export class Game {
     this.pushAlert(said, 'warning');
     this.logEvent('note', said, true);
     this.easeTheClock(3);
+  }
+
+  /**
+   * The pilot on the tide, the first time she is in water that has one.
+   *
+   * Said inshore, because that is where it matters and where a master would
+   * raise it — three metres of range is a sentence about the Tagus, not a
+   * fact about the ocean.
+   */
+  private watchTheTide(): void {
+    if (this.tideToldOnce) return;
+    const r = this.tideNow();
+    if (!r || r.range < 1.8) return;
+    if (this.sounding.shoreDistNm > 18) return;
+    this.tideToldOnce = true;
+    const said = pilotOnTheTide(r);
+    this.pushAlert(said, 'note');
+    this.logEvent('note', said, true);
   }
 
   /**
@@ -1795,6 +1824,7 @@ export class Game {
     this.keepTheBook(simDt);
     this.watchForTheTurn(hours);
     this.watchTheMonsoon();
+    this.watchTheTide();
 
     // Chart whatever the lookout can see, at intervals.
     if (this.clock.t - this.lastSurveyT > 900) {
@@ -3656,12 +3686,105 @@ export class Game {
     // while the player is looking at something else.
     this.setCanvas(0);
     this.steadyAsSheGoes();
-    this.pushAlert(
-      'She is in against the land. The watch have handed the sail. '
-      + 'Back her off with B, or steer off and press H.', 'warning');
-    this.logEvent('note',
-      'Ran her in until she would go no further and touched, gently, with no harm in it. '
-      + 'Handed the sail and lay against the shore waiting for orders.');
+
+    // What it costs is the state of the tide, which is the whole of it.
+    //
+    // Touching used to be free — "gently, with no harm in it" — which was a
+    // deliberate kindness and also meant the one piece of water in this game
+    // that can genuinely trap a ship had no teeth at all. It still does not
+    // wreck her. What it does now is the thing that actually decided these:
+    // a ship that goes on with the water making under her lifts off on the
+    // next of the flood, and one that goes on at the top of a spring tide
+    // spends the day lying over on her bilge with her own weight working her.
+    const outlook = groundingOutlook(this.tideNow());
+    if (outlook.easy) {
+      this.pushAlert(
+        'She is in against the land, and the tide is making. The watch have handed the sail. '
+        + 'Back her off with B, or steer off and press H.', 'warning');
+      this.logEvent('note',
+        'Ran her in until she would go no further and touched. ' + outlook.text);
+      return;
+    }
+    this.pendingScenes.push(this.aground(outlook));
+  }
+
+  /**
+   * She has taken the ground on a falling tide, which is a day's work.
+   *
+   * Three courses, and they are the three a master had: lighten her and get her
+   * off now, lay out an anchor and wait for the water, or let her sit and take
+   * what comes. Every one of them costs something real, and none of them is
+   * the end of the voyage.
+   */
+  private aground(outlook: { easy: boolean; hours: number; text: string }): SeaEvent {
+    const cargo = this.ship.cargoTons;
+    const over = Math.min(cargo, Math.max(3, Math.round(cargo * 0.35)));
+    return {
+      id: 'aground',
+      title: 'She has taken the ground',
+      severity: 'grave',
+      text: `She went on making four knots and stopped in her own length, and everything not `
+        + `secured went forward along the deck with her.\n\n${outlook.text}\n\n`
+        + 'The carpenter is sounding the well. Nothing is coming in yet.',
+      choices: [
+        ...(cargo > 2 ? [{
+          label: `Lighten her — ${over} tons over the side`,
+          detail: 'Get her off on this tide. It is cargo, and some of it is somebody else\u2019s.',
+          resolve: (g: Game) => {
+            const gone = g.heaveCargoOverboard(over);
+            g.clock.t += 4 * 3600;
+            g.crew.fatigue = clamp(g.crew.fatigue + 0.14, 0, 1);
+            shiftAll(g.hands, -0.04);
+            return `${gone.toFixed(0)} tons through the lee ports and into the boats, a kedge `
+              + 'laid out astern, and the whole company at the capstan. She came off at about '
+              + 'four in the afternoon with a noise like a door opening and swung to her anchor '
+              + 'in four fathoms. The cargo is on the putty and will be there at low water for '
+              + 'anyone who wants it.';
+          },
+        }] : []),
+        {
+          label: 'Lay out a kedge and wait for the water',
+          detail: `${tideClock(outlook.hours)} until high water, lying over on her bilge.`,
+          resolve: (g: Game) => {
+            g.clock.t += Math.max(2, outlook.hours) * 3600;
+            g.crew.fatigue = clamp(g.crew.fatigue + 0.22, 0, 1);
+            g.crew.morale = clamp(g.crew.morale - 0.08, 0, 1);
+            shiftAll(g.hands, -0.08);
+            // Lying over on the ground works her, and how much depends on
+            // what state she was already in.
+            const hurt = g.rng.range(0.04, 0.13) * (2 - g.ship.condition.hull);
+            g.ship.damage(hurt);
+            return `A kedge laid out astern in the boat and the company at the capstan every `
+              + `hour of the ebb for nothing. She lay over about fifteen degrees at low water `
+              + `with the sea breaking under her counter and everybody aboard listening to her, `
+              + `and came off on the top of the flood. She is making water where she was not `
+              + `before, and the carpenter has a list.`;
+          },
+        },
+        {
+          label: 'Let her lie and see what the tide leaves',
+          detail: 'Do nothing. It is sometimes right and it is never comfortable.',
+          resolve: (g: Game) => {
+            g.clock.t += Math.max(3, outlook.hours + 2) * 3600;
+            g.crew.morale = clamp(g.crew.morale - 0.14, 0, 1);
+            shiftAll(g.hands, -0.12);
+            const hurt = g.rng.range(0.08, 0.22) * (2 - g.ship.condition.hull);
+            g.ship.damage(hurt);
+            if (g.rng.chance(0.3)) {
+              g.ship.condition.leak = clamp(g.ship.condition.leak + 0.25, 0, 3);
+              return 'She lay down on her bilge and stayed there through the whole of the ebb '
+                + 'with her people sitting on the weather rail because there was nowhere else '
+                + 'to sit. She floated at about two in the morning and she has started a butt '
+                + 'somewhere forward that nobody can find. Both watches on the pumps from now '
+                + 'until she is hove down somewhere.';
+            }
+            return 'She lay down on her bilge and stayed there through the whole of the ebb, and '
+              + 'floated on the top of the flood with a good deal of noise and nothing broken '
+              + 'that anybody can see. The boatswain does not believe it and is still looking.';
+          },
+        },
+      ],
+    };
   }
 
   /**
@@ -5072,6 +5195,7 @@ export class Game {
       chaseOrder: this.chaseOrder,
       chaseToldOnce: this.chaseToldOnce,
       monsoonToldOnce: this.monsoonToldOnce,
+      tideToldOnce: this.tideToldOnce,
       monsoonWarnedT: this.monsoonWarnedT,
       journeys: this.journeys,
       journeyRecord: this.journeyRecord,
@@ -5158,6 +5282,7 @@ export class Game {
     g.chaseOrder = d.chaseOrder ?? 'hold';
     g.chaseToldOnce = d.chaseToldOnce ?? false;
     g.monsoonToldOnce = d.monsoonToldOnce ?? false;
+    g.tideToldOnce = d.tideToldOnce ?? false;
     g.monsoonWarnedT = d.monsoonWarnedT ?? -1e9;
     g.journeys = d.journeys ?? [];
     g.journeyRecord = { ...newJourneyRecord(), ...(d.journeyRecord ?? {}) };

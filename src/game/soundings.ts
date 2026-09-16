@@ -8,6 +8,7 @@ import {
 import { portDef } from '../world/ports';
 import { skill } from '../crew/skills';
 import type { SeaEvent } from './seaEvents';
+import { readTide } from '../navigation/tides';
 import type { Game } from './state';
 
 /**
@@ -131,11 +132,19 @@ export function castLead(g: Game): LeadCast {
   }
 
   // What the leadsman actually calls, with everything in it that goes wrong:
-  // the stretch of a wet line, the ship's remaining way, and a tide nobody has
-  // a table for. A pilot who knows his business loses less of it.
+  // the stretch of a wet line, the ship's remaining way, and the tide.
+  //
+  // The tide used to be a flat 1.1 metres of unremovable error, on the grounds
+  // that nobody had a table for it. That was true of the game and false of the
+  // period: a pilot carried the establishment of the port and the age of the
+  // moon and had the state of the tide to within half an hour, which is most of
+  // the correction. So it is his skill that decides how much of it he takes
+  // out, and a good one gets his soundings down to the stretch of the line.
   const readSigma = (0.9 + depth * 0.022) * (1.3 - nvSkill * 0.55)
     + speed * 0.35;
-  const tideSigma = 1.1;
+  const tide = readTide(truth, g.clock.t);
+  const swing = tide ? (tide.range / 2) * tide.springs : 0.55;
+  const tideSigma = swing * (1.05 - nvSkill * 0.8);
   const sigmaD = Math.hypot(readSigma, tideSigma);
   const called = Math.max(2, depth + g.rng.normal(0, sigmaD));
   const fathoms = called / 1.8288;

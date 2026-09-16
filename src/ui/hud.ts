@@ -1,6 +1,7 @@
 import { angleDelta, bearingTo, clamp, compassPoint, formatBearing, wrap360 } from '../core/math';
 import { describeStranger, strangerIntentText } from '../game/encounter';
 import { beaufortName } from '../world/wind';
+import { tideClock } from '../navigation/tides';
 import { moraleWord } from '../crew/crew';
 import { enduranceDays } from '../crew/crew';
 import { daysLeft } from '../progression/ventures';
@@ -197,6 +198,17 @@ export class Hud {
         return [
           hudRow(m.season === 'turning' ? 'The turning' : 'The season', m.name),
           asideRow('Runs for', `${Math.round(m.daysToTurn)} more days`),
+        ];
+      })(),
+      // The tide, inshore, where three metres of range is the difference
+      // between a sounding and a guess. Simulated since the beginning: the
+      // depth under her keel has always moved with it and nobody was told.
+      ...(() => {
+        const t = g.tideNow();
+        if (!t) return [];
+        return [
+          hudRow('Tide', t.word),
+          asideRow('High water', tideClock(t.toHigh)),
         ];
       })(),
     );
