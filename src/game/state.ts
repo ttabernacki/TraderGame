@@ -1,7 +1,7 @@
 import { Clock } from '../core/clock';
 import {
-  NM, angleDelta, bearingTo, clamp, compassPoint, cosd, formatBearing, formatLat, formatLon,
-  haversine, lerp, rhumbStep, wrap180, wrap360, type LatLon,
+  NM, angleDelta, atan2d, bearingTo, clamp, compassPoint, cosd, formatBearing, formatLat,
+  formatLon, haversine, lerp, rhumbStep, sind, toENU, wrap180, wrap360, type LatLon,
 } from '../core/math';
 import { Rng } from '../core/rng';
 import { Weather, type WeatherSample } from '../world/weather';
@@ -1207,6 +1207,7 @@ export class Game {
       return;
     }
 
+    this.lastStepHours = simDt / 3600;
     this.weather.update(simDt, this.clock.t, this.ship.state.pos);
     this.refreshEnvironment();
     this.makeSternway(simDt);
@@ -4301,22 +4302,109 @@ export class Game {
    * between a captain who has to be on deck and one who does not, which is what
    * the whole seamanship tree is about.
    */
-  coastOrder: { offingNm: number } | null = null;
+  coastOrder: { offingNm: number; steer?: number; smoothed?: number; hand?: number; axis?: number } | null = null;
+
+  /** Ship-hours in the step just taken, for anything rate-limited in her time. */
+  private lastStepHours = 0;
 
   /**
-   * The course that holds the offing.
+   * The coast's general trend, as a line, rather than the nearest rock to her.
    *
-   * A proportional controller on the offing, biasing a course laid parallel to
-   * the shore. Two things it must get right and which took measuring:
+   * This is the whole fix for the jitter. `sounding.shoreBearing` points at the
+   * single closest piece of land, which on a real coast jumps about constantly:
+   * every headland, every islet, every bight swings it thirty or forty degrees
+   * in a few miles, and a controller reading it steered the ship round each one
+   * individually. What a master actually does is look at the run of the land
+   * over the next day's sail and lay a course along *that*, ignoring anything
+   * smaller than his offing.
    *
-   * The alongshore direction is ambiguous — a coast runs two ways — so she
-   * keeps the one she is already going, chosen by which of the two is nearer
-   * her present head. Recomputing it freshly each tick let her flip end for end
-   * whenever the shore bearing wandered across the beam.
+   * So: probe the shore at points spread along her track, fit a straight line
+   * through those shore points by least squares, and hold station off the line.
+   * Features shorter than the probe span average out of the fit instead of
+   * being steered around.
+   */
+  private coastTrend(span: number, axis: number):
+  { bearing: number; mE: number; mN: number; bulge: number } | null {
+    const here = this.ship.state.pos;
+    // Seven probes over `span` miles along `axis`: enough to average a headland
+    // out, few enough to stay cheap at 7200x.
+    //
+    // `axis` is deliberately not her head. Probing along the head fed the fit
+    // with her own steering: working to windward she swings sixty degrees a
+    // board, the probe line swings with her, the fit moves, the aim point
+    // moves, and she chases herself. It is the trend from the last tick
+    // instead, which is a property of the coast and not of the ship.
+    const pts: { e: number; n: number }[] = [];
+    for (let i = -3; i <= 3; i++) {
+      const at = rhumbStep(here, axis, (i * span * NM) / 6);
+      const s = nearestShore(at, 120);
+      if (!Number.isFinite(s.distance) || s.distance / NM > 110) continue;
+      const shorePoint = rhumbStep(at, s.bearing, s.distance);
+      pts.push(toENU(here, shorePoint));
+    }
+    if (pts.length < 4) return null;
+
+    // Least-squares line through the shore points, taken as the principal axis
+    // of the scatter so a north-south coast is no harder than an east-west one.
+    const n = pts.length;
+    const mE = pts.reduce((a, p) => a + p.e, 0) / n;
+    const mN = pts.reduce((a, p) => a + p.n, 0) / n;
+    let see = 0; let snn = 0; let sen = 0;
+    for (const p of pts) {
+      see += (p.e - mE) ** 2; snn += (p.n - mN) ** 2; sen += (p.e - mE) * (p.n - mN);
+    }
+    // The fit gives the direction as an angle anticlockwise from east, so it
+    // wants turning into a compass bearing before anything else touches it.
+    if (see + snn < 1) return null;   // every probe found the same rock
+    const phi = atan2d(2 * sen, see - snn) / 2;
+    const bearing = wrap360(90 - phi);
+
+    // How far the most seaward headland in the span stands out of the line.
+    //
+    // This is what makes "keep her five miles off" mean what a master means by
+    // it. A straight line laid through a bight passes close to the headlands at
+    // each end and miles from the beach in the middle, so a path offset five
+    // miles from the *line* was measured holding two and a half off the points
+    // and fifteen off the bay — the fair curve the captain asked for, at an
+    // offing he did not. Offsetting by the bulge as well clears the points by
+    // the distance ordered and simply gives him more water in the bays, which
+    // is the same thing he would do with the ship in his own hands.
+    const ux = sind(bearing); const uy = cosd(bearing);
+    const shipPerp = -mE * uy + mN * ux;
+    const sign = Math.sign(shipPerp) || 1;
+    let bulge = 0;
+    for (const p of pts) {
+      const perp = ((p.e - mE) * uy - (p.n - mN) * ux) * sign;
+      if (perp > bulge) bulge = perp;
+    }
+    return { bearing, mE, mN, bulge: bulge / NM };
+  }
+
+  /**
+   * The course that follows the coast.
    *
-   * And the bias is capped well short of ninety degrees. At ninety she would
-   * turn straight at the beach to close an offing she was outside of, which is
-   * the one thing this order must never do.
+   * This steers to a *path*, not to an error, and that is the whole of the
+   * difference. Three earlier versions were proportional controllers on the
+   * distance off — measure how far the land is, turn in proportion — and every
+   * one of them sawed, because a controller of that shape has no idea where it
+   * is going, only how wrong it is now. Feeding it a smoothed distance and
+   * rate-limiting its output helped and did not fix it; it was still four
+   * hundred degrees of helm to make good a hundred miles of coast.
+   *
+   * So the coast is fitted to a line (`coastTrend`), the line is offset to
+   * seaward by the ordered offing to give the track she is meant to be on, and
+   * she steers for a point on that track some miles ahead — the same pure
+   * pursuit a helmsman uses without naming it, by picking a hill over the bow
+   * and keeping it there. The aim point moves only as fast as the fitted line
+   * does, which is slowly, so the course is smooth by construction rather than
+   * by being filtered afterwards.
+   *
+   * Two things are still done the hard way. The sense in which she is running
+   * along the coast is latched when the order is given, because deriving it from
+   * her present head let it flip end for end the moment she began working to
+   * windward. And the distance to the nearest land — not to the fitted line —
+   * still overrides everything if it becomes small, because the fit knows the
+   * trend of the coast and nothing at all about the rock she is about to hit.
    */
   private coastCourse(): number | null {
     const o = this.coastOrder;
@@ -4325,32 +4413,157 @@ export class Game {
     // Out of soundings and out of sight of it, there is no coast to follow.
     if (!Number.isFinite(d) || d > 90) return null;
 
-    const along = [
-      wrap360(this.sounding.shoreBearing + 90),
-      wrap360(this.sounding.shoreBearing - 90),
-    ];
-    const keep = Math.abs(angleDelta(this.ship.state.heading, along[0]))
-      <= Math.abs(angleDelta(this.ship.state.heading, along[1])) ? along[0] : along[1];
+    // Look along a span set by the offing: the further off she is ordered to
+    // run, the larger the features she is entitled to ignore. Never less than
+    // thirty miles, or small bays still get into the fit.
+    const span = Math.max(60, o.offingNm * 4);
+    const trend = this.coastTrend(span, o.axis ?? this.ship.state.heading);
+    if (trend) {
+      // Keep the probe axis pointing the way she is running, not back down the
+      // coast: the fitted line has no sense of direction, only of orientation.
+      const sensed = o.axis === undefined || Math.abs(angleDelta(o.axis, trend.bearing)) < 90
+        ? trend.bearing : wrap360(trend.bearing + 180);
+      // And hold it to a rate, for the same reason the steer is held to one.
+      // Rounding a peninsula — Cap-Vert was the case that showed it — the fit
+      // jumps to the coast on the far side, the probe line jumps with it, and
+      // she was measured turning back north up the coast she had just run.
+      const milesAxis = Math.max(this.physics.speedKnots, 0.5) * (this.lastStepHours ?? 0);
+      o.axis = o.axis === undefined ? sensed
+        : wrap360(o.axis + clamp(angleDelta(o.axis, sensed), -1, 1)
+          * Math.max(2, milesAxis * 8));
+    }
 
-    // Positive when she is further off than ordered, and wants to close.
+    // Which way the land lies from her, by the trend where there is one.
+    const shoreBrg = trend
+      ? (Math.abs(angleDelta(wrap360(trend.bearing + 90), this.sounding.shoreBearing))
+        < 90 ? wrap360(trend.bearing + 90) : wrap360(trend.bearing - 90))
+      : this.sounding.shoreBearing;
+
+    // Latch the hand of the shore: land to port, or land to starboard.
+    if (o.hand === undefined) {
+      o.hand = angleDelta(this.ship.state.heading, shoreBrg) >= 0 ? 1 : -1;
+    }
+    const alongCoast = wrap360(shoreBrg - o.hand * 90);
+
+    let want: number;
+    if (trend) {
+      // Pure pursuit, on the offset curve rather than on an offset straight
+      // line.
+      //
+      // The line fit was tried as the path itself and holds a beautifully fair
+      // course at the wrong distance: a chord through forty miles of a bight
+      // passed two and a half miles off the points and fifteen off the beach in
+      // the middle, on an order of five. So the fit is kept for the *direction*
+      // to look in, which is all it is good for, and the path is the real thing
+      // — the curve lying `offing` miles off the actual coast.
+      //
+      // The aim point is found by stepping ahead along that direction, asking
+      // where the land is from *there*, and coming back out to seaward by the
+      // offing. Three of them are averaged so that one probe landing on an
+      // islet cannot throw the helm.
+      const runDir = Math.abs(angleDelta(alongCoast, trend.bearing)) < 90
+        ? trend.bearing : wrap360(trend.bearing + 180);
+
+      // Look far enough ahead that a wobble in any one probe is a degree or two
+      // of bearing and not ten. This distance is the single number that decides
+      // whether she saws: measured on the same coast, twelve miles of look-ahead
+      // cost 437 degrees of helm per hundred made good and thirty cost 142.
+      const aheadNm = clamp(Math.max(this.physics.speedKnots, 3) * 3,
+        Math.max(34, o.offingNm * 1.5), span * 0.7);
+
+      // Of the candidates, take the one that asks her to keep furthest to
+      // seaward, rather than the average of them.
+      //
+      // Averaging was tried and is wrong at exactly the place it matters. Along
+      // the straight of the Guinea coast it is fine; at the turn into the Bight
+      // of Biafra, where the land swings from running east to running south,
+      // the near probe lands on one coast and the far one across the bight, and
+      // the mean of two points on opposite sides of a corner is out in the
+      // middle of it. Measured, she alternated between steering 90 and steering
+      // 210 every four hours for two days. Taking the most seaward candidate
+      // instead means the corner is entered on the course that clears it, which
+      // is also what a master does with a point of land ahead: he gives it the
+      // berth the worst of it needs, not the berth the average of it needs.
+      const here = this.ship.state.pos;
+      let want2: number | null = null;
+      let mostSeaward = Infinity;
+      for (const frac of [0.6, 0.85, 1.15, 1.5]) {
+        const at = rhumbStep(here, runDir, aheadNm * frac * NM);
+        // A probe that has walked up the beach is no use: the nearest shore to
+        // a point inland is whatever is behind it, and the aim point derived
+        // from it can be anywhere at all.
+        if (isLand(at)) continue;
+        const sh = nearestShore(at, 120);
+        if (!Number.isFinite(sh.distance) || sh.distance / NM > 110) continue;
+        const shorePt = rhumbStep(at, sh.bearing, sh.distance);
+        // Out to seaward from the land at that place, by the distance ordered.
+        const aim = rhumbStep(shorePt, wrap360(sh.bearing + 180), o.offingNm * NM);
+        const brg = bearingTo(here, aim);
+        // A ship following a coast never has to turn back on herself. Rounding
+        // a peninsula the probes land on the far side of it, and the aim point
+        // they give is astern; taking it turned her round to run back up the
+        // coast she had just made good.
+        if (Math.abs(angleDelta(this.ship.state.heading, brg)) > 100) continue;
+        // Seaward is a turn in the direction opposite the hand of the shore, so
+        // the most seaward candidate is the one that minimises this.
+        const turn = o.hand * angleDelta(alongCoast, brg);
+        if (turn < mostSeaward) { mostSeaward = turn; want2 = brg; }
+      }
+      // But never right round: she is following this coast, not leaving it.
+      want = want2 === null ? alongCoast
+        : wrap360(alongCoast + o.hand * clamp(mostSeaward, -95, 80));
+    } else {
+      // No fit — hold what she has along the coast and let the floor below do
+      // the work if the land closes.
+      want = alongCoast;
+    }
+
+    // The one thing the path may never smooth away: the actual land.
     //
-    // Asymmetric on purpose, which is both better seamanship and the whole
-    // difference between an order a player will use and one he will not: she
-    // closes the land gently and sheers off it hard. `shoreDistNm` is the
-    // distance to the *nearest* land, so a headland coming abeam reads as the
-    // offing collapsing even though the coast's general trend has not moved,
-    // and on a five-mile order she was measured closing to one and a half.
-    // Answering that twice as hard as she answers being too far out costs
-    // nothing but a little easting and keeps her off the one thing that can
-    // end the voyage.
-    const errNm = d - o.offingNm;
-    const CLOSE_GAIN = 7;
-    const SHEER_GAIN = 20;
-    const MAX_BIAS = 62;
-    const bias = clamp(errNm * (errNm >= 0 ? CLOSE_GAIN : SHEER_GAIN), -MAX_BIAS, MAX_BIAS);
-    // Toward the land is the shore bearing, so a positive error turns that way.
-    const toward = angleDelta(keep, this.sounding.shoreBearing) >= 0 ? 1 : -1;
-    const want = wrap360(keep + toward * bias);
+    // Everything above looks ahead, and looking ahead is exactly what fails at
+    // a corner or over an islet the probes stepped across. So a plain guard is
+    // laid over the top of it, on the distance to the nearest land right now.
+    // It is written to contribute *nothing* while she is at or outside the
+    // offing she was given — which is almost always — so it adds no motion of
+    // its own to the helm, and everything once she is inside it.
+    // The guard reads a smoothed distance, not the raw one. Reading the raw
+    // one put all the noise it was meant to catch straight back into the helm:
+    // measured, it took her from 287 degrees of helm per hundred miles to 545,
+    // undoing the entire fix in one term. Smoothed over a run of coast rather
+    // than a run of clock, so it behaves the same at any rate of time.
+    //
+    // And it looks a little way ahead as well as at where she is. Aiming at a
+    // point thirty-odd miles up the coast is what makes the track fair, and it
+    // is also what lets her cut inside something in the first ten: on a five
+    // mile order she was measured closing to one and six tenths. Taking the
+    // worst of the next few miles as well as the present means the guard leads
+    // the danger instead of lagging it, so it can stay gentle and still work.
+    let dGuard = d;
+    for (const ahead of [3, 6, 10]) {
+      const at = rhumbStep(this.ship.state.pos, this.ship.state.heading, ahead * NM);
+      const sh = nearestShore(at, 60);
+      const nm = isLand(at) ? 0 : sh.distance / NM;
+      if (nm < dGuard) dGuard = nm;
+    }
+    const milesRun = Math.max(this.physics.speedKnots, 0.5) * (this.lastStepHours ?? 0);
+    const k = 1 - Math.exp(-milesRun / Math.max(8, o.offingNm * 0.8));
+    o.smoothed = o.smoothed === undefined ? dGuard : o.smoothed + (dGuard - o.smoothed) * k;
+
+    const shortfall = o.offingNm - o.smoothed;
+    const panicking = d < o.offingNm * 0.45;
+    if (shortfall > 0 || panicking) {
+      const urgency = panicking ? 1
+        : clamp(shortfall / Math.max(o.offingNm * 0.7, 1), 0, 1);
+      // Where the guard points hardens with how bad it is. A little inside the
+      // offing she is merely edged out, on the seaward bow; embayed — which is
+      // what happens rounding Cap-Vert into the bight behind it — she is put
+      // straight out to sea, which is what a master does and what the order is
+      // for. Interpolating between the two keeps it from being a switch.
+      const edge = wrap360(alongCoast - o.hand * 50);
+      const out = wrap360(shoreBrg + 180);
+      const guard = wrap360(edge + clamp(urgency * 1.6 - 0.6, 0, 1) * angleDelta(edge, out));
+      want = wrap360(want + urgency * angleDelta(want, guard));
+    }
 
     // Give the helm a course she can actually sail.
     //
@@ -4367,7 +4580,53 @@ export class Game {
     // offing does not sail into the wind either; he makes his offing on the
     // tack that pays.
     const w = this.weatherNow.wind;
-    return bestCourse(this.ship.hull.id, w.from, w.speed, want).heading;
+
+    // Only ask the polar table when she cannot simply steer what is wanted.
+    //
+    // `bestCourse` searches headings on a five-degree grid, so a demand sitting
+    // between two of them flips from one to the other and back every tick, and
+    // the ship dutifully swings five degrees each way for ever. Measured at the
+    // tick, that chatter alone was most of the remaining helm: the course was
+    // fair at any sane sampling rate and still cost four hundred degrees per
+    // hundred miles. When the wanted course is outside her no-go it *is* the
+    // best course, exactly, and there is nothing to search for.
+    const offWind = Math.abs(angleDelta(w.from, want));
+    if (offWind >= this.noGoAngle) {
+      const prevOk = o.steer;
+      if (prevOk === undefined) { o.steer = want; return want; }
+      const milesOk = Math.max(this.physics.speedKnots, 0.5) * (this.lastStepHours ?? 0);
+      const lim = panicking ? 180 : Math.max(1, milesOk * 4);
+      o.steer = wrap360(prevOk + clamp(angleDelta(prevOk, want), -lim, lim));
+      return o.steer;
+    }
+
+    const best = bestCourse(this.ship.hull.id, w.from, w.speed, want);
+    let sailable = best.heading;
+
+    // Don't go about for a trifle.
+    //
+    // `bestCourse` re-decides from nothing every tick, so wherever the demand
+    // sits near a dead beat the two tacks trade places on a few degrees of
+    // shift and she tacks, and tacks back, and tacks again — thirty swings of
+    // over thirty degrees in four days, measured. A master puts her about when
+    // the other board is worth having, not when it is worth a tenth of a knot.
+    // So the board she is on keeps the benefit of the doubt.
+    const mirrored = wrap360(2 * w.from - sailable);
+    if (Math.abs(angleDelta(this.ship.state.heading, mirrored))
+      < Math.abs(angleDelta(this.ship.state.heading, sailable))) {
+      const vmgOf = (h: number) => polarAt(this.ship.hull.id, w.speed,
+        Math.abs(wrap180(w.from - h))) * cosd(angleDelta(want, h));
+      if (vmgOf(mirrored) > vmgOf(sailable) - 0.12 * Math.max(best.speed, 1)) sailable = mirrored;
+    }
+
+    // Slew limit, in degrees per mile made good rather than per tick, so the
+    // curve she describes is the same at one time scale as at another.
+    const milesSince = Math.max(this.physics.speedKnots, 0.5) * (this.lastStepHours ?? 0);
+    const prev = o.steer;
+    if (prev === undefined) { o.steer = sailable; return sailable; }
+    const limit = panicking ? 180 : Math.max(1, milesSince * 4);
+    o.steer = wrap360(prev + clamp(angleDelta(prev, sailable), -limit, limit));
+    return o.steer;
   }
 
   /** Hand the watch the coast and an offing. */
