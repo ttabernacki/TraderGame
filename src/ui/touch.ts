@@ -82,7 +82,7 @@ export class TouchControls {
       { label: 'The book', key: 'j', hint: 'Chart, roteiro, log, orders, company', wide: true },
       { label: 'Sight', key: 'n', hint: 'Sextant' },
       { label: 'Lead', key: 'g', hint: 'Heave the lead — depth, ground, and the offing' },
-      { label: 'Padrão', key: 'u', hint: 'Land a pillar and claim the place' },
+      { label: 'Padrão', key: 'u', hint: 'Land a pillar on a headland, where the next ship will see it' },
       { label: '♪', key: 'm', hint: 'Sound on or off' },
       { label: 'Anchor', key: ' ', hint: 'Anchor', wide: true },
     ]);

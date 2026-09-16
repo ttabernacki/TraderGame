@@ -1,5 +1,6 @@
 import { clamp } from '../core/math';
 import type { Landmark } from '../progression/crown';
+import type { CoastFeature } from '../world/features';
 import type { SeaEvent } from './seaEvents';
 import type { Game } from './state';
 
@@ -158,6 +159,93 @@ export function beyondScene(g: Game): SeaEvent {
           return 'You give the helmsman the course and go below. It is entered in the log in one '
             + 'line. The hands work it out among themselves within a day, as they always do, and '
             + 'are left to decide on their own what it means, which is how a ship gets a mood.';
+        },
+      },
+    ],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Headlands and river mouths
+// ---------------------------------------------------------------------------
+
+/**
+ * A feature raised from the masthead, and what is done about it.
+ *
+ * The route landmarks above are the eight peaks of the whole game and they
+ * arrive already named, because history named them and the player is sailing
+ * into history. These are the other eighteen: real capes and river mouths, at
+ * their real positions, which arrive with *no name at all* — and naming them is
+ * the point.
+ *
+ * That is what the two old buttons were missing. "Name this place" worked in
+ * the middle of a featureless bight and the padrão key worked on any beach, so
+ * neither was about a place. A name goes on something a chart can carry and a
+ * pillar goes where the next ship will see it, and both of those mean a
+ * headland or the mouth of a river. Now they only happen at one.
+ *
+ * Three names are offered and all three are historical practice: what the thing
+ * looks like, the saint whose day it is, and whatever the captain likes. The
+ * suggestion is the name the Portuguese really gave it, so a player who just
+ * takes the master's word ends up with the map that exists.
+ */
+export function featureScene(g: Game, f: CoastFeature, saint: string): SeaEvent {
+  const stones = g.crown.padraoStock;
+  const landable = g.padraoLandable();
+  const beyond = g.beyondTheKnown;
+  const worth = Math.round(f.value * (beyond ? 1.5 : 1));
+  const own = `${f.kind === 'river' ? 'Rio' : g.ship.state.pos.lat >= 0 ? 'Cabo' : 'Ponta'} de ${saint}`;
+
+  const name = (given: string, withStone: boolean) => (gg: Game): string => {
+    const note = gg.nameTheFeature(f, given, worth);
+    if (!withStone) return note;
+    return `${note}\n\n${gg.landThePadrao(f, given)}`;
+  };
+
+  return {
+    id: `feature:${f.id}`,
+    title: `A ${f.kind === 'river' ? 'river mouth' : 'headland'}, unnamed`,
+    severity: 'note',
+    text: `${f.sighting}\n\nIt is on no chart in Lisbon and it has no name. It will have whatever `
+      + 'one you give it, and it will keep it.',
+    choices: [
+      {
+        label: `Call it ${f.suggested}`,
+        detail: `The master's suggestion, ${f.because}.`,
+        resolve: name(f.suggested, false),
+      },
+      {
+        label: `Call it ${own}`,
+        detail: `The chaplain's, it being the feast of ${saint}. Half this coast is named this way.`,
+        resolve: name(own, false),
+      },
+      ...(stones > 0 && landable.ok ? [{
+        label: `Land a padrão, and call it ${f.suggested}`,
+        detail: 'A day, the boat, and one of the stones. The arms of Portugal on the high ground '
+          + 'where the next ship down this coast will read them.',
+        resolve: name(f.suggested, true),
+      }] : [{
+        label: 'No pillar can be landed here',
+        detail: stones > 0 ? landable.reason
+          : g.ship.upgrades.includes('padroes')
+            ? 'The last of the stones went up further north.'
+            : 'You shipped no pillars at Lisbon. They are cut there and nowhere else.',
+        resolve: () => 'The boat stays in the chocks. Whatever is done about this place will have '
+          + 'to be done with ink.',
+      }]),
+      {
+        label: 'Enter it and stand on',
+        detail: 'A line in the book, no name, and the passage keeps its hours. Somebody else will '
+          + 'name it, and it will be their name on it.',
+        resolve: (gg) => {
+          gg.crown.record('coast', `${f.kind === 'river' ? 'A river' : 'A headland'} at `
+            + `${gg.nav.estimated.lat.toFixed(1)}`, gg.nav.estimated, Math.round(worth * 0.3),
+          gg.clock.t);
+          gg.chartedThisPassage += 12;
+          gg.crown.chartedSincePatent += 12;
+          return 'Bearings taken off both ends of it, the soundings entered, and the pilot has it '
+            + 'in the book as a headland with no name against it. He does not like the blank and '
+            + 'says so twice.';
         },
       },
     ],

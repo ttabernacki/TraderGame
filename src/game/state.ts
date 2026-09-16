@@ -63,10 +63,11 @@ import { polarAt } from '../ship/polars';
 import { rollOfficerEvent } from './officerEvents';
 import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty';
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
+import { featureNear, type CoastFeature } from '../world/features';
 import { daysLeft, offerVentures, ventureLine, type Venture } from '../progression/ventures';
 import { advanceRival, newRival, rivalGossip, type RivalState } from '../progression/rival';
 import { rollRivalMeeting } from '../progression/rivalEvents';
-import { beyondScene, landmarkScene } from './discovery';
+import { beyondScene, featureScene, landmarkScene } from './discovery';
 import { castLead, landfallScene, type LeadCast } from './soundings';
 import { mutinyScene } from './mutiny';
 import { newCasa, rollCasaScene, type CasaState } from '../progression/casa';
@@ -2457,6 +2458,22 @@ export class Game {
       this.pendingScenes.push(landmarkScene(this, l));
     }
 
+    // Headlands and river mouths, which is where names and pillars go.
+    //
+    // Offered when she is up with one *and* it is actually in sight — a cape
+    // raised in a fog at fifteen miles is a cape nobody has seen. Once each,
+    // whether or not it was named, because a captain who stood on past it does
+    // not get the choice again on the way home; somebody else has it by then.
+    const f = featureNear(pos);
+    if (f && !this.foundFeatures.includes(f.id)) {
+      const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
+      if (this.sounding.shoreDistNm < range) {
+        this.foundFeatures.push(f.id);
+        this.easeTheClock(2);
+        this.pendingScenes.push(featureScene(this, f, saintOfDay(this.clock)));
+      }
+    }
+
     // The first time she is south of anything in the Portuguese record.
     if (!this.passedTheKnown && pos.lat < BEYOND_LAT) {
       this.passedTheKnown = true;
@@ -3555,66 +3572,122 @@ export class Game {
   /**
    * Put a name on the chart.
    *
-   * The chart table has had a "Name this place" button since the beginning and
-   * nothing has ever depended on pressing it, so nobody did. It is now what the
-   * survey commission asks for — which is right, because naming what you have
-   * run along is the other half of surveying it, and it is how half the coast
-   * of Africa came by the names it still has.
-   *
-   * It needs a place. A pilot in the middle of the Atlantic naming the water he
-   * is floating over is not doing cartography, so the land has to be in sight,
-   * and a name has to be his own rather than one already on the sheet.
+   * It used to work anywhere the land was in sight, which meant a captain could
+   * stop in a bight of featureless sand and have a cape named after him. A name
+   * is only worth anything if it goes on something another pilot can recognise
+   * from seaward — so it now goes on a headland or a river mouth and nowhere
+   * else. See world/features.
    */
   namePlace(name: string): { ok: boolean; message: string } {
     const given = name.trim();
     if (given.length < 3) {
       return { ok: false, message: 'A place wants a name, not a mark.' };
     }
-    const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
-    if (this.sounding.shoreDistNm > range) {
+    const f = featureNear(this.ship.state.pos);
+    if (!f) {
       return {
         ok: false,
-        message: 'There is nothing in sight to name. Stand in until the land is up.',
+        message: 'There is nothing here to hang a name on. A name goes on a headland or the '
+          + 'mouth of a river — something the next man can find. Stand along the coast until '
+          + 'something stands up out of it.',
       };
     }
-    const near = this.chart.places.find(
-      (p) => haversine(this.chart.placeAt(p), this.nav.estimated) / NM < 12,
-    );
-    if (near) {
-      return { ok: false, message: `You have already called this place ${near.name}.` };
+    const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
+    if (this.sounding.shoreDistNm > range) {
+      return { ok: false, message: 'It is not in sight. Stand in until the land is up.' };
     }
+    if (this.namedFeatures[f.id]) {
+      return { ok: false, message: `You have already called this place ${this.namedFeatures[f.id]}.` };
+    }
+    return { ok: true, message: this.nameTheFeature(f, given, f.value) };
+  }
 
-    const place = this.chart.addPlace(given, 'cape', this.nav.estimated, this.clock.t);
+  /** The headland or river mouth she is up with, for the interface. */
+  featureHere(): { id: string; kind: string; named: string | null; suggested: string } | null {
+    const f = featureNear(this.ship.state.pos);
+    if (!f) return null;
+    const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
+    if (this.sounding.shoreDistNm > range) return null;
+    return {
+      id: f.id, kind: f.kind, named: this.namedFeatures[f.id] ?? null, suggested: f.suggested,
+    };
+  }
+
+  /** What the captain has called each feature he has found. */
+  namedFeatures: Record<string, string> = {};
+  /** Features raised from the masthead, so each is offered once. */
+  private foundFeatures: string[] = [];
+
+  /**
+   * Enter a headland under a name, which is the act the whole thing is about.
+   *
+   * Half the coast of Africa still carries the name the first Portuguese
+   * captain to see it happened to choose, usually for the saint of the day or
+   * for what the thing looked like from the deck, and usually decided in about
+   * a minute by a man who had no idea anyone would still be using it.
+   */
+  nameTheFeature(f: CoastFeature, given: string, worth: number): string {
+    this.namedFeatures[f.id] = given;
+    this.chart.addPlace(given, f.kind, this.nav.estimated, this.clock.t);
     this.writeCoast(given, this.nav.estimated,
       `Named by me, ${this.clock.formatDate()}. `
       + `${this.sounding.depth.toFixed(0)} fathoms a mile off it, and the land behind `
       + `${this.sounding.shoreDistNm.toFixed(0)} miles distant when it first came up.`);
-    const fresh = this.crown.record('coast', given, this.nav.estimated, 8, this.clock.t);
+    this.crown.record('coast', given, this.nav.estimated, worth, this.clock.t);
     this.crown.progressObjective('name', undefined, 1);
+    this.chartedThisPassage += 25;
+    this.crown.chartedSincePatent += 25;
+    this.crew.morale = clamp(this.crew.morale + 0.04, 0, 1);
     this.logEvent('discovery',
-      `Named this place ${given}, at ${formatLat(place.lat)}, ${formatLon(place.lon)} by the reckoning.`);
-    return {
-      ok: true,
-      message: fresh
-        ? `${given}. It is on the chart under your hand and nobody else's.`
-        : `${given}, again. The register already carries that name.`,
-    };
+      `Entered this ${f.kind === 'river' ? 'river' : 'headland'} as ${given}, at `
+      + `${formatLat(this.nav.estimated.lat)}, ${formatLon(this.nav.estimated.lon)} by the `
+      + 'reckoning. The pilot has it on the sheet and the escrivão has it in the book, and from '
+      + 'today that is its name.', true);
+    return `${given}. It is on the chart under your hand and nobody else's.`;
+  }
+
+  // -------------------------------------------------------------------------
+  // Raising a padrão
+  // -------------------------------------------------------------------------
+
+  /**
+   * Whether the boat could put a stone ashore at all, weather and hands aside
+   * from where she is.
+   *
+   * Split out from the place, because the two refusals are different and the
+   * player needs to know which one he is looking at: "not here" is a thing he
+   * fixes by sailing, "not today" is a thing he fixes by waiting.
+   */
+  padraoLandable(): { ok: boolean; reason: string } {
+    if (this.weatherNow.waveHeight > 2.2 || this.weatherNow.wind.speed > 22) {
+      return { ok: false, reason: 'No boat could land on that beach today.' };
+    }
+    if (this.sounding.shoreDistNm > 6) {
+      return { ok: false, reason: 'Too far off the land to send a boat in.' };
+    }
+    if (ableHands(this.crew) < 10) {
+      return { ok: false, reason: 'There are not enough men fit to pull a boat ashore.' };
+    }
+    return { ok: true, reason: 'The boat can be hoisted out and the pillar landed.' };
   }
 
   /**
    * Whether a stone pillar can be put up where she now lies.
    *
-   * The padrão was the physical act of claiming: a carved limestone pillar with
-   * the arms of Portugal and the date, landed by boat and set on a headland
-   * where the next ship down the coast would see it. Cão carried them on his
-   * voyages and two of his are still standing. It costs a day, it needs the
-   * boat and calm enough water to use it, and it is the only thing in the game
-   * that leaves a mark on the world that outlasts the voyage.
+   * A padrão is a signpost before it is a claim. It is cut limestone with the
+   * arms of Portugal, the king's name and the date on it, and it goes on high
+   * ground **where the next ship down the coast will see it** — which is the
+   * whole reason the thing exists and the whole reason it cannot go on any
+   * beach that happens to be to leeward. Cão's went on the Congo mouth, on
+   * Cabo de Santa Maria and on Cabo da Cruz, and two of them were still there
+   * four hundred years later.
    */
   padraoCheck(): { ok: boolean; reason: string; name: string } {
-    // Named for the saint whose day it is, which is how half the coast of Africa
-    // came by the names it still has.
-    const name = `${this.ship.state.pos.lat >= 0 ? 'Cabo' : 'Ponta'} de ${saintOfDay(this.clock)}`;
+    const f = featureNear(this.ship.state.pos);
+    const name = f
+      ? this.namedFeatures[f.id] ?? f.suggested
+      : `${this.ship.state.pos.lat >= 0 ? 'Cabo' : 'Ponta'} de ${saintOfDay(this.clock)}`;
+
     if (!this.ship.upgrades.includes('padroes') || this.crown.padraoStock <= 0) {
       return {
         ok: false,
@@ -3624,21 +3697,20 @@ export class Game {
           : 'There are no pillars aboard. They are cut and shipped at Lisbon.',
       };
     }
-    if (this.sounding.shoreDistNm > 4) {
-      return { ok: false, reason: 'Too far off the land to send a boat in.', name };
-    }
-    if (this.weatherNow.waveHeight > 2.2 || this.weatherNow.wind.speed > 22) {
-      return { ok: false, reason: 'No boat could land on that beach today.', name };
+    if (!f) {
+      return {
+        ok: false,
+        name,
+        reason: 'A pillar goes on a headland where the next ship down this coast will see it, or '
+          + 'at the mouth of a river where she must pass it. It is a signpost. On an open beach '
+          + 'it marks nothing and nobody will ever read it.',
+      };
     }
     if (this.crown.padraoNear(this.ship.state.pos)) {
-      return { ok: false, reason: 'A pillar of yours already stands within sight of this one.', name };
+      return { ok: false, reason: 'A pillar of yours already stands on this one.', name };
     }
-    if (!this.beyondTheKnown) {
-      return { ok: false, reason: 'This coast is charted already. A pillar here claims nothing.', name };
-    }
-    if (ableHands(this.crew) < 10) {
-      return { ok: false, reason: 'There are not enough men fit to pull a boat ashore.', name };
-    }
+    const landable = this.padraoLandable();
+    if (!landable.ok) return { ok: false, reason: landable.reason, name };
     return { ok: true, reason: 'The boat can be hoisted out and the pillar landed.', name };
   }
 
@@ -3646,13 +3718,33 @@ export class Game {
   raisePadrao(name?: string): string {
     const check = this.padraoCheck();
     if (!check.ok) return check.reason;
+    const f = featureNear(this.ship.state.pos);
+    if (!f) return check.reason;
     const given = (name ?? check.name).trim() || check.name;
+    if (!this.namedFeatures[f.id]) this.nameTheFeature(f, given, f.value);
+    return this.landThePadrao(f, given);
+  }
 
+  /**
+   * The stone itself.
+   *
+   * Worth more the further it is beyond anything Lisbon has a sheet for, which
+   * is the honest measure: a pillar on a cape three hundred miles past the last
+   * line on the Casa's chart is a claim, and one on a headland everybody has
+   * been passing for forty years is a decoration.
+   */
+  landThePadrao(f: CoastFeature, given: string): string {
+    if (this.crown.padraoStock <= 0) {
+      return 'There is no stone left in the hold. The carpenter offers to cut something out of a '
+        + 'spare spar and is told, with some feeling, that a wooden padrão is worse than none.';
+    }
+    const beyond = this.beyondTheKnown;
+    const worth = Math.round(f.value * (beyond ? 0.9 : 0.35));
     this.clock.t += 9 * 3600;
     this.crown.padroesRaised += 1;
     this.crown.padraoStock -= 1;
     this.crown.progressObjective('padrao', undefined, 1);
-    this.crown.record('padrao', given, this.nav.estimated, 22, this.clock.t);
+    this.crown.record('padrao', given, this.nav.estimated, worth, this.clock.t);
     this.crown.padraoSites.push({
       name: given, lat: this.nav.estimated.lat, lon: this.nav.estimated.lon, t: this.clock.t,
     });
@@ -3661,13 +3753,19 @@ export class Game {
     for (const o of this.crew.officers) {
       if (o.alive && !o.ashoreAt) o.loyalty = clamp(o.loyalty + 0.03, 0, 1);
     }
+    // A pillar is a signpost and the other man can read it.
+    if (beyond) this.rival.frontierLat = Math.min(this.rival.frontierLat, f.lat + 1.5);
     this.logEvent('discovery',
-      `Hoisted out the boat and landed the pillar on the headland, which is entered as ${given}. `
-      + 'The arms of Portugal and the date cut into the stone, the cross set on top of it, and '
-      + 'the whole ship\u2019s company that could be spared standing round it bareheaded while '
-      + 'the office was read. It will be there when everyone who saw it is dead.', true);
+      `Hoisted out the boat and landed the pillar on the high ground at ${given}. The arms of `
+      + 'Portugal and the date cut into the stone, the cross set on top of it, and the whole '
+      + 'ship\u2019s company that could be spared standing round it bareheaded while the office '
+      + 'was read. It will be there when everyone who saw it is dead.', true);
     this.pushAlert(`${given} claimed for the Crown.`, 'note');
-    return `The pillar is standing. This place is ${given} from today.`;
+    return beyond
+      ? `The stone is standing on the highest ground the boats could reach. It will tell the next `
+        + `Portuguese ship down this coast exactly how far you got, and when, and in what.`
+      : `The stone is standing, on a headland Portuguese ships have been passing for years. The `
+        + `Casa will enter it. Nobody at the Casa will be surprised by it.`;
   }
 
   /** Take one of the courses offered by the outstanding decision. */
@@ -5327,6 +5425,8 @@ export class Game {
       orderedCanvas: this.orderedCanvas,
       helmOrder: this.helmOrder,
       latitudeOrder: this.latitudeOrder,
+      namedFeatures: this.namedFeatures,
+      foundFeatures: this.foundFeatures,
       coastOrder: this.coastOrder,
       encounter: this.encounter,
       seaRecord: this.seaRecord,
@@ -5415,6 +5515,8 @@ export class Game {
     g.orderedCanvas = d.orderedCanvas ?? g.ship.canvasSet;
     g.helmOrder = d.helmOrder ?? null;
     g.latitudeOrder = d.latitudeOrder ?? null;
+    g.namedFeatures = d.namedFeatures ?? {};
+    g.foundFeatures = d.foundFeatures ?? [];
     g.coastOrder = d.coastOrder ?? null;
     g.encounter = d.encounter ?? null;
     g.seaRecord = { ...newSeaRecord(), ...(d.seaRecord ?? {}) };

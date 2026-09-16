@@ -280,7 +280,15 @@ export class ChartView {
           this.naming = false; this.notice = null; this.buildTools();
           if (this.game) this.updateOverlay(this.game.nav.estimated);
         })
-        : button('Name this place', () => this.namePlace()),
+        // Only offered where there is something to name. The button used to
+        // sit there on every square of open ocean and the refusal came after
+        // the player had typed a name into it.
+        : (() => {
+          const f = g ? g.featureHere() : null;
+          return f && !f.named
+            ? button(`Name this ${f.kind === 'river' ? 'river' : 'headland'}`, () => this.namePlace())
+            : null;
+        })(),
 
       // The layers, as chips: what is drawn on the chart, not what to do next.
       el('div', { class: 'chart-chips' },
