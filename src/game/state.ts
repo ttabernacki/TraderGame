@@ -484,6 +484,8 @@ export class Game {
   private deepestSouth = 90;
   /** Set once she has been south of everything anyone out of Lisbon has seen. */
   private passedTheKnown = false;
+  /** Whether the lead had bottom last tick, so the shoaling cry is given once. */
+  private wasShoaling = false;
   /**
    * Scenes waiting to be put to the captain.
    *
@@ -2413,13 +2415,27 @@ export class Game {
         );
       }
 
-      if (this.sounding.shoaling) {
+      // Shoaling water: said once on going in, and then she is left alone.
+      //
+      // This had no latch on it at all. `checkWorldEvents` runs every tick, so
+      // for as long as the lead had anything under it the clock was pulled back
+      // to four times *on every frame* — the player would wind it up, watch it
+      // drop again immediately, and end up limping across a shelf at four
+      // times because the game would not let go of the wheel. Every other place
+      // the clock is eased is a one-shot: the cry of land, a sail raised, the
+      // watch shortening sail. This is now one too.
+      //
+      // The warning is still grave and it still comes down the first time, which
+      // is the point of it. What it no longer does is take the decision away and
+      // keep taking it.
+      if (this.sounding.shoaling && !this.wasShoaling) {
         this.easeTheClock(2);
         this.pushAlert(
           `By the lead, ${this.sounding.depth.toFixed(0)} fathoms shoaling — land bears ${formatBearing(bearing)}`,
           'grave',
         );
       }
+      this.wasShoaling = this.sounding.shoaling;
     }
 
     // Landmarks of the route.
