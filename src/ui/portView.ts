@@ -2,6 +2,7 @@ import { clamp } from '../core/math';
 import { good, unitOf } from '../economy/goods';
 import { Markets, provisioningCost, type Listing } from '../economy/market';
 import { people } from '../world/peoples';
+import type { PortDef } from '../world/ports';
 import { availableUpgrades, UPGRADE_BY_ID } from '../ship/upgrades';
 import { hullClass } from '../ship/hull';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
@@ -10,6 +11,9 @@ import { skill } from '../crew/skills';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
 import { RATING_LABEL, TEMPER, regardWord as handRegardWord } from '../crew/hands';
 import { ARC_BY_ID } from '../progression/arcs';
+import {
+  backingFor, candidates, errandsAt, journeyWord, outfitCost, outstanding,
+} from '../progression/inland';
 import { daysLeft, ventureLine, ventureTons } from '../progression/ventures';
 import type { Game } from '../game/state';
 import { append, button, card, clear, el, kv } from './dom';
@@ -28,6 +32,8 @@ export class PortView {
   private game: Game | null = null;
   private quantities = new Map<string, number>();
   private notice: { text: string; grave?: boolean } | null = null;
+  /** Which officer the inland card has selected, until one is sent. */
+  private inlandMan: string | null = null;
 
   constructor(
     private onClose: () => void,
@@ -852,6 +858,8 @@ export class PortView {
       ));
     }
 
+    this.renderInland(right, g, def);
+
     if (g.crew.officers.some((o) => o.role === 'degredado' && o.alive && !o.ashoreAt) && def.people !== 'portuguese') {
       right.append(card('Put a man ashore',
         el('p', { class: 'quote' },
@@ -888,6 +896,72 @@ export class PortView {
     }
 
     host.append(el('div', { class: 'cols two' }, left, right));
+  }
+
+  /**
+   * The one thing in this game you can do that is not on the water.
+   *
+   * Two cards, and the second is the more important of them: the men who are
+   * already out there. A captain who sent somebody up a river in 1484 and has
+   * been at sea since needs to be told, every time he makes a port on this
+   * coast, that there is a man of his inland and roughly how long he has been
+   * there — otherwise the three years are not felt, they are merely elapsed.
+   */
+  private renderInland(right: HTMLElement, g: Game, def: PortDef): void {
+    const out = outstanding(g);
+    if (out.length > 0) {
+      right.append(card('Men inland',
+        ...out.map((j) => el('p', {}, journeyWord(g, j))),
+      ));
+    }
+
+    const errands = errandsAt(def);
+    const men = candidates(g);
+    if (errands.length === 0 || men.length === 0) return;
+
+    const chosen = this.inlandMan && men.some((m) => m.id === this.inlandMan)
+      ? men.find((m) => m.id === this.inlandMan)!
+      : men[0];
+    const backing = backingFor(g, def, chosen);
+
+    right.append(card('Send a man inland',
+      el('p', { class: 'quote' },
+        'The Crown did this for sixty years and it was never once a small thing. A man walks '
+        + 'away from the coast with a letter and a bag of goods, and either he comes back with '
+        + 'something nobody in Europe knows, or he does not come back. Pêro da Covilhã went out '
+        + 'in 1487, reached Calicut, sent word that the ocean was open, and was never allowed '
+        + 'home.'),
+      el('div', { class: 'hud-row', style: { marginBottom: '8px' } },
+        el('span', { class: 'k' }, 'Who goes'),
+        el('span', { class: 'v' },
+          ...men.map((m) => button(m.name, () => {
+            this.inlandMan = m.id;
+            this.render();
+          }, { primary: m.id === chosen.id }))),
+      ),
+      kv('His chances', backing > 0.6 ? 'Good — he has the tongue and they know you here'
+        : backing > 0.38 ? 'Fair. He will be passed from hand to hand and it will be slow.'
+          : 'Poor. He has no language and no friends on this coast.'),
+      el('p', { style: { fontSize: '13px', fontStyle: 'italic', color: 'var(--ink-soft)' } },
+        'Chances turn on his own quality, on whether he speaks their language, and on what '
+        + 'they think of you here. Nothing else.'),
+      ...errands.map((e) => el('div', {
+        style: { marginTop: '14px', paddingTop: '12px', borderTop: '1px solid rgba(90,74,55,0.2)' },
+      },
+        el('div', { style: { fontSize: '15px', marginBottom: '5px' } }, e.name),
+        el('p', { class: 'quote' }, e.brief),
+        el('p', { style: { fontSize: '13px' } }, e.hope),
+        el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginTop: '8px' } },
+          el('span', { style: { fontSize: '13px', color: 'var(--ink-soft)' } },
+            `${outfitCost(e)} cruzados of goods · ${e.years.toFixed(1)} years at best`),
+          button(`Send ${chosen.name}`, () => {
+            this.notice = { text: g.sendInland(def, chosen.id, e.id) };
+            this.inlandMan = null;
+            this.render();
+          }, { primary: g.crown.gold >= outfitCost(e) }),
+        ),
+      )),
+    ));
   }
 }
 

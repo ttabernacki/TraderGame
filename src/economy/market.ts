@@ -99,9 +99,29 @@ export class Markets {
   private baseStock(def: PortDef, g: Good, abundance: number): number {
     const scale = { anchorage: 0.15, village: 0.4, town: 1, city: 2.2, emporium: 4.5 }[def.size];
     const bulkiness = clamp(0.06 / Math.max(g.bulk, 0.001), 0.4, 14);
-    const units = abundance * scale * bulkiness * 45 * (0.5 + def.wealth);
-    const affordable = (this.valueCeiling(def) * abundance) / Math.max(g.lisbon, 0.01);
+    // A road to the interior, bought with a man's three years. What it changes
+    // is not the price — it is that the goods arrive here through two pairs of
+    // hands instead of four, so there is simply more of them and the town can
+    // pay for more of them. See progression/inland.
+    const road = this.roads.has(def.id) ? 1.7 : 1;
+    const units = abundance * scale * bulkiness * 45 * (0.5 + def.wealth) * road;
+    const affordable = (this.valueCeiling(def) * abundance * road) / Math.max(g.lisbon, 0.01);
     return Math.round(Math.min(units, affordable));
+  }
+
+  /** Ports whose inland road has been opened. */
+  roads = new Set<string>();
+
+  /** Open one, and let the stock rebuild to the new baseline from now on. */
+  openRoad(portId: string, t: number): void {
+    if (this.roads.has(portId)) return;
+    this.roads.add(portId);
+    // Refreshed from a long time ago so the new baseline is reached at once:
+    // he has been away three years and the caravans have been coming down for
+    // most of them.
+    const s = this.stateFor(portId);
+    s.lastUpdate = t - 400 * 86400;
+    this.refresh(portId, t);
   }
 
   /**

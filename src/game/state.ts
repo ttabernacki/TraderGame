@@ -48,6 +48,10 @@ import {
   type ChaseOrder, type SeaRecord, type Stranger,
 } from './encounter';
 import { hailScene } from './hailing';
+import {
+  ERRAND_BY_ID, backingFor, journeyScene, newJourneyRecord, outfitCost,
+  type Journey, type JourneyRecord,
+} from '../progression/inland';
 import { polarAt } from '../ship/polars';
 import { rollOfficerEvent } from './officerEvents';
 import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty';
@@ -389,6 +393,13 @@ export class Game {
   chaseOrder: ChaseOrder = 'hold';
   /** What a career of meetings at sea came to. See encounter/SeaRecord. */
   seaRecord: SeaRecord = newSeaRecord();
+
+  /** Men sent away from the sea. See progression/inland. */
+  journeys: Journey[] = [];
+  journeyRecord: JourneyRecord = newJourneyRecord();
+  private nextJourneyId = 1;
+  /** Ports whose inland road has been opened, which deepens their market. */
+  inlandRoads = new Set<string>();
   /** Days since the last sail was raised, so they do not come in pairs. */
   private daysSinceSail = 3;
 
@@ -3801,6 +3812,90 @@ export class Game {
     this.standingCourse = null;
   }
 
+  // -------------------------------------------------------------------------
+  // Men sent inland
+  // -------------------------------------------------------------------------
+
+  /**
+   * Give a man a bag of goods, a letter, and an errand, and watch him walk
+   * inland. See progression/inland.
+   *
+   * He stays on the books and stays on the wage bill, because the Crown paid
+   * these men for the whole time they were gone and paid their widows after,
+   * and because a captain who could simply write a man off would not feel the
+   * years the way the thing is supposed to be felt.
+   */
+  sendInland(def: PortDef, officerId: string, errandId: string): string {
+    const e = ERRAND_BY_ID.get(errandId as never);
+    const o = this.crew.officers.find((x) => x.id === officerId);
+    if (!e || !o) return 'There is nobody to send.';
+    const cost = outfitCost(e);
+    if (this.crown.gold < cost) {
+      return `Fitting a party out costs ${cost} cruzados of goods and you have not got it.`;
+    }
+    this.crown.gold -= cost;
+    o.ashoreAt = def.id;
+    o.ashoreSince = this.clock.t;
+    const backing = backingFor(this, def, o);
+    this.journeys.push({
+      id: `jn${this.nextJourneyId++}`,
+      errand: e.id,
+      officerId: o.id,
+      officerName: o.name,
+      fromPortId: def.id,
+      peopleId: def.people,
+      sentT: this.clock.t,
+      // Not the errand's nominal length: a badly backed party is slower as well
+      // as less likely, because half of what goes wrong is being made to wait.
+      dueT: this.clock.t + e.years * (1.5 - backing * 0.55) * 365.25 * 86400,
+      backing,
+    });
+    this.journeyRecord.sent++;
+    this.logEvent('contact',
+      `${o.name} went up the river from ${def.name} with nine men, four hundred cruzados of `
+      + `goods, and orders to ${e.brief.charAt(0).toLowerCase()}${e.brief.slice(1)} He was told `
+      + `we would come back for him. Everybody on the beach understood what that was worth.`, true);
+    return `${o.name} is gone inland. Put into ${def.name} again in two or three years.`;
+  }
+
+  /**
+   * Whether a man who went inland is on the beach here, and if so, the card.
+   *
+   * Put up as a pending event rather than as a notice on the port screen,
+   * because three years is not a notice.
+   */
+  checkInland(def: PortDef): boolean {
+    if (this.pendingEvent) return false;
+    const scene = journeyScene(this, def);
+    if (!scene) return false;
+    this.logEvent('contact', scene.text.replace(/\n\n/g, ' '), true);
+    this.pendingEvent = scene;
+    return true;
+  }
+
+  /**
+   * Something a returning man was told about, entered as hearsay.
+   *
+   * Deliberately a rumour and not a chart: he did not see the place, he was
+   * told about it by somebody who had, and the error on it is the error on
+   * every second-hand position in this game.
+   */
+  hearFromInland(target: PortDef, from: PortDef): void {
+    if (this.leads.some((x) => x.targetPort === target.id)) return;
+    const known = new Set(this.chart.ports.keys());
+    const lead = hearRumour(from, known, this.rng, this.clock.t, () => `l${this.nextLeadId++}`);
+    if (!lead) return;
+    lead.targetPort = target.id;
+    lead.source = `a man who walked there and back`;
+    this.leads.push(lead);
+  }
+
+  /** The inland road, opened once, which deepens what this port can trade. */
+  openTheRoad(portId: string): void {
+    this.inlandRoads.add(portId);
+    this.markets.openRoad(portId, this.clock.t);
+  }
+
   /** Give it up, and go back to steering direct for the mark. */
   stopRunningTheLatitude(): void {
     this.latitudeOrder = null;
@@ -4158,6 +4253,9 @@ export class Game {
     this.recentEvents = [];
     // Whatever was on the horizon is somebody else's business now.
     this.partCompany();
+    // And whoever walked away from this beach two years ago may be standing on
+    // it. See progression/inland.
+    this.checkInland(def);
     this.markets.refresh(def.id, this.clock.t);
     this.refreshPortBusiness(def);
     this.deliverVentures(def);
@@ -4810,6 +4908,10 @@ export class Game {
       seaRecord: this.seaRecord,
       chaseOrder: this.chaseOrder,
       chaseToldOnce: this.chaseToldOnce,
+      journeys: this.journeys,
+      journeyRecord: this.journeyRecord,
+      nextJourneyId: this.nextJourneyId,
+      inlandRoads: [...this.inlandRoads],
       route: this.route,
       daysSincePort: this.daysSincePort,
       distanceRun: this.distanceRun,
@@ -4888,6 +4990,11 @@ export class Game {
     g.seaRecord = { ...newSeaRecord(), ...(d.seaRecord ?? {}) };
     g.chaseOrder = d.chaseOrder ?? 'hold';
     g.chaseToldOnce = d.chaseToldOnce ?? false;
+    g.journeys = d.journeys ?? [];
+    g.journeyRecord = { ...newJourneyRecord(), ...(d.journeyRecord ?? {}) };
+    g.nextJourneyId = d.nextJourneyId ?? 1;
+    g.inlandRoads = new Set<string>(d.inlandRoads ?? []);
+    for (const id of g.inlandRoads) g.markets.openRoad(id, g.clock.t);
     // Saves from before a passage could have more than one mark carry a single
     // destination; it becomes a route of one.
     g.route = d.route ?? (d.destination ? [d.destination] : []);

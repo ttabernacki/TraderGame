@@ -181,6 +181,29 @@ export class EpilogueView {
         // Who he was, which the whole career was an answer to.
         card(originDef(g.origin).name, el('p', {}, originDef(g.origin).epilogue)),
 
+        // The men who left the sea. Above the ships-spoken card because a man
+        // who walked inland is a bigger thing than any meeting on the water.
+        g.journeyRecord.sent > 0
+          ? card('The ones who walked',
+              el('p', { class: 'flavour' },
+                'Sending a man away from the coast was the Crown’s other instrument, and it '
+                + 'was never a small thing to do to somebody. Most of them were never heard of '
+                + 'again and a few of them changed what Europe knew.'),
+              kv('Sent inland', String(g.journeyRecord.sent)),
+              kv('Came back', String(g.journeyRecord.returned)),
+              kv('Got where they were sent', String(g.journeyRecord.succeeded)),
+              g.journeyRecord.lost > 0 ? kv('Never came down', String(g.journeyRecord.lost)) : null,
+              ...g.journeys.filter((j) => !j.done).map((j) => el('p', { class: 'bad' },
+                `${j.officerName} is still out there, or is not, and the difference has never `
+                + 'been established. His wage was paid to the end.')),
+              g.journeyRecord.succeeded > 0
+                ? el('p', { class: 'good' },
+                  'What they brought back could not have been sailed to. That is the whole of '
+                  + 'why it was worth a man.')
+                : null,
+            )
+          : null,
+
         // Who you turned out to be when there was nobody watching but the men
         // on your own deck and the men on the other one.
         g.seaRecord.sighted > 0
