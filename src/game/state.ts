@@ -48,6 +48,7 @@ import {
   type ChaseOrder, type SeaRecord, type Stranger,
 } from './encounter';
 import { hailScene } from './hailing';
+import { newGale, newGaleRecord, rollGaleScene, type GaleRecord, type GaleState } from './gale';
 import {
   ERRAND_BY_ID, backingFor, journeyScene, newJourneyRecord, outfitCost,
   type Journey, type JourneyRecord,
@@ -400,6 +401,10 @@ export class Game {
   private nextJourneyId = 1;
   /** Ports whose inland road has been opened, which deepens their market. */
   inlandRoads = new Set<string>();
+
+  /** The blow she is in, and what a career of them came to. See game/gale. */
+  gale: GaleState = newGale();
+  galeRecord: GaleRecord = newGaleRecord();
   /** Days since the last sail was raised, so they do not come in pairs. */
   private daysSinceSail = 3;
 
@@ -2405,7 +2410,8 @@ export class Game {
     // A beat of somebody's story outranks everything: these are the moments the
     // voyage is actually about, they are written rather than rolled, and each
     // one is only ever offered once in a career.
-    const event = this.pendingScenes.shift()
+    const event = rollGaleScene(this)
+      ?? this.pendingScenes.shift()
       ?? this.rollArcBeat()
       ?? rollRivalMeeting(this, days)
       ?? rollOfficerEvent(this, days)
@@ -3890,6 +3896,40 @@ export class Game {
     this.leads.push(lead);
   }
 
+  /**
+   * Cargo through the lee ports, to lighten her.
+   *
+   * Takes it out of the largest lots first, because that is what a boatswain
+   * with a gale on him and an hour to do it in actually starts on. Returns the
+   * tons that really went, which is not always the tons asked for. Charters and
+   * the King's cargo are not exempt: that is the whole weight of the decision.
+   */
+  heaveCargoOverboard(tons: number): number {
+    let want = Math.max(0, tons);
+    let gone = 0;
+    const lots = this.ship.cargo.slice().sort((a, b) => b.quantity - a.quantity);
+    for (const lot of lots) {
+      if (want <= 0.01) break;
+      const g = good(lot.goodId);
+      const tonsHere = lot.quantity * g.bulk;
+      const take = Math.min(tonsHere, want);
+      const units = take / Math.max(g.bulk, 1e-6);
+      this.ship.removeCargo(lot.goodId, units);
+      want -= take;
+      gone += take;
+    }
+    if (gone > 0) this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
+    return gone;
+  }
+
+  /** She is lost. The one ending that is not the end of a career. */
+  wreckHer(): void {
+    const lost = Math.max(1, Math.round(this.crew.count * this.rng.range(0.3, 0.7)));
+    this.killHands(lost, 'Lost when she struck.');
+    this.endGame('She was driven ashore in a gale and went to pieces in the surf. '
+      + `${this.crew.count} of the company reached the beach.`);
+  }
+
   /** The inland road, opened once, which deepens what this port can trade. */
   openTheRoad(portId: string): void {
     this.inlandRoads.add(portId);
@@ -4912,6 +4952,8 @@ export class Game {
       journeyRecord: this.journeyRecord,
       nextJourneyId: this.nextJourneyId,
       inlandRoads: [...this.inlandRoads],
+      gale: this.gale,
+      galeRecord: this.galeRecord,
       route: this.route,
       daysSincePort: this.daysSincePort,
       distanceRun: this.distanceRun,
@@ -4995,6 +5037,8 @@ export class Game {
     g.nextJourneyId = d.nextJourneyId ?? 1;
     g.inlandRoads = new Set<string>(d.inlandRoads ?? []);
     for (const id of g.inlandRoads) g.markets.openRoad(id, g.clock.t);
+    g.gale = d.gale ?? newGale();
+    g.galeRecord = { ...newGaleRecord(), ...(d.galeRecord ?? {}) };
     // Saves from before a passage could have more than one mark carry a single
     // destination; it becomes a route of one.
     g.route = d.route ?? (d.destination ? [d.destination] : []);

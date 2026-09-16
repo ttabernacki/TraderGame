@@ -9,6 +9,7 @@ import { rollOfficerEvent } from './game/officerEvents';
 import { castLead, landfallScene } from './game/soundings';
 import { raiseASail } from './game/encounter';
 import { hailScene } from './game/hailing';
+import { leeShore, rollGaleScene } from './game/gale';
 import { mutinyScene } from './game/mutiny';
 import { rollSeaEvent } from './game/seaEvents';
 import { sightOpportunities, takeSight } from './navigation/navigator';
@@ -433,6 +434,8 @@ if (import.meta.env.DEV) {
         return game.encounter;
       },
       hailScene,
+      rollGaleScene,
+      leeShore,
       sightOpportunities,
       takeSight,
       castLead,

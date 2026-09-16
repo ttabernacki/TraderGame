@@ -181,6 +181,31 @@ export class EpilogueView {
         // Who he was, which the whole career was an answer to.
         card(originDef(g.origin).name, el('p', {}, originDef(g.origin).epilogue)),
 
+        // The weather, which is the only thing in the whole career that was
+        // never a choice — only what was done about it.
+        g.galeRecord.weathered > 0
+          ? card('Hard weather',
+              kv('Gales', String(g.galeRecord.weathered)),
+              g.galeRecord.clawedOff > 0
+                ? el('p', { class: 'good' },
+                  `${g.galeRecord.clawedOff === 1 ? 'Once' : `${g.galeRecord.clawedOff} times`} `
+                  + 'she was embayed on a lee shore in a gale and beat off it, which is the '
+                  + 'thing a ship of this rig could do and almost nothing else afloat could. '
+                  + 'Every man who was on deck for it told the story wrong afterwards and none '
+                  + 'of them were lying.')
+                : null,
+              g.galeRecord.rodeItOut > 0
+                ? el('p', {}, `${g.galeRecord.rodeItOut === 1 ? 'Once' : `${g.galeRecord.rodeItOut} times`} `
+                  + 'she lay to her anchors all night with the land astern and the cables '
+                  + 'groaning in the hawse, and the ground held.')
+                : null,
+              g.galeRecord.driven > 0
+                ? el('p', { class: 'bad' }, `${g.galeRecord.driven === 1 ? 'Once' : `${g.galeRecord.driven} times`} `
+                  + 'she would not weather it and struck.')
+                : null,
+            )
+          : null,
+
         // The men who left the sea. Above the ships-spoken card because a man
         // who walked inland is a bigger thing than any meeting on the water.
         g.journeyRecord.sent > 0
