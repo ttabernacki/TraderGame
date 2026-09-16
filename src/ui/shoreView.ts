@@ -105,21 +105,6 @@ export class ShoreView {
       kv('Hands fit', `${g.crew.count}`),
     ));
 
-    const padrao = g.padraoCheck();
-    right.append(card('A pillar',
-      el('p', { class: 'quote' },
-        'Cut limestone with the arms of Portugal, the King\u2019s name and the date on it, set on '
-        + 'high ground where the next ship down this coast will see it. It is a signpost before '
-        + 'it is a claim, which is why it only goes on a headland or the mouth of a river.'),
-      el('p', { class: 'flavour' }, padrao.reason),
-      padrao.ok
-        ? button(`Set up ${padrao.name}`, () => {
-          this.notice = g.raisePadrao();
-          this.render();
-        }, { primary: true })
-        : null,
-    ));
-
     this.body.append(el('div', { class: 'cols side' }, left, right));
   }
 }

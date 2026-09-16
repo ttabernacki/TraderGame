@@ -3672,60 +3672,6 @@ export class Game {
   }
 
   /**
-   * Whether a stone pillar can be put up where she now lies.
-   *
-   * A padrão is a signpost before it is a claim. It is cut limestone with the
-   * arms of Portugal, the king's name and the date on it, and it goes on high
-   * ground **where the next ship down the coast will see it** — which is the
-   * whole reason the thing exists and the whole reason it cannot go on any
-   * beach that happens to be to leeward. Cão's went on the Congo mouth, on
-   * Cabo de Santa Maria and on Cabo da Cruz, and two of them were still there
-   * four hundred years later.
-   */
-  padraoCheck(): { ok: boolean; reason: string; name: string } {
-    const f = featureNear(this.ship.state.pos);
-    const name = f
-      ? this.namedFeatures[f.id] ?? f.suggested
-      : `${this.ship.state.pos.lat >= 0 ? 'Cabo' : 'Ponta'} de ${saintOfDay(this.clock)}`;
-
-    if (!this.ship.upgrades.includes('padroes') || this.crown.padraoStock <= 0) {
-      return {
-        ok: false,
-        name,
-        reason: this.ship.upgrades.includes('padroes')
-          ? 'The last of the pillars is ashore already.'
-          : 'There are no pillars aboard. They are cut and shipped at Lisbon.',
-      };
-    }
-    if (!f) {
-      return {
-        ok: false,
-        name,
-        reason: 'A pillar goes on a headland where the next ship down this coast will see it, or '
-          + 'at the mouth of a river where she must pass it. It is a signpost. On an open beach '
-          + 'it marks nothing and nobody will ever read it.',
-      };
-    }
-    if (this.crown.padraoNear(this.ship.state.pos)) {
-      return { ok: false, reason: 'A pillar of yours already stands on this one.', name };
-    }
-    const landable = this.padraoLandable();
-    if (!landable.ok) return { ok: false, reason: landable.reason, name };
-    return { ok: true, reason: 'The boat can be hoisted out and the pillar landed.', name };
-  }
-
-  /** Put a pillar ashore. Costs a day and the boat's crew a hard morning. */
-  raisePadrao(name?: string): string {
-    const check = this.padraoCheck();
-    if (!check.ok) return check.reason;
-    const f = featureNear(this.ship.state.pos);
-    if (!f) return check.reason;
-    const given = (name ?? check.name).trim() || check.name;
-    if (!this.namedFeatures[f.id]) this.nameTheFeature(f, given, f.value);
-    return this.landThePadrao(f, given);
-  }
-
-  /**
    * The stone itself.
    *
    * Worth more the further it is beyond anything Lisbon has a sheet for, which
@@ -3740,7 +3686,45 @@ export class Game {
     }
     const beyond = this.beyondTheKnown;
     const worth = Math.round(f.value * (beyond ? 0.9 : 0.35));
-    this.clock.t += 9 * 3600;
+
+    // Standing in, and waiting for a day the boat can live in.
+    //
+    // A cape is raised from the masthead at fifteen or twenty miles and a boat
+    // cannot be landed from there, so this used to refuse and the player had to
+    // close the coast himself and then find a second button. That was two
+    // mechanisms for one act. Deciding to claim a headland is the decision; the
+    // standing in and the waiting for a slant are what the ship then does about
+    // it, and they cost what they cost.
+    // The distance is paid for in hours: she closes the coast under her own
+    // sail, and that is a known quantity. What is not known is whether the sea
+    // will let a boat off the beach, so only that — and having hands fit to
+    // pull her — is what the waiting is about.
+    const off = Math.max(0, this.sounding.shoreDistNm - 3);
+    const hours = 9 + (off / Math.max(this.physics.speedKnots, 2.5));
+    const workable = (): { ok: boolean; reason: string } => {
+      if (this.weatherNow.waveHeight > 2.2 || this.weatherNow.wind.speed > 22) {
+        return { ok: false, reason: 'No boat could land on that beach today.' };
+      }
+      if (ableHands(this.crew) < 10) {
+        return { ok: false, reason: 'There are not enough men fit to pull a boat ashore.' };
+      }
+      return { ok: true, reason: '' };
+    };
+    this.clock.t += hours * 3600;
+    this.refreshEnvironment();
+    let waited = 0;
+    while (!workable().ok && waited < 5) {
+      this.clock.t += 24 * 3600;
+      this.refreshEnvironment();
+      waited++;
+    }
+    const last = workable();
+    if (!last.ok) {
+      this.crew.fatigue = clamp(this.crew.fatigue + 0.08, 0, 1);
+      return 'Five days standing off and on waiting for the sea to let a boat in, and it never '
+        + `did. ${last.reason} The stone is still in the hold and the place is still ${given}, `
+        + 'which is at least on the chart.';
+    }
     this.crown.padroesRaised += 1;
     this.crown.padraoStock -= 1;
     this.crown.progressObjective('padrao', undefined, 1);

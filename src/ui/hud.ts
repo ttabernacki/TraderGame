@@ -731,10 +731,6 @@ export class Hud {
     const lead = g.openLeads[g.openLeads.length - 1];
     if (lead) lines.push({ k: 'Hearsay', v: kindShort(lead.kind) });
 
-    const padrao = g.padraoCheck();
-    if (padrao.ok) {
-      lines.push({ k: 'Ashore', v: 'A pillar may be landed here — U' });
-    }
 
     clear(this.orders);
     this.orders.style.display = lines.length > 0 ? '' : 'none';

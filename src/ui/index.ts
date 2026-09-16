@@ -296,13 +296,6 @@ export class Ui {
         g.pushAlert(on ? 'Sound on.' : 'Sound off.', 'note');
         return true;
       }
-      case 'u': {
-        // Land a pillar. The one act in the game that leaves something behind.
-        const check = g.padraoCheck();
-        if (!check.ok) { g.pushAlert(check.reason, 'warning'); return true; }
-        g.pushAlert(g.raisePadrao(), 'note');
-        return true;
-      }
       case 'j':
         // The book, open at the page it was left at — which is how a book is
         // actually used, and means one key reaches everything.

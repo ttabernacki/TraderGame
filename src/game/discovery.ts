@@ -219,17 +219,23 @@ export function featureScene(g: Game, f: CoastFeature, saint: string): SeaEvent 
         detail: `The chaplain's, it being the feast of ${saint}. Half this coast is named this way.`,
         resolve: name(own, false),
       },
-      ...(stones > 0 && landable.ok ? [{
+      // Offered on the strength of having a stone aboard and nothing else.
+      // Standing in from the masthead's fifteen miles, and waiting for a day
+      // the boat can live in, is what the ship does about the decision — not a
+      // reason to refuse to let the captain take it. This is now the only place
+      // in the game a pillar is landed.
+      ...(stones > 0 ? [{
         label: `Land a padrão, and call it ${f.suggested}`,
-        detail: 'A day, the boat, and one of the stones. The arms of Portugal on the high ground '
-          + 'where the next ship down this coast will read them.',
+        detail: landable.ok
+          ? 'A day, the boat, and one of the stones. The arms of Portugal on the high ground '
+            + 'where the next ship down this coast will read them.'
+          : `She stands in first, and waits for a day the boat can live in — ${landable.reason.toLowerCase()}`,
         resolve: name(f.suggested, true),
       }] : [{
-        label: 'No pillar can be landed here',
-        detail: stones > 0 ? landable.reason
-          : g.ship.upgrades.includes('padroes')
-            ? 'The last of the stones went up further north.'
-            : 'You shipped no pillars at Lisbon. They are cut there and nowhere else.',
+        label: 'No pillar to land',
+        detail: g.ship.upgrades.includes('padroes')
+          ? 'The last of the stones went up further north. You cannot mark what you cannot mark.'
+          : 'You shipped no pillars at Lisbon. They are cut there and nowhere else.',
         resolve: () => 'The boat stays in the chocks. Whatever is done about this place will have '
           + 'to be done with ink.',
       }]),

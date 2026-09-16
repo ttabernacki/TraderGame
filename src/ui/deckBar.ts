@@ -38,7 +38,6 @@ const ITEMS: Item[] = [
   { label: 'Lead', key: 'g', cap: 'G', hint: 'Heave the lead — depth, ground, and how far off the land she is' },
   { label: '\u266a', key: 'm', cap: 'M', hint: 'Sound on or off' },
   { label: 'View', key: 'v', cap: 'V', hint: 'Shift the view about the ship' },
-  { label: 'Padrão', key: 'u', cap: 'U', hint: 'Land a pillar on a headland or a river mouth, where the next ship will see it' },
 ];
 
 /** True where the player has a mouse, which is who this bar is for. */
