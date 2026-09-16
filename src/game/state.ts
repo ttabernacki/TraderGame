@@ -1382,7 +1382,7 @@ export class Game {
     if (this.helmOrder === null && !dest && this.standingCourse === null && !this.latitudeOrder) {
       this.standingCourse = wrap360(this.ship.state.heading);
     }
-    const wanted = this.helmOrder ?? this.chaseCourse() ?? this.latitudeCourse()
+    const wanted = this.helmOrder ?? this.chaseCourse() ?? this.coastCourse() ?? this.latitudeCourse()
       ?? dest?.bearing ?? this.standingCourse;
     if (wanted === null) return null;
     const windEye = this.weatherNow.wind.from;
@@ -1548,12 +1548,17 @@ export class Game {
     const prudent = this.canvasCeiling;
     const now = this.ship.canvasSet;
 
-    // Anything she is carrying that the weather allows is taken as the standing
-    // order, whoever set it. Without this the watch will strike sail she is
-    // safely carrying because some code path put canvas on her without going
+    // Anything she is carrying is taken as the standing order, whoever set it,
+    // up to what the weather allows. Without this the watch will strike sail she
+    // is safely carrying because some code path put canvas on her without going
     // through setCanvas — and a ship that silently furls everything and lies
     // there is the worst possible bug to hand a player who asked for less work.
-    if (now > this.orderedCanvas && now <= prudent + 0.001) this.orderedCanvas = now;
+    //
+    // It used to adopt the canvas only when it was already at or under the
+    // ceiling, which left the gap it exists to close: set her *above* the
+    // ceiling and the watch furled the lot instead of easing her to it. Taking
+    // the lesser of the two is what the sentence above always meant.
+    if (now > this.orderedCanvas) this.orderedCanvas = Math.min(now, prudent);
 
     const want = Math.min(this.orderedCanvas, prudent);
     if (Math.abs(want - now) < 0.004) return;
@@ -3881,12 +3886,15 @@ export class Game {
     const from = this.helmOrder ?? this.courseToSteer() ?? this.ship.state.heading;
     this.helmOrder = wrap360(from + deg);
     this.standingCourse = null;
+    // Putting the helm over yourself takes the coast back off the master.
+    this.coastOrder = null;
   }
 
   /** Steady on the course she is heading now. */
   steadyAsSheGoes(): void {
     this.helmOrder = wrap360(this.ship.state.heading);
     this.standingCourse = null;
+    this.coastOrder = null;
     this.ship.state.rudder = 0;
   }
 
@@ -4024,6 +4032,7 @@ export class Game {
     if (!this.destination) return false;
     this.helmOrder = null;
     this.latitudeOrder = null;
+    this.coastOrder = null;
     this.standingCourse = null;
     return true;
   }
@@ -4189,6 +4198,116 @@ export class Game {
   /** Give it up, and go back to steering direct for the mark. */
   stopRunningTheLatitude(): void {
     this.latitudeOrder = null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Running a coast at an offing
+  // -------------------------------------------------------------------------
+
+  /**
+   * Hold her parallel to the land at a set distance off. See perk `coasting`.
+   *
+   * This is what the caravels actually did for eighty years, and it is the one
+   * order in the game a player has had to give by hand, minute by minute, for
+   * days at a time: a coast is surveyed by running along it close enough to
+   * draw and far enough off to live, and the whole of `Chart.survey` is fed by
+   * exactly that. Holding it by eye at four times real time is the least
+   * interesting work in the game and there is a great deal of it.
+   *
+   * It is a perk and not a default because it is a real skill. A master who can
+   * be handed a coast and an offing and left to run it is the difference
+   * between a captain who has to be on deck and one who does not, which is what
+   * the whole seamanship tree is about.
+   */
+  coastOrder: { offingNm: number } | null = null;
+
+  /**
+   * The course that holds the offing.
+   *
+   * A proportional controller on the offing, biasing a course laid parallel to
+   * the shore. Two things it must get right and which took measuring:
+   *
+   * The alongshore direction is ambiguous — a coast runs two ways — so she
+   * keeps the one she is already going, chosen by which of the two is nearer
+   * her present head. Recomputing it freshly each tick let her flip end for end
+   * whenever the shore bearing wandered across the beam.
+   *
+   * And the bias is capped well short of ninety degrees. At ninety she would
+   * turn straight at the beach to close an offing she was outside of, which is
+   * the one thing this order must never do.
+   */
+  private coastCourse(): number | null {
+    const o = this.coastOrder;
+    if (!o) return null;
+    const d = this.sounding.shoreDistNm;
+    // Out of soundings and out of sight of it, there is no coast to follow.
+    if (!Number.isFinite(d) || d > 90) return null;
+
+    const along = [
+      wrap360(this.sounding.shoreBearing + 90),
+      wrap360(this.sounding.shoreBearing - 90),
+    ];
+    const keep = Math.abs(angleDelta(this.ship.state.heading, along[0]))
+      <= Math.abs(angleDelta(this.ship.state.heading, along[1])) ? along[0] : along[1];
+
+    // Positive when she is further off than ordered, and wants to close.
+    //
+    // Asymmetric on purpose, which is both better seamanship and the whole
+    // difference between an order a player will use and one he will not: she
+    // closes the land gently and sheers off it hard. `shoreDistNm` is the
+    // distance to the *nearest* land, so a headland coming abeam reads as the
+    // offing collapsing even though the coast's general trend has not moved,
+    // and on a five-mile order she was measured closing to one and a half.
+    // Answering that twice as hard as she answers being too far out costs
+    // nothing but a little easting and keeps her off the one thing that can
+    // end the voyage.
+    const errNm = d - o.offingNm;
+    const CLOSE_GAIN = 7;
+    const SHEER_GAIN = 20;
+    const MAX_BIAS = 62;
+    const bias = clamp(errNm * (errNm >= 0 ? CLOSE_GAIN : SHEER_GAIN), -MAX_BIAS, MAX_BIAS);
+    // Toward the land is the shore bearing, so a positive error turns that way.
+    const toward = angleDelta(keep, this.sounding.shoreBearing) >= 0 ? 1 : -1;
+    const want = wrap360(keep + toward * bias);
+
+    // Give the helm a course she can actually sail.
+    //
+    // The first version handed over the geometric answer and walked away. On a
+    // coast that happened to lie across the wind that answer was inside her
+    // no-go: measured off Guinea, she was put at twenty degrees to the wind's
+    // eye, sat in irons making a knot and a half *astern*, and was set down on
+    // the beach she had been told to keep twenty miles off — arriving at nought
+    // point nought miles while the order was still in force.
+    //
+    // So the wanted direction is run through the same `bestCourse` the strange
+    // sail is chased with, which returns the heading that makes the most good
+    // in that direction out of the polar table. A master handed a coast and an
+    // offing does not sail into the wind either; he makes his offing on the
+    // tack that pays.
+    const w = this.weatherNow.wind;
+    return bestCourse(this.ship.hull.id, w.from, w.speed, want).heading;
+  }
+
+  /** Hand the watch the coast and an offing. */
+  followTheCoast(offingNm: number): string {
+    if (!this.can('coasting')) {
+      return 'Nobody aboard can be trusted to hold her at a distance off a coast you cannot see '
+        + 'from the cabin. You will have to con her yourself.';
+    }
+    this.coastOrder = { offingNm: clamp(offingNm, 0.5, 40) };
+    this.helmOrder = null;
+    this.latitudeOrder = null;
+    this.standingCourse = null;
+    this.logEvent('navigation',
+      `Gave the master the coast and told him to hold her ${offingNm.toFixed(0)} miles off it and `
+      + 'follow it. He has the lead going in the chains and a man at the masthead, and he will '
+      + 'send for you when it changes its mind about which way it is going.');
+    return `Running the coast at ${offingNm.toFixed(0)} miles.`;
+  }
+
+  /** Take it back. */
+  stopFollowingTheCoast(): void {
+    this.coastOrder = null;
   }
 
   // -------------------------------------------------------------------------
@@ -4865,6 +4984,7 @@ export class Game {
     this.aimOffNm = 0;
     this.helmOrder = null;
     this.latitudeOrder = null;
+    this.coastOrder = null;
     this.standingCourse = null;
     this.markLaidAt = { ...this.nav.estimated };
     this.markDistNm = haversine(this.nav.estimated, { lat, lon }) / NM;
@@ -4911,6 +5031,7 @@ export class Game {
     this.standingCourse = wrap360(this.ship.state.heading);
     this.helmOrder = null;
     this.latitudeOrder = null;
+    this.coastOrder = null;
     this.markLaidAt = null;
   }
 
@@ -5206,6 +5327,7 @@ export class Game {
       orderedCanvas: this.orderedCanvas,
       helmOrder: this.helmOrder,
       latitudeOrder: this.latitudeOrder,
+      coastOrder: this.coastOrder,
       encounter: this.encounter,
       seaRecord: this.seaRecord,
       chaseOrder: this.chaseOrder,
@@ -5293,6 +5415,7 @@ export class Game {
     g.orderedCanvas = d.orderedCanvas ?? g.ship.canvasSet;
     g.helmOrder = d.helmOrder ?? null;
     g.latitudeOrder = d.latitudeOrder ?? null;
+    g.coastOrder = d.coastOrder ?? null;
     g.encounter = d.encounter ?? null;
     g.seaRecord = { ...newSeaRecord(), ...(d.seaRecord ?? {}) };
     g.chaseOrder = d.chaseOrder ?? 'hold';

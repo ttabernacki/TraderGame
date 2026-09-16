@@ -245,6 +245,31 @@ export class ChartView {
             )),
           )
         : null,
+      // Running a coast at an offing. Only for a captain whose master can be
+      // handed one — see the `coasting` perk in the seamanship tree.
+      g && g.can('coasting')
+        ? el('div', { class: 'chart-chips', style: { alignItems: 'baseline' } },
+            el('span', { style: { fontSize: '12px', color: 'var(--ink-soft)' } }, 'Run the coast'),
+            ...([2, 5, 10, 20] as const).map((nm) => this.chip(
+              `${nm} miles off`,
+              g.coastOrder?.offingNm === nm,
+              () => {
+                if (g.coastOrder?.offingNm === nm) {
+                  g.stopFollowingTheCoast();
+                  g.pushAlert('The master has given you the coast back.', 'note');
+                } else {
+                  g.pushAlert(g.followTheCoast(nm), 'note');
+                }
+              },
+              nm <= 2
+                ? 'Close enough to draw every inlet, and close enough that one bad sounding is '
+                  + 'the end of her.'
+                : nm >= 20
+                  ? 'Well off it. Safe, and you will miss anything that does not stand up.'
+                  : `Hold her ${nm} miles off the land and follow it wherever it goes.`,
+            )),
+          )
+        : null,
       hasRoute
         ? button('Clear course', () => {
           this.game?.clearDestination(); this.buildTools(); this.buildVoyage(); this.draw();

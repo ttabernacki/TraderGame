@@ -13,7 +13,7 @@ export type SkillId =
  */
 export type PerkId =
   // Seamanship
-  | 'press' | 'spare' | 'lieTo'
+  | 'press' | 'spare' | 'lieTo' | 'coasting'
   // Navigation
   | 'celestial' | 'deadReckoning' | 'lunars'
   // Cartography
@@ -116,9 +116,16 @@ export const NODES: SkillNode[] = [
     excludes: 'sea-press', perk: 'spare',
   },
   {
+    // Coasting and tacking are one node because they are one craft: handling a
+    // ship in close water, where there is no sea room to be clumsy in. Giving
+    // the offing its own tier would make seamanship cost fifteen points where
+    // every other tree costs twelve, and the whole build economy is written
+    // against that twelve.
     id: 'sea-tacking', tree: 'marinharia', tier: 4, cost: 3, level: 20,
-    name: 'Wearing and tacking',
-    effect: 'She comes about quickly and is never caught in stays.',
+    name: 'Conning her in close water',
+    effect: 'She comes about quickly and is never caught in stays — and you can hand the watch '
+      + 'a coast and an offing and let them run it, which is how the whole of Guinea was surveyed.',
+    perk: 'coasting',
   },
   {
     id: 'sea-lieto', tree: 'marinharia', tier: 5, cost: 4, level: 30,
