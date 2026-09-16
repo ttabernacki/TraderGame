@@ -86,6 +86,7 @@ const BEYOND_LAT = -21.8;
 export type GameMode =
   | 'sailing' | 'chart' | 'sight' | 'logbook' | 'crew' | 'port'
   | 'audience' | 'court' | 'shipyard' | 'menu' | 'title' | 'gameover' | 'orders' | 'epilogue'
+  | 'voyages'
   | 'shore' | 'rutter';
 
 /** One mast's sails, as set against how they ought to be. */
@@ -5694,11 +5695,26 @@ export class Game {
       aimOffNm: this.aimOffNm,
       debt: this.crown.debt,
       nav: {
-        estimated: this.nav.estimated,
-        sigmaLat: this.nav.sigmaLat,
-        sigmaLon: this.nav.sigmaLon,
-        traverse: this.nav.traverse,
-        fixes: this.nav.fixes,
+        estimated: { lat: round(this.nav.estimated.lat, 6), lon: round(this.nav.estimated.lon, 6) },
+        sigmaLat: round(this.nav.sigmaLat, 5),
+        sigmaLon: round(this.nav.sigmaLon, 5),
+        // The traverse board and the fix list are the pilot's working, and a
+        // double's last eleven digits are not part of it. Rounded to a good
+        // deal finer than anything he could read off an instrument.
+        traverse: this.nav.traverse.map((e) => ({
+          ...e,
+          t: Math.round(e.t),
+          course: round(e.course, 2),
+          distance: round(e.distance, 3),
+          windFrom: round(e.windFrom, 1),
+          windKnots: round(e.windKnots, 2),
+        })),
+        fixes: this.nav.fixes.map((f) => ({
+          ...f,
+          t: Math.round(f.t),
+          latitude: round(f.latitude, 5),
+          sigma: round(f.sigma, 5),
+        })),
         kit: this.nav.kit,
       },
       chart: this.chart.serialize(),
@@ -5721,7 +5737,9 @@ export class Game {
       markets: this.markets.serialize(),
       relations: [...this.relations.entries()],
       visited: [...this.visitedPorts],
-      log: this.log.serialize(),
+      log: this.log.serialize().map((e) => (e.lat === undefined ? e : {
+        ...e, t: Math.round(e.t), lat: round(e.lat, 4), lon: round(e.lon ?? 0, 4),
+      })),
       dockedAt: this.dockedAt,
       anchored: this.anchored,
       ration: this.ration,
@@ -5919,4 +5937,17 @@ function sweepEntersEye(
   const edge = wrap360(windEye - dir * noGo);
   const toEdge = dir > 0 ? wrap360(edge - heading) : wrap360(heading - edge);
   return toEdge < sweep - 0.5;
+}
+
+/**
+ * Round to `d` decimals on the way into a save.
+ *
+ * A double prints seventeen significant digits and a save file is mostly
+ * numbers, so most of a save was the part of each number nobody can measure,
+ * act on, or see. Four decimals of a degree is about eleven yards.
+ */
+function round(n: number, d: number): number {
+  if (!Number.isFinite(n)) return 0;
+  const m = 10 ** d;
+  return Math.round(n * m) / m;
 }

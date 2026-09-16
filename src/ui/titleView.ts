@@ -23,7 +23,23 @@ export class TitleView {
   private origins = el('div', { class: 'difficulty' });
   private originBlurb = el('div', { class: 'difficulty-blurb' });
 
-  constructor(onNew: (d: Difficulty, o: OriginId) => void, onContinue: () => void, hasSave: boolean) {
+  /**
+   * Continue and the Book of Voyages are both hidden until something is known
+   * to be there to continue. Finding that out means reading storage, which
+   * throws outright in some privacy modes, and asking the account, which is a
+   * network call — so the title draws without either and `setHasSave` fills
+   * them in a moment later.
+   */
+  private actions = el('div', { class: 'actions' });
+  private onContinue: () => void;
+  private onVoyages: () => void;
+
+  constructor(
+    onNew: (d: Difficulty, o: OriginId) => void, onContinue: () => void, hasSave: boolean,
+    onVoyages: () => void = () => {},
+  ) {
+    this.onContinue = onContinue;
+    this.onVoyages = onVoyages;
     // The copy lives in a column down one side so the ship sailing behind the
     // title has somewhere to be. Centred over the middle of the screen, she
     // sailed straight through the paragraph.
@@ -43,16 +59,27 @@ export class TitleView {
       el('div', { class: 'difficulty-head' }, 'How is she to be worked?'),
       this.choices,
       this.blurb,
-      el('div', { class: 'actions' },
-        button('Sail', () => onNew(this.difficulty, this.origin), { primary: true }),
-        hasSave ? button('Continue the voyage', onContinue) : null,
-      ),
+      this.actions,
       el('div', { style: { marginTop: '30px', fontSize: '12px', color: '#6f8296', maxWidth: '560px', lineHeight: '1.7' } },
         'The wind belts, ocean currents, monsoons, coastlines, ports, trade goods, instruments and star positions in this game are the real ones. ' +
         'Latitude is found the way it was actually found. Longitude cannot be found at all. ' +
         'Neither setting changes any of that \u2014 only how much of the ship\u2019s routine work is yours to do.'),
     );
+    this.onNew = onNew;
     this.renderChoices();
+    this.setHasSave(hasSave);
+  }
+
+  private onNew!: (d: Difficulty, o: OriginId) => void;
+
+  /** Called once the shelf has answered. Safe to call more than once. */
+  setHasSave(has: boolean): void {
+    clear(this.actions);
+    this.actions.append(button('Sail', () => this.onNew(this.difficulty, this.origin),
+      { primary: true }));
+    if (has) this.actions.append(button('Continue the voyage', this.onContinue));
+    this.actions.append(button(has ? 'The Book of Voyages' : 'Bring a voyage in',
+      this.onVoyages, { ghost: true }));
   }
 
   private renderChoices(): void {

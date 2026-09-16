@@ -2259,3 +2259,96 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
    buttons walk up and down the screen under the pointer. */
 .sail-what { min-height: calc(2.9em); display: block; }
 .sail-intent { min-height: calc(2.9em); display: block; }
+
+/* ---------------------------------------------------------------------------
+   The Book of Voyages
+   ------------------------------------------------------------------------- */
+
+.voyage-where {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  margin-bottom: 14px;
+}
+
+.voyage-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #8a7a62;
+  align-self: center;
+}
+.voyage-dot.on { background: var(--green, #5c8a5c); }
+
+.voyage-notice {
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 1.1em;
+  margin-bottom: 12px;
+}
+.voyage-notice.good { color: var(--green, #5c8a5c); }
+.voyage-notice.bad { color: var(--red, #9a4b3f); }
+
+.voyage-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 18px; }
+
+.voyage-card {
+  border: 1px solid var(--rule, #c9b99a);
+  border-radius: 3px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.voyage-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 15px;
+  margin-bottom: 8px;
+}
+.voyage-age { font-size: 12px; color: var(--ink-faint, #8a7a62); font-style: italic; }
+
+/* Two columns of facts on a desk, one on a phone. */
+.voyage-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 1px 18px;
+  margin-bottom: 10px;
+}
+
+.voyage-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.voyage-acts button { font-size: 12.5px; padding: 5px 10px; }
+
+.voyage-newrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.voyage-name,
+.voyage-paste {
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--rule, #c9b99a);
+  border-radius: 2px;
+  padding: 6px 8px;
+}
+.voyage-name { flex: 1 1 200px; min-width: 0; }
+.voyage-paste {
+  width: 100%;
+  margin-top: 10px;
+  resize: vertical;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+.voyage-file { font-size: 12.5px; max-width: 100%; }

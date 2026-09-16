@@ -557,33 +557,81 @@ export class Chart {
     return s / this.points.size;
   }
 
+  /**
+   * Write out the chart the player has *made*, not the one he was issued.
+   *
+   * The inherited chart is seven hundred-odd points, and it was the whole
+   * weight of a save file: a hundred and thirty-six kilobytes of a hundred and
+   * fifty-four, before a single mile had been sailed. None of it was worth
+   * keeping, because none of it is a choice or an outcome — `seededError` is a
+   * pure function of latitude and longitude with no run-time seed in it, so
+   * every untouched point can simply be drawn again on load and comes back
+   * bit-for-bit identical. What is worth keeping is the handful of points the
+   * captain has been near enough to correct, which is what the surveying is
+   * for, and which is a few dozen points even after years at sea.
+   *
+   * So the seeded points are dropped and regenerated, and only the ones with a
+   * pass on them are written. Positions are rounded to six decimals — about
+   * four inches, which is a good deal finer than a quadrant — because the other
+   * eleven digits of a double are noise that was costing a third of the file.
+   */
   serialize(): unknown {
     return {
-      points: [...this.points.values()],
-      ports: [...this.ports.values()],
+      // `v: 2` marks the compact form. Without it the loader assumes the old
+      // whole-chart dump, which still reads correctly.
+      v: 2,
+      points: [...this.points.values()]
+        .filter((p) => p.passes > 0 || p.t > 0)
+        .map((p) => [
+          p.key, r6(p.lat), r6(p.lon), r(p.wLat, 6), r(p.wLon, 6),
+          p.passes, Math.round(p.obsT), r(p.errorNm, 3), p.land, Math.round(p.t),
+        ]),
+      ports: [...this.ports.values()]
+        .filter((p) => p.passes > 0 || p.visited || p.traded)
+        .map((p) => [
+          p.id, r6(p.lat), r6(p.lon), p.visited ? 1 : 0, p.traded ? 1 : 0,
+          Math.round(p.t), r(p.wLat, 6), r(p.wLon, 6), p.passes,
+        ]),
       places: this.places,
-      track: this.track,
+      track: this.track.map((t: any) => ({ ...t, lat: r6(t.lat), lon: r6(t.lon) })),
       seen: [...this.seen.entries()],
     };
   }
 
   static deserialize(data: any): Chart {
-    const c = Object.create(Chart.prototype) as Chart;
-    // A chart saved before the weights existed is one man's opinion with no
-    // record of how he came by it, so it is loaded as exactly that.
-    c.points = new Map((data.points ?? []).map((p: ChartedPoint) => [p.key, {
-      ...p,
-      wLat: p.wLat ?? SEEDED_W_LAT,
-      wLon: p.wLon ?? SEEDED_W_LON,
-      passes: p.passes ?? (p.t > 0 ? 1 : 0),
-      obsT: p.obsT ?? (p.t ?? -1e9),
-    }]));
-    c.ports = new Map((data.ports ?? []).map((p: ChartedPort) => [p.id, {
-      ...p,
-      wLat: p.wLat ?? SEEDED_W_LAT,
-      wLon: p.wLon ?? SEEDED_W_LON,
-      passes: p.passes ?? (p.visited ? 1 : 0),
-    }]));
+    // Draw the issued chart again, then lay the captain's own work over it.
+    const c = new Chart();
+    if (data.v >= 2) {
+      for (const a of data.points ?? []) {
+        c.points.set(a[0], {
+          key: a[0], lat: a[1], lon: a[2], wLat: a[3], wLon: a[4],
+          passes: a[5], obsT: a[6], errorNm: a[7], land: a[8], t: a[9],
+        });
+      }
+      for (const a of data.ports ?? []) {
+        c.ports.set(a[0], {
+          id: a[0], lat: a[1], lon: a[2], visited: !!a[3], traded: !!a[4],
+          t: a[5], wLat: a[6], wLon: a[7], passes: a[8],
+        });
+      }
+    } else {
+      // A chart saved before the weights existed is one man's opinion with no
+      // record of how he came by it, so it is loaded as exactly that. Older
+      // saves carry the whole chart, seeded points included, and replace it.
+      c.points = new Map((data.points ?? []).map((p: ChartedPoint) => [p.key, {
+        ...p,
+        wLat: p.wLat ?? SEEDED_W_LAT,
+        wLon: p.wLon ?? SEEDED_W_LON,
+        passes: p.passes ?? (p.t > 0 ? 1 : 0),
+        obsT: p.obsT ?? (p.t ?? -1e9),
+      }]));
+      c.ports = new Map((data.ports ?? []).map((p: ChartedPort) => [p.id, {
+        ...p,
+        wLat: p.wLat ?? SEEDED_W_LAT,
+        wLon: p.wLon ?? SEEDED_W_LON,
+        passes: p.passes ?? (p.visited ? 1 : 0),
+      }]));
+    }
     c.places = data.places ?? [];
     c.track = data.track ?? [];
     c.seen = new Map(data.seen ?? []);
@@ -591,6 +639,18 @@ export class Chart {
     (c as any).nextPlaceId = (c.places.length ?? 0) + 1;
     return c;
   }
+}
+
+/** Round to `d` decimals, dropping the trailing noise of a double. */
+function r(n: number, d: number): number {
+  if (!Number.isFinite(n)) return 0;
+  const m = 10 ** d;
+  return Math.round(n * m) / m;
+}
+
+/** Six decimals of a degree is about four inches. Nothing here needs more. */
+function r6(n: number): number {
+  return r(n, 6);
 }
 
 /**

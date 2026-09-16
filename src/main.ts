@@ -71,7 +71,8 @@ document.addEventListener('visibilitychange', () => {
 
 const ui = new Ui(uiHost, {
   onNewGame: (difficulty, origin) => startNew(difficulty, origin),
-  onContinue: () => continueSaved(),
+  onContinue: () => void continueSaved(),
+  onResume: (json) => resumeFrom(json),
   onCycleCamera: () => {
     if (!renderer || !game) return;
     const mode = renderer.cycleCamera();
@@ -161,16 +162,36 @@ function startNew(difficulty: Difficulty = 'watch', origin: OriginId = 'segundo'
   ui.setMode('court');
 }
 
-function continueSaved(): void {
-  demo = null;
-  const raw = Ui.loadSave();
+async function continueSaved(): Promise<void> {
+  const raw = await ui.mostRecent();
   if (!raw) { startNew(); return; }
+  resumeFrom(raw);
+}
+
+/**
+ * Take up a voyage from a save that has already been decoded.
+ *
+ * Every way back into a game comes through here — Continue, a slot in the book,
+ * a file, a pasted code — so there is one place that rebuilds the world, and
+ * one place that decides what to do when a save will not read. A save that
+ * throws is not an excuse to silently start a new game over the top of it: the
+ * player is put back where he was with the failure said out loud, so he still
+ * has the file or the other copy.
+ */
+function resumeFrom(json: string): void {
+  let loaded: Game;
   try {
-    game = Game.deserialize(raw);
-  } catch {
-    startNew();
+    loaded = Game.deserialize(json);
+  } catch (e) {
+    if (game) {
+      game.pushAlert('That voyage could not be read.', 'grave');
+    } else {
+      ui.showTitle();
+    }
     return;
   }
+  demo = null;
+  game = loaded;
   ensureRenderer(game);
   if (renderer) renderer.cameraMode = 'chase';
   ui.attach(game);
@@ -379,9 +400,11 @@ function buildFrame(g: Game): RenderFrame {
   };
 }
 
-// Autosave every few minutes of play, and on the way out.
+// Autosave every few minutes of play, and on the way out. Quietly: an alert
+// every three minutes saying the same thing is noise, and the player did not
+// ask for it this time.
 setInterval(() => {
-  if (game && game.mode !== 'gameover') ui.save(game);
+  if (game && game.mode !== 'gameover') void ui.save(game, false);
 }, 180000);
 
 /**
@@ -444,6 +467,10 @@ if (import.meta.env.DEV) {
     }),
   });
 }
+
+// A voyage left by a build before the Book of Voyages existed is moved onto the
+// shelf before anything reads it.
+Ui.rescueOldSave();
 
 ui.showTitle();
 // The title's words come up first and the sea follows a frame later. Building

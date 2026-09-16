@@ -20,12 +20,21 @@ import { GameOverView, TitleView } from './titleView';
 import { TouchControls } from './touch';
 import { DeckBar } from './deckBar';
 import { ShoreView } from './shoreView';
+import { SavesView } from './savesView';
+import { SaveShelf, describeSave } from '../game/save';
 
-const SAVE_KEY = 'carreira-da-india:save';
+/**
+ * The old single save, kept only so a voyage left in a browser by a build
+ * before the Book of Voyages is not lost when that browser next opens the page.
+ * Nothing writes to it any more; `Ui.rescueOldSave` moves it onto the shelf.
+ */
+const LEGACY_KEY = 'carreira-da-india:save';
 
 export interface UiCallbacks {
   onNewGame: (difficulty: Difficulty, origin: OriginId) => void;
   onContinue: () => void;
+  /** Resume a voyage that has already been decoded to JSON. */
+  onResume: (json: string) => void;
   onCycleCamera: () => void;
   /** Hold or release a virtual key, for the on-screen controls. */
   onVirtualKey: (key: string, down: boolean) => void;
@@ -55,6 +64,9 @@ export class Ui {
   private court: CourtView;
   private shore: ShoreView;
   private orders: OrdersView;
+  private saves: SavesView;
+  /** Where voyages are kept: the browser, and the account when there is one. */
+  private shelf = new SaveShelf();
   private overlay = el('div', { id: 'overlay' });
   private touch: TouchControls;
   private bar: DeckBar;
@@ -96,6 +108,11 @@ export class Ui {
     this.court = new CourtView(() => this.setMode('port'));
     this.shore = new ShoreView(back, () => this.setMode('chart'));
     this.orders = new OrdersView(back, () => this.setMode('chart'));
+    this.saves = new SavesView(
+      this.shelf,
+      () => (this.game ? this.setMode('sailing') : this.showTitle()),
+      (json) => this.cb.onResume(json),
+    );
 
     host.append(this.hud.root, this.touch.root, this.bar.root, this.events.root, this.overlay);
     this.hud.setVisible(false);
@@ -112,11 +129,24 @@ export class Ui {
     this.touch.setVisible(false);
     this.bar.setVisible(false);
     clear(this.overlay);
-    // Reading localStorage throws outright in some privacy modes, which would
-    // otherwise take the title screen down with it before anything is drawn.
-    const hasSave = !!Ui.loadSave();
-    const t = new TitleView(this.cb.onNewGame, this.cb.onContinue, hasSave);
+    // The title is drawn at once and the Continue button appears a moment later
+    // if there is anything to continue. Reading storage throws outright in some
+    // privacy modes and asking the account is a network call, so neither is
+    // allowed to hold up the first screen of the game.
+    const t = new TitleView(
+      this.cb.onNewGame, this.cb.onContinue, false, () => this.showVoyages(),
+    );
     this.overlay.append(t.root);
+    void this.hasAnySave().then((has) => t.setHasSave(has));
+  }
+
+  /** The Book of Voyages, from the title screen or from the deck. */
+  showVoyages(): void {
+    const g = this.game;
+    if (g) { this.setMode('voyages'); return; }
+    clear(this.overlay);
+    this.overlay.append(this.saves.root);
+    this.saves.open(null);
   }
 
   /**
@@ -186,6 +216,10 @@ export class Ui {
         break;
       case 'orders':
         this.openBook(mode, this.orders.root, () => this.orders.open(g));
+        break;
+      case 'voyages':
+        this.overlay.append(this.saves.root);
+        this.saves.open(g);
         break;
       case 'epilogue':
         this.overlay.append(new EpilogueView(g, () => this.cb.onNewGame(g.difficulty, g.origin)).root);
@@ -258,6 +292,14 @@ export class Ui {
     // Typing in a field should never steer the ship.
     const active = document.activeElement;
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return false;
+
+    // The Book of Voyages opens from wherever you are, before the per-screen
+    // routing below. A player who wants to keep the game does not first want to
+    // work out which screen he is allowed to want that from.
+    if (k === 'f2') {
+      this.setMode((g.mode as GameMode) === 'voyages' ? 'sailing' : 'voyages');
+      return true;
+    }
 
     if (g.mode !== 'sailing') {
       const toggles: Record<string, GameMode> = {
@@ -355,37 +397,94 @@ export class Ui {
         return true;
       }
       case 'f5':
-        this.save(g); return true;
+        void this.save(g); return true;
       default:
         return false;
     }
   }
 
-  save(g: Game): void {
-    try {
-      localStorage.setItem(SAVE_KEY, g.serialize());
-      g.pushAlert('The voyage is recorded.', 'note');
-    } catch {
-      g.pushAlert('Could not write the save.', 'warning');
+  /**
+   * The autosave: the voyage in hand, written to the browser under `auto`.
+   *
+   * Never to the account. It runs every few minutes and on every tab-hide, and
+   * a document store is not the place for a write on a timer — the account gets
+   * the voyage when the player deliberately keeps one.
+   */
+  async save(g: Game, announce = true): Promise<void> {
+    const r = await this.shelf.write(g, 'auto', 'The voyage in hand', false);
+    if (announce) {
+      g.pushAlert(r.ok ? 'The voyage is recorded.' : r.message, r.ok ? 'note' : 'warning');
     }
   }
 
-  /** Write the voyage out without saying anything about it. */
+  /**
+   * Write the voyage out on the way past, synchronously.
+   *
+   * This is the one that runs when the page is being hidden or closed, and it
+   * cannot await anything: a phone that is switching apps will not wait for a
+   * promise, so gzip and the shelf are both out and it is a plain write of the
+   * uncompressed JSON. It is a bigger record than the ordinary autosave and it
+   * is the same format on the way back in, which is all that matters when the
+   * alternative is losing the passage.
+   */
   static saveQuietly(g: Game): void {
-    try { localStorage.setItem(SAVE_KEY, g.serialize()); } catch { /* nowhere to put it */ }
-  }
-
-  static loadSave(): string | null {
     try {
-      return localStorage.getItem(SAVE_KEY);
-    } catch {
-      return null;
-    }
+      const json = g.serialize();
+      localStorage.setItem('carreira.save.auto', `p${btoaUtf8(json)}`);
+      const raw = localStorage.getItem('carreira.saves');
+      const index: any[] = raw ? JSON.parse(raw) : [];
+      const meta = describeSave(g, 'auto', 'The voyage in hand', json.length);
+      localStorage.setItem('carreira.saves',
+        JSON.stringify([...index.filter((m) => m.id !== 'auto'), meta]));
+    } catch { /* nowhere to put it, and nothing to be done about it here */ }
   }
 
-  static clearSave(): void {
-    try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ }
+  /** The most recent voyage on the shelf, for Continue. */
+  async mostRecent(): Promise<string | null> {
+    const slots = await this.shelf.list();
+    return slots.length ? this.shelf.read(slots[0].id) : null;
   }
+
+  async hasAnySave(): Promise<boolean> {
+    return (await this.shelf.list()).length > 0;
+  }
+
+  /**
+   * Move a voyage left by an older build onto the shelf.
+   *
+   * The previous save was one unnamed slot under its own key, holding raw JSON.
+   * Somebody has a voyage in there and should not lose it because the save
+   * system was rebuilt around them.
+   */
+  static rescueOldSave(): void {
+    try {
+      const old = localStorage.getItem(LEGACY_KEY);
+      if (!old) return;
+      if (localStorage.getItem('carreira.save.rescued')) return;
+      localStorage.setItem('carreira.save.rescued', '1');
+      localStorage.setItem('carreira.save.rescued-voyage', `p${btoaUtf8(old)}`);
+      const raw = localStorage.getItem('carreira.saves');
+      const index: any[] = raw ? JSON.parse(raw) : [];
+      if (index.some((m) => m.id === 'rescued-voyage')) return;
+      index.push({
+        id: 'rescued-voyage', name: 'The voyage you were on', savedAt: Date.now(),
+        format: 2, date: 'before the book was kept', ship: 'as she was',
+        where: 'where you left her', title: '—', gold: 0, standing: 0,
+        crew: '—', years: 0, bytes: old.length,
+      });
+      localStorage.setItem('carreira.saves', JSON.stringify(index));
+    } catch { /* nothing to rescue it with */ }
+  }
+}
+
+/** Base64 of a UTF-8 string, which `btoa` alone cannot do. */
+function btoaUtf8(s: string): string {
+  const bytes = new TextEncoder().encode(s);
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    out += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(out);
 }
 
 /** Continuous key state for the helm and the sails. */
