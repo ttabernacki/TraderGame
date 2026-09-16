@@ -475,6 +475,23 @@ export function rollGaleScene(g: Game): SeaEvent | null {
   const w = g.weatherNow.wind;
   if (w.speed < GALE_KNOTS) return null;
 
+  // A doldrum thunder squall is not a gale.
+  //
+  // The weather model already knows the difference and this did not read it:
+  // squalls below nine degrees peak anywhere up to forty-five knots, last
+  // between half an hour and three, and are eight miles across. Firing "the
+  // glass has been falling since the middle watch" at one of those produced a
+  // gale every nineteen days on the Guinea run, which is the wettest, least
+  // gale-swept water on the route and is also the whole of the early game.
+  // Measured after this: the Cape blows hardest, as it should.
+  //
+  // A cyclone is emphatically not excluded. A tropical revolving storm off
+  // Guinea in the season is exactly the crisis this is for.
+  const storm = g.weatherNow.storm;
+  if (storm && storm.kind === 'squall') return null;
+  // Nor a gust in otherwise ordinary weather with no system behind it at all.
+  if (!storm && g.weatherNow.waveHeight < 3.5) return null;
+
   // A new blow, or the same one still on us.
   if (g.clock.t - g.gale.startT > 3 * 86400) {
     g.gale = newGale();
