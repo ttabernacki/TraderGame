@@ -183,6 +183,7 @@ export class PortView {
       kv('Wealth', qualityWord(def.wealth)),
     ));
 
+    const monsoon = g.monsoonNow();
     right.append(card('Pass the time',
       el('p', {}, 'Lying at anchor rests the crew, mends their spirits, and lets fresh food do its work — and it also lets the weather change, and the season turn.'),
       el('div', { style: { display: 'flex', gap: '7px', flexWrap: 'wrap' } },
@@ -192,6 +193,24 @@ export class PortView {
           this.render();
         })),
       ),
+      // The thing every hull in this ocean actually did, and the reason its
+      // harbours were full: lie here until the wind comes round.
+      monsoon
+        ? el('div', { style: { marginTop: '13px', paddingTop: '11px', borderTop: '1px solid rgba(90,74,55,0.2)' } },
+            kv('The season', monsoon.name),
+            el('p', { style: { fontSize: '13px' } }, monsoon.carries),
+            el('p', { style: { fontSize: '13px', fontStyle: 'italic', color: 'var(--ink-soft)' } },
+              monsoon.against),
+            el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginTop: '8px' } },
+              el('span', { style: { fontSize: '13px', color: 'var(--ink-soft)' } },
+                `${Math.round(monsoon.daysToTurn)} days to the turn, and a month of calms after it`),
+              button('Lie here until the wind comes round', () => {
+                this.notice = { text: g.waitForTheMonsoon() };
+                this.render();
+              }),
+            ),
+          )
+        : null,
     ));
 
     host.append(el('div', { class: 'cols two' }, left, right));

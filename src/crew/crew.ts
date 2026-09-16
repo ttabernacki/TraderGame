@@ -194,6 +194,11 @@ export interface CrewUpdateContext {
   /** Simulated days elapsed this step. */
   days: number;
   ashore: boolean;
+  /**
+   * How well the place she is lying in can feed a ship's company, 0 to 1 — a
+   * port's `refit`. Zero for an open roadstead with nothing on the beach.
+   */
+  ashoreVictuals?: number;
   /** Fraction of full ration being issued, 0.5 to 1.25. */
   ration: number;
   leadership: number;
@@ -262,7 +267,19 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
   p.wine -= rate * 0.6;
   p.fresh -= d * 1.4 * mouths;
 
-  if (p.fresh <= 0) {
+  // A ship's company lying in a harbour eat the harbour's food.
+  //
+  // This is the cure the comment below has always described and the code has
+  // never done: `ashore` reset the landfall clock and nothing else, so a ship
+  // alongside a great Indian port for five months went on accumulating scurvy
+  // debt exactly as though she were in mid-ocean, and a captain who waited out
+  // the monsoon the way every hull in that ocean waited it out buried his
+  // entire company doing it. The debt clears about three times as fast as it
+  // builds, so a month in a victualling port pays off a three-month passage.
+  const victuals = ctx.ashore ? clamp(ctx.ashoreVictuals ?? 0, 0, 1) : 0;
+  if (victuals > 0.15) {
+    crew.daysWithoutFresh = Math.max(0, crew.daysWithoutFresh - d * (0.6 + victuals * 2.4));
+  } else if (p.fresh <= 0) {
     p.fresh = 0;
     crew.daysWithoutFresh += d;
   } else if (p.fresh > 1) {

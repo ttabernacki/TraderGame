@@ -188,6 +188,17 @@ export class Hud {
       wx.visibility < 20
         ? asideRow('Visibility', `${wx.visibility.toFixed(1)} miles`)
         : null,
+      // The monsoon is a calendar, not weather, and it is the one fact a pilot
+      // in that ocean navigated by. Simulated since the beginning and never
+      // once said out loud until now.
+      ...(() => {
+        const m = g.monsoonNow();
+        if (!m) return [];
+        return [
+          hudRow(m.season === 'turning' ? 'The turning' : 'The season', m.name),
+          asideRow('Runs for', `${Math.round(m.daysToTurn)} more days`),
+        ];
+      })(),
     );
     // Everything on the dial is relative to her head, which is fixed up the
     // page. `wind.from - heading` is the wind's bearing off the bow, which is

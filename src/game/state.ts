@@ -50,6 +50,9 @@ import {
 import { hailScene } from './hailing';
 import { newGale, newGaleRecord, rollGaleScene, type GaleRecord, type GaleState } from './gale';
 import {
+  pilotOnTheMonsoon, readMonsoon, setsAgainst, type MonsoonRead,
+} from '../navigation/monsoon';
+import {
   ERRAND_BY_ID, backingFor, journeyScene, newJourneyRecord, outfitCost,
   type Journey, type JourneyRecord,
 } from '../progression/inland';
@@ -1574,6 +1577,110 @@ export class Game {
   }
 
   /**
+   * What the monsoon is doing, if this water has one. See navigation/monsoon.
+   *
+   * A readout rather than a calculation: the wind model has always known, and
+   * this is the first thing in the game that asks it.
+   */
+  monsoonNow(): MonsoonRead | null {
+    return readMonsoon(this.ship.state.pos, this.clock.dayOfYear);
+  }
+
+  /** Whether the pilot has explained the monsoon. Once a career is enough. */
+  private monsoonToldOnce = false;
+  /** So the warning about sailing against the season is given once a season. */
+  private monsoonWarnedT = -1e9;
+
+  /**
+   * The pilot on the monsoon, and then on sailing against it.
+   *
+   * Two separate things, and the second is the one that kills people. Being
+   * told that the wind reverses is general knowledge; being told, while the
+   * ship is standing west across the Arabian Sea in July, that this passage
+   * takes three months instead of three weeks and that the water will run out,
+   * is a warning about what is happening now.
+   */
+  private watchTheMonsoon(): void {
+    if (this.anchored || this.dockedAt) return;
+    const m = this.monsoonNow();
+    if (!m || m.grip < 0.25) return;
+
+    if (!this.monsoonToldOnce) {
+      this.monsoonToldOnce = true;
+      const said = pilotOnTheMonsoon(m);
+      this.pushAlert(said, 'note');
+      this.logEvent('note', said, true);
+      return;
+    }
+
+    // Standing the wrong way across it, with the season against her.
+    if (this.clock.t - this.monsoonWarnedT < 90 * 86400) return;
+    if (this.physics.speedKnots < 1.5) return;
+    const course = this.physics.courseOverGround;
+    if (!setsAgainst(m, course)) return;
+    // Only out on the open sea, where the passage is the thing at stake.
+    if (this.sounding.shoreDistNm < 90) return;
+    this.monsoonWarnedT = this.clock.t;
+    const said = `The pilot: "You are going the wrong way for the season, senhor. The `
+      + `${m.name.toLowerCase()} has ${Math.round(m.daysToTurn)} days to run and it is dead `
+      + `against us. We will do it, and it will take three months to do three weeks of work, `
+      + `and I would rather lie in a harbour and wait than bury the people."`;
+    this.pushAlert(said, 'warning');
+    this.logEvent('note', said, true);
+    this.easeTheClock(3);
+  }
+
+  /**
+   * Lie in this harbour until the wind comes round.
+   *
+   * What every hull in that ocean did, and the reason the harbours were full.
+   * It is not a free skip: the wages run, the stores go, the men go ashore and
+   * some of them do not come back, and the commission's dates do not move.
+   */
+  waitForTheMonsoon(): string {
+    // Only in a harbour. A ship hove to in the middle of the Arabian Sea for
+    // four months is not waiting out the monsoon, she is dying of it: the
+    // crew simulation is a ship at sea, and over that many days it correctly
+    // kills everybody aboard. What the Arab and Gujarati shipping actually did
+    // was lie in a port, where the men go ashore and the hull is pumped.
+    if (!this.dockedAt) {
+      return 'Not out here. A ship waits out the monsoon in a harbour, with her people ashore '
+        + 'and somebody on the pumps, or she does not wait it out at all.';
+    }
+    const m = readMonsoon(this.ship.state.pos, this.clock.dayOfYear);
+    if (!m) return 'This is not monsoon water. The wind here does what it likes.';
+    // To the turn, and then far enough past it that the new monsoon has
+    // actually set in: the phase does not reach the threshold that counts as a
+    // season until a fortnight after it crosses zero, so waiting only to the
+    // crossing put her back to sea in the middle of the calms she was avoiding.
+    const days = Math.max(1, Math.round(m.daysToTurn + 26));
+    // Four months at anchor is four months of eating.
+    //
+    // Without this the button quietly killed the ship's company: waitDays runs
+    // the crew simulation for every one of those days, the casks empty around
+    // day eighty, and the game ended in the middle of what the player had been
+    // told was a sensible piece of seamanship. The harbours of that ocean were
+    // full of ships waiting out the monsoon and every one of them had victualled
+    // for it first.
+    const keeps = enduranceDays(this.crew, this.ration);
+    if (keeps < days + 10) {
+      return `The wind turns in ${Math.round(m.daysToTurn)} days and there is a month of calms `
+        + `after it — call it ${days} days at anchor. She has ${Math.floor(keeps)} days of `
+        + 'stores in her. Victual her for the season first, or there will be nobody aboard to '
+        + 'sail when the wind comes round.';
+    }
+    const was = m.name.toLowerCase();
+    this.waitDays(days);
+    const after = readMonsoon(this.ship.state.pos, this.clock.dayOfYear);
+    this.logEvent('note',
+      `Lay at anchor ${days} days for the monsoon to turn. The ${was} went out in the middle of `
+      + 'the month and there was a fortnight of thunder and dead calm, and then one morning the '
+      + `wind was in the other quarter and every hull in the road was getting her anchor at `
+      + 'once.', true);
+    return `${days} days at anchor. It is the ${(after?.name ?? 'season').toLowerCase()} now.`;
+  }
+
+  /**
    * The pilot suggests the volta do mar, once, the first time she is stuck.
    *
    * This is the one piece of seamanship in the game that a player will not
@@ -1687,6 +1794,7 @@ export class Game {
     this.chart.logTrack(this.nav.estimated, this.clock.t);
     this.keepTheBook(simDt);
     this.watchForTheTurn(hours);
+    this.watchTheMonsoon();
 
     // Chart whatever the lookout can see, at intervals.
     if (this.clock.t - this.lastSurveyT > 900) {
@@ -1977,6 +2085,9 @@ export class Game {
     const events = updateCrew(this.crew, {
       days,
       ashore: this.anchored && this.dockedAt !== null,
+      // What this particular place can put aboard. An emporium feeds a crew;
+      // an open anchorage on a desert coast does not.
+      ashoreVictuals: this.dockedAt ? portDef(this.dockedAt).refit : 0,
       ration: this.ration,
       leadership: skill(eff, 'lideranca'),
       surgeonQuality: (surgeon ? surgeon.ability : 0) + w.physic,
@@ -4390,6 +4501,18 @@ export class Game {
       this.accumDays += step;
       this.refreshEnvironment();
       this.updateCrewAndShip(step * 86400);
+      // In a harbour she is kept pumped.
+      //
+      // At sea the pumps are a watch's worth of tired men against the sea
+      // coming aboard, and the balance between the leak and the pumping is one
+      // of the real tensions of a long passage. Alongside it is not a tension
+      // at all: there is time, there is shore labour, and there is nothing else
+      // for the hands to do. Without this a ship left lying for a season
+      // filled and foundered at her own anchor with a full crew aboard, which
+      // is what waiting out a monsoon did to her.
+      if (this.dockedAt) {
+        this.ship.condition.bilge = Math.max(0, this.ship.condition.bilge - step * 2.5);
+      }
       if (this.mode === 'gameover') return;
     }
     // A week at anchor is a week of ships arriving and merchants changing their
@@ -4948,6 +5071,8 @@ export class Game {
       seaRecord: this.seaRecord,
       chaseOrder: this.chaseOrder,
       chaseToldOnce: this.chaseToldOnce,
+      monsoonToldOnce: this.monsoonToldOnce,
+      monsoonWarnedT: this.monsoonWarnedT,
       journeys: this.journeys,
       journeyRecord: this.journeyRecord,
       nextJourneyId: this.nextJourneyId,
@@ -5032,6 +5157,8 @@ export class Game {
     g.seaRecord = { ...newSeaRecord(), ...(d.seaRecord ?? {}) };
     g.chaseOrder = d.chaseOrder ?? 'hold';
     g.chaseToldOnce = d.chaseToldOnce ?? false;
+    g.monsoonToldOnce = d.monsoonToldOnce ?? false;
+    g.monsoonWarnedT = d.monsoonWarnedT ?? -1e9;
     g.journeys = d.journeys ?? [];
     g.journeyRecord = { ...newJourneyRecord(), ...(d.journeyRecord ?? {}) };
     g.nextJourneyId = d.nextJourneyId ?? 1;
