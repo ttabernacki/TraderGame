@@ -57,11 +57,16 @@ export class SavesView {
     this.root.append(
       el('div', { class: 'screen-head' },
         el('h1', {}, 'The Book of Voyages'),
+        // What the screen promises has to be what this page can actually do, and
+        // that is decided per view — the account is a capability the page may
+        // simply not be granted. So the head says the part that is always true
+        // and `drawWhere` below says which stores are really in play.
         el('div', { class: 'sub' },
           'Every voyage you have kept, and where it is kept. A voyage in this browser '
-          + 'is gone if the browser is cleared; one in your account follows you to any '
-          + 'machine you sign in on; one you have saved as a file is yours whatever '
-          + 'happens to either.'),
+          + 'is gone if the browser is cleared or you open the game on another machine. '
+          + 'A voyage saved as a file, or copied out as a code, is yours whatever '
+          + 'happens to this page — and it is how a voyage moves from one machine to '
+          + 'another.'),
       ),
       el('div', { class: 'screen-body' }, body),
       el('div', { class: 'screen-foot' }, button('Back', this.onBack)),
@@ -89,9 +94,10 @@ export class SavesView {
       el('span', {}, cloud
         ? 'Kept in this browser and in your account.'
         : this.shelf.local
-          ? 'Kept in this browser. Your account is not available on this page, so save '
-            + 'a file for anything you would be sorry to lose.'
-          : 'This browser will not keep a save at all. Use files.'),
+          ? 'Kept in this browser. Save a file for anything you would be sorry to lose, '
+            + 'or to carry a voyage to another machine.'
+          : 'This browser will not keep a save at all — save files instead, and bring '
+            + 'them back in below.'),
     );
   }
 

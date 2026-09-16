@@ -196,6 +196,15 @@ function resumeFrom(json: string): void {
   if (renderer) renderer.cameraMode = 'chase';
   ui.attach(game);
   ui.setMode(game.dockedAt ? 'port' : 'sailing');
+  // Write it down at once.
+  //
+  // Taking a voyage up is the moment it becomes the voyage in hand, and until
+  // this was here it was not written anywhere until the three-minute timer came
+  // round. Bringing a voyage in from a file on a machine that had never seen it
+  // left the Book of Voyages empty behind the player — which reads exactly like
+  // an import that silently failed — and closing the tab in that window lost
+  // the import altogether.
+  void ui.save(game, false);
 }
 
 function ensureRenderer(g: Game): void {

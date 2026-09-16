@@ -289,9 +289,15 @@ export class Ui {
       return false;
     }
 
-    // Typing in a field should never steer the ship.
-    const active = document.activeElement;
-    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return false;
+    // Typing in a field should never steer the ship — but a file picker and a
+    // checkbox are not places anybody types, and leaving them in here meant
+    // that after choosing a save file the keyboard was dead until the player
+    // happened to click somewhere else.
+    const active = document.activeElement as HTMLInputElement | null;
+    const typing = active
+      && ((active.tagName === 'INPUT' && !['file', 'checkbox', 'radio', 'button', 'submit']
+        .includes(active.type)) || active.tagName === 'TEXTAREA');
+    if (typing) return false;
 
     // The Book of Voyages opens from wherever you are, before the per-screen
     // routing below. A player who wants to keep the game does not first want to
