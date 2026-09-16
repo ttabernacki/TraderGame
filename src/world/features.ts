@@ -223,8 +223,6 @@ export const FEATURES: CoastFeature[] = [
   },
 ];
 
-export const FEATURE_BY_ID = new Map(FEATURES.map((f) => [f.id, f]));
-
 /** The feature she is up with, if any. */
 export function featureNear(at: LatLon): CoastFeature | null {
   let best: CoastFeature | null = null;
@@ -234,14 +232,4 @@ export function featureNear(at: LatLon): CoastFeature | null {
     if (d <= f.radiusNm && d < bestNm) { best = f; bestNm = d; }
   }
   return best;
-}
-
-/** How far off she is from it, in miles. */
-export function distanceTo(f: CoastFeature, at: LatLon): number {
-  return haversine(at, { lat: f.lat, lon: f.lon }) / NM;
-}
-
-/** The way a feature is spoken of before it has a name. */
-export function anonymousName(f: CoastFeature): string {
-  return f.kind === 'river' ? 'the river mouth' : 'the headland';
 }

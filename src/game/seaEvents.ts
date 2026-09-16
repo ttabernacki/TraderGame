@@ -196,7 +196,16 @@ export const EVENTS: SeaEventDef[] = [
   {
     id: 'squall',
     everyDays: 5,
-    gate: (c) => c.windKnots > 9 && c.g.ship.canvasSet > 0.3,
+    // Only when the weather actually has one coming.
+    //
+    // This used to fire on any wind over nine knots, so the card announced a
+    // black squall a quarter of an hour away on a fine day with no squall
+    // within two hundred miles, and the real doldrum squalls the weather does
+    // simulate arrived with nothing said about them. The decision the card
+    // offers — shorten down, or hold on — is worth keeping; it just has to be
+    // about the squall that is really there.
+    gate: (c) => c.windKnots > 9 && c.g.ship.canvasSet > 0.3
+      && c.g.weatherNow.storm?.kind === 'squall' && c.g.weatherNow.stormDistanceNm < 40,
     build: (c) => ({
       id: 'squall', severity: 'warning',
       title: 'A squall to windward',
@@ -232,46 +241,15 @@ export const EVENTS: SeaEventDef[] = [
   },
 
   // --- Other ships ---------------------------------------------------------
-  {
-    id: 'sail',
-    everyDays: 8,
-    gate: (c) => c.shoreNm < 320 && day(c),
-    build: (c) => ({
-      id: 'sail', severity: 'note',
-      title: 'A sail!',
-      text: `A sail on the ${signBearing(c)} horizon, hull down, standing across your course. No colours that anyone can make out at this distance.`,
-      choices: [
-        {
-          label: 'Close her and speak her',
-          detail: 'News, perhaps. Or trouble.',
-          resolve: (g) => {
-            g.clock.t += 86400 * 0.25;
-            const roll = g.rng.next();
-            if (roll > 0.7) {
-              g.crown.gold += 40;
-              g.crew.morale = clamp(g.crew.morale + 0.09, 0, 1);
-              return 'A Portuguese caravel homeward bound from the Mina. They gave us news of the coast, a cask of wine, and forty cruzados for carrying letters to Lisbon.';
-            }
-            if (roll > 0.3) {
-              g.crew.morale = clamp(g.crew.morale + 0.05, 0, 1);
-              return 'A Genoese, bound for the Canaries, as surprised to see us as we were to see him. An hour of shouting across the water and we each went our way.';
-            }
-            g.ship.damage(g.rng.range(0.03, 0.09));
-            g.crew.morale = clamp(g.crew.morale - 0.12, 0, 1);
-            return 'A corsair out of Salé, and he had the weather gauge. We ran, and he chased us until dark and put two shot through the topsides before he gave it up.';
-          },
-        },
-        {
-          label: 'Haul off and let her go',
-          detail: 'Nothing gained. Nothing risked.',
-          resolve: (g) => {
-            g.crew.morale = clamp(g.crew.morale - 0.02, 0, 1);
-            return 'Hauled off two points and let her go over the horizon. She may have been a friend. There is no telling now.';
-          },
-        },
-      ],
-    }),
-  },
+  //
+  // There used to be a card here called 'A sail!' which rolled a die three ways
+  // — a friendly caravel, a Genoese, or a corsair — and told you which you had
+  // got. Strange sails are simulated now: one is generated with a nation, a
+  // business and an intent, she is chased or avoided on the polars with a real
+  // closing speed, and what she turns out to be is discovered by speaking her.
+  // A card that decides the same question with one call to the random number
+  // generator is not a second helping of that; it is a worse copy of it, and
+  // firing every eight days it was the more common of the two. Removed.
 
   // --- Windfalls and losses ------------------------------------------------
   {
@@ -464,7 +442,11 @@ export const EVENTS: SeaEventDef[] = [
     build: (c) => ({
       id: 'overboard', severity: 'grave',
       title: 'Man overboard',
-      text: `${c.rng.pick(['Gonçalo Aires', 'Pero Dias', 'Fernão Vaz', 'Estêvão Lopes'])} went off the yard in the dark and is astern of us somewhere in ${c.waveHeight.toFixed(1)} metres of sea.`,
+      // One of the men the captain knows, where there is one left to lose. The
+      // card used to pick a name out of a list of four that belonged to nobody,
+      // so the man who went off the yard was a stranger with a Portuguese name
+      // and the fo'c'sle the game keeps was untouched by it.
+      text: `${overboardMan(c)} went off the yard in the dark and is astern of us somewhere in ${c.waveHeight.toFixed(1)} metres of sea.`,
       choices: [
         {
           label: 'Heave to and search',
@@ -475,6 +457,9 @@ export const EVENTS: SeaEventDef[] = [
               g.crew.morale = clamp(g.crew.morale + 0.16, 0, 1);
               return 'Hove to and put the boat over in a sea that had no business taking a boat. Found him at the third pass, half drowned and swearing. The hands would follow you anywhere now.';
             }
+            // And when he is not found he is dead, which the card used not to
+            // do: it said 'Nothing' and left the man on the muster roll.
+            g.killHands(1, 'Went off the yard at night and was not found.');
             g.crew.morale = clamp(g.crew.morale + 0.04, 0, 1);
             return 'Hove to and searched until the light went. Nothing. But they saw that we tried, and that is worth something to men who go aloft in the dark.';
           },
@@ -483,8 +468,7 @@ export const EVENTS: SeaEventDef[] = [
           label: 'Note it in the book and hold your course',
           detail: 'Keep the ground you have made. They will remember.',
           resolve: (g) => {
-            g.crew.count = Math.max(1, g.crew.count - 1);
-            g.crew.deaths += 1;
+            g.killHands(1, 'Went off the yard at night, and the ship did not turn back.');
             g.crew.morale = clamp(g.crew.morale - 0.18, 0, 1);
             g.crew.unrest = clamp(g.crew.unrest + 0.15, 0, 2);
             return 'Held our course. It was the right decision and every man aboard knows it, and not one of them will look at me.';
@@ -779,4 +763,20 @@ function applyBaseEffect(g: Game, id: string): void {
 /** Roughly where the thing was seen, for flavour. */
 function signBearing(c: EventContext): string {
   return c.rng.pick(['weather', 'lee', 'starboard', 'larboard', 'northern', 'southern']);
+}
+
+/**
+ * Who went over the side.
+ *
+ * One of the named men where there is one — the whole reason the fo'c'sle is
+ * written down is so that a loss has somebody in it — and an unnamed hand from
+ * forward otherwise, which is honest: a captain did not know every man on a nau.
+ */
+function overboardMan(c: EventContext): string {
+  const live = c.g.hands.filter((h) => h.alive && h.aboard);
+  if (live.length > 0) {
+    const h = live[Math.floor(c.rng.next() * live.length)];
+    return `${h.name}, of ${h.from},`;
+  }
+  return 'One of the hands';
 }

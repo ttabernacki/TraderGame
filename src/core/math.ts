@@ -57,10 +57,6 @@ export function cosd(deg: number): number {
   return Math.cos(deg * DEG);
 }
 
-export function tand(deg: number): number {
-  return Math.tan(deg * DEG);
-}
-
 export function asind(x: number): number {
   return Math.asin(clamp(x, -1, 1)) * RAD;
 }
@@ -140,14 +136,6 @@ export function toENU(origin: LatLon, p: LatLon): { e: number; n: number } {
   return {
     e: wrap180(p.lon - origin.lon) * metresPerDegLon(origin.lat),
     n: (p.lat - origin.lat) * METRES_PER_DEG_LAT,
-  };
-}
-
-/** Inverse of {@link toENU}. */
-export function fromENU(origin: LatLon, e: number, n: number): LatLon {
-  return {
-    lat: origin.lat + n / METRES_PER_DEG_LAT,
-    lon: wrap180(origin.lon + e / metresPerDegLon(origin.lat)),
   };
 }
 

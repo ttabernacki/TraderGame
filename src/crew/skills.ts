@@ -59,8 +59,6 @@ export const SKILLS: SkillDef[] = [
   },
 ];
 
-export const SKILL_BY_ID = new Map(SKILLS.map((s) => [s.id, s]));
-
 export interface SkillNode {
   id: string;
   tree: SkillId;
@@ -393,10 +391,6 @@ export function buyNode(c: CaptainSkills, id: string): boolean {
 /** Normalised 0-1 value used throughout the simulation. */
 export function skill(set: SkillSet, id: SkillId): number {
   return Math.max(0, Math.min(1, set[id] / 100));
-}
-
-export function hasMilestone(set: SkillSet, id: SkillId, at: number): boolean {
-  return set[id] >= at;
 }
 
 export function rankOf(level: number): string {

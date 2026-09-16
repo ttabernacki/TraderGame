@@ -207,11 +207,4 @@ export function rivalStanding(r: RivalState, playerStanding: number): string {
   return `${r.name} has the King's ear. You have a ship.`;
 }
 
-/** The frontier as a bearing and distance from the player, for the chart. */
-export function rivalFrontier(r: RivalState): { lat: number; lon: number } {
-  // Kept on the African coast, roughly, so it draws in a sensible place.
-  const lon = r.frontierLat > -6 ? 9 : r.frontierLat > -22 ? 12 : 16;
-  return { lat: r.frontierLat, lon };
-}
-
 export { wrap360, haversine, NM };

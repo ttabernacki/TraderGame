@@ -220,19 +220,6 @@ export function moonPosition(
   return { ...h, phase };
 }
 
-/**
- * Polaris in this era does not sit on the pole. It circles it at a radius that
- * shrinks century by century, so its altitude is only your latitude twice a
- * night. The Regimento do Norte gave a correction keyed to the position of the
- * Guards — the two bright stars of the Little Bear — and a navigator who cannot
- * read the Guards will be wrong by up to three and a half degrees, which is two
- * hundred nautical miles.
- */
-export function polarisOffset(year: number): number {
-  const p = precess(STARS.find((s) => s.name === 'Polaris')!, year);
-  return 90 - p.dec;
-}
-
 export interface PolarisSight {
   /** The raw altitude a navigator would measure. */
   altitude: number;
@@ -275,14 +262,6 @@ export function latitudeFromNoonSun(altitude: number, declination: number, sunBo
 export function latitudeFromMeridianStar(altitude: number, dec: number, boreSouth: boolean): number {
   const zenith = 90 - altitude;
   return boreSouth ? dec + zenith : dec - zenith;
-}
-
-/** Local apparent time from the sun's hour angle. Longitude remains unknowable. */
-export function localApparentTime(sunAltitude: number, azimuth: number, lat: number, dec: number): number {
-  const cosH = (sind(sunAltitude) - sind(lat) * sind(dec)) / (cosd(lat) * cosd(dec) + 1e-9);
-  const H = acosd(cosH);
-  const signed = azimuth > 180 ? -H : H;
-  return 12 + signed / 15;
 }
 
 /** Time of sunrise and sunset in local apparent hours. */

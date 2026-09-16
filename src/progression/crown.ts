@@ -1,6 +1,6 @@
 import { clamp, haversine, NM, type LatLon } from '../core/math';
 import { Rng } from '../core/rng';
-import { PORTS, anchorageOf, portDef } from '../world/ports';
+import { PORTS } from '../world/ports';
 import { HULL_CLASSES } from '../ship/hull';
 
 export interface Title {
@@ -649,10 +649,6 @@ export class Crown {
 export function portName(id: string): string {
   const p = PORTS.find((x) => x.id === id);
   return p ? p.name : id;
-}
-
-export function portPosition(id: string): LatLon {
-  return anchorageOf(portDef(id));
 }
 
 export { clamp };

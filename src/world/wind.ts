@@ -108,13 +108,6 @@ export function monsoonPhase(dayOfYear: number): number {
   return Math.sin((2 * Math.PI * (dayOfYear - 105)) / 365);
 }
 
-export function monsoonName(dayOfYear: number): string {
-  const m = monsoonPhase(dayOfYear);
-  if (m > 0.35) return 'South-west monsoon';
-  if (m < -0.35) return 'North-east monsoon';
-  return m >= 0 ? 'Monsoon turning to the south-west' : 'Monsoon turning to the north-east';
-}
-
 /** Persistent coastal wind regimes that override the zonal belts near shore. */
 function coastalBias(p: LatLon): { from: number; speed: number; weight: number } | null {
   // Portuguese trade winds ("nortada") down the Iberian and Moroccan coast.

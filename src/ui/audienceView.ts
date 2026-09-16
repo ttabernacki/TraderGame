@@ -227,11 +227,28 @@ export class AudienceView {
       }
     }
 
+    // Leave to set a pillar on somebody else's ground is a different act from
+    // claiming an empty headland, and worth keeping — but it used to conjure
+    // the stone out of nothing, while a pillar landed on a cape you had found
+    // came out of the hold. Now both cost one, and leave granted with no stone
+    // aboard is leave you cannot use, which is its own small tragedy.
     if (outcome.padrao) {
-      g.crown.padroesRaised += 1;
-      g.crown.progressObjective('padrao', undefined, 1);
-      g.crown.record('padrao', `Padrão at ${def.name}`, g.nav.estimated, 12, g.clock.t);
-      g.logEvent('discovery', `Set up a padrão on the headland above ${def.name}, with the arms of Portugal and the date cut into it.`);
+      if (g.crown.padraoStock > 0) {
+        g.crown.padraoStock -= 1;
+        g.crown.padroesRaised += 1;
+        g.crown.progressObjective('padrao', undefined, 1);
+        g.crown.record('padrao', `Padrão at ${def.name}`, g.nav.estimated, 12, g.clock.t);
+        g.crown.padraoSites.push({
+          name: `Padrão at ${def.name}`, lat: g.nav.estimated.lat, lon: g.nav.estimated.lon,
+          t: g.clock.t,
+        });
+        g.logEvent('discovery', `Set up a padrão on the headland above ${def.name}, with the arms of Portugal and the date cut into it.`);
+      } else {
+        g.logEvent('contact',
+          `Leave given to set a padrão above ${def.name}, and not a stone in the hold to set. `
+          + 'They are cut at Lisbon and nowhere else, and the offer will not be made twice.');
+        g.pushAlert('Leave for a padrão, and no stone to raise.', 'warning');
+      }
     }
 
     if (outcome.factory) {

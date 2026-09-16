@@ -119,10 +119,6 @@ export function screen(
   );
 }
 
-export function fmt(n: number, digits = 0): string {
-  return n.toLocaleString('en-GB', { minimumFractionDigits: digits, maximumFractionDigits: digits });
-}
-
 export function plural(n: number, one: string, many?: string): string {
   return n === 1 ? one : (many ?? `${one}s`);
 }

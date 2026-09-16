@@ -743,12 +743,4 @@ function guardWord(hour: number): string {
   return words[hour % 12];
 }
 
-/** Uncertainty ellipse for the chart, in degrees. */
-export function uncertaintyDegrees(nav: Navigator): { lat: number; lon: number } {
-  return {
-    lat: nav.sigmaLat / 60,
-    lon: nav.sigmaLon / 60 / Math.max(cosd(nav.estimated.lat), 0.2),
-  };
-}
-
 export { METRES_PER_DEG_LAT, metresPerDegLon };

@@ -370,11 +370,6 @@ export function prudentCanvas(windKnots: number): number {
   return 0;
 }
 
-/** Convert a speed in metres per second to knots. */
-export function toKnots(ms: number): number {
-  return ms / KNOTS;
-}
-
 /** Estimate the best speed achievable at a given wind angle, for the polar diagram. */
 export function polarSpeed(
   hull: HullClass,
@@ -421,11 +416,6 @@ export function polarSpeed(
     best = Math.max(best, state.surge / KNOTS);
   }
   return Math.max(0, best);
-}
-
-/** Direction helper for the HUD: which way to put the helm to reach a heading. */
-export function helmToward(current: number, target: number): number {
-  return clamp(angleDelta(current, target) / 25, -1, 1);
 }
 
 export { sind, cosd };

@@ -245,8 +245,6 @@ export const MEETINGS: RivalMeeting[] = [
   },
 ];
 
-export const MEETING_BY_ID = new Map(MEETINGS.map((m) => [m.id, m]));
-
 /**
  * How the rivalry ends, read off what actually passed between you.
  *

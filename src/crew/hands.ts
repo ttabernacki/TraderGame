@@ -211,6 +211,52 @@ export function aboardHands(hands: Hand[]): Hand[] {
 }
 
 /**
+ * Men signed on partway through the voyage, to replace the ones who are gone.
+ *
+ * The fo'c'sle used to be mustered once at Lisbon and never added to, while the
+ * port screen had a button that put the anonymous head-count straight back to
+ * complement for six cruzados a man. So a voyage that buried half the men it
+ * knew by name sailed on with a full muster and an empty fo'c'sle, and the one
+ * system the game had for making a death mean something quietly emptied out
+ * over a career.
+ *
+ * `home` is where they are being shipped from, which decides both the names and
+ * how they start out: a man taken on at Lisbon has signed for the voyage, and a
+ * man taken on at Malindi has signed for a ship full of strangers going
+ * somewhere he has never heard of, and knows less and trusts less accordingly.
+ */
+export function signOnHands(
+  rng: Rng, count: number, home: string, portuguese: boolean, existing: Hand[],
+): Hand[] {
+  const out: Hand[] = [];
+  const used = new Set(existing.map((h) => h.name));
+  let next = existing.length + 1;
+  for (let i = 0; i < count; i++) {
+    let name = '';
+    for (let tries = 0; tries < 30; tries++) {
+      name = `${rng.pick(FIRST)} ${rng.pick(SURNAME)}`;
+      if (!used.has(name)) break;
+    }
+    used.add(name);
+    out.push({
+      id: `h${next++}`,
+      name,
+      from: portuguese ? rng.pick(HOME) : home,
+      rating: pickRating(rng),
+      temper: rng.pick(TEMPERS.filter((t) => t !== 'young')),
+      // A man shipped abroad, into a ship whose company has been together for a
+      // year and whose language may not be his, does not start where the others
+      // started. He starts lower and has to be won over like anybody else.
+      regard: clamp((portuguese ? 0.46 : 0.34) + rng.normal(0, 0.09), 0.15, 0.75),
+      alive: true,
+      aboard: true,
+      memory: [],
+    });
+  }
+  return out;
+}
+
+/**
  * Move one man's opinion, and let him remember why.
  *
  * A brittle man moves further on the same event than a steady one, which is the
@@ -229,21 +275,10 @@ export function shiftAll(hands: Hand[], delta: number, why?: string): void {
   for (const h of aboardHands(hands)) shiftRegard(h, delta, why);
 }
 
-/** How the men forward stand toward the captain, as one number. */
-export function meanRegard(hands: Hand[]): number {
-  const live = aboardHands(hands);
-  if (live.length === 0) return 0.5;
-  return live.reduce((s, h) => s + h.regard, 0) / live.length;
-}
-
 export function regardWord(r: number): string {
   if (r > 0.78) return 'would follow you anywhere';
   if (r > 0.6) return 'thinks well of you';
   if (r > 0.42) return 'has no opinion he will say aloud';
   if (r > 0.25) return 'has his doubts';
   return 'has not forgiven you';
-}
-
-export function handLine(h: Hand): string {
-  return `${h.name}, ${RATING_LABEL[h.rating].english.toLowerCase()}, of ${h.from}`;
 }

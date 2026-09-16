@@ -755,21 +755,25 @@ export class PortView {
 
     const left = el('div', {});
     const shortfall = g.crew.complement - g.crew.count;
-    const wagePerMan = 6;
-    const cost = shortfall * wagePerMan;
+    const wage = g.handWage();
+    const cost = shortfall * wage;
+    const known = g.hands.filter((h) => h.alive && h.aboard).length;
     left.append(card('Hands',
       kv('Aboard', `${g.crew.count} of ${g.crew.complement}`),
+      kv('Wage here', `${wage} cruzados a man`),
       shortfall > 0
         ? el('div', { style: { marginTop: '10px' } },
             el('p', {}, def.people === 'portuguese'
               ? 'There are men on the quay who will ship for the Guinea voyage, and a few who know what that means and want more.'
               : 'A few men can be found here who will take service, though how they will fare in a Portuguese ship is anyone\'s guess.'),
+            known < 8
+              ? el('p', { class: 'quote' },
+                  'Some of them will have to be come to know, there being fewer names forward '
+                  + 'than there were when she sailed.')
+              : el('span', {}),
             button(`Ship ${shortfall} hands — ${cost} cruzados`, () => {
-              if (g.crown.gold < cost) { this.notice = { text: 'Not enough in the purse.', grave: true }; this.render(); return; }
-              g.crown.gold -= cost;
-              g.crew.count = g.crew.complement;
-              g.logEvent('crew', `Shipped ${shortfall} hands at ${def.name}.`);
-              this.notice = { text: 'The muster is full again.' };
+              const r = g.shipHands(shortfall);
+              this.notice = { text: r.message, grave: !r.ok };
               this.render();
             }, { primary: true, disabled: g.crown.gold < cost }))
         : el('p', {}, 'She is fully manned.'),

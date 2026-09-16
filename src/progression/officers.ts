@@ -199,9 +199,3 @@ export function loyaltyWord(l: number): string {
 export function officerTitle(o: Officer): string {
   return OFFICER_ROLES.find((r) => r.role === o.role)?.english ?? o.role;
 }
-
-/** A one-line description of a man for a list. */
-export function officerLine(o: Officer): string {
-  const t = traitDef(o.trait);
-  return t ? `${officerTitle(o)} — ${t.name.toLowerCase()}` : officerTitle(o);
-}

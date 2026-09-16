@@ -71,7 +71,7 @@ import { beyondScene, featureScene, landmarkScene } from './discovery';
 import { castLead, landfallScene, type LeadCast } from './soundings';
 import { mutinyScene } from './mutiny';
 import { newCasa, rollCasaScene, type CasaState } from '../progression/casa';
-import { TEMPER, aboardHands, musterHands, shiftAll, type Hand } from '../crew/hands';
+import { TEMPER, aboardHands, musterHands, shiftAll, signOnHands, type Hand } from '../crew/hands';
 import { originDef, type OriginId } from '../progression/origins';
 import { assignTraits, wardroom, type TraitEffects } from '../progression/officers';
 import { good } from '../economy/goods';
@@ -1057,6 +1057,70 @@ export class Game {
       const r = this.relationsFor(p.id);
       r.regard = clamp(r.regard + delta, -1, 1);
     }
+  }
+
+  /**
+   * Ship replacements at a port.
+   *
+   * The counterpart of `killHands`, and it exists for the same reason: losses
+   * take named men, so replacements have to put named men back, or the fo'c'sle
+   * empties out over a career while the muster reads full.
+   *
+   * What it costs is not a flat six cruzados a head. Men are cheap on a quay in
+   * Lisbon where the voyage is understood and there is a queue; they are dear
+   * at Mina, where what is known about the Guinea voyage is that people do not
+   * come back from it, and dearer still in a foreign port where the ship is a
+   * curiosity and the wage has to do the whole of the persuading.
+   */
+  shipHands(n: number): { ok: boolean; cost: number; message: string } {
+    const def = this.portHere;
+    if (!def) return { ok: false, cost: 0, message: 'She is not in a port.' };
+    const want = Math.min(n, this.crew.complement - this.crew.count);
+    if (want <= 0) return { ok: false, cost: 0, message: 'She is fully manned.' };
+    const cost = this.handWage() * want;
+    if (this.crown.gold < cost) {
+      return { ok: false, cost, message: 'Not enough in the purse to sign them.' };
+    }
+    this.crown.gold -= cost;
+    this.crew.count += want;
+
+    // Put names back on the books, up to the size of the fo'c'sle the ship
+    // started with — the captain knows about eight men, not the whole company.
+    const known = this.hands.filter((h) => h.alive && h.aboard).length;
+    const gaps = Math.min(want, Math.max(0, 8 - known));
+    if (gaps > 0) {
+      const fresh = signOnHands(
+        this.rng, gaps, def.name, def.people === 'portuguese', this.hands,
+      );
+      this.hands.push(...fresh);
+      this.logEvent('crew',
+        `Shipped ${want} hands at ${def.name} for ${cost} cruzados. `
+        + `${fresh.map((h) => h.name).join(', ')} came aft to be entered in the book, and the `
+        + 'purser wrote them down without looking up.');
+    } else {
+      this.logEvent('crew', `Shipped ${want} hands at ${def.name} for ${cost} cruzados.`);
+    }
+    return {
+      ok: true,
+      cost,
+      message: this.crew.count >= this.crew.complement
+        ? 'The muster is full again.'
+        : `${want} shipped. She is still ${this.crew.complement - this.crew.count} short.`,
+    };
+  }
+
+  /** What a hand costs a month here, which is mostly about what is known here. */
+  handWage(): number {
+    const def = this.portHere;
+    if (!def) return 6;
+    let wage = def.people === 'portuguese' ? 6 : 11;
+    // Where the ship's own reputation has got about, it is either a help or the
+    // reverse, and the reverse is more expensive than the help is cheap.
+    const rel = this.relationsFor(def.id);
+    wage *= 1 - clamp(rel.regard, -1, 1) * 0.18;
+    // And what it is known she is going to do with them.
+    if (Math.abs(def.lat) < 15 && def.people === 'portuguese') wage *= 1.4;
+    return Math.max(4, Math.round(wage));
   }
 
   /**

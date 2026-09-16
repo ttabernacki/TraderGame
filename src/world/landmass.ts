@@ -518,9 +518,4 @@ export function coastVertexKeysInBox(
   return out;
 }
 
-/** Name of a landmass by index. */
-export function landName(index: number): string {
-  return LANDMASSES[index]?.name ?? 'Unknown land';
-}
-
 export { LANDMASSES };
