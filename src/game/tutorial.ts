@@ -107,12 +107,17 @@ export const TUTORIAL: TutorialStep[] = [
   {
     id: 'sight',
     from: 'Rui Correia, pilot',
-    task: 'Take a latitude at noon — N for the quadrant',
-    says: 'This is the one thing that puts the reckoning right. At noon the sun is at its '
-      + 'highest and due south of us; take its altitude with the quadrant and the tables give '
-      + 'you the latitude within a few miles. Latitude only — nobody on earth can find a '
-      + 'longitude and nobody will for another two hundred and sixty years. Half of what this '
-      + 'ship does is sailing down a latitude until the land comes up.',
+    task: 'Take the North Star after dark — N for the quadrant',
+    says: 'This is the one thing that puts the reckoning right, and you take it at night, not '
+      + 'at noon. We carry the Regimento do Norte: it is the rule of the pole star and the '
+      + 'corrections for the Guards, and it is the whole of what is in the chest. Wait for a '
+      + 'clear night, get the pole star\'s altitude with the quadrant, and it gives you your '
+      + 'latitude within a few miles.\n\nThe sun is no use to us. Its altitude at noon is just '
+      + 'a number without a table of declination for the day, and we have none — those are a '
+      + 'different book and they are sold at Lisbon. Buy them before you go south, because the '
+      + 'pole star goes under the horizon at the line and then the sun is all there is.\n\n'
+      + 'Latitude only, either way. Nobody on earth can find a longitude and nobody will for '
+      + 'another two hundred and sixty years.',
     done: (g) => g.nav.fixes.length > 0,
   },
   {

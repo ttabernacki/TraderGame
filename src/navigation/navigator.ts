@@ -4,7 +4,7 @@ import {
 } from '../core/math';
 import { Rng } from '../core/rng';
 import {
-  ALMANAC_BY_ID, COMPASS_BY_ID, INSTRUMENT_BY_ID, SPEED_BY_ID, sightError,
+  ALMANAC_BY_ID, COMPASS_BY_ID, INSTRUMENT_BY_ID, SPEED_BY_ID, sightError, type Almanac,
 } from './instruments';
 import {
   latitudeFromMeridianStar, latitudeFromNoonSun, magneticVariation, polarisSight,
@@ -386,6 +386,17 @@ export function sightOpportunities(
   year: number,
   cloud: number,
   visibility: number,
+  /**
+   * The books aboard.
+   *
+   * Optional only so that older callers still compile; every caller that has a
+   * ship should pass it. Without it this function answers "can you see it",
+   * which is half the question — the other half is whether there is anything
+   * aboard to turn the altitude into a latitude, and a player was finding that
+   * out only after he had gone through the whole business of taking the sight.
+   * A pilot knows what is in his chest before he goes to the rail.
+   */
+  almanac?: Almanac,
 ): SightOpportunity[] {
   const out: SightOpportunity[] = [];
   const sun = sunPosition(truePos.lat, truePos.lon, dayFromEpoch, hourLocal, dayOfYear);
@@ -405,22 +416,40 @@ export function sightOpportunities(
   }
   const minutesToNoon = Math.round((bestH - hourLocal) * 60);
 
+  // Whether the books aboard can turn a solar altitude into a latitude at all.
+  //
+  // The Regimento do Norte — which is what a captain starts with, and which is
+  // what a caravel of 1482 actually carried — is a rule for the pole star and
+  // contains no solar declination whatever. Taking the sun with it gives you a
+  // number and nothing else. That was already true and was only said *after*
+  // the sight had been worked, which is the wrong end of the ritual.
+  const southernSky = truePos.lat < 0;
+  const noSolar = almanac ? almanac.solarError === null : false;
+  const noSouthern = almanac ? southernSky && !almanac.southern : false;
+
   out.push({
     body: 'sun',
     label: 'Meridian altitude of the sun',
     altitude: sun.altitude,
     azimuth: sun.azimuth,
     minutesToNoon,
-    available: sun.altitude > 6 && nearNoon && !overcast && !hazy,
-    reason: sun.altitude <= 6
-      ? 'The sun is not high enough'
-      : !nearNoon
-        ? 'It wants local noon; wait until she bears due north or south'
-        : overcast
-          ? 'Overcast — no sun to be had'
-          : hazy
-            ? 'The horizon is lost in haze'
-            : undefined,
+    available: sun.altitude > 6 && nearNoon && !overcast && !hazy && !noSolar && !noSouthern,
+    reason: noSolar
+      ? 'No solar tables aboard — the Regimento do Norte is a rule for the pole star and '
+        + 'has no declination of the sun in it. Take the North Star instead, or buy the '
+        + 'tables at Lisbon.'
+      : noSouthern
+        ? 'Your tables do not run south of the line. Take a southern star, or buy tables '
+          + 'that go below the equator.'
+        : sun.altitude <= 6
+          ? 'The sun is not high enough'
+          : !nearNoon
+            ? 'It wants local noon; wait until she bears due north or south'
+            : overcast
+              ? 'Overcast — no sun to be had'
+              : hazy
+                ? 'The horizon is lost in haze'
+                : undefined,
   });
 
   const pole = polarisSight(truePos.lat, truePos.lon, dayFromEpoch, hourLocal, year);

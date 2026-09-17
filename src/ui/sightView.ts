@@ -85,6 +85,7 @@ export class SightView {
       g.clock.date.year,
       g.weatherNow.cloud,
       g.weatherNow.visibility,
+      g.nav.almanac,
     );
   }
 
@@ -230,9 +231,34 @@ export class SightView {
       card('Your instruments',
         kv('Altitude', inst.name),
         kv('Tables', alm.name),
+        // What the books aboard can and cannot do, said here rather than
+        // discovered after a sight has been worked. The two are genuinely
+        // different books: a rule for the pole star is not a table of solar
+        // declination, and a captain who does not know that goes south with the
+        // wrong one and loses his latitude at the line.
+        kv('The pole star', alm.declinationError < 2
+          ? `Good to about ${(alm.declinationError * 60).toFixed(0)} miles`
+          : 'No rule for the Guards — three degrees either way'),
+        kv('The sun', alm.solarError === null
+          ? 'No declination tables — cannot be worked'
+          : alm.southern
+            ? `Good to about ${(alm.solarError * 60).toFixed(0)} miles, north or south`
+            : `Good to about ${(alm.solarError * 60).toFixed(0)} miles, north of the line only`),
         kv('Speed', g.nav.speedInstrument.name),
         kv('Compass', g.nav.compass.name),
         el('p', { style: { marginTop: '9px', fontSize: '13px', fontStyle: 'italic', color: 'var(--ink-soft)' } }, inst.blurb),
+        alm.solarError === null
+          ? el('p', { class: 'notice', style: { marginTop: '10px' } },
+            'You are carrying a rule for the pole star and nothing else, which is what a '
+            + 'caravel of this date carried. Take the North Star by night. The sun wants a '
+            + 'table of declination for the day, which is a separate book, sold at Lisbon — '
+            + 'and you will need it south of the line, where the pole star sets astern of you '
+            + 'and never comes up again.')
+          : !alm.southern
+            ? el('p', { class: 'notice', style: { marginTop: '10px' } },
+              'Your tables stop at the equator. South of the line neither the pole star nor '
+              + 'these tables will give you a latitude, and the Casa sells ones that go further.')
+            : el('span', {}),
       ),
       card('The reckoning',
         kv('Latitude', formatLat(g.nav.estimated.lat)),

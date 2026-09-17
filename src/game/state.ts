@@ -2021,22 +2021,42 @@ export class Game {
     const opps = sightOpportunities(
       this.ship.state.pos, this.clock.day, this.clock.hour,
       this.clock.dayOfYear, this.clock.date.year,
-      this.weatherNow.cloud, this.weatherNow.visibility,
+      this.weatherNow.cloud, this.weatherNow.visibility, this.nav.almanac,
     );
-    // Only bodies this pilot can actually work into a latitude with the books
-    // he has aboard. Being offered a sight that turns out to be useless is
-    // worse than not being offered one.
+    // `sightOpportunities` is given the books now, so `available` already means
+    // "can be seen *and* can be worked" and `canWork` is only a second pair of
+    // eyes on it.
     const usable = opps.filter((o) => o.available && this.canWork(o.body));
     const grave = this.nav.sigmaLat > 24;
 
     if (usable.length === 0) {
       if (!grave) return;
-      const sun = opps.find((o) => o.body === 'sun');
-      const why = opps.find((o) => o.available && !this.canWork(o.body))
-        ? 'and no tables aboard to work it by'
-        : (sun?.reason ?? 'nothing to be had').toLowerCase();
       this.lastSightWord = this.clock.t;
-      this.pushAlert(`No latitude again today — ${why}.`, 'warning');
+      // Short, and about the thing he can do something about.
+      //
+      // This used to lowercase whichever reason the sun happened to carry and
+      // paste it into the sentence. That was survivable while the reasons were
+      // three words about cloud; once the sun started explaining that the
+      // Regimento do Norte is a rule for the pole star and has no solar
+      // declination in it, the alert became a paragraph in the corner of the
+      // screen with a lower-case R.
+      const sun = opps.find((o) => o.body === 'sun');
+      const pole = opps.find((o) => o.body === 'polaris');
+      const noTables = this.nav.almanac.solarError === null;
+      const poleGone = pole ? /below the horizon/i.test(pole.reason ?? '') : false;
+      if (noTables && poleGone) {
+        this.pushAlert(
+          'No latitude to be had at all — the pole star is under the horizon astern and there '
+          + 'are no solar tables aboard. The reckoning is all you have.', 'grave');
+      } else if (noTables) {
+        this.pushAlert(
+          'No latitude again today. The sun is no use without tables; it wants a clear night '
+          + 'and the pole star.', 'warning');
+      } else {
+        const why = (sun?.reason ?? 'nothing to be had').replace(/\.$/, '');
+        this.pushAlert(`No latitude again today — ${why.charAt(0).toLowerCase()}${why.slice(1)}.`,
+          'warning');
+      }
       return;
     }
 

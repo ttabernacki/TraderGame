@@ -692,8 +692,9 @@ export class PortView {
     const rows: Node[] = [];
     const standing = g.crown.lifetimeStanding;
 
-    const section = (label: string, items: { id: string; name: string; cost: number; standing: number; blurb: string }[], current: string, apply: (id: string) => void) => {
+    const section = (label: string, items: { id: string; name: string; cost: number; standing: number; blurb: string }[], current: string, apply: (id: string) => void, note?: Node | null) => {
       rows.push(el('div', { style: { fontSize: '12px', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-soft)', marginTop: '11px', marginBottom: '5px' } }, label));
+      if (note) rows.push(note);
       for (const it of items) {
         const owned = current === it.id;
         const locked = it.standing > standing;
@@ -715,7 +716,28 @@ export class PortView {
     };
 
     section('For altitudes', ALTITUDE_INSTRUMENTS, g.nav.kit.altitude, (id) => { g.nav.kit.altitude = id; });
-    section('Tables', ALMANACS, g.nav.kit.almanac, (id) => { g.nav.kit.almanac = id; });
+    // Why there are two kinds of book, said at the counter.
+    //
+    // A rule for the pole star and a table of solar declination are different
+    // things and were different books, and a captain who does not know that
+    // sails south with the wrong one — the pole star sets astern of him at the
+    // line and he loses his latitude altogether, which is the single worst
+    // thing that can happen to a voyage in this game.
+    section('Tables', ALMANACS, g.nav.kit.almanac, (id) => { g.nav.kit.almanac = id; },
+      el('p', {
+        class: g.nav.almanac.solarError === null ? 'notice' : '',
+        style: { fontSize: '12.5px', lineHeight: '1.55', marginBottom: '7px' },
+      },
+      g.nav.almanac.solarError === null
+        ? 'You carry a rule for the pole star and no table of the sun, so a meridian '
+          + 'altitude is only a number to you. That is enough while the pole star is up — '
+          + 'but it sets astern of you at the equator and does not come back, and south of '
+          + 'the line a ship without solar tables has no latitude at all.'
+        : g.nav.almanac.southern
+          ? 'Your tables give you the sun as well as the pole star, north of the line and '
+            + 'south of it.'
+          : 'Your tables give you the sun, but they stop at the equator. South of the line '
+            + 'they are no more use than the pole star is.'));
     section('For the log', SPEED_INSTRUMENTS, g.nav.kit.speed, (id) => { g.nav.kit.speed = id; });
     section('Compasses', COMPASSES.map((c) => ({ ...c, standing: 0 })), g.nav.kit.compass, (id) => { g.nav.kit.compass = id; });
 
