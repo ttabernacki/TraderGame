@@ -83,6 +83,10 @@ export class TouchControls {
       { label: 'Sight', key: 'n', hint: 'Sextant' },
       { label: 'Lead', key: 'g', hint: 'Heave the lead — depth, ground, and the offing' },
       { label: '♪', key: 'm', hint: 'Sound on or off' },
+      // There is no F2 on a phone, and the Book of Voyages is the only save
+      // screen there is — without a button for it here a player on a touch
+      // device has no way to save at all.
+      { label: 'Save', key: 'f2', hint: 'The Book of Voyages — save or load' },
       { label: 'Anchor', key: ' ', hint: 'Anchor', wide: true },
     ]);
 
