@@ -33,7 +33,19 @@ import { bestCourse } from './encounter';
  * her to keep close station will make a slower passage than he would alone. A
  * player who lets her range ahead will find things sooner and will sometimes
  * find them without her.
+ *
+ * ---
+ *
+ * **Switched off.** However well it argues on paper, in play she is a second
+ * ship's worth of management bolted onto a game that already asks a great deal
+ * of one, and the tension above reads as nagging rather than as pressure. So
+ * nothing offers one any more and a saved voyage that has one loses her on
+ * load. Everything below still works and is still under test — `attachConsort`
+ * builds one, she sails, she can be damaged, lost, searched for and brought
+ * home — so this is one flag away from coming back if it is ever wanted, and
+ * nothing has been deleted to get there.
  */
+export const CONSORTS_ENABLED = false;
 
 /** What she has been told to do. */
 export type Station =

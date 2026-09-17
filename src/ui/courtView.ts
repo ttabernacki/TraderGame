@@ -1,5 +1,6 @@
 import { commissionPoints, monarchAt, nextTitle, type Patent } from '../progression/crown';
 import { rivalStanding } from '../progression/rival';
+import { CONSORTS_ENABLED } from '../game/consort';
 import type { Game } from '../game/state';
 import { append, button, card, clear, el, kv, meter } from './dom';
 
@@ -220,22 +221,28 @@ export class CourtView {
               `${p.advance} in advance · ${p.reward} on completion · ${p.standingReward} renown · `
               + `${commissionPoints(p.standingReward)} skill points`),
             button('Take it', () => {
-              g.crown.accept(p, g.clock.t);
+              const stones = g.crown.accept(p, g.clock.t);
               g.layCourseForCommission();
               g.crown.hasKingsLetter = true;
               g.logEvent('crown',
                 `Received the King's commission: "${p.title}". ${p.advance} cruzados advanced, and a sealed letter for any Christian prince who may be found.`, true);
-              // The commissions that matter come with a second ship.
-              //
-              // This is how the Crown actually did it: the early runs down the
-              // coast were single caravels because they were cheap and nobody
-              // was sure there was anything down there, and from the moment the
-              // enterprise looked like it might pay, no captain was sent alone.
-              // So the armada arrives with the commission that is worth one,
-              // which is also the point in a career where the player has enough
-              // to think about for a second ship to be interesting rather than
-              // one more panel.
-              if (!g.consort && p.standingReward >= 55) {
+              // A commission that wants pillars is issued with the pillars. See
+              // Crown.accept: a captain told to raise them on his first voyage
+              // has no way of knowing he was supposed to have bought them, and
+              // finds out four thousand miles from the only yard that cuts them.
+              if (stones > 0) {
+                g.logEvent('crown',
+                  `${stones} padrões struck with the King's arms and the cross of the Order came `
+                  + 'down to the quay with the commission, and are stowed in the ground tier. The '
+                  + 'Casa does not send a man to raise pillars and leave him to find his own '
+                  + 'stone.', true);
+              }
+              // The commissions that matter used to come with a second ship,
+              // which is how the Crown actually did it. She is switched off —
+              // see CONSORTS_ENABLED in game/consort — because a second ship's
+              // worth of management on top of this one read as nagging rather
+              // than as pressure. The code is all still there.
+              if (CONSORTS_ENABLED && !g.consort && p.standingReward >= 55) {
                 g.attachConsort(p.standingReward >= 240 ? 'nau' : 'caravela-latina');
               }
               this.offers = [];

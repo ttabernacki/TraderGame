@@ -62,7 +62,7 @@ import {
 import { polarAt } from '../ship/polars';
 import { newTutorial, stepTutorial, type TutorialState, type TutorialStep } from './tutorial';
 import {
-  TEMPERS as CONSORT_TEMPERS, consortReport, makeConsort, orderedOffing, sailConsort,
+  CONSORTS_ENABLED, TEMPERS as CONSORT_TEMPERS, consortReport, makeConsort, orderedOffing, sailConsort,
   signalRangeNm, type Consort, type Station,
 } from './consort';
 import {
@@ -6936,7 +6936,10 @@ export class Game {
     g.propositionsSeen = d.propositionsSeen ?? [];
     g.feitorias = d.feitorias ?? [];
     g.lettersSeen = d.lettersSeen ?? [];
-    g.consort = d.consort ?? null;
+    // The second ship is switched off; see CONSORTS_ENABLED in game/consort.
+    // A voyage saved while she was still a feature loses her on load rather
+    // than sailing on with a ship nothing in the game will ever mention again.
+    g.consort = CONSORTS_ENABLED ? (d.consort ?? null) : null;
     g.consortRecord = d.consortRecord
       ?? { assigned: 0, lost: 0, burned: 0, detached: 0, broughtHome: 0 };
     // A voyage begun before the pilot existed is a voyage whose captain has

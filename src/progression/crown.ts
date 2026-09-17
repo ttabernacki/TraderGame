@@ -509,10 +509,34 @@ export class Crown {
       });
   }
 
-  accept(p: Patent, t: number): void {
+  /**
+   * Take a commission. Returns how many padrões were issued with it.
+   *
+   * A commission that orders pillars raised is issued with the pillars, which
+   * is both what the Casa actually did and the only sane reading of the order.
+   * They are cut at Lisbon and nowhere else on the coast, they are an upgrade
+   * bought at the shipwrights, and nothing anywhere told a captain he was
+   * supposed to have bought them — so a player could take "raise 2 padrões on
+   * new headlands" as the commission in front of him, sail, find the headland,
+   * and be told at the rail four thousand miles from the only yard that cuts
+   * stone that there is none in the hold. That is not a decision he got wrong;
+   * it is a thing nobody told him.
+   *
+   * One spare over the order, because a captain given two to raise was not sent
+   * with exactly two.
+   */
+  accept(p: Patent, t: number): number {
     this.patent = { ...p, issued: t };
     this.gold += p.advance;
     this.chartedSincePatent = 0;
+
+    const wanted = p.objectives
+      .filter((o) => o.kind === 'padrao')
+      .reduce((sum, o) => sum + Math.max(1, o.amount ?? 1), 0);
+    if (wanted <= 0) return 0;
+    const issued = Math.max(0, (wanted + 1) - this.padraoStock);
+    this.padraoStock += issued;
+    return issued;
   }
 
   /** Register a discovery. Returns true if it was new. */
