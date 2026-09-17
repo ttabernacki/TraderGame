@@ -9,8 +9,12 @@ import { button, card, clear, el, kv } from './dom';
 import { TEMPERS as CONSORT_TEMPERS, orderedOffing, signalRangeNm } from '../game/consort';
 import { portName } from '../progression/crown';
 import { house, kindName } from '../economy/finance';
+import { portDef } from '../world/ports';
+import {
+  capacityOf, regardWordF, stockTons, stockValue, troubleWord,
+} from '../progression/feitoria';
 
-type Tab = 'orders' | 'charters' | 'reports' | 'wardroom' | 'consort' | 'rival';
+type Tab = 'orders' | 'charters' | 'reports' | 'stations' | 'wardroom' | 'consort' | 'rival';
 
 /**
  * The captain's orders.
@@ -58,19 +62,23 @@ export class OrdersView {
       orders: g.crown.patent ? g.crown.patent.objectives.filter((o) => !o.complete).length : 0,
       charters: g.activeVentures.length,
       reports: g.openLeads.length,
+      stations: g.liveFactories.length,
       wardroom: g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length,
       consort: 0,
       rival: 0,
     };
     const names: Record<Tab, string> = {
       orders: 'Commission', charters: 'Charters', reports: 'Hearsay',
-      wardroom: 'Wardroom', consort: 'In company', rival: 'Rival',
+      stations: 'Factories', wardroom: 'Wardroom', consort: 'In company', rival: 'Rival',
     };
 
     // The consort's tab is only there when there is a consort. A row of tabs
     // that includes a permanently empty one teaches the player to skip it.
-    const tabs = (Object.keys(names) as Tab[]).filter((t) => t !== 'consort' || g.consort);
+    const tabs = (Object.keys(names) as Tab[])
+      .filter((t) => t !== 'consort' || g.consort)
+      .filter((t) => t !== 'stations' || g.liveFactories.length > 0);
     if (this.tab === 'consort' && !g.consort) this.tab = 'orders';
+    if (this.tab === 'stations' && g.liveFactories.length === 0) this.tab = 'orders';
 
     this.body.append(el('div', { class: 'tabs' },
       ...tabs.map((t) => el('button', {
@@ -86,6 +94,7 @@ export class OrdersView {
     }
     else if (this.tab === 'charters') this.renderCharters(g);
     else if (this.tab === 'reports') this.renderLeads(g);
+    else if (this.tab === 'stations') this.renderStations(g);
     else if (this.tab === 'wardroom') this.renderWardroom(g);
     else if (this.tab === 'consort') this.renderConsort(g);
     else this.renderRival(g);
@@ -333,6 +342,46 @@ export class OrdersView {
         g.recallTutorial();
         this.render();
       }));
+  }
+
+  /**
+   * The stations, from a thousand miles away.
+   *
+   * The only screen in the game about places the ship is not. It exists
+   * because `trouble` is the one number a player must be able to watch without
+   * being there — a factory that can only be inspected by sailing to it is a
+   * factory that gets burned while you are doing something else, and the
+   * decision it is supposed to create (is it worth breaking the voyage to go
+   * and show the flag?) cannot be made blind.
+   */
+  private renderStations(g: Game): void {
+    for (const f of g.liveFactories) {
+      const def = portDef(f.portId);
+      const away = Math.round((g.clock.t - f.settled) / 86400);
+      this.body.append(card(`${def.name} — ${f.factor}`,
+        kv('In the shed', `${stockTons(f).toFixed(1)} of ${capacityOf(f).toFixed(0)} tons`),
+        kv('Worth at Lisbon', `${stockValue(f)} cruzados`),
+        kv('In the chest', `${Math.round(f.chest)} cruzados`, f.chest < 40 ? 'warn' : ''),
+        kv('Men in it', `${f.garrison}`),
+        kv('The town', regardWordF(f.regard)),
+        kv('How it stands', troubleWord(f.trouble),
+          f.trouble > 0.55 ? 'bad' : f.trouble > 0.32 ? 'warn' : ''),
+        kv('Since you were there', `${away} days`, away > 500 ? 'bad' : away > 300 ? 'warn' : ''),
+        f.trouble > 0.55
+          ? el('p', {}, 'The arithmetic here only gets worse while you are elsewhere. A ship in '
+              + 'the road is most of the answer and it is the only part of it that does not cost '
+              + 'money.')
+          : null,
+      ));
+    }
+    this.body.append(card('What a station is for',
+      el('p', { class: 'flavour' },
+        'A ship buying a cargo has to buy it in a fortnight, in front of everybody, at whatever '
+        + 'the town decides a man in a hurry should pay. A factor buys the same cargo a barrel at '
+        + 'a time across a year at what a resident pays, and it is stacked on the floor waiting '
+        + 'when you come. That is the whole of it, and the price of it is a man of yours living '
+        + 'on that beach.'),
+    ));
   }
 
   private renderConsort(g: Game): void {

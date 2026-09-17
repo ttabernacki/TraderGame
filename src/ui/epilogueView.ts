@@ -5,6 +5,7 @@ import { rivalEnding } from '../progression/rivalEvents';
 import { BONDS } from '../progression/arcs';
 import { originDef } from '../progression/origins';
 import { casaEnding } from '../progression/casa';
+import { portName } from '../progression/crown';
 import type { Game } from '../game/state';
 import { button, card, el, kv } from './dom';
 
@@ -317,6 +318,31 @@ export class EpilogueView {
                       + 'did not, which is what everybody did.'
                     : 'You sailed mostly on the board and on the smell of the water, and got away '
                       + 'with it more often than the arithmetic says you should have.'),
+            )
+          : null,
+
+        // The stations, which are the only thing a captain of this trade left
+        // behind that outlasted him. A man with three sheds on that coast and a
+        // middling renown did more to make the century happen than a man with a
+        // great name and nothing standing.
+        g.feitorias.length > 0
+          ? card('What is still standing on that coast',
+              ...g.feitorias.map((f) => kv(
+                portName(f.portId),
+                f.lost ? (f.lostWhy ?? 'gone')
+                  : `${f.factor}, ${f.garrison} men, ${f.works.length} works`,
+                f.lost ? 'bad' : '')),
+              el('p', { class: 'flavour' },
+                g.liveFactories.length === 0
+                  ? 'Nothing of yours is on that shore now. Whatever was in those sheds went into '
+                    + 'somebody else\u2019s books, and the men who were in them are in the muster '
+                    + 'under another heading.'
+                  : g.liveFactories.length > 2
+                    ? 'Three stations and more, with your men in them, buying whether you are '
+                      + 'alive or not. This is what the century was actually made of, and it was '
+                      + 'made by men doing exactly this and being forgotten for it.'
+                    : 'It is standing. Somebody is in it. Ships that are not yours will water '
+                      + 'there and be glad of it long after anybody remembers whose it was.'),
             )
           : null,
 

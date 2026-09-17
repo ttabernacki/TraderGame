@@ -83,12 +83,17 @@ import { newCasa, rollCasaScene, type CasaState } from '../progression/casa';
 import { TEMPER, aboardHands, musterHands, shiftAll, signOnHands, type Hand } from '../crew/hands';
 import { originDef, type OriginId } from '../progression/origins';
 import { assignTraits, wardroom, type TraitEffects } from '../progression/officers';
-import { good } from '../economy/goods';
+import { GOOD_BY_ID, good, unitOf } from '../economy/goods';
 import {
   HOUSES, Ledger, cambioRate, ceilingFor, house, letraRate, quinhaoPrice, reaches,
   type Debt, type DebtKind, type House, type HouseId,
 } from '../economy/finance';
 import { rollFinanceScene } from './financeEvents';
+import {
+  WORK_BY_ID, capacityOf, garrisonWanted, runFactory, stockTons,
+  type Feitoria, type WorkId,
+} from '../progression/feitoria';
+import { rollFeitoriaScene } from './feitoriaEvents';
 
 /**
  * Latitude of the deepest Portuguese penetration at the start of play.
@@ -220,6 +225,11 @@ export class Game {
   finance = new Ledger(0);
   /** Houses that have already made their one proposition, so it stays an event. */
   propositionsSeen: HouseId[] = [];
+
+  /** The stations: sheds on beaches that go on trading while you are elsewhere. */
+  feitorias: Feitoria[] = [];
+  /** Letters already delivered, so the same one does not overtake you twice. */
+  lettersSeen: string[] = [];
 
   mode: GameMode = 'title';
   /** Set while at anchor in a port. */
@@ -1448,6 +1458,54 @@ export class Game {
       man.aboard = false;
       man.fate = fate;
       man.fateT = this.clock.t;
+    }
+  }
+
+  /**
+   * Men left in a station, which is not the same as men lost.
+   *
+   * They come off the muster and off the ship's work with names attached, and
+   * they go back on it if the place is ever shut up and they are brought away.
+   * Doing this by decrementing `crew.count` alone left the fo'c'sle list saying
+   * twenty-four men were aboard a ship being worked by eighteen.
+   */
+  landHands(n: number, where: string): string[] {
+    const names: string[] = [];
+    if (n <= 0) return names;
+    const live = aboardHands(this.hands);
+    // The fo'c'sle list is a named *sample* of the company — eight men out of
+    // twenty-four — so a party leaving has to take its share of the sample and
+    // not its share of the ship. Taking `n` named men for `n` hands stripped
+    // six of the eight into a shed and left the ship being worked by two men
+    // with names and sixteen without.
+    const share = Math.max(1, Math.round(n * (live.length / Math.max(this.crew.count, 1))));
+    this.crew.count = Math.max(0, this.crew.count - n);
+    for (let i = 0; i < Math.min(share, live.length); i++) {
+      const man = live[Math.floor(this.rng.next() * live.length)];
+      if (!man.aboard) continue;
+      man.aboard = false;
+      man.fate = `Left in the factory at ${where}.`;
+      man.fateT = this.clock.t;
+      names.push(man.name);
+    }
+    return names;
+  }
+
+  /** And the other way, when a station is shut up and its people come away. */
+  recoverHands(n: number, where: string): void {
+    if (n <= 0) return;
+    this.crew.count += n;
+    // All of them: whatever was landed there is what comes back, and the list
+    // is the only record of who that was.
+    let want = this.hands.length;
+    for (const h of this.hands) {
+      if (want <= 0) break;
+      if (h.alive && !h.aboard && h.fate?.includes(where)) {
+        h.aboard = true;
+        h.fate = undefined;
+        h.fateT = undefined;
+        want--;
+      }
     }
   }
 
@@ -5629,33 +5687,363 @@ export class Game {
     return 'Anchor let go.';
   }
 
+  // -------------------------------------------------------------------------
+  // The stations
+  // -------------------------------------------------------------------------
+
+  /** The factory in the port she is lying in, if there is one. */
+  get factoryHere(): Feitoria | null {
+    if (!this.dockedAt) return null;
+    return this.feitorias.find((f) => f.portId === this.dockedAt && !f.lost) ?? null;
+  }
+
+  get liveFactories(): Feitoria[] {
+    return this.feitorias.filter((f) => !f.lost);
+  }
+
   /**
-   * What the factor ashore has made while you were somewhere else.
+   * Whether a station can be founded here at all, and why not.
    *
-   * A feitoria is the whole Portuguese method — Arguim, São Jorge da Mina,
-   * every station down that coast — and until the Ambassador node it is a word
-   * on the relations screen that pays nothing. With it, the place trades on its
-   * own account between your visits and hands you the takings when you call:
-   * real income that arrives whether or not this voyage went well, which is a
-   * different economy from carrying cargo and the reason to build toward it.
+   * Three gates, and each of them is a different part of the game: the King's
+   * leave to do it anywhere (the perk), this town's leave to do it here (the
+   * audience), and a man and men you can actually spare. The third is the real
+   * one — nobody ever runs out of the first two twice.
+   */
+  canFoundFactory(def: PortDef): string | null {
+    if (!this.can('feitoria')) {
+      return 'Nothing in your commission lets you leave the King\u2019s men on a foreign shore. '
+        + 'That is the Ambassador\u2019s article, and it is bought in the book.';
+    }
+    const rel = this.relationsFor(def.id);
+    if (!rel.factory) {
+      return 'You have no ground here. Ground for a factory is asked for at an audience and '
+        + 'granted or not by whoever owns this beach.';
+    }
+    if (this.feitorias.some((f) => f.portId === def.id && !f.lost)) return 'There is one here already.';
+    const men = this.crew.count - this.ship.baseHull.crewMin;
+    if (men < 6) {
+      return `A station wants six men left in it and she cannot sail without ${this.ship.baseHull.crewMin}. `
+        + `You have ${Math.max(0, men)} to spare.`;
+    }
+    if (this.foundingCost() > this.crown.gold + this.creditFree) {
+      return `The founding of it comes to ${this.foundingCost()} cruzados and there is not that much.`;
+    }
+    return null;
+  }
+
+  /** Timber, tools, trade goods to start the chest, and a year's victuals for the men. */
+  foundingCost(): number {
+    return 320;
+  }
+
+  /**
+   * Leave a man on a beach.
+   *
+   * The officer is the whole decision. He comes off the muster and out of the
+   * berth for years — the ship works worse for it, immediately and visibly —
+   * and what he was decides everything the station does afterwards. An able
+   * man fills the shed. An honest one hands you the books. They are separate
+   * qualities and no officer in the game has both at once by accident.
+   */
+  foundFactory(officerId: string, order: string[]): string {
+    const def = this.portHere;
+    if (!def) return 'This is done ashore.';
+    const why = this.canFoundFactory(def);
+    if (why) return why;
+    const o = this.crew.officers.find((x) => x.id === officerId && x.alive && !x.ashoreAt);
+    if (!o) return 'That man is not aboard.';
+
+    const cost = this.foundingCost();
+    if (this.crown.gold < cost) this.drawCredit(cost);
+    this.crown.gold -= cost;
+    this.landHands(6, def.name);
+    o.ashoreAt = def.id;
+    o.ashoreSince = this.clock.t;
+
+    // Ability is what he is; honesty is his character, and the traits that make
+    // a good officer at sea are not the ones that make a safe man with a chest.
+    const trait = o.trait ?? '';
+    const honest = clamp(0.5 + o.loyalty * 0.4
+      + (trait === 'devout' || trait === 'steady' ? 0.16 : 0)
+      + (trait === 'grasping' || trait === 'sly' ? -0.3 : 0), 0.1, 0.98);
+
+    const f: Feitoria = {
+      portId: def.id,
+      factor: o.name,
+      officerId: o.id,
+      ability: clamp(o.ability * 0.85 + skill(this.skills, 'comercio') * 0.15, 0.1, 1),
+      honesty: honest,
+      founded: this.clock.t,
+      settled: this.clock.t,
+      works: [],
+      garrison: 6,
+      stock: {},
+      paid: {},
+      chest: 90,
+      buying: order.length > 0 ? order.slice(0, 3) : [],
+      regard: clamp(this.relationsFor(def.id).regard * 0.8 + 0.1, 0, 1),
+      trouble: 0.05,
+      lost: false,
+      landed: 0,
+      paidOut: 0,
+    };
+    this.feitorias.push(f);
+    this.relationsFor(def.id).factorySettled = this.clock.t;
+    this.crown.standing += 12;
+    this.refreshEnvironment();
+    this.logEvent('crown',
+      `Founded a feitoria at ${def.name}. ${o.name} is left in it with six men, ninety cruzados `
+      + 'in the chest and the King\u2019s commission, and he will be here when you come back or he '
+      + 'will not. The berth aft is empty from today.', true);
+    return `${o.name} has the shed and six men. She is that much shorter-handed and you have a `
+      + 'station on this coast.';
+  }
+
+  /**
+   * What the factor has done since you last stood in his store.
+   *
+   * Run in one pass at the quay rather than tick by tick: nothing about a
+   * station is worth a frame of the simulation while the ship is four thousand
+   * miles away, and a factor's year is exactly the kind of thing that ought to
+   * arrive as a set of books read out to you.
    */
   private settleFeitoria(def: PortDef): void {
-    if (!this.can('feitoria')) return;
-    const rel = this.relationsFor(def.id);
-    if (!rel.factory) return;
-    const since = rel.factorySettled ?? this.clock.t;
-    rel.factorySettled = this.clock.t;
-    const days = (this.clock.t - since) / 86400;
-    if (days < 20) return;
-    // Capped at a year: a factor left for three years has been dead for two.
-    const earned = Math.round(Math.min(days, 365) * (2.6 + Math.max(0, rel.regard) * 3.4));
-    if (earned <= 0) return;
-    this.crown.gold += earned;
+    const f = this.feitorias.find((x) => x.portId === def.id && !x.lost);
+    if (!f) return;
+    const days = (this.clock.t - f.settled) / 86400;
+    f.settled = this.clock.t;
+    if (days < 8) return;
+    const news = runFactory(f, def, days, this.rng, this.relationsFor(def.id).regard);
+    // Standing in the road is itself the answer to half of it. A station that
+    // sees a Portuguese ship is a station nobody is about to try.
+    f.trouble = clamp(f.trouble - 0.3, 0, 1);
     this.logEvent('trade',
-      `The factor at ${def.name} has his books ready. ${Math.round(days)} days of trade done in your `
-      + `absence and ${earned} cruzados to your account, less what he has kept for himself, which he `
-      + 'does not itemise.', true);
-    this.pushAlert(`The feitoria at ${def.name} pays ${earned} cruzados.`, 'note');
+      `${f.factor} has the books ready at ${def.name}. ${Math.round(days)} days: `
+      + `${news.bought.toFixed(1)} tons bought in for ${Math.round(news.spent)} cruzados, `
+      + `${Math.round(news.earned)} taken in trade, ${stockTons(f).toFixed(1)} tons in the shed `
+      + `and ${Math.round(f.chest)} in the chest.`
+      + (news.spoiled > 0.05 ? ` ${news.spoiled.toFixed(1)} tons went bad waiting for a bottom.` : '')
+      + (news.skimmed > 12 ? ' The figures do not quite meet in the middle and he knows you can see it.' : ''),
+      true);
+    this.pushAlert(`${def.name}: ${stockTons(f).toFixed(1)} tons in the shed.`, 'note');
+  }
+
+  /**
+   * Take the shed's contents aboard.
+   *
+   * The reward for the whole system, and it is a reward in *time* rather than
+   * in money: a cargo that takes a ship three weeks to buy and guts the quay
+   * while she does it is already sitting on the floor, bought all year in small
+   * parcels at what a resident pays. The factor takes his commission on it,
+   * which is why it is not simply free.
+   */
+  loadFromShed(goodId: string, units: number): string {
+    const f = this.factoryHere;
+    if (!f) return 'There is no factory of yours here.';
+    const have = f.stock[goodId] ?? 0;
+    const g = good(goodId);
+    const take = Math.min(have, Math.max(0, units), this.ship.holdFree / Math.max(g.bulk, 1e-6));
+    if (take < 1) {
+      return have < 1 ? 'There is none of that in the shed.' : 'There is no room in her for it.';
+    }
+    // His commission, which is how a factor was actually paid.
+    const per = (f.paid[goodId] ?? g.lisbon * 0.2) * 1.08;
+    const cost = Math.round(per * take);
+    const fromChest = Math.min(f.chest, 0);
+    void fromChest;
+    if (cost > this.crown.gold + this.creditFree) {
+      return `His commission on that comes to ${cost} and there is not that much in the purse.`;
+    }
+    if (this.crown.gold < cost) this.drawCredit(cost);
+    this.crown.gold -= cost;
+    f.chest += cost;
+    f.stock[goodId] = have - take;
+    f.landed += take * g.lisbon;
+    this.ship.addCargo(goodId, take, per);
+    this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
+    this.logEvent('trade',
+      `Took ${take.toFixed(0)} ${g.unit} of ${g.name.toLowerCase()} out of the shed at `
+      + `${portName(f.portId)} at ${per.toFixed(1)} the ${g.unit}, against ${g.lisbon} at Lisbon. `
+      + 'A year of somebody else\u2019s patience, carried aboard in an afternoon.');
+    return `${take.toFixed(0)} ${unitOf(g, take)} aboard at ${per.toFixed(1)} — `
+      + `${cost} cruzados to the factor.`;
+  }
+
+  /** Put coin in the chest, which is the only thing that lets him buy. */
+  fundChest(amount: number): string {
+    const f = this.factoryHere;
+    if (!f) return 'There is no factory of yours here.';
+    const sum = Math.round(clamp(amount, 1, this.crown.gold + this.creditFree));
+    if (sum < 1) return 'There is nothing to put in it.';
+    if (this.crown.gold < sum) this.drawCredit(sum);
+    this.crown.gold -= sum;
+    f.chest += sum;
+    return `${sum} cruzados into the chest. He can only buy with what is in it.`;
+  }
+
+  /** Take the takings. */
+  drawChest(): string {
+    const f = this.factoryHere;
+    if (!f) return 'There is no factory of yours here.';
+    const sum = Math.floor(f.chest);
+    if (sum < 1) return 'The chest is empty, which he will explain at length.';
+    // Leave him something to work with unless you empty it on purpose: a factor
+    // with nothing to buy with is a man sitting in a shed for a year.
+    f.chest = 0;
+    f.paidOut += sum;
+    this.crown.gold += sum;
+    const shared = this.takeShares(sum);
+    this.logEvent('trade',
+      `Drew ${sum} cruzados out of the chest at ${portName(f.portId)}.`
+      + (shared > 0.5 ? ` ${Math.round(shared)} of it went to the men holding sixteenths.` : '')
+      + ' He has nothing to buy with until something is put back.');
+    return `${sum} cruzados. He now has nothing to trade with.`;
+  }
+
+  /** What he is to buy while you are away. */
+  setStandingOrder(goodIds: string[]): string {
+    const f = this.factoryHere;
+    if (!f) return 'There is no factory of yours here.';
+    f.buying = goodIds.slice(0, 3);
+    return f.buying.length === 0
+      ? 'He is to buy whatever the place offers, which is safe and never brilliant.'
+      : `Orders given: ${f.buying.map((id) => good(id).name.toLowerCase()).join(', ')}.`;
+  }
+
+  /** Build something. */
+  buildWork(id: WorkId): string {
+    const f = this.factoryHere;
+    if (!f) return 'There is no factory of yours here.';
+    const w = WORK_BY_ID.get(id);
+    if (!w) return 'No such work.';
+    if (f.works.includes(id)) return 'That is built already.';
+    if (this.crown.gold + this.creditFree < w.cost) {
+      return `The ${w.english.toLowerCase()} comes to ${w.cost} and there is not that much.`;
+    }
+    const spare = this.crew.count - this.ship.baseHull.crewMin;
+    if (w.hands > spare) {
+      return `It wants ${w.hands} more men left here and she cannot spare them.`;
+    }
+    if (this.crown.gold < w.cost) this.drawCredit(w.cost);
+    this.crown.gold -= w.cost;
+    if (w.hands > 0) { this.landHands(w.hands, portName(f.portId)); f.garrison += w.hands; }
+    f.works.push(id);
+    f.trouble = clamp(f.trouble - 0.12, 0, 1);
+    this.refreshEnvironment();
+    this.logEvent('crown',
+      `Built the ${w.name.toLowerCase()} at ${portName(f.portId)} for ${w.cost} cruzados. ${w.blurb}`,
+      true);
+    return `${w.name} built.` + (w.hands > 0 ? ` ${w.hands} more men left here.` : '');
+  }
+
+  /** Put more men in it. */
+  reinforceFactory(n: number): string {
+    const f = this.factoryHere;
+    if (!f) return 'There is no factory of yours here.';
+    const spare = this.crew.count - this.ship.baseHull.crewMin;
+    const men = Math.min(Math.max(0, Math.round(n)), spare);
+    if (men < 1) return 'She has no men to spare and still be able to sail.';
+    this.landHands(men, portName(f.portId));
+    f.garrison += men;
+    f.trouble = clamp(f.trouble - men * 0.02, 0, 1);
+    this.refreshEnvironment();
+    return `${men} left ashore. ${f.garrison} in the station now, and she is that much shorter.`;
+  }
+
+  /** Bring everybody and everything away, and give the position up. */
+  closeFactory(f: Feitoria, why: string): string {
+    let carried = 0;
+    for (const [id, q] of Object.entries(f.stock)) {
+      const g = GOOD_BY_ID.get(id);
+      if (!g || q < 1) continue;
+      const room = this.ship.holdFree / Math.max(g.bulk, 1e-6);
+      const take = Math.min(q, room);
+      if (take < 1) continue;
+      this.ship.addCargo(id, take, f.paid[id] ?? g.lisbon * 0.2);
+      carried += take * g.bulk;
+    }
+    this.crown.gold += Math.floor(f.chest);
+    this.recoverHands(f.garrison, portName(f.portId));
+    f.garrison = 0;
+    f.stock = {};
+    f.chest = 0;
+    f.lost = true;
+    f.lostWhy = why;
+    if (f.officerId) {
+      const o = this.crew.officers.find((x) => x.id === f.officerId);
+      if (o) { o.ashoreAt = undefined; o.ashoreSince = undefined; }
+    }
+    this.relationsFor(f.portId).factory = false;
+    this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
+    this.refreshEnvironment();
+    this.logEvent('crown',
+      `The station at ${portName(f.portId)} is given up. ${why} `
+      + (carried > 0.05 ? `${carried.toFixed(1)} tons came aboard with the men.` : 'Nothing came aboard.'),
+      true);
+    return `${portName(f.portId)} is shut. The men are aboard and the ground is somebody else\u2019s again.`;
+  }
+
+  /**
+   * The factor stops being the factor.
+   *
+   * Every branch of the scenes where he is hanged, carried home in irons, dies
+   * of the fever or simply stops being yours has to put the officer somewhere:
+   * back on the muster, or dead, or written out of the wardroom for good.
+   * Leaving him with `ashoreAt` still set and the station pretending he was
+   * never there produced a man who was in two places and available in neither.
+   */
+  factorLeaves(f: Feitoria, how: 'aboard' | 'dead' | 'stays'): void {
+    const o = f.officerId ? this.crew.officers.find((x) => x.id === f.officerId) : null;
+    f.officerId = null;
+    if (!o) return;
+    if (how === 'aboard') {
+      o.ashoreAt = undefined;
+      o.ashoreSince = undefined;
+      this.refreshEnvironment();
+      return;
+    }
+    if (how === 'dead') {
+      o.alive = false;
+      o.ashoreAt = undefined;
+      this.refreshEnvironment();
+      return;
+    }
+    // He stays where he is and stops being a berth you could ever fill again.
+    o.ashoreAt = f.portId;
+  }
+
+  /**
+   * Everybody in the station is gone.
+   *
+   * The men left there are named men on the muster with `aboard` false and a
+   * fate that says where they went, so a sacked factory has to go back through
+   * the fo'c'sle and mark them, or the last page of the career reports them as
+   * having merely been put ashore somewhere.
+   */
+  loseGarrison(f: Feitoria): void {
+    const where = portName(f.portId);
+    let gone = 0;
+    for (const h of this.hands) {
+      if (!h.alive || h.aboard) continue;
+      if (!h.fate?.includes(where)) continue;
+      h.alive = false;
+      h.fate = `Killed when the factory at ${where} was burned.`;
+      h.fateT = this.clock.t;
+      gone++;
+    }
+    this.crew.deaths += Math.max(f.garrison, gone);
+    f.garrison = 0;
+    this.factorLeaves(f, 'dead');
+  }
+
+  /** The garrison the works ask for, for the screen. */
+  garrisonWantedAt(f: Feitoria): number {
+    return garrisonWanted(f.works);
+  }
+
+  /** Room left in the shed, in tons. */
+  shedRoom(f: Feitoria): number {
+    return Math.max(0, capacityOf(f) - stockTons(f));
   }
 
   /**
@@ -5755,13 +6143,13 @@ export class Game {
     // Whoever is owed money in this town finds out she is here before the
     // anchor is down. Queued as a scene so it is put to the captain before the
     // port screen opens rather than after he has spent the purse.
-    const money = rollFinanceScene(this);
-    if (money) {
+    const word = rollFinanceScene(this) ?? rollFeitoriaScene(this);
+    if (word) {
       // Straight into the slot rather than onto the queue: the queue is drained
       // by rollIncidents, which needs the clock to be running, and the clock is
       // stopped the moment she is moored.
-      if (this.pendingEvent) this.pendingScenes.push(money);
-      else this.pendingEvent = money;
+      if (this.pendingEvent) this.pendingScenes.push(word);
+      else this.pendingEvent = word;
     }
     this.mode = 'port';
   }
@@ -6280,6 +6668,22 @@ export class Game {
       });
     }
 
+    // A station that will not survive being left again. It belongs here rather
+    // than only on the orders screen because this is the list a player reads
+    // before deciding where to go next, which is the decision it bears on.
+    const shaky = this.liveFactories
+      .filter((f) => f.trouble > 0.5)
+      .sort((a, b) => b.trouble - a.trouble)[0];
+    if (shaky) {
+      out.push({
+        label: 'A factory in trouble',
+        value: portName(shaky.portId),
+        state: shaky.trouble > 0.72 ? 'bad' : 'warn',
+        note: `${shaky.factor} has ${stockTons(shaky).toFixed(1)} tons in the shed and a town that `
+          + 'has changed its mind. It only gets worse while you are elsewhere.',
+      });
+    }
+
     // A commission that wants pillars, and no pillars aboard. They are cut at
     // Lisbon and nowhere else, so finding this out at the Congo is finding it
     // out three months too late.
@@ -6419,6 +6823,8 @@ export class Game {
       })),
       finance: this.finance.serialize(),
       propositionsSeen: this.propositionsSeen,
+      feitorias: this.feitorias,
+      lettersSeen: this.lettersSeen,
       dockedAt: this.dockedAt,
       anchored: this.anchored,
       ration: this.ration,
@@ -6528,6 +6934,8 @@ export class Game {
     g.coastOrder = d.coastOrder ?? null;
     g.finance = Ledger.deserialize(d.finance);
     g.propositionsSeen = d.propositionsSeen ?? [];
+    g.feitorias = d.feitorias ?? [];
+    g.lettersSeen = d.lettersSeen ?? [];
     g.consort = d.consort ?? null;
     g.consortRecord = d.consortRecord
       ?? { assigned: 0, lost: 0, burned: 0, detached: 0, broughtHome: 0 };
