@@ -396,9 +396,25 @@ export function assignedScene(_g: Game, c: Consort): SeaEvent {
 
 /** Whether a consort should be doing anything about the weather right now. */
 export function galeRisk(c: Consort, waveHeight: number, windKnots: number): number {
-  const exposure = (1 - c.condition) * 0.7 + clamp((windKnots - 28) / 24, 0, 1) * 0.8
-    + clamp((waveHeight - 4) / 6, 0, 1) * 0.6;
-  return clamp(exposure * (1.25 - TEMPERS[c.temper].skill * 0.5), 0, 1);
+  // Weather first, and nothing without it.
+  //
+  // The first version added `(1 - condition) * 0.7` to the exposure, which made
+  // being less than perfect a source of risk in its own right: a consort handed
+  // over at eighty-two per cent — which is what the Casa gives you — carried an
+  // eleven per cent chance a day of taking damage in a flat calm, for ever.
+  // Over a four-month voyage that is a certainty several times over, and forty
+  // per cent of each one rolled her missing. Censused across twenty-four seeds,
+  // three voyages in four ended with her lost and the search card came up four
+  // times a voyage, which is not drama, it is a leak.
+  //
+  // Ships do not come apart in fine weather. What being hurt actually does is
+  // make bad weather worse for you, so condition multiplies the exposure
+  // instead of creating it, and in anything under a gale the answer is nought.
+  const weather = clamp((windKnots - 30) / 22, 0, 1) * 0.75
+    + clamp((waveHeight - 4) / 6, 0, 1) * 0.5;
+  if (weather <= 0) return 0;
+  const frail = 1 + (1 - c.condition) * 1.2;
+  return clamp(weather * frail * (1.2 - TEMPERS[c.temper].skill * 0.55), 0, 1);
 }
 
 /** The line for the log when she is simply doing her job. */

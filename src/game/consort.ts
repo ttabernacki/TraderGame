@@ -1,5 +1,5 @@
 import {
-  NM, bearingTo, clamp, haversine, rhumbStep, wrap180, wrap360, type LatLon,
+  NM, angleDelta, bearingTo, clamp, haversine, rhumbStep, wrap180, wrap360, type LatLon,
 } from '../core/math';
 import { isLand, nearestShore } from '../world/landmass';
 import { polarAt } from '../ship/polars';
@@ -201,9 +201,28 @@ export function sailConsort(g: Game, c: Consort, dt: number): void {
   // is the case the player is asked about.
   const potential = polarAt(c.hullId, w.speed, Math.abs(wrap180(w.from - c.heading)))
     * (0.45 + c.condition * 0.55);
-  c.speedKnots = offNm > slack
-    ? potential * (0.88 + skill * 0.12)
-    : Math.min(potential * (0.78 + skill * 0.22), Math.max(g.physics.speedKnots, 0));
+
+  // Press when out of station, ease when she has run too far ahead of it.
+  //
+  // Two mistakes were made here in turn and both are worth the comment. Press
+  // whenever she is off the aim point in any direction, and a scout overruns,
+  // turns back, overruns again, and orbits at twice her ordered range. Ease
+  // whenever she is simply far from the flagship, and a consort *astern* of
+  // station shortens sail to let a ship she cannot catch come up — which put a
+  // ship ordered a mile on the quarter twenty-two miles astern.
+  //
+  // The distance alone does not say which has happened; the bearing does. If
+  // the flagship bears abaft her beam she is ahead and can afford to wait. If
+  // it does not, she is behind, and a ship behind her station makes sail.
+  const fromFlag = haversine(c.pos, me) / NM;
+  const flagAstern = Math.abs(angleDelta(c.heading, bearingTo(c.pos, me))) > 110;
+  const tooFarAhead = flagAstern && fromFlag > want * 1.4 + 1;
+  const flagSpeed = Math.max(g.physics.speedKnots, 0);
+  c.speedKnots = tooFarAhead
+    ? Math.min(potential * 0.6, flagSpeed * 0.85)
+    : offNm > slack
+      ? potential * (0.88 + skill * 0.12)
+      : Math.min(potential * (0.78 + skill * 0.22), flagSpeed);
 
   // She will not sail herself ashore.
   const next = rhumbStep(c.pos, c.heading, c.speedKnots * NM * (dt / 3600));

@@ -3877,9 +3877,13 @@ export class Game {
     // spends the day lying over on her bilge with her own weight working her.
     const outlook = groundingOutlook(this.tideNow());
     if (outlook.easy) {
+      // The water is making under her, so she lifts off on her own — but she
+      // has to be put back into it, or she touches again on the next step and
+      // the "gently, with no harm in it" message becomes a stream of them.
+      this.floatHerOff();
       this.pushAlert(
-        'She is in against the land, and the tide is making. The watch have handed the sail. '
-        + 'Back her off with B, or steer off and press H.', 'warning');
+        'She touched, and the flood lifted her off again. The watch have handed the sail and '
+        + 'her head is off the land.', 'warning');
       this.logEvent('note',
         'Ran her in until she would go no further and touched. ' + outlook.text);
       return;
@@ -3914,6 +3918,7 @@ export class Game {
             g.clock.t += 4 * 3600;
             g.crew.fatigue = clamp(g.crew.fatigue + 0.14, 0, 1);
             shiftAll(g.hands, -0.04);
+            (g as any).floatHerOff();
             return `${gone.toFixed(0)} tons through the lee ports and into the boats, a kedge `
               + 'laid out astern, and the whole company at the capstan. She came off at about '
               + 'four in the afternoon with a noise like a door opening and swung to her anchor '
@@ -3933,6 +3938,7 @@ export class Game {
             // what state she was already in.
             const hurt = g.rng.range(0.04, 0.13) * (2 - g.ship.condition.hull);
             g.ship.damage(hurt);
+            (g as any).floatHerOff();
             return `A kedge laid out astern in the boat and the company at the capstan every `
               + `hour of the ebb for nothing. She lay over about fifteen degrees at low water `
               + `with the sea breaking under her counter and everybody aboard listening to her, `
@@ -3949,6 +3955,7 @@ export class Game {
             shiftAll(g.hands, -0.12);
             const hurt = g.rng.range(0.08, 0.22) * (2 - g.ship.condition.hull);
             g.ship.damage(hurt);
+            (g as any).floatHerOff();
             if (g.rng.chance(0.3)) {
               g.ship.condition.leak = clamp(g.ship.condition.leak + 0.25, 0, 3);
               return 'She lay down on her bilge and stayed there through the whole of the ebb '
@@ -3964,6 +3971,49 @@ export class Game {
         },
       ],
     };
+  }
+
+  /**
+   * Put her back in water that will float her.
+   *
+   * Every one of the grounding scenes says she came off — "came off at about
+   * four in the afternoon", "came off on the top of the flood", "floated at
+   * about two in the morning" — and not one of them moved her. She was left
+   * sitting exactly where she struck, so `touchLand` raised the same scene
+   * again three hours later, and again, and again. Censused with a captain who
+   * answered every card with the careful choice, that came to twenty-one
+   * groundings, a hull worked from sound to a quarter in four days, and a ship
+   * that filled faster than the pumps could clear her — all of it from one
+   * question the game asked over and over because the answer never took effect.
+   *
+   * She comes off the way a ship comes off: astern, down her own keel line,
+   * into the water she came in over, and then her head is put out to sea.
+   */
+  private floatHerOff(): void {
+    const s = this.ship.state;
+    const astern = wrap360(s.heading + 180);
+    // Out along her own wake until there is water under her, and no further —
+    // a mile and a half is already more than a kedge would ever warp her.
+    for (let nm = 0.15; nm <= 1.6; nm += 0.15) {
+      const p = rhumbStep(s.pos, astern, nm * NM);
+      if (!isLand(p) && depthAt(p) > this.ship.hull.draft * 1.6) {
+        s.pos = p;
+        break;
+      }
+    }
+    // Head her away from whatever she was on, and stopped, so the next thing
+    // she does is the captain's decision and not a second grounding.
+    this.sounding = { ...this.sounding, aground: false };
+    s.heading = wrap360(this.sounding.shoreBearing + 180);
+    s.surge = 0;
+    s.sway = 0;
+    s.yawRate = 0;
+    this.setCanvas(0);
+    this.standingCourse = wrap360(s.heading);
+    this.helmOrder = null;
+    // And she is not asked about it again the moment she is afloat.
+    this.lastTouchT = this.clock.t;
+    this.refreshEnvironment();
   }
 
   /**
@@ -4946,7 +4996,13 @@ export class Game {
     const risk = galeRisk(c, this.weatherNow.waveHeight, this.weatherNow.wind.speed);
     if (risk > 0 && this.rng.chance(risk * days * 0.9)) {
       c.condition = clamp(c.condition - this.rng.range(0.04, 0.16), 0, 1);
-      if (this.rng.chance(0.4)) {
+      // Losing sight of her is the weather doing it, not the damage. A fleet
+      // scatters in a gale at night with the visibility down to nothing; it
+      // does not scatter because one ship sprung a plank.
+      const scatters = this.weatherNow.visibility < 6
+        || this.weatherNow.wind.speed > 38
+        || this.clock.hour < 5.5 || this.clock.hour > 19;
+      if (scatters && this.rng.chance(0.22)) {
         c.lost = true;
         c.missingSince = this.clock.t;
         this.logEvent('peril',
