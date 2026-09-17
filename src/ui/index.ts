@@ -21,6 +21,7 @@ import { TouchControls } from './touch';
 import { DeckBar } from './deckBar';
 import { ShoreView } from './shoreView';
 import { SavesView } from './savesView';
+import { PilotPanel } from './pilotPanel';
 import { SaveShelf, describeSave } from '../game/save';
 
 /**
@@ -65,6 +66,7 @@ export class Ui {
   private shore: ShoreView;
   private orders: OrdersView;
   private saves: SavesView;
+  private pilot: PilotPanel;
   /** Where voyages are kept: the browser, and the account when there is one. */
   private shelf = new SaveShelf();
   private overlay = el('div', { id: 'overlay' });
@@ -113,8 +115,13 @@ export class Ui {
       () => (this.game ? this.setMode('sailing') : this.showTitle()),
       (json) => this.cb.onResume(json),
     );
+    this.pilot = new PilotPanel(() => {
+      this.game?.dismissTutorial();
+      this.pilot.update(this.game!);
+    });
 
-    host.append(this.hud.root, this.touch.root, this.bar.root, this.events.root, this.overlay);
+    host.append(this.hud.root, this.touch.root, this.bar.root, this.pilot.root,
+      this.events.root, this.overlay);
     this.hud.setVisible(false);
   }
 
@@ -182,6 +189,7 @@ export class Ui {
         this.openBook(mode, this.rutter.root, () => this.rutter.open(g));
         break;
       case 'chart':
+        g.seenChart = true;
         this.openBook(mode, this.chart.root, () => {
           this.chart.open(g);
           requestAnimationFrame(() => this.chart.resize());
@@ -263,6 +271,18 @@ export class Ui {
     } else {
       this.events.show(null);
     }
+
+    // The pilot follows the captain about.
+    //
+    // Half of what he has to say happens ashore — taking the commission at
+    // court, buying the sugar in the market, filling the casks — so the panel
+    // cannot live on the sailing screen alone. It stands down behind a
+    // decision card and inside the book, where it would be talking over
+    // something the player opened deliberately.
+    const pilotWanted = g.mode === 'sailing' || g.mode === 'port' || g.mode === 'court';
+    this.pilot.update(g);
+    this.pilot.root.style.visibility = pilotWanted && !g.pendingEvent ? '' : 'hidden';
+    this.pilot.root.classList.toggle('ashore', g.mode !== 'sailing');
   }
 
   resize(): void {

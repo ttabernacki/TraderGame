@@ -60,6 +60,7 @@ import {
   type Journey, type JourneyRecord,
 } from '../progression/inland';
 import { polarAt } from '../ship/polars';
+import { newTutorial, stepTutorial, type TutorialState, type TutorialStep } from './tutorial';
 import {
   TEMPERS as CONSORT_TEMPERS, consortReport, makeConsort, orderedOffing, sailConsort,
   signalRangeNm, type Consort, type Station,
@@ -4860,6 +4861,49 @@ export class Game {
   /** The second ship, when there is one. */
   consort: Consort | null = null;
 
+  // -------------------------------------------------------------------------
+  // The first voyage
+  // -------------------------------------------------------------------------
+
+  /** Where the pilot has got to. See game/tutorial.ts. */
+  tutorial: TutorialState = newTutorial();
+
+  /** True once the captain has opened the chart, which one step waits on. */
+  seenChart = false;
+
+  /** The instruction standing at the moment, or null once he has stopped. */
+  tutorialStep(): TutorialStep | null {
+    return stepTutorial(this);
+  }
+
+  /** Put the pilot away. Not for good — see `recallTutorial`. */
+  dismissTutorial(): void {
+    this.tutorial.on = false;
+    this.logEvent('note',
+      'Told the pilot you would find your own way. He said nothing, which is how he says '
+      + 'most things.');
+  }
+
+  /**
+   * Ask him again.
+   *
+   * Dismissing him used to set `finished`, which made it irreversible — a
+   * player who shut the panel to see the sea and then wanted the next
+   * instruction had thrown away the rest of the first voyage's guidance with
+   * no way back. `finished` now means only that the commission was discharged,
+   * which is the one ending that should be permanent.
+   */
+  recallTutorial(): void {
+    if (this.tutorial.finished) return;
+    this.tutorial.on = true;
+    this.logEvent('note', 'Asked the pilot what he would do. He had been waiting to be asked.');
+  }
+
+  /** Whether there is anything left for him to say. */
+  get pilotAvailable(): boolean {
+    return !this.tutorial.finished;
+  }
+
   /** What became of the ships that sailed with you, for the last page. */
   consortRecord = { assigned: 0, lost: 0, burned: 0, detached: 0, broughtHome: 0 };
 
@@ -5953,6 +5997,8 @@ export class Game {
       coastOrder: this.coastOrder,
       consort: this.consort,
       consortRecord: this.consortRecord,
+      tutorial: this.tutorial,
+      seenChart: this.seenChart,
       encounter: this.encounter,
       seaRecord: this.seaRecord,
       chaseOrder: this.chaseOrder,
@@ -6046,6 +6092,10 @@ export class Game {
     g.consort = d.consort ?? null;
     g.consortRecord = d.consortRecord
       ?? { assigned: 0, lost: 0, burned: 0, detached: 0, broughtHome: 0 };
+    // A voyage begun before the pilot existed is a voyage whose captain has
+    // plainly worked it out for himself, so he is not started on lesson one.
+    g.tutorial = d.tutorial ?? { on: false, at: 0, finished: true };
+    g.seenChart = d.seenChart ?? true;
     g.encounter = d.encounter ?? null;
     g.seaRecord = { ...newSeaRecord(), ...(d.seaRecord ?? {}) };
     g.chaseOrder = d.chaseOrder ?? 'hold';

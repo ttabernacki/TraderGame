@@ -2355,3 +2355,80 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
 
 /* The consort's row goes amber when she wants attention. */
 .hud-row.warn .v { color: var(--warn); }
+
+/* ---------------------------------------------------------------------------
+   The pilot, on the first voyage
+   ------------------------------------------------------------------------- */
+
+.pilot {
+  position: absolute;
+  left: 50%;
+  bottom: 96px;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px));
+  z-index: 6;
+  background: rgba(20, 17, 13, 0.9);
+  border: 1px solid rgba(201, 185, 154, 0.35);
+  border-left: 3px solid var(--gold, #b89b5e);
+  border-radius: 3px;
+  padding: 9px 13px 10px;
+  color: #e8dcc4;
+  font-size: 13.5px;
+  line-height: 1.6;
+  backdrop-filter: blur(3px);
+  pointer-events: auto;
+}
+
+/* Ashore there is no deck bar under it, so it can sit lower. */
+.pilot.ashore { bottom: 22px; z-index: 40; }
+
+.pilot-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 11px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #a08f6d;
+  margin-bottom: 3px;
+}
+
+.pilot-task {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 15px;
+  color: #f0e6d0;
+}
+.pilot-task > span:first-child { flex: 1; }
+
+.pilot-more {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  line-height: 1;
+  padding: 0;
+  font-size: 13px;
+  background: transparent;
+  border: 1px solid rgba(201, 185, 154, 0.35);
+  border-radius: 2px;
+  color: #c9b99a;
+  cursor: pointer;
+}
+.pilot-more:hover { background: rgba(201, 185, 154, 0.14); }
+
+.pilot-body { margin-top: 6px; color: #cfc2a5; font-size: 13px; }
+.pilot-body p { margin: 0; }
+
+.pilot-mark {
+  margin-top: 5px;
+  font-size: 12px;
+  font-style: italic;
+  color: #a08f6d;
+}
+
+@media (max-width: 720px) {
+  .pilot { bottom: 84px; font-size: 12.5px; padding: 7px 10px 8px; }
+  .pilot-task { font-size: 13.5px; }
+}

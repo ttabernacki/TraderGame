@@ -78,7 +78,11 @@ export class OrdersView {
       }, counts[t] > 0 ? `${names[t]} (${counts[t]})` : names[t])),
     ));
 
-    if (this.tab === 'orders') this.renderCommission(g);
+    if (this.tab === 'orders') {
+      this.renderCommission(g);
+      const pc = this.pilotCard(g);
+      if (pc) this.body.append(pc);
+    }
     else if (this.tab === 'charters') this.renderCharters(g);
     else if (this.tab === 'reports') this.renderLeads(g);
     else if (this.tab === 'wardroom') this.renderWardroom(g);
@@ -288,6 +292,20 @@ export class OrdersView {
    * not be in a position to read it, and the screen says so — an order given to
    * a ship beyond signalling distance is not given at all.
    */
+  /** Bring the pilot back, for a captain who shut him and wants the next word. */
+  private pilotCard(g: Game): HTMLElement | null {
+    if (!g.pilotAvailable) return null;
+    if (g.tutorial.on) return null;
+    return card('The pilot',
+      el('p', {},
+        'Rui Correia has stopped offering advice because you told him to. He has not '
+        + 'finished the first voyage with you and would take it up again if asked.'),
+      button('Ask him what he would do', () => {
+        g.recallTutorial();
+        this.render();
+      }));
+  }
+
   private renderConsort(g: Game): void {
     const c = g.consort;
     if (!c) return;

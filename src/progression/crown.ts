@@ -235,29 +235,26 @@ const PATENT_TEMPLATES: {
   // twice has the volta in his hands, and the Guinea voyage is then a question
   // of victualling rather than of seamanship. Which is the order in which these
   // things were actually learned.
-  {
-    minStanding: 0,
-    build: () => ({
-      title: 'The Madeira sugar',
-      advance: 120, reward: 240, standingReward: 22, returnTo: 'lisboa',
-      narrative:
-        'A short run and an easy one, and the Casa gives it to men it has not made up its mind about. Madeira is five hundred miles south-west and the wind will put you there in a week without your having to think about it. Load sugar and bring it home. The Contador will tell you it is a fortnight’s work. The Contador has never tried to beat back up this coast in July.',
-      objectives: [
-        { kind: 'reach', description: 'Call at Funchal', target: 'funchal', progress: 0, complete: false },
-        { kind: 'cargo', description: 'Bring home 25 arrobas of sugar', target: 'acucar', amount: 25, progress: 0, complete: false },
-        { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },
-      ],
-    }),
-  },
+  // The first commission, and the one the pilot narrates. See game/tutorial.ts.
+  //
+  // This used to be two: a sugar run to Madeira, and then a separate voyage to
+  // the Azores to learn the volta do mar. They are one voyage. The Casa sent
+  // exactly this triangle for exactly this reason — the run out is a week of
+  // fair wind that teaches a new captain how to work his ship, and the run home
+  // is the whole problem of the Atlantic in miniature, because the wind that
+  // carried him down blows dead against the way back and the answer is to sail
+  // away from home until it changes hands. Splitting it across two commissions
+  // put a fortnight of open ocean between the lesson and the reason for it.
   {
     minStanding: 0,
     build: () => ({
       title: 'The turn of the sea',
-      advance: 150, reward: 300, standingReward: 34, returnTo: 'lisboa',
+      advance: 140, reward: 300, standingReward: 26, returnTo: 'lisboa',
       narrative:
-        'You are to go to Madeira and come home by way of Terceira, in the Azores, which is eight hundred miles to the north-west of it and in the wrong direction entirely. There is no cargo in this and no discovery. The pilots of the Casa will tell you that the way home from the south is not south-east but out into the ocean until the wind changes hands, and that a man who has not done it does not believe them. Go and do it. Then you will be trusted with the Guinea run.',
+        'A short run and an easy one, and the Casa gives it to men it has not made up its mind about. Madeira is five hundred miles south-west and the north-easterly will put you there in a week without your having to think about it. Load sugar. Then come home by way of Terceira, in the Azores, which is eight hundred miles to the north-west of Madeira and in the wrong direction entirely — because the wind that carried you down will not carry you back, and the pilots of the Casa will tell you that the way home from the south is out into the ocean until the wind changes hands, and that a man who has not done it does not believe them. Go and do it. Then you will be trusted with the Guinea run.',
       objectives: [
         { kind: 'reach', description: 'Call at Funchal', target: 'funchal', progress: 0, complete: false },
+        { kind: 'cargo', description: 'Bring home 25 arrobas of sugar', target: 'acucar', amount: 25, progress: 0, complete: false },
         { kind: 'reach', description: 'Make Angra, in the Azores', target: 'angra', progress: 0, complete: false },
         { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },
       ],
