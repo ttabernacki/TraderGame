@@ -8,6 +8,7 @@ import type { Game } from '../game/state';
 import { button, card, clear, el, kv } from './dom';
 import { TEMPERS as CONSORT_TEMPERS, orderedOffing, signalRangeNm } from '../game/consort';
 import { portName } from '../progression/crown';
+import { house, kindName } from '../economy/finance';
 
 type Tab = 'orders' | 'charters' | 'reports' | 'wardroom' | 'consort' | 'rival';
 
@@ -160,6 +161,34 @@ export class OrdersView {
             + 'and nothing at all if the ship does not come home.')
         : null,
     ));
+
+    // What is owed, at sea, where it is worth knowing. A bill falling due in
+    // forty days is a reason to turn for home, and a captain who only sees it
+    // on the counting-house screen in port sees it a month too late.
+    const bills = g.finance.live.filter((d) => d.kind !== 'quinhao');
+    const shares = g.finance.live.filter((d) => d.kind === 'quinhao');
+    if (bills.length > 0 || shares.length > 0) {
+      this.body.append(card('What is owed',
+        ...bills.map((d) => {
+          const days = Math.round((d.dueBy - g.clock.t) / 86400);
+          return kv(`${house(d.house).short} — ${kindName(d.kind).toLowerCase()}`,
+            `${Math.round(d.owed - d.seized)} cruzados, `
+            + (days < 0 ? `${-days} days overdue` : `due in ${days} days`),
+            days < 0 ? 'bad' : days < 45 ? 'warn' : '');
+        }),
+        ...shares.map((d) => kv(`${house(d.house).short} — ${d.sixteenths}/16`,
+          `${(d.share * 100).toFixed(0)}% of everything landed`)),
+        bills.some((d) => d.kind === 'cambio')
+          ? el('p', {}, 'The câmbios are the ones that die with her. Whatever else happens on '
+              + 'this passage, that money is not owed by a man at the bottom of the sea.')
+          : null,
+        bills.some((d) => g.clock.t > d.dueBy)
+          ? el('p', {}, 'Paper past its date compounds every week and the factors have written '
+              + 'to each other. Making a port where the house has a man is how this gets settled, '
+              + 'and it is also how they find you.')
+          : null,
+      ));
+    }
   }
 
   // -------------------------------------------------------------------------

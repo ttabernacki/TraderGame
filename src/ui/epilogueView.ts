@@ -320,6 +320,35 @@ export class EpilogueView {
             )
           : null,
 
+        // What the Rua Nova made of him in the end. A career's borrowing is a
+        // portrait of a kind: a man who never took a cruzado of anybody else's
+        // money and a man who sailed his whole life on other men's sixteenths
+        // both reached the same latitudes, and did not have the same life.
+        g.finance.borrowed > 0
+          ? card('The Rua Nova',
+              kv('Borrowed in a career', `${Math.round(g.finance.borrowed)} cruzados`),
+              kv('Repaid', `${Math.round(g.finance.repaid)} cruzados`),
+              g.finance.sharedOut > 0
+                ? kv('Taken by sharers off the quay', `${Math.round(g.finance.sharedOut)} cruzados`)
+                : null,
+              g.finance.defaults > 0
+                ? kv('Bad debts against your name', `${g.finance.defaults}`, 'bad')
+                : null,
+              el('p', { class: 'flavour' },
+                g.finance.defaults > 0
+                  ? 'Your name is in a book on that street that is never closed and never '
+                    + 'destroyed, and it is in it for the wrong reason. The houses that wrote it '
+                    + 'lent to your successors on slightly worse terms because of you.'
+                  : g.finance.sharedOut > g.finance.repaid
+                    ? 'You sailed on other men\u2019s money and they took their part of every cargo '
+                      + 'you ever landed. They did very well out of you, and they are the reason '
+                      + 'you had the ships to do it in.'
+                    : 'You borrowed and you paid, and the houses on that street would have written '
+                      + 'you paper on a nod at the end. That is a thing almost no captain of this '
+                      + 'coast could say.'),
+            )
+          : null,
+
         // What passed between the two of you personally, which is a different
         // question from who got further south and is answered by the choices
         // made at the four meetings rather than by the standings.

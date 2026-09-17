@@ -136,6 +136,17 @@ export class CourtView {
               + 'and the Casa knows perfectly well where they came from.');
           }
 
+          // And whoever bought sixteenths of this voyage is in the room with a
+          // clerk of his own, taking his fraction of the King's money before it
+          // has finished being counted.
+          const shared = g.takeShares(s.gold);
+          if (shared > 0.5) {
+            s.gold -= Math.round(shared);
+            s.lines.push(
+              `${Math.round(shared)} cruzados to the men holding sixteenths of the voyage, taken `
+              + 'at the table before the money was made up into bags.');
+          }
+
           // Skill points are the commission's, not the voyage's.
           if (discharged) {
             const points = g.awardCommission(discharged, beyond);

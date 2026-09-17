@@ -10,7 +10,7 @@ import { LEAD_REACH_M, depthAt, isLand, nearestShore } from '../world/landmass';
 import { PORTS, anchorageOf, portDef, portsNear, type PortDef } from '../world/ports';
 import { people } from '../world/peoples';
 import { Ship } from '../ship/ship';
-import { hullClass } from '../ship/hull';
+import { HULL_CLASSES, hullClass } from '../ship/hull';
 import { UPGRADE_BY_ID } from '../ship/upgrades';
 import {
   KNOTS, prudentCanvas, stepShip, type Environment, type ShipTuning, type StepResult,
@@ -84,6 +84,11 @@ import { TEMPER, aboardHands, musterHands, shiftAll, signOnHands, type Hand } fr
 import { originDef, type OriginId } from '../progression/origins';
 import { assignTraits, wardroom, type TraitEffects } from '../progression/officers';
 import { good } from '../economy/goods';
+import {
+  HOUSES, Ledger, cambioRate, ceilingFor, house, letraRate, quinhaoPrice, reaches,
+  type Debt, type DebtKind, type House, type HouseId,
+} from '../economy/finance';
+import { rollFinanceScene } from './financeEvents';
 
 /**
  * Latitude of the deepest Portuguese penetration at the start of play.
@@ -210,6 +215,11 @@ export class Game {
   private shoreVisits = new Map<string, number>();
   private nextVentureId = 1;
   private nextLeadId = 1;
+
+  /** Everything owed on the Rua Nova, and what the houses there think of you. */
+  finance = new Ledger(0);
+  /** Houses that have already made their one proposition, so it stays an event. */
+  propositionsSeen: HouseId[] = [];
 
   mode: GameMode = 'title';
   /** Set while at anchor in a port. */
@@ -757,6 +767,291 @@ export class Game {
       `${Math.round(draw)} cruzados drawn on credit. You owe ${Math.round(this.crown.debt)}, and it is `
       + 'owed whether the cargo comes home or not.');
     return draw;
+  }
+
+  // -------------------------------------------------------------------------
+  // The Rua Nova
+  // -------------------------------------------------------------------------
+
+  /**
+   * How dangerous the money thinks this voyage is, 0 to 1.
+   *
+   * The lender prices the route, not the captain, which is why a câmbio for
+   * the Cape costs three times one for Madeira however well he knows you. The
+   * three things that actually killed ships are in it: how far south she is
+   * going, how far from anywhere the passage runs, and the state of the hull
+   * she is going in.
+   */
+  voyageRisk(): number {
+    const p = this.crown.patent;
+    let far = 0;
+    if (p?.returnTo) {
+      // The furthest thing the commission names is what the money is looking at.
+      for (const o of p.objectives) {
+        const target = PORTS.find((x) => x.id === o.target);
+        if (target) far = Math.max(far, Math.abs(target.lat - 38.7) + Math.abs(target.lon + 9.2) * 0.4);
+      }
+    }
+    const dest = this.destination;
+    if (dest) far = Math.max(far, Math.abs(dest.lat - 38.7) + Math.abs(dest.lon + 9.2) * 0.4);
+    // Where she already is counts too: a man raising money at Mina is not
+    // planning a coastal hop, whatever he says.
+    far = Math.max(far, Math.abs(this.ship.state.pos.lat - 38.7));
+    const hull = 1 - clamp(this.ship.condition.hull, 0.3, 1);
+    return clamp(far / 68 + hull * 0.3, 0.05, 1);
+  }
+
+  /**
+   * What a house thinks the voyage in hand will land, for pricing sixteenths.
+   *
+   * Deliberately generous to the *ship* and not to the captain: they are
+   * valuing a hull, a commission and a hold, because that is all they can see.
+   * A captain who knows a trade they do not can sell sixteenths cheaply and
+   * keep the difference, which is the only way to win at this instrument.
+   */
+  voyageValue(): number {
+    const p = this.crown.patent;
+    const commission = p && !p.complete && !p.failed ? p.reward : 0;
+    const hold = this.ship.holdCapacity * 34;
+    // And who is sailing her, a little. Not because they trust him — that is
+    // what credit is for, and it is priced separately — but because a voyage
+    // under a man with a name on this coast is worth more than the same hull
+    // under a man without one, and they know it.
+    const name = this.crown.lifetimeStanding * 1.4;
+    return Math.round(commission + hold + name + this.ship.manifestValue() * 0.5 + 120);
+  }
+
+  houseReaches(h: House, def: PortDef): boolean {
+    return reaches(h, def);
+  }
+
+  /** Terms this house will put on the table here, right now. */
+  termsFor(h: House, kind: DebtKind): { max: number; rate: number; days: number; barred: string | null } {
+    const credit = this.finance.credit[h.id];
+    const out = this.finance.owedTo(h.id);
+    const room = Math.max(0, ceilingFor(h, credit) - out);
+    const days = kind === 'cambio' ? 240 : 150;
+    const barred = credit < h.floor ? h.refusal
+      : !this.portHere || !this.houseReaches(h, this.portHere)
+        ? `${h.short} has no man in this town.`
+        : kind !== 'quinhao' && room < 25
+          ? `They have ${Math.round(out)} cruzados out with you already.`
+          : null;
+    return {
+      max: Math.round(room),
+      rate: kind === 'cambio' ? cambioRate(h, this.voyageRisk(), credit)
+        : kind === 'letra' ? letraRate(h, credit, days) : 0,
+      days, barred,
+    };
+  }
+
+  /** Take money from a house. Returns what goes on the screen. */
+  borrow(id: HouseId, kind: DebtKind, amount: number): string {
+    const h = house(id);
+    const terms = this.termsFor(h, kind);
+    if (terms.barred) return terms.barred;
+    const sum = Math.round(clamp(amount, 1, terms.max));
+    if (sum < 1) return 'There is no room left on that account.';
+    this.crown.gold += sum;
+    const owed = Math.round(sum * (1 + terms.rate));
+    this.finance.strike({
+      house: id, kind, principal: sum, owed, rate: terms.rate,
+      dueBy: this.clock.t + terms.days * 86400, struck: this.clock.t,
+      sixteenths: 0, share: 0,
+      atPort: this.dockedAt ?? 'lisboa',
+      voyage: this.crown.patent && !this.crown.patent.complete
+        ? this.crown.patent.title : 'the voyage in hand',
+    });
+    this.logEvent('trade',
+      `Drew ${sum} cruzados of ${h.name} on a ${kind === 'cambio' ? 'câmbio marítimo' : 'letra'} `
+      + `at ${(terms.rate * 100).toFixed(0)} per cent, ${owed} to be repaid inside ${terms.days} days.`
+      + (kind === 'cambio'
+        ? ' If she does not come home the debt goes down with her, which is what the premium is for.'
+        : ' It is owed whatever becomes of the ship.'), true);
+    return `${sum} cruzados. ${owed} falls due in ${terms.days} days.`;
+  }
+
+  /**
+   * Sell sixteenths of the voyage.
+   *
+   * The one instrument with no date on it and nothing ever to repay — and the
+   * only one that can take money off you for the rest of a career, because the
+   * share comes off every sale until the account is discharged.
+   */
+  sellSixteenths(id: HouseId, n: number): string {
+    const h = house(id);
+    if (!h.writes.includes('quinhao')) return `${h.short} does not buy shares in voyages.`;
+    const credit = this.finance.credit[h.id];
+    if (credit < h.floor) return h.refusal;
+    if (!this.portHere || !this.houseReaches(h, this.portHere)) {
+      return `${h.short} has no man in this town.`;
+    }
+    const held = this.finance.live.reduce((s, d) => s + d.sixteenths, 0);
+    const take = Math.round(clamp(n, 1, 12 - held));
+    if (take < 1) return 'There are not enough sixteenths left unsold to be worth anybody’s while.';
+    const price = quinhaoPrice(h, take, this.voyageValue(), credit);
+    this.crown.gold += price;
+    this.finance.strike({
+      house: id, kind: 'quinhao', principal: price, owed: 0, rate: 0,
+      dueBy: this.clock.t + 540 * 86400, struck: this.clock.t,
+      sixteenths: take, share: take / 16,
+      atPort: this.dockedAt ?? 'lisboa', voyage: 'the voyage in hand',
+    });
+    this.finance.regard(id, 2, 0);
+    this.logEvent('trade',
+      `Sold ${take} sixteenths of the voyage to ${h.name} for ${price} cruzados. There is nothing `
+      + `to repay and never will be; instead his man takes ${((take / 16) * 100).toFixed(0)} per cent `
+      + 'of everything landed until the account is closed.', true);
+    return `${price} cruzados for ${take} sixteenths. They take `
+      + `${((take / 16) * 100).toFixed(0)}% of everything you land.`;
+  }
+
+  /** Pay off a bill, in whole or in part. */
+  repayDebt(debtId: string, amount?: number): string {
+    const d = this.finance.find(debtId);
+    if (!d || d.settled) return 'That paper is already discharged.';
+    const h = house(d.house);
+    const due = d.owed - d.seized;
+    const want = Math.round(clamp(amount ?? due, 1, due));
+    const paid = Math.min(want, this.crown.gold + this.creditFree);
+    if (paid < 1) return 'There is nothing in the purse and nothing to draw on.';
+    if (this.crown.gold < paid) this.drawCredit(paid);
+    this.crown.gold -= paid;
+    this.finance.repaid += paid;
+    d.seized += paid;
+    if (d.seized >= d.owed - 1) {
+      d.settled = true;
+      d.outcome = 'paid';
+      const late = this.clock.t > d.dueBy;
+      this.finance.regard(d.house, late ? 5 : 11);
+      this.logEvent('trade',
+        `Discharged ${h.name}’s paper with ${paid} cruzados${late ? ', late' : ', inside the date'}. `
+        + 'The bill came back with the seal cut off it.', true);
+      return `Paid in full. ${h.short} has cut the seal off the bill.`;
+    }
+    return `Paid ${paid}. ${Math.round(d.owed - d.seized)} still stands.`;
+  }
+
+  /**
+   * The sharers' cut of money coming aboard.
+   *
+   * Called at the two places money actually arrives — the quay when cargo is
+   * sold, and the Casa when a commission is settled. Returns what was taken so
+   * the caller can say so, because a fifth of a good cargo disappearing without
+   * a word would read as a bug.
+   */
+  takeShares(amount: number): number {
+    const took = this.finance.takeShare(amount);
+    if (took > 0.5) this.crown.gold -= took;
+    return took;
+  }
+
+  /**
+   * Cargo carried up the quay against a debt.
+   *
+   * Valued as this town values it rather than at Lisbon prices, because the
+   * factor is selling it here — which is why being attached at a poor port
+   * costs far more cargo than being attached at a rich one.
+   */
+  attachCargo(value: number): number {
+    if (value <= 0) return 0;
+    const def = this.portHere;
+    let want = value;
+    let got = 0;
+    const lots = this.ship.cargo.slice().sort((a, b) => b.quantity * good(b.goodId).lisbon
+      - a.quantity * good(a.goodId).lisbon);
+    for (const lot of lots) {
+      if (want <= 0.5) break;
+      const gd = good(lot.goodId);
+      const rel = def ? this.relationsFor(def.id) : null;
+      const listing = def
+        ? this.markets.listings(def.id, this.clock.t, rel?.regard ?? 0.5, 0.6)
+          .find((x) => x.goodId === lot.goodId)
+        : undefined;
+      const per = listing && listing.bid > 0 ? listing.bid : gd.lisbon * 0.55;
+      const units = Math.min(lot.quantity, want / Math.max(per, 0.01));
+      this.ship.removeCargo(lot.goodId, units);
+      want -= units * per;
+      got += units * per;
+    }
+    if (got > 0) this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
+    return Math.round(got);
+  }
+
+  /**
+   * Give the house the ship rather than be entered in the bad book.
+   *
+   * She is replaced with the meanest hull a yard will hand over, because a
+   * captain with no ship is not a game state this simulation has anywhere to
+   * put — and because that is what actually happened: a man who lost a ship
+   * went back to sea in somebody's worn-out caravel and started again.
+   */
+  surrenderShip(d: Debt): string {
+    const h = house(d.house);
+    const worth = this.tradeInValue();
+    const owed = d.owed - d.seized;
+    d.settled = true;
+    d.outcome = worth >= owed ? 'paid' : 'defaulted';
+    this.finance.repaid += Math.min(worth, owed);
+    if (worth < owed) {
+      this.finance.defaults += 1;
+      this.finance.regard(d.house, -14, 0.5);
+    } else {
+      this.finance.regard(d.house, -3, 0.2);
+    }
+
+    const cheapest = HULL_CLASSES.reduce((a, b) => (a.cost <= b.cost ? a : b));
+    const old = this.ship;
+    const next = new Ship(old.name, cheapest.id, old.state.pos, old.state.heading);
+    let carried = 0;
+    for (const lot of old.cargo) {
+      const gd = good(lot.goodId);
+      if (next.holdFree < lot.quantity * gd.bulk) continue;
+      next.addCargo(lot.goodId, lot.quantity, lot.cost);
+      carried += 1;
+    }
+    next.condition.hull = Math.min(old.condition.hull, 0.72);
+    this.ship = next;
+    this.crew.complement = cheapest.crewFull;
+    this.crew.count = Math.min(this.crew.count, cheapest.crewFull);
+    this.refreshEnvironment();
+    this.crew.morale = clamp(this.crew.morale - 0.2, 0, 1);
+
+    this.logEvent('crown',
+      `Signed the ship over to ${h.name} against ${Math.round(owed)} cruzados. The yard has `
+      + `handed you a ${cheapest.name} that has been round the Bojador twice and looks it. `
+      + (carried > 0 ? 'What would stow has been shifted across; the rest went with her.'
+        : 'Everything in the hold went with her.'), true);
+    return `She is his. You have a ${cheapest.name} instead, and no debt to ${h.short}.`;
+  }
+
+  /**
+   * Bills running, and the houses' opinion of you drifting back to neutral.
+   *
+   * Credit recovers very slowly on its own and only towards the middle: a man
+   * nobody has heard of for two years is neither trusted nor distrusted, and a
+   * reputation that decayed to nothing would make a default free after a long
+   * enough voyage.
+   */
+  private checkFinance(days: number): void {
+    if (days <= 0) return;
+    this.finance.accrue(this.clock.t, days);
+    for (const d of this.finance.live) {
+      if (d.kind !== 'quinhao') continue;
+      if (this.clock.t < d.dueBy) continue;
+      d.settled = true;
+      d.outcome = 'expired';
+      this.logEvent('trade',
+        `${house(d.house).name}’s sixteenths are discharged. He put in ${Math.round(d.principal)} `
+        + `cruzados and took ${Math.round(d.drawn)} out, and neither of you has any further claim `
+        + 'on the other.', true);
+    }
+    const drift = days * 0.012;
+    for (const h of HOUSES) {
+      const c = this.finance.credit[h.id];
+      if (this.finance.owedTo(h.id) > 0) continue;
+      this.finance.credit[h.id] = Math.round(clamp(c + Math.sign(45 - c) * drift, 0, 100));
+    }
   }
 
   /**
@@ -2680,6 +2975,7 @@ export class Game {
     this.checkArrival();
     this.checkLeads();
     this.checkVentures(days);
+    this.checkFinance(days);
     this.advanceRival(days);
 
     // A beat of somebody's story outranks everything: these are the moments the
@@ -2804,6 +3100,12 @@ export class Game {
     this.crown.standing = o.standing;
     this.crown.lifetimeStanding = o.standing;
     this.captain.points = o.points;
+    // The counting-houses form their own opinion, and it is not the court's.
+    this.finance = new Ledger(o.standing);
+    for (const h of HOUSES) {
+      this.finance.credit[h.id] = Math.round(clamp(
+        this.finance.credit[h.id] + o.creditBias, 0, 100));
+    }
     this.logEvent('note', o.detail, true);
   }
 
@@ -5450,6 +5752,17 @@ export class Game {
     );
     if (this.portGossip) this.logEvent('note', this.portGossip);
     this.crew.morale = clamp(this.crew.morale + 0.1, 0, 1);
+    // Whoever is owed money in this town finds out she is here before the
+    // anchor is down. Queued as a scene so it is put to the captain before the
+    // port screen opens rather than after he has spent the purse.
+    const money = rollFinanceScene(this);
+    if (money) {
+      // Straight into the slot rather than onto the queue: the queue is drained
+      // by rollIncidents, which needs the clock to be running, and the clock is
+      // stopped the moment she is moored.
+      if (this.pendingEvent) this.pendingScenes.push(money);
+      else this.pendingEvent = money;
+    }
     this.mode = 'port';
   }
 
@@ -5550,6 +5863,21 @@ export class Game {
     this.gameOverReason = reason;
     this.mode = 'gameover';
     this.logEvent('peril', reason, true);
+    // The sea loans die with her, which is the entire reason anybody ever paid
+    // sixty per cent for one. Worth saying out loud even at the end, because it
+    // is the only moment in the game where the expensive instrument is the one
+    // that was right.
+    const { cancelled, standing } = this.finance.shipLost();
+    if (cancelled > 0) {
+      this.logEvent('trade',
+        `${Math.round(cancelled)} cruzados of câmbio marítimo went down with her and will `
+        + 'never be asked for. The houses that wrote it knew what they were selling.', true);
+    }
+    if (standing > 0) {
+      this.logEvent('trade',
+        `${Math.round(standing)} cruzados of letras are still owed by a man with no ship, and `
+        + 'will be owed by his name after that.', true);
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -5921,6 +6249,37 @@ export class Game {
       });
     }
 
+    // Paper falling due, alongside the water and the hull, because it is the
+    // same kind of thing: a number that is fine today and ruinous in ninety
+    // days, and the decision about it is made in port or not at all.
+    const bills = this.finance.live.filter((d) => d.kind !== 'quinhao');
+    if (bills.length > 0) {
+      const late = bills.filter((d) => this.clock.t > d.dueBy);
+      const soonest = bills.reduce((a, b) => (a.dueBy <= b.dueBy ? a : b));
+      const untilDue = (soonest.dueBy - this.clock.t) / 86400;
+      out.push({
+        label: 'Paper outstanding',
+        value: `${Math.round(this.finance.owedTo())} cruzados`,
+        state: late.length > 0 ? 'bad' : untilDue < 45 ? 'warn' : 'good',
+        note: late.length > 0
+          ? `${late.length} of them past the date. Their factors are looking for you, and a letra `
+            + 'goes on compounding while they do.'
+          : untilDue < 45
+            ? `The nearest falls due in ${Math.round(untilDue)} days, and a passage is longer than `
+              + 'that more often than not.'
+            : undefined,
+      });
+    }
+    if (this.finance.shareOut > 0) {
+      out.push({
+        label: 'Sold out of the voyage',
+        value: `${(this.finance.shareOut * 100).toFixed(0)} in a hundred`,
+        state: this.finance.shareOut > 0.4 ? 'warn' : 'good',
+        note: 'Taken off the top of everything you land and everything the Casa pays you, '
+          + 'before it reaches the purse.',
+      });
+    }
+
     // A commission that wants pillars, and no pillars aboard. They are cut at
     // Lisbon and nowhere else, so finding this out at the Congo is finding it
     // out three months too late.
@@ -6058,6 +6417,8 @@ export class Game {
       log: this.log.serialize().map((e) => (e.lat === undefined ? e : {
         ...e, t: Math.round(e.t), lat: round(e.lat, 4), lon: round(e.lon ?? 0, 4),
       })),
+      finance: this.finance.serialize(),
+      propositionsSeen: this.propositionsSeen,
       dockedAt: this.dockedAt,
       anchored: this.anchored,
       ration: this.ration,
@@ -6165,6 +6526,8 @@ export class Game {
     g.namedFeatures = d.namedFeatures ?? {};
     g.foundFeatures = d.foundFeatures ?? [];
     g.coastOrder = d.coastOrder ?? null;
+    g.finance = Ledger.deserialize(d.finance);
+    g.propositionsSeen = d.propositionsSeen ?? [];
     g.consort = d.consort ?? null;
     g.consortRecord = d.consortRecord
       ?? { assigned: 0, lost: 0, burned: 0, detached: 0, broughtHome: 0 };

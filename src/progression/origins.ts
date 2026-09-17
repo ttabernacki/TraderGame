@@ -37,6 +37,16 @@ export interface Origin {
   standingScale: number;
   /** What the Casa will do about a captain who sells his charts privately. */
   watched: boolean;
+  /**
+   * What the money on the Rua Nova makes of him, before he has done anything.
+   *
+   * Emphatically not the same question as what the King makes of him, and in
+   * one case the exact opposite: a New Christian is watched at court and is on
+   * first-name terms with the Florentine and Genoese houses who actually
+   * financed this trade, while a fidalgo is received at court and is the worst
+   * class of debtor in Lisbon, because nobody can distrain on a nobleman.
+   */
+  creditBias: number;
   /** The last word, at the end of the career. */
   epilogue: string;
 }
@@ -53,7 +63,7 @@ export const ORIGINS: Origin[] = [
       + 'second son is the Church, the army, or the sea. You have no money and no expectations '
       + 'and nothing whatever to go back to, and the Casa da Mina is extremely willing to give '
       + 'ships to men in that position, because such men do not turn back.',
-    gold: 60, standing: 0, points: 4, standingScale: 1, watched: false,
+    gold: 60, standing: 0, points: 4, standingScale: 1, watched: false, creditBias: 0,
     epilogue:
       'Your brother died in the house you grew up in, having never gone further from it than '
       + 'Coimbra. There is a street named after you in a town neither of you was born in, and '
@@ -70,7 +80,7 @@ export const ORIGINS: Origin[] = [
       + 'file. A man in your position can rise as far as his usefulness carries him and not one '
       + 'inch further, and the moment he stops being useful the file is opened. You are a very '
       + 'good pilot because you have never once been able to afford not to be.',
-    gold: 140, standing: 0, points: 3, standingScale: 1.25, watched: true,
+    gold: 140, standing: 0, points: 3, standingScale: 1.25, watched: true, creditBias: 22,
     epilogue:
       'The file was opened twice in your lifetime and closed both times, because on each occasion '
       + 'somebody at the Casa pointed out what you were worth and somebody else did the '
@@ -88,7 +98,7 @@ export const ORIGINS: Origin[] = [
       + 'which is worth more than the house you grew up in, and you have read it until you could '
       + 'recite the soundings. You know this coast better than any man of your age alive and you '
       + 'have never seen it.',
-    gold: 85, standing: 10, points: 3, standingScale: 1, watched: false,
+    gold: 85, standing: 10, points: 3, standingScale: 1, watched: false, creditBias: 6,
     epilogue:
       'You found the place. It is a bay with a bar across it that will take a caravel at the top '
       + 'of the tide and not otherwise, and it is on the chart now under his name because you put '
@@ -106,7 +116,7 @@ export const ORIGINS: Origin[] = [
       + 'of it, and you went to the King and asked for a ship. Everyone who knows you thinks you '
       + 'have lost your mind. The King, who is the same sort of man, understood immediately and '
       + 'has been watching what you do with it ever since.',
-    gold: 260, standing: 35, points: 2, standingScale: 0.85, watched: false,
+    gold: 260, standing: 35, points: 2, standingScale: 0.85, watched: false, creditBias: -14,
     epilogue:
       'You could have stayed. That is the part nobody at court ever understood and the part every '
       + 'man who sailed with you understood within about a week. You gave up a great deal to be '

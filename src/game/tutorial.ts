@@ -137,7 +137,14 @@ export const TUTORIAL: TutorialStep[] = [
     says: 'Sugar is what this island is, and the Casa wants it in Lisbon. Buy it in the market. '
       + 'Watch the price as you take it: a town has only so much to sell and the price climbs '
       + 'as you empty the warehouse, which is true of every port in this game and is most of '
-      + 'the difference between a rich captain and a busy one.',
+      + 'the difference between a rich captain and a busy one.'
+      + '\n\nIf the purse will not stretch, there is a counting house on this screen and there '
+      + 'are men in it who will lend to you. Read what they offer before you sign: a câmbio '
+      + 'marítimo costs the earth and is cancelled outright if the ship is lost, a letra is '
+      + 'cheap and is owed by you whether she comes home or not, and sixteenths of the voyage '
+      + 'are never repaid at all because the buyer simply takes his share of everything you '
+      + 'land. Which of the three is right depends entirely on how much you trust the sea, '
+      + 'and nobody can tell you that but you.',
     done: (g) => g.ship.quantityOf('acucar') >= 25,
   },
   {

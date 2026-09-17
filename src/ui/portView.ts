@@ -15,10 +15,15 @@ import {
   backingFor, candidates, errandsAt, journeyWord, outfitCost, outstanding,
 } from '../progression/inland';
 import { daysLeft, ventureLine, ventureTons } from '../progression/ventures';
+import {
+  HOUSES, creditWord, house, kindBlurb, kindName, quinhaoPrice, standingLine,
+  type DebtKind, type House,
+} from '../economy/finance';
+import { portName } from '../progression/crown';
 import type { Game } from '../game/state';
 import { append, button, card, clear, el, kv } from './dom';
 
-type Tab = 'town' | 'market' | 'freight' | 'stores' | 'yard' | 'hands';
+type Tab = 'town' | 'market' | 'freight' | 'money' | 'stores' | 'yard' | 'hands';
 
 /** Everything that happens at anchor: the market, the yard, and the wardroom. */
 export class PortView {
@@ -89,6 +94,7 @@ export class PortView {
       ['town', 'Town'],
       ['market', 'Market'],
       ['freight', g.ventureOffers.length > 0 ? `Freight (${g.ventureOffers.length})` : 'Freight'],
+      ['money', g.finance.owedTo() > 0 ? `Counting house (${g.finance.owedTo().toFixed(0)})` : 'Counting house'],
       ['stores', 'Stores'],
       ['yard', 'Shipwrights'],
       ['hands', 'Hands'],
@@ -109,6 +115,7 @@ export class PortView {
       case 'town': this.renderTown(inner, g, rel); break;
       case 'market': this.renderMarket(inner, g, rel); break;
       case 'freight': this.renderFreight(inner, g, rel); break;
+      case 'money': this.renderMoney(inner, g); break;
       case 'stores': this.renderStores(inner, g); break;
       case 'yard': this.renderYard(inner, g); break;
       case 'hands': this.renderHands(inner, g); break;
@@ -470,6 +477,11 @@ export class PortView {
     const revenue = take * got;
     g.ship.removeCargo(l.goodId, take);
     g.crown.gold += revenue;
+    // The sharers' man is standing at the scale. Taken here rather than at a
+    // reckoning in Lisbon because that is where it was taken, and because
+    // watching it come off the top of the best cargo of your life is the whole
+    // cost of having sold sixteenths.
+    const shared = g.takeShares(revenue);
     g.markets.sell(g.portHere!.id, l.goodId, take);
     g.crown.syncCargoObjectives((id) => g.ship.quantityOf(id));
 
@@ -477,10 +489,16 @@ export class PortView {
     g.logEvent('trade',
       `Sold ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} at ${got.toFixed(1)}, ${revenue.toFixed(0)} cruzados` +
       (paid > 0 ? `, against ${(paid * take).toFixed(0)} paid — ${profit >= 0 ? 'a gain' : 'a loss'} of ${Math.abs(profit).toFixed(0)}.` : '.'));
+    if (shared > 0.5) {
+      g.logEvent('trade',
+        `${shared.toFixed(0)} cruzados of that went straight off the scale to the men who hold `
+        + 'sixteenths of this voyage. Nobody had to ask you for it.');
+    }
     this.notice = {
       text: `Sold for ${revenue.toFixed(0)} cruzados`
         + (paid > 0 ? ` — ${profit >= 0 ? 'profit' : 'loss'} ${Math.abs(profit).toFixed(0)}.` : '.')
-        + (edge > 0.01 ? ` Your book was worth ${(edge * 100).toFixed(0)}% of it.` : ''),
+        + (edge > 0.01 ? ` Your book was worth ${(edge * 100).toFixed(0)}% of it.` : '')
+        + (shared > 0.5 ? ` The sharers took ${shared.toFixed(0)} off the top.` : ''),
     };
     this.render();
   }
@@ -551,6 +569,161 @@ export class PortView {
     ));
 
     host.append(el('div', { class: 'cols two' }, left, right));
+  }
+
+  /**
+   * The Rua Nova.
+   *
+   * Three instruments, four or five houses, and one screen that has to make the
+   * difference between them obvious without a paragraph of explanation, because
+   * the whole decision *is* the difference between them. So each card leads
+   * with the one sentence that matters — the sea loan dies with the ship, the
+   * letra does not, the sixteenths are never repaid — and the number underneath
+   * is the price of that sentence.
+   */
+  private renderMoney(host: HTMLElement, g: Game): void {
+    const def = g.portHere!;
+    const left = el('div', {});
+    const right = el('div', {});
+
+    const live = g.finance.live;
+    const loans = live.filter((d) => d.kind !== 'quinhao');
+    const shares = live.filter((d) => d.kind === 'quinhao');
+
+    // What is owed, first, because a man walking into a counting house knows
+    // what he owes before he knows what he wants.
+    right.append(card('Paper outstanding',
+      loans.length === 0 && shares.length === 0
+        ? el('p', {}, 'Nothing out. Your name is your own and so is the voyage.')
+        : el('div', {}, ...loans.map((d) => {
+            const h = house(d.house);
+            const over = Math.round(g.finance.daysOverdue(d, g.clock.t));
+            const due = Math.round(d.owed - d.seized);
+            return el('div', { style: { marginBottom: '12px' } },
+              kv(`${h.short} — ${kindName(d.kind).toLowerCase()}`, `${due} cruzados`,
+                over > 0 ? 'bad' : ''),
+              el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)' } },
+                over > 0
+                  ? `${over} days overdue, drawn at ${portName(d.atPort)}.`
+                    + (d.kind === 'letra' ? ' It is compounding weekly.' : '')
+                  : `Due in ${Math.round((d.dueBy - g.clock.t) / 86400)} days, drawn at ${portName(d.atPort)}.`),
+              el('div', { class: 'row', style: { marginTop: '4px' } },
+                button(`Pay ${due}`, () => {
+                  this.notice = { text: g.repayDebt(d.id) };
+                  this.render();
+                }, { disabled: g.crown.gold + g.creditFree < 1 }),
+                button('Pay half', () => {
+                  this.notice = { text: g.repayDebt(d.id, Math.round(due / 2)) };
+                  this.render();
+                }, { disabled: g.crown.gold + g.creditFree < 1 || due < 4 }),
+              ),
+            );
+          }),
+          ...shares.map((d) => {
+            const h = house(d.house);
+            return el('div', { style: { marginBottom: '10px' } },
+              kv(`${h.short} — ${d.sixteenths}/16 of the voyage`,
+                `${(d.share * 100).toFixed(0)}% of everything landed`),
+              el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)' } },
+                `He put in ${Math.round(d.principal)} and has taken ${Math.round(d.drawn)} so far. `
+                + `Discharged in ${Math.max(0, Math.round((d.dueBy - g.clock.t) / 86400))} days.`),
+            );
+          }),
+        ),
+      g.finance.shareOut > 0
+        ? el('p', { class: 'notice' },
+            `${(g.finance.shareOut * 100).toFixed(0)} per cent of every cargo you land and every `
+            + 'settlement you are paid goes to the men holding sixteenths, off the top, before you '
+            + 'see it.')
+        : null,
+    ));
+
+    right.append(card('The Casa’s own credit',
+      kv('Left to draw', `${g.creditFree.toFixed(0)} cruzados`),
+      g.crown.debt > 0 ? kv('Already drawn', `${g.crown.debt.toFixed(0)} cruzados`) : null,
+      el('p', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', lineHeight: '1.55' } },
+        'Not the same thing as the street below. This is an advance against the commission you '
+        + 'are already carrying — no premium, no date, and it comes straight off what the '
+        + 'Casa pays you when the voyage is reckoned. It is small, it is only ever as large as '
+        + 'the commission, and it is gone the moment that is discharged. The houses lend against '
+        + 'you, which is why they can lend so much more.'),
+    ));
+
+    right.append(card('Your name on this street',
+      ...HOUSES.map((h) => el('div', { style: { marginBottom: '5px' } },
+        kv(h.short, creditWord(g.finance.credit[h.id]),
+          g.finance.credit[h.id] < h.floor ? 'bad' : ''))),
+      el('p', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '8px' } },
+        `Borrowed in a career: ${Math.round(g.finance.borrowed)}. Repaid: `
+        + `${Math.round(g.finance.repaid)}. Taken by sharers: ${Math.round(g.finance.sharedOut)}.`
+        + (g.finance.defaults > 0 ? ` Bad debts against your name: ${g.finance.defaults}.` : '')),
+    ));
+
+    // And the offers. One card per house that has a man in this town.
+    const here = HOUSES.filter((h) => g.houseReaches(h, def));
+    if (here.length === 0) {
+      left.append(card('No money in this town',
+        el('p', {}, 'The Rua Nova reaches a long way and it does not reach here. Whatever you are '
+          + 'going to do next, you are going to do it on what is in the ship.')));
+    } else {
+      left.append(el('p', { class: 'quote', style: { marginBottom: '14px' } },
+        'A sea loan is insurance with a loan’s face on it: it costs three times what an '
+        + 'ordinary bill costs, and if she never comes home nobody ever asks you for it. A letra '
+        + 'is cheap and is owed by you whatever happens to her. Sixteenths are never repaid at '
+        + 'all — they simply take their share of everything you land, for as long as the '
+        + 'voyage runs.'));
+      for (const h of here) left.append(this.houseCard(g, h));
+    }
+
+    host.append(el('div', { class: 'cols two' }, left, right));
+  }
+
+  private houseCard(g: Game, h: House): HTMLElement {
+    const credit = g.finance.credit[h.id];
+    const body: (Node | null)[] = [
+      el('p', { class: 'flavour' }, h.blurb),
+      el('p', { style: { fontSize: '13px' } }, standingLine(h, credit)),
+    ];
+
+    // A house that will not deal at all says so once. Listing its instruments
+    // underneath and repeating the same refusal against each of them read as a
+    // bug: the same sentence three times in one card.
+    if (credit < h.floor) return card(h.name, ...body);
+
+    for (const kind of h.writes) {
+      const t = g.termsFor(h, kind as DebtKind);
+      if (kind === 'quinhao') {
+        const held = g.finance.live.reduce((s, d) => s + d.sixteenths, 0);
+        const offers = [2, 4, 6].filter((n) => n + held <= 12);
+        body.push(el('div', { style: { marginTop: '10px' } },
+          kv(kindName('quinhao'), t.barred ? '—' : 'no repayment, ever'),
+          el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', lineHeight: '1.5' } },
+            t.barred ?? kindBlurb('quinhao')),
+          t.barred ? null : el('div', { class: 'row', style: { marginTop: '5px' } },
+            ...offers.map((n) => button(
+              `Sell ${n}/16 for ${quinhaoAsk(g, h, n)}`,
+              () => { this.notice = { text: g.sellSixteenths(h.id, n) }; this.render(); },
+            )),
+          ),
+        ));
+        continue;
+      }
+      const sums = [0.25, 0.5, 1].map((f) => Math.round(t.max * f)).filter((x) => x >= 25);
+      body.push(el('div', { style: { marginTop: '10px' } },
+        kv(kindName(kind as DebtKind),
+          t.barred ? '—' : `${(t.rate * 100).toFixed(0)}% over ${t.days} days`),
+        el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', lineHeight: '1.5' } },
+          t.barred ?? kindBlurb(kind as DebtKind)),
+        t.barred ? null : el('div', { class: 'row', style: { marginTop: '5px' } },
+          ...sums.map((sum) => button(
+            `${sum} → repay ${Math.round(sum * (1 + t.rate))}`,
+            () => { this.notice = { text: g.borrow(h.id, kind as DebtKind, sum) }; this.render(); },
+          )),
+        ),
+      ));
+    }
+
+    return card(h.name, ...body);
   }
 
   private renderStores(host: HTMLElement, g: Game): void {
@@ -1066,4 +1239,9 @@ function qualityWord(q: number): string {
   if (q > 0.4) return 'Fair';
   if (q > 0.2) return 'Poor';
   return 'Wretched';
+}
+
+/** What a house would pay for n sixteenths of the voyage in hand. */
+function quinhaoAsk(g: Game, h: House, n: number): number {
+  return quinhaoPrice(h, n, g.voyageValue(), g.finance.credit[h.id]);
 }
