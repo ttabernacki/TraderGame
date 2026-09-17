@@ -1,6 +1,6 @@
 import './style.css';
 
-import { DEG, clamp, wrap180 } from './core/math';
+import { DEG, NM, clamp, haversine, wrap180 } from './core/math';
 import { Game } from './game/state';
 import { portDef } from './world/ports';
 import type { Difficulty } from './game/difficulty';
@@ -366,6 +366,11 @@ function buildFrame(g: Game): RenderFrame {
   });
 
   const other = g.encounter;
+  // The consort is drawn while she is anywhere a masthead could pick her out,
+  // which is a good deal further than signalling distance — seeing her topsails
+  // hull down on the quarter is most of what having her feels like.
+  const mate = g.consort;
+  const mateNm = mate ? haversine(g.ship.state.pos, mate.pos) / NM : Infinity;
   return {
     stranger: other
       ? {
@@ -373,6 +378,14 @@ function buildFrame(g: Game): RenderFrame {
         pos: other.pos,
         heading: other.heading,
         beta: wrap180(g.weatherNow.wind.from - other.heading),
+      }
+      : null,
+    consort: mate && !mate.lost && mate.station !== 'detached' && mateNm < 26
+      ? {
+        hullId: mate.hullId,
+        pos: mate.pos,
+        heading: mate.heading,
+        beta: wrap180(g.weatherNow.wind.from - mate.heading),
       }
       : null,
     pos: g.ship.state.pos,

@@ -2352,3 +2352,6 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
   word-break: break-all;
 }
 .voyage-file { font-size: 12.5px; max-width: 100%; }
+
+/* The consort's row goes amber when she wants attention. */
+.hud-row.warn .v { color: var(--warn); }

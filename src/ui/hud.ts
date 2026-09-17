@@ -211,6 +211,14 @@ export class Hud {
           asideRow('High water', tideClock(t.toHigh)),
         ];
       })(),
+      // The second ship. Where she is, and whether she is anybody's problem.
+      ...(() => {
+        const c = g.consortLine();
+        if (!c) return [];
+        const row = hudRow('In company', c.line);
+        if (c.worrying) row.classList.add('warn');
+        return [row, asideRow('Signals', 'Orders, then In company')];
+      })(),
     );
     // Everything on the dial is relative to her head, which is fixed up the
     // page. `wind.from - heading` is the wind's bearing off the bow, which is

@@ -6,8 +6,10 @@ import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
 import { officerOpinion } from '../game/officerEvents';
 import type { Game } from '../game/state';
 import { button, card, clear, el, kv } from './dom';
+import { TEMPERS as CONSORT_TEMPERS, orderedOffing, signalRangeNm } from '../game/consort';
+import { portName } from '../progression/crown';
 
-type Tab = 'orders' | 'charters' | 'reports' | 'wardroom' | 'rival';
+type Tab = 'orders' | 'charters' | 'reports' | 'wardroom' | 'consort' | 'rival';
 
 /**
  * The captain's orders.
@@ -56,15 +58,21 @@ export class OrdersView {
       charters: g.activeVentures.length,
       reports: g.openLeads.length,
       wardroom: g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length,
+      consort: 0,
       rival: 0,
     };
     const names: Record<Tab, string> = {
       orders: 'Commission', charters: 'Charters', reports: 'Hearsay',
-      wardroom: 'Wardroom', rival: 'Rival',
+      wardroom: 'Wardroom', consort: 'In company', rival: 'Rival',
     };
 
+    // The consort's tab is only there when there is a consort. A row of tabs
+    // that includes a permanently empty one teaches the player to skip it.
+    const tabs = (Object.keys(names) as Tab[]).filter((t) => t !== 'consort' || g.consort);
+    if (this.tab === 'consort' && !g.consort) this.tab = 'orders';
+
     this.body.append(el('div', { class: 'tabs' },
-      ...(Object.keys(names) as Tab[]).map((t) => el('button', {
+      ...tabs.map((t) => el('button', {
         class: this.tab === t ? 'active' : '',
         onclick: () => { this.tab = t; this.render(); },
       }, counts[t] > 0 ? `${names[t]} (${counts[t]})` : names[t])),
@@ -74,6 +82,7 @@ export class OrdersView {
     else if (this.tab === 'charters') this.renderCharters(g);
     else if (this.tab === 'reports') this.renderLeads(g);
     else if (this.tab === 'wardroom') this.renderWardroom(g);
+    else if (this.tab === 'consort') this.renderConsort(g);
     else this.renderRival(g);
   }
 
@@ -271,6 +280,83 @@ export class OrdersView {
 
   // -------------------------------------------------------------------------
 
+  /**
+   * The second ship: where she is, who has her, and what she is to do.
+   *
+   * Written as orders rather than as a control panel, because that is what they
+   * are. Every one of them is a signal made to another captain who may or may
+   * not be in a position to read it, and the screen says so — an order given to
+   * a ship beyond signalling distance is not given at all.
+   */
+  private renderConsort(g: Game): void {
+    const c = g.consort;
+    if (!c) return;
+    const r = g.consortLine()!;
+    const t = CONSORT_TEMPERS[c.temper];
+    const inSignal = r.distNm <= signalRangeNm(g) && !c.lost && c.station !== 'detached';
+
+    this.body.append(card(`${c.name}`,
+      el('p', { class: 'quote' }, `${c.captain} — ${t.label.toLowerCase()}. ${t.line}`),
+      kv('Where she is', r.line),
+      kv('Station', c.station === 'detached'
+        ? `Detached for ${c.boundFor ?? 'Lisbon'}`
+        : c.station === 'scout' ? `Ranging ${orderedOffing(c).toFixed(0)} miles ahead`
+          : c.station === 'alongside' ? 'Alongside'
+            : `${orderedOffing(c).toFixed(1)} miles on the quarter`),
+      kv('Her people', `${c.crew} aboard`),
+      kv('Her water', `${c.water.toFixed(0)} days`),
+      kv('Her lading', `${c.cargoTons.toFixed(0)} tons`),
+      kv('Her state', `${Math.round(c.condition * 100)} in a hundred`),
+      kv('What he thinks of you', consortRegardWord(c.regard)),
+      el('p', {}, r.state),
+    ));
+
+    if (!inSignal) {
+      this.body.append(card('Out of signal',
+        el('p', {}, c.station === 'detached'
+          ? 'She is on her own errand. Nothing you decide here reaches her.'
+          : 'Nothing can be signalled to her at this distance. Close her, or wait '
+            + 'for her to close you, before giving an order.')));
+      return;
+    }
+
+    const order = (label: string, detail: string, run: () => string) =>
+      el('div', { style: { marginBottom: '10px' } },
+        button(label, () => {
+          this.notice = run();
+          this.render();
+        }),
+        el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '3px' } },
+          detail));
+
+    this.body.append(card('Signals',
+      this.notice ? el('p', { class: 'quote' }, this.notice) : el('span', {}),
+      order('Keep close company', 'A mile on the quarter. Slower, and you will not lose her.',
+        () => g.orderConsort('company', 1)),
+      order('Keep loose company', 'Four miles. Faster, and the signal still carries.',
+        () => g.orderConsort('company', 4)),
+      order('Range ahead', 'Twelve miles up to windward. She sees things first and alone.',
+        () => g.orderConsort('scout', 12)),
+      order('Close and heave to', 'Both ships stopped, the boats out, and an hour or a day gone.',
+        () => g.orderConsort('alongside')),
+    ));
+
+    this.body.append(card('Detach her',
+      el('p', {},
+        'Send her away on her own passage. She is out of the voyage from that moment, and '
+        + 'whatever she is carrying goes with her — which is either the safest thing you can '
+        + 'do with the King\'s pepper or the last you will see of it.'),
+      ...['lisboa', 'mina', 'funchal'].map((id) => order(
+        `Send her to ${portName(id)}`,
+        'You will hear when she arrives, and not before.',
+        () => g.detachConsort(id),
+      )),
+    ));
+  }
+
+  private notice = '';
+
+
   private renderRival(g: Game): void {
     const r = g.rival;
     this.body.append(card(r.name,
@@ -326,4 +412,20 @@ function bearingTo(from: { lat: number; lon: number }, to: { lat: number; lon: n
   const dLat = to.lat - from.lat;
   const dLon = (to.lon - from.lon) * Math.cos((from.lat * Math.PI) / 180);
   return (((Math.atan2(dLon, dLat) * 180) / Math.PI) % 360 + 360) % 360;
+}
+
+/**
+ * What the consort's captain makes of you.
+ *
+ * Deliberately not the same words as the fo'c'sle's regard: a hand's opinion is
+ * about whether he trusts you with his life, and another captain's is about
+ * whether he thinks you are fit to command him, which is a different and in
+ * some ways a colder question.
+ */
+function consortRegardWord(r: number): string {
+  if (r > 0.8) return 'would follow you anywhere, and has said so';
+  if (r > 0.62) return 'thinks you know your business';
+  if (r > 0.45) return 'is reserving his judgement';
+  if (r > 0.28) return 'has begun to answer signals slowly';
+  return 'obeys you because of the commission and for no other reason';
 }

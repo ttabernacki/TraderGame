@@ -206,6 +206,38 @@ export class EpilogueView {
             )
           : null,
 
+        // The ships that sailed with him, which on this route is the thing a
+        // commodore is actually judged on. A captain who came home alone came
+        // home alone, whatever else he brought with him.
+        (g.consortRecord.assigned > 0 || g.consort)
+          ? card('The ships in company',
+              kv('Attached to your commissions', String(g.consortRecord.assigned)),
+              g.consort
+                ? el('p', { class: 'good' },
+                  `${g.consort.name} was still in company at the end of it, `
+                  + `${g.consort.captain} commanding, which after a voyage of this length is `
+                  + 'not a small thing to be able to write down.')
+                : null,
+              g.consortRecord.broughtHome > 0
+                ? el('p', { class: 'good' },
+                  `${g.consortRecord.broughtHome === 1 ? 'One ship was' : `${g.consortRecord.broughtHome} ships were`} `
+                  + 'detached and made harbour, and the lading in her was landed and sold.')
+                : null,
+              g.consortRecord.burned > 0
+                ? el('p', {}, `${g.consortRecord.burned === 1 ? 'One ship was' : `${g.consortRecord.burned} ships were`} `
+                  + 'taken out and burned rather than left to sink with her people aboard. '
+                  + 'It is the decision nobody argues with afterwards and nobody forgets either.')
+                : null,
+              g.consortRecord.lost > 0
+                ? el('p', { class: 'bad' },
+                  `${g.consortRecord.lost === 1 ? 'One ship' : `${g.consortRecord.lost} ships`} `
+                  + 'parted company and was never spoken again. The Casa enters that as lost '
+                  + 'with all hands, and the families are told the same thing, and nobody in '
+                  + 'Lisbon will ever know whether it was true.')
+                : null,
+            )
+          : null,
+
         // The men who left the sea. Above the ships-spoken card because a man
         // who walked inland is a bigger thing than any meeting on the water.
         g.journeyRecord.sent > 0

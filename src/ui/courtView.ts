@@ -214,6 +214,19 @@ export class CourtView {
               g.crown.hasKingsLetter = true;
               g.logEvent('crown',
                 `Received the King's commission: "${p.title}". ${p.advance} cruzados advanced, and a sealed letter for any Christian prince who may be found.`, true);
+              // The commissions that matter come with a second ship.
+              //
+              // This is how the Crown actually did it: the early runs down the
+              // coast were single caravels because they were cheap and nobody
+              // was sure there was anything down there, and from the moment the
+              // enterprise looked like it might pay, no captain was sent alone.
+              // So the armada arrives with the commission that is worth one,
+              // which is also the point in a career where the player has enough
+              // to think about for a second ship to be interesting rather than
+              // one more panel.
+              if (!g.consort && p.standingReward >= 55) {
+                g.attachConsort(p.standingReward >= 240 ? 'nau' : 'caravela-latina');
+              }
               this.offers = [];
               this.render();
             }, { primary: true }),

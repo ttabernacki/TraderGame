@@ -93,6 +93,14 @@ export interface RenderFrame {
    * off the sea instead of off a panel.
    */
   stranger: { hullId: string; pos: LatLon; heading: number; beta: number } | null;
+  /**
+   * The consort, when there is one in sight. A separate slot from the strange
+   * sail rather than a list, because there are exactly two kinds of other ship
+   * in this game and they are drawn for opposite reasons — one is a question
+   * and one is yours — and a list of "others" would have made the call site
+   * decide which was which on every frame.
+   */
+  consort: { hullId: string; pos: LatLon; heading: number; beta: number } | null;
 }
 
 /**
@@ -122,6 +130,8 @@ export class Renderer {
   /** The strange sail's hull, built the first time one is raised. */
   private stranger: ShipMesh | null = null;
   private strangerHullId: string | null = null;
+  private consortMesh: ShipMesh | null = null;
+  private consortHullId: string | null = null;
 
   cameraMode: CameraMode = 'chase';
   /** User look offsets, in degrees. */
@@ -264,21 +274,32 @@ export class Renderer {
    * ship close-hauled has her yards braced up.
    */
   private drawStranger(f: RenderFrame): void {
-    const s = f.stranger;
+    this.drawOther(f, f.stranger, 'stranger');
+    this.drawOther(f, f.consort, 'consort');
+  }
+
+  /** One other ship on the water, whoever she belongs to. */
+  private drawOther(
+    f: RenderFrame,
+    s: { hullId: string; pos: LatLon; heading: number; beta: number } | null,
+    which: 'stranger' | 'consort',
+  ): void {
+    const held = which === 'stranger' ? this.stranger : this.consortMesh;
+    const heldId = which === 'stranger' ? this.strangerHullId : this.consortHullId;
     if (!s) {
-      if (this.stranger) this.stranger.group.visible = false;
+      if (held) held.group.visible = false;
       return;
     }
-    if (this.strangerHullId !== s.hullId) {
-      if (this.stranger) {
-        this.scene.remove(this.stranger.group);
-        this.stranger.dispose();
+    let mesh = held;
+    if (heldId !== s.hullId) {
+      if (held) {
+        this.scene.remove(held.group);
+        held.dispose();
       }
-      this.stranger = new ShipMesh(hullClass(s.hullId));
-      this.strangerHullId = s.hullId;
-      this.scene.add(this.stranger.group);
+      mesh = new ShipMesh(hullClass(s.hullId));
+      this.scene.add(mesh.group);
+      if (which === 'stranger') { this.stranger = mesh; this.strangerHullId = s.hullId; } else { this.consortMesh = mesh; this.consortHullId = s.hullId; }
     }
-    const mesh = this.stranger;
     if (!mesh) return;
     mesh.group.visible = true;
 
