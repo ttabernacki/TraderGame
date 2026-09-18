@@ -343,9 +343,28 @@ function frame(now: number): void {
       belowDecks: false,
     });
     if (game) ui.update(game);
+    if (game) checkAutosave(game);
   }
 
   requestAnimationFrame(frame);
+}
+
+/**
+ * Autosave on the ship's calendar rather than on the wall clock.
+ *
+ * Five days of the voyage, which is a unit the player actually thinks in: at
+ * the Watch rate that is a couple of minutes, at eighteen hundred times it is
+ * under a minute, and either way the thing that was saved is a recognisable
+ * point in the passage rather than "three minutes ago, wherever that was".
+ */
+const AUTOSAVE_DAYS = 5;
+let lastAutoSaveT = -1e9;
+
+function checkAutosave(g: Game): void {
+  if (g.mode === 'gameover' || g.mode === 'title') return;
+  if (g.clock.t - lastAutoSaveT < AUTOSAVE_DAYS * 86400) return;
+  lastAutoSaveT = g.clock.t;
+  void ui.save(g, false);
 }
 
 function buildFrame(g: Game): RenderFrame {
@@ -422,12 +441,17 @@ function buildFrame(g: Game): RenderFrame {
   };
 }
 
-// Autosave every few minutes of play, and on the way out. Quietly: an alert
-// every three minutes saying the same thing is noise, and the player did not
-// ask for it this time.
+// The backstop, for the time the clock is not running.
+//
+// The autosave proper is on the ship's calendar (see checkAutosave), which is
+// what a player means by "every so often" — but the clock is stopped dead the
+// whole time he is on the port screens, and a captain who spends a quarter of
+// an hour fitting out and then closes the tab would otherwise have saved
+// nothing since he made the land. So a wall-clock save as well, rarely, and
+// quietly: an alert saying the same thing over and over is noise.
 setInterval(() => {
-  if (game && game.mode !== 'gameover') void ui.save(game, false);
-}, 180000);
+  if (game && game.mode !== 'gameover' && game.mode !== 'title') void ui.save(game, false);
+}, 240000);
 
 /**
  * Write the voyage out whenever the page might be about to go away.

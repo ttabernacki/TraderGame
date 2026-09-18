@@ -2417,12 +2417,27 @@ export class Game {
     const best = usable[0];
     const days = (this.clock.t - this.nav.lastFixT) / 86400;
     // The sun is on the meridian for about an hour and a half, and at a watch a
+    // The sun is on the meridian for about an hour and a half, and at a watch a
     // second that is four seconds of the player's life. The offer was being
     // made and then withdrawn before anybody could reach for the quadrant, so
     // in practice the sight — which is the whole of how a pilot knows his
     // latitude — was something that only ever happened by accident. The clock
     // comes down for it, the way the ship would be called.
-    this.easeTheClock(2);
+    //
+    // But only when it is worth calling the ship for. Before the solar tables
+    // the sun cannot be worked at all, so this fired rarely; the moment they
+    // are bought it can be worked every clear noon, and the clock was being
+    // hauled down to a watch a second every single day of a three-month
+    // passage. That is not a prompt, it is a stutter — and the player who has
+    // just spent two hundred and twenty cruzados making his navigation better
+    // is precisely the one being punished for it.
+    //
+    // So the ship is called when the sight actually matters: when the
+    // reckoning has gone bad, or when nothing has been observed for days. On an
+    // ordinary noon with good tables and a fresh fix it is one line in the
+    // corner, and the passage runs on.
+    const worthStopping = grave || days > 3;
+    if (worthStopping) this.easeTheClock(2);
     this.pushAlert(
       `${best.label} may be had. `
       + `${days > 2 ? `Nothing observed for ${days.toFixed(0)} days. ` : ''}Press N.`,
@@ -3123,6 +3138,124 @@ export class Game {
     clerk.joined = this.clock.t;
     this.crew.officers.push(clerk);
     this.wardroomCache = null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Línguas
+  // -------------------------------------------------------------------------
+
+  /**
+   * Engaging an interpreter.
+   *
+   * The wardroom is otherwise the company she sailed with and cannot be shopped
+   * for, which is right: those men are written, they have arcs, and a berth
+   * that empties stays empty. The língua is the one exception, and it is the
+   * exception the period insists on. Nobody carried a fixed interpreter down
+   * that coast; they picked men up. Gama took a Jew of Poznań off a boat at
+   * Anjediva, Cabral carried men who had been taken at Mina, every ship that
+   * went south of the Senegal engaged somebody at the last port who had the
+   * next people's tongue, and a captain who could not do that was reduced to
+   * shouting at strangers and hoping — which is precisely what the audience
+   * screen makes you do without one.
+   *
+   * So: one man, at a port whose people you have actually met, who has their
+   * language and nothing else. He costs money up front and a wage after, and he
+   * is worth it exactly as far as the next people who speak something different.
+   */
+  linguaOffer(def: PortDef): { language: string; cost: number; can: string | null } {
+    const pe = people(def.people);
+    const rel = this.relationsFor(def.id);
+    // A rich town has men who have been up and down this coast; a beach has the
+    // one fisherman who went to Arguim once.
+    const size = { anchorage: 0.6, village: 0.75, town: 1, city: 1.25, emporium: 1.5 }[def.size];
+    const cost = Math.round((70 + def.wealth * 110) * size);
+
+    let can: string | null = null;
+    if (def.people === 'portuguese') {
+      // Lisbon and Lagos are full of men brought home off that coast, which is
+      // historically the main way the early língua was got at all.
+      can = null;
+    } else if (!rel.met) {
+      can = 'Nobody here has been presented to you yet, and you are in no position to engage anybody.';
+    } else if (rel.regard < -0.2) {
+      can = 'Nobody here will take service with you on any terms.';
+    }
+    if (!can && this.linguaFor(pe.language)) {
+      can = `You already carry a man who has ${pe.language}.`;
+    }
+    if (!can && this.linguas().length >= 3) {
+      can = 'Three interpreters is as many as the wardroom will hold and as many as are any use.';
+    }
+    if (!can && this.crown.gold + this.creditFree < cost) {
+      can = `He wants ${cost} cruzados in hand and there is not that much.`;
+    }
+    return { language: pe.language, cost, can };
+  }
+
+  /** The interpreters aboard. */
+  linguas(): Officer[] {
+    return this.crew.officers.filter((o) => o.role === 'lingua' && o.alive && !o.ashoreAt);
+  }
+
+  linguaFor(language: string): Officer | null {
+    return this.crew.officers.find(
+      (o) => o.alive && !o.ashoreAt && o.languages.includes(language)) ?? null;
+  }
+
+  /**
+   * The languages a Portuguese port can supply, which is not this port's own.
+   *
+   * At Lisbon what is on offer is a man off that coast, and which coast depends
+   * on how far down it Portugal has actually got — which is the player's own
+   * doing, so the list grows as the career does.
+   */
+  linguaLanguagesAt(def: PortDef): string[] {
+    if (def.people !== 'portuguese') return [people(def.people).language];
+    const out: string[] = [];
+    for (const id of this.visitedPorts) {
+      const p = PORTS.find((x) => x.id === id);
+      if (!p || p.people === 'portuguese') continue;
+      const rel = this.relations.get(id);
+      if (!rel?.met) continue;
+      const lang = people(p.people).language;
+      if (!out.includes(lang) && !this.linguaFor(lang)) out.push(lang);
+    }
+    return out;
+  }
+
+  /** Take him on. Returns what goes on the screen. */
+  engageLingua(def: PortDef, language: string): string {
+    const offer = this.linguaOffer(def);
+    if (offer.can && def.people !== 'portuguese') return offer.can;
+    if (this.linguaFor(language)) return `You already carry a man who has ${language}.`;
+    if (this.linguas().length >= 3) {
+      return 'Three interpreters is as many as the wardroom will hold.';
+    }
+    const cost = offer.cost;
+    if (this.crown.gold + this.creditFree < cost) {
+      return `He wants ${cost} cruzados in hand and there is not that much.`;
+    }
+    if (this.crown.gold < cost) this.drawCredit(cost);
+    this.crown.gold -= cost;
+
+    // What he actually is varies a great deal, and the captain cannot tell
+    // which he has got until somebody important is being spoken to.
+    const ability = clamp(this.rng.normal(0.52, 0.17), 0.14, 0.93);
+    const o = makeOfficer('lingua', this.rng, ability, [language]);
+    o.joined = this.clock.t;
+    // He has signed with a foreign ship going somewhere he may not come back
+    // from, and he knows the terms better than the crew do.
+    o.loyalty = clamp(this.rng.normal(0.46, 0.13), 0.12, 0.9);
+    // He goes on the muster under a Portuguese name, because that is what
+    // happened: a man engaged on that coast was baptised before he was entered
+    // in the book, and the name in the book is the only one the record kept.
+    this.crew.officers.push(o);
+    this.wardroomCache = null;
+    this.logEvent('contact',
+      `Engaged ${o.name} at ${def.name} as língua, for ${cost} cruzados down and ${o.wage} the `
+      + `month. He has ${language} and, as far as anybody aboard can tell, nothing else. `
+      + 'Whether he is any good will be found out in front of somebody who matters.', true);
+    return `${o.name} is aboard as your língua. He has ${language}.`;
   }
 
   recruitArc(arcId: string): Officer | null {

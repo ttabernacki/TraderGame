@@ -1294,6 +1294,11 @@ export class PortView {
     // berth is simply empty — which is worth saying plainly, because the ship
     // then works slightly worse in a way the captain ought to be able to
     // account for.
+    // The one berth that can still be filled off a quay. See Game.linguaOffer:
+    // nobody carried a fixed interpreter down that coast, they picked men up,
+    // and a captain who cannot do that is reduced to shouting at strangers.
+    right.append(this.linguaCard(g, def));
+
     const empty = OFFICER_ROLES.filter(
       (r) => r.role !== 'lingua' && r.role !== 'degredado'
         && !g.crew.officers.some((o) => o.alive && o.role === r.role));
@@ -1348,6 +1353,58 @@ export class PortView {
     }
 
     host.append(el('div', { class: 'cols two' }, left, right));
+  }
+
+  /** Interpreters: the ones aboard, and the one this quay can supply. */
+  private linguaCard(g: Game, def: PortDef): HTMLElement {
+    const aboard = g.linguas();
+    const offer = g.linguaOffer(def);
+    const langs = g.linguaLanguagesAt(def);
+    const portuguese = def.people === 'portuguese';
+
+    return card('Línguas',
+      el('p', { class: 'quote' },
+        'An audience with a people whose tongue nobody aboard has is conducted in signs, and '
+        + 'goes about as well as that sounds. An interpreter is the difference between being '
+        + 'received and being tolerated.'),
+      aboard.length > 0
+        ? el('div', { style: { marginBottom: '10px' } },
+            ...aboard.map((o) => kv(o.name,
+              `${o.languages.join(', ')} · ${(o.ability * 100).toFixed(0)} · ${loyaltyWord(o.loyalty)}`)))
+        : el('p', { style: { fontSize: '13px' } },
+            'Nobody aboard speaks anything but Portuguese.'),
+
+      portuguese
+        ? (langs.length > 0
+            ? el('div', {},
+                el('p', { style: { fontSize: '13px' } },
+                  'There are men on this waterfront who were brought home off that coast and have '
+                  + 'been here long enough to be useful in both directions.'),
+                el('div', { class: 'row', style: { flexWrap: 'wrap' } },
+                  ...langs.slice(0, 5).map((lang) => button(
+                    `${lang} — ${offer.cost}`,
+                    () => { this.notice = { text: g.engageLingua(def, lang) }; this.render(); },
+                    { disabled: g.crown.gold + g.creditFree < offer.cost },
+                  )),
+                ),
+              )
+            : el('p', { style: { fontSize: '13px', color: 'var(--ink-soft)' } },
+                'Nobody here has a tongue you have any use for yet. Go and meet somebody, and '
+                + 'there will be a man on this quay who can talk to them.'))
+        : offer.can
+          ? el('p', { class: 'notice' }, offer.can)
+          : el('div', {},
+              el('p', { style: { fontSize: '13px' } },
+                `A man of this place will take service and has ${offer.language}. What else he is `
+                + 'will be found out in front of somebody who matters.'),
+              el('div', { class: 'row' },
+                button(`Engage him — ${offer.cost} cruzados`, () => {
+                  this.notice = { text: g.engageLingua(def, offer.language) };
+                  this.render();
+                }, { primary: true }),
+              ),
+            ),
+    );
   }
 
   /**
