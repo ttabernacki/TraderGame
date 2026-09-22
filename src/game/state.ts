@@ -1242,6 +1242,17 @@ export class Game {
   }
 
   /** Ports close enough to enter. */
+  /**
+   * How far the pilot's advice carries, against the lookout's own eyes.
+   *
+   * A day's run, which is what the reasoning in `portInSight` calls for and is
+   * the distance a pilot who has the latitude can usefully talk about. It must
+   * stay larger than the worst error on the inherited chart or the search for a
+   * badly drawn town has no answer — which is asserted in the landfall harness
+   * so a new port cannot quietly reintroduce it.
+   */
+  static readonly PILOT_REACH_NM = 120;
+
   approachablePorts(): { def: PortDef; distNm: number }[] {
     return portsNear(this.ship.state.pos, 8).map((p) => ({ def: p.def, distNm: p.distNm }));
   }
@@ -1324,15 +1335,39 @@ export class Game {
    * sight, bears thus-and-so. Places not yet charted are not included. This
    * tells the player nothing a ship's company would not have known and it turns
    * an impossible search into a chase.
+   *
+   * The reach of the pilot's half of that was 60 miles, and it had to be more.
+   * The whole arrangement exists because the inherited chart is wrong in
+   * longitude — and six of the nineteen places on that chart are wrong by more
+   * than sixty miles, Mina by seventy-four and Axim by sixty-seven, which are
+   * the two richest landfalls on the coast. So a captain laid a course for
+   * Mina, sailed to the spot his chart called Mina, found open water, and asked
+   * the masthead which way the town lay; and because the town was seventy-four
+   * miles off and the search stopped at sixty, nobody aboard had anything to
+   * say. The recovery the comment above describes was unavailable at exactly
+   * the ports it was written for. See PILOT_REACH_NM.
    */
-  portInSight(): { def: PortDef; bearing: number; distNm: number; sure: boolean } | null {
+  portInSight(wantId?: string): { def: PortDef; bearing: number; distNm: number; sure: boolean } | null {
     const eye = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
     // Two ranges. Inside the lookout's, with the coast up, he can see the place
     // and says so. Outside it — but within a day's run — it is the pilot
     // talking, not the lookout: he has the latitude off the quadrant and he
     // knows the town is on this coast, so he knows which way to turn, and that
     // is exactly how these places were found.
-    for (const near of portsNear(this.ship.state.pos, 60)) {
+    // The one he is looking for first, then the nearest.
+    //
+    // This only ever answered about the nearest charted town, which is the
+    // wrong answer to the question the arrival actually asks. Standing on the
+    // spot the chart calls Mina, the nearest charted town is Axim — because
+    // Mina's real position is seventy-four miles east of where it is drawn —
+    // so a captain who had laid a course for Mina, sailed it, and asked where
+    // Mina was, was told about somewhere else entirely and never about Mina.
+    const list = portsNear(this.ship.state.pos, Game.PILOT_REACH_NM);
+    const ordered = wantId
+      ? [...list].sort((a, b) =>
+          (a.def.id === wantId ? -1 : 0) - (b.def.id === wantId ? -1 : 0))
+      : list;
+    for (const near of ordered) {
       if (!this.chart.ports.has(near.def.id)) continue;
       const dLat = near.at.lat - this.ship.state.pos.lat;
       const dLon = angleDelta(this.ship.state.pos.lon, near.at.lon) * cosd(this.ship.state.pos.lat);
@@ -3332,7 +3367,9 @@ export class Game {
    * navigator believes — and the course is struck once she has.
    */
   private checkArrival(): void {
-    const d = this.destination;
+    // The raw route entry rather than the `destination` getter, which narrows
+    // away the portId the arrival message needs to tell a town from a mark.
+    const d = this.route[0];
     if (!d) return;
     const trueDist = haversine(this.ship.state.pos, { lat: d.lat, lon: d.lon }) / NM;
     if (trueDist > 6) return;
@@ -3355,8 +3392,40 @@ export class Game {
     // otherwise, which is what a ship does when she has arrived and nobody has
     // yet said what next.
     this.standingCourse = wrap360(this.ship.state.heading);
-    this.pushAlert(`Up with ${d.name}.`, 'note');
-    this.logEvent('note', `Made ${d.name} by the reckoning, and there it was.`, true);
+
+    // And what is actually here, which is not always the town.
+    //
+    // The mark is laid at the position the *chart* gives, and off Guinea the
+    // chart is wrong by up to seventy-odd miles — so arriving at it regularly
+    // means arriving at a piece of open sea. This used to announce "Made X by
+    // the reckoning, and there it was", which is a flat lie in that case and is
+    // the single most confusing thing the game can say: the player is told he
+    // has arrived somewhere he can see he is not, and concludes the world has
+    // moved. Say which of the two has happened.
+    const seen = this.portInSight(d.portId);
+    const here = seen && seen.def.id === d.portId ? seen : null;
+    if (here?.sure) {
+      this.pushAlert(`Up with ${d.name}.`, 'note');
+      this.logEvent('note',
+        `Made ${d.name} by the reckoning, and there it was, ${here.distNm.toFixed(0)} miles off `
+        + `and bearing ${formatBearing(here.bearing)}.`, true);
+      return;
+    }
+    if (here) {
+      this.pushAlert(`Up with the charted place. ${d.name} bears `
+        + `${formatBearing(here.bearing)}, ${here.distNm.toFixed(0)} miles.`, 'note');
+      this.logEvent('note',
+        `Up with the position the chart gives for ${d.name}, and there is nothing here but water. `
+        + `The pilot has the latitude and says the place lies ${formatBearing(here.bearing)} of us, `
+        + `some ${here.distNm.toFixed(0)} miles — the chart is out in its longitude, as it is `
+        + 'the whole length of this coast. Run down the parallel and look for it.', true);
+      return;
+    }
+    this.pushAlert(`Up with the charted position of ${d.name} — and nothing here.`, 'warning');
+    this.logEvent('note',
+      `Made the position the chart gives for ${d.name}. There is no town in sight and nobody `
+      + 'aboard can say which way it lies. The chart is wrong, the reckoning may be wrong as '
+      + 'well, and the only honest answers are the parallel and the lead.', true);
   }
 
   /**
