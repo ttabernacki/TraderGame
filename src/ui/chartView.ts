@@ -57,7 +57,6 @@ export class ChartView {
   private lastPointer = { x: 0, y: 0 };
   private showTrack = true;
   private showPlaces = true;
-  private showTrue = false;
   /** Draw the wind your own roteiro records, for this month. */
   private showWinds = true;
   /** And the set of the water, which is off until he goes looking for it. */
@@ -94,7 +93,7 @@ export class ChartView {
     this.root.append(
       el('div', { class: 'screen-head' },
         el('h1', {}, 'The chart'),
-        el('div', { class: 'sub' }, 'Drawn from the reckoning, and no better than the reckoning'),
+        el('div', { class: 'sub' }, 'The land is where the land is. You are where you think you are'),
       ),
       el('div', { class: 'screen-body', style: { padding: '0', overflow: 'hidden' } }, this.wrap),
       el('div', { class: 'screen-foot' },
@@ -304,8 +303,6 @@ export class ChartView {
           ? this.chip('Set', this.showSet, () => { this.showSet = !this.showSet; },
             'The set of the water as your own book has it, for this month')
           : null,
-        this.chip('Truth', this.showTrue, () => { this.showTrue = !this.showTrue; },
-          'A modern overlay showing where the land actually is. No pilot of this century had this.'),
         this.chip('Centre', false, () => {
           if (g) this.centre = { ...g.nav.estimated };
         }, 'Bring the chart back to where she thinks she is'),
@@ -767,7 +764,6 @@ export class ChartView {
 
     this.drawGraticule(ctx, rect);
     this.drawRhumbNetwork(ctx, rect);
-    if (this.showTrue) this.drawTrueCoast(ctx);
     // The set under the wind, so where both are drawn the wind reads on top.
     if (this.showSet && this.game) this.drawSeaArrows(ctx, this.game, 'set');
     if (this.showWinds && this.game) this.drawSeaArrows(ctx, this.game, 'wind');
@@ -873,19 +869,16 @@ export class ChartView {
     // Two passes, and the split is the whole point of the screen.
     //
     // Coast you have run yourself is drawn firm. Coast you inherited from the
-    // Casa's chart — which for everything south of Morocco is a long way from
-    // where the land really is — is drawn faint and broken, the way a
-    // cartographer draws a coast he has only been told about. It is the same
-    // ink either way, so the player can see at a glance which part of his own
-    // chart he would stake the ship on, and that turns running a known coast
-    // from scenery into work worth doing.
+    // Casa — a line copied from a line by men who had not been there — is
+    // drawn faint and broken, the way a cartographer draws a coast he has only
+    // been told about. It is the same ink either way, so the player can see at
+    // a glance which part of his own chart is his, and that turns running a
+    // known coast from scenery into work worth doing.
     //
-    // Which grade a stretch gets is read off what the pilot knows about it and
-    // nothing else: how many times he has run it and how far his reckonings
-    // agreed. It used to be read off how far the drawing is from the real
-    // coast, which is a number nobody aboard could possibly have — a lucky
-    // guess came out drawn firm and an honest survey with a bad departure came
-    // out drawn as hearsay. The chart may be wrong. It may not know it.
+    // The grade is read off what the pilot knows about the stretch and nothing
+    // else: how many times he has run it, and what his fixes were worth when
+    // he did. It is not read off any error in the drawing — the chart draws
+    // the world true. What it tracks is who has actually seen it.
     const byLand = new Map<number, { index: number; lat: number; lon: number; grade: number }[]>();
     for (const p of g.chart.points.values()) {
       const idx = Number(p.key.split(':')[1]);
@@ -1047,24 +1040,6 @@ export class ChartView {
           ctx.stroke();
         }
       }
-    }
-    ctx.restore();
-  }
-
-  private drawTrueCoast(ctx: CanvasRenderingContext2D): void {
-    ctx.save();
-    ctx.strokeStyle = 'rgba(60, 110, 160, 0.45)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 3]);
-    for (const land of LANDMASSES) {
-      const r = land.ring;
-      ctx.beginPath();
-      for (let i = 0; i < r.length; i += 2) {
-        const s = this.toScreen(r[i], r[i + 1]);
-        if (i === 0) ctx.moveTo(s.x, s.y); else ctx.lineTo(s.x, s.y);
-      }
-      ctx.closePath();
-      ctx.stroke();
     }
     ctx.restore();
   }
@@ -1372,9 +1347,9 @@ function buildLegend(): HTMLElement {
   const item = (color: string, label: string) =>
     el('div', {}, el('i', { style: { background: color } }), el('span', {}, label));
   return el('div', { class: 'chart-legend' },
-    item('#4a3520', 'A position you would steer on'),
-    item('#6b4f30', 'Drawn on one day\u2019s reckoning'),
-    item('rgba(74,53,32,0.42)', 'On the Casa\u2019s chart, position doubtful'),
+    item('#4a3520', 'Coast you have surveyed'),
+    item('#6b4f30', 'Run once, in one day\u2019s passage'),
+    item('rgba(74,53,32,0.42)', 'The Casa\u2019s word for it — nobody aboard has seen it'),
     item('#a83228', 'Portuguese factory'),
     item('#3c5a8a', 'A padrão of yours'),
     item('rgba(170,130,70,0.55)', 'Where a rumour points'),

@@ -176,17 +176,16 @@ export function castLead(g: Game): LeadCast {
     // than the reckoning that wrote the page did, which is the whole ethic of
     // the chart in this game — but it fixes her.
     //
-    // Blended against the board rather than asserted over it. Asserting it was
-    // what threw a ship standing out of São Jorge da Mina several hundred
-    // miles: the cast she made coming in, on a board two hundred miles out,
-    // was handed straight back to her on the way out as a three-mile fix, and
-    // the coast of Africa appeared to move. See Navigator.rememberedFix.
+    // Blended against the board on the page's own doubt rather than asserted
+    // over it, so a page out of an older save — written on a reckoning instead
+    // of on the ground — cannot throw a good board across the gulf.
+    // See Navigator.rememberedFix.
     recalledMove = nav.rememberedFix(
       { lat: known.lat, lon: known.lon }, Math.max(known.doubt, 2.5), g.clock.t,
     );
   }
 
-  writeSounding(g, cell, fathoms, ground);
+  writeSounding(g, cell, fathoms, ground, truth);
 
   const call = `By the deep, ${fathoms.toFixed(0)}. ${capitalise(ground)} on the tallow.`;
   g.logEvent('navigation', call
@@ -235,18 +234,14 @@ function recallSounding(g: Game, cell: string): RecalledSounding | null {
       return {
         ground,
         fathoms: n.fact.value ?? 0,
-        // The cast's own reckoned position, not the page's. A page is opened
-        // under the name of the nearest thing on the chart and keeps for ever
-        // the position it was opened at, so reading the entry handed back
-        // wherever the *first* cast ever filed under that name happened to
-        // be — which on a coast run twice is a different stretch of it.
+        // The cast's own position, not the page's. A page is opened under the
+        // name of the nearest thing on the chart and keeps for ever the
+        // position it was opened at, so reading the entry handed back wherever
+        // the *first* cast ever filed under that name happened to be.
         lat: n.fact.lat ?? e.lat,
         lon: n.fact.lon ?? e.lon,
-        // And the doubt the board carried when it was written, which used to
-        // be a flat three miles however wrong the pilot had been that day.
-        // A page out of an old save has no doubt recorded, and is therefore
-        // treated as worthless for position, which is the safe way to be
-        // wrong about it.
+        // A page out of an older save was written on a reckoning rather than
+        // on the ground itself, so it is trusted no further than that.
         doubt: n.fact.doubt ?? 120,
         where: e.title,
       };
@@ -264,15 +259,16 @@ function recallSounding(g: Game, cell: string): RecalledSounding | null {
  * the note's source field so a later cast can be compared against it.
  */
 function writeSounding(
-  g: Game, cell: string, fathoms: number, ground: Ground,
+  g: Game, cell: string, fathoms: number, ground: Ground, at: LatLon,
 ): void {
   const where = nearestName(g) ?? `the coast in ${Math.abs(g.nav.estimated.lat).toFixed(0)}° `
     + `${g.nav.estimated.lat >= 0 ? 'north' : 'south'}`;
   const { entry } = g.rutter.open(
     'coast', `coast:${where}`, where, g.nav.estimated, g.clock.t);
-  // The position and the doubt go on the line, not on the page. A second cast
-  // over the same ground on a surer board overwrites the first — see
-  // Rutter.note — which is how a pilot's book actually gets better.
+  // The patch of bottom is where it is. What the pilot wrote in his book is a
+  // note about a real place, so recognising that ground again tells him truly
+  // where he is — which is the whole value of a sounding book, and the reason
+  // the lead is worth heaving at all.
   g.rutter.note(entry,
     `Soundings: ${fathoms.toFixed(0)} fathoms, ${ground}.`,
     'observed', g.clock.t,
@@ -280,8 +276,10 @@ function writeSounding(
       source: ground,
       fact: {
         tag: 'sounding', value: fathoms, target: cell,
-        lat: g.nav.estimated.lat, lon: g.nav.estimated.lon,
-        doubt: Math.hypot(g.nav.sigmaLat, g.nav.sigmaLon),
+        lat: at.lat, lon: at.lon,
+        // The ground cell is a few miles across, so knowing it puts her within
+        // a few miles and no closer.
+        doubt: 4,
       },
     });
 }

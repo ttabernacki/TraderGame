@@ -8,21 +8,18 @@ import { PORTS, anchorageOf, type PortDef } from '../world/ports';
 export interface ChartedPoint {
   /** Landmass and vertex this represents. */
   key: string;
-  /** Where the pilot drew it, which is where he thought he was when he saw it. */
+  /** Where it is. The chart does not lie about the world. */
   lat: number;
   lon: number;
   /**
-   * The weight behind the drawn position, separately for each coordinate, in
-   * inverse square miles — the sum of the confidence of every sighting that has
-   * gone into it.
+   * How well established this stretch is, separately for each coordinate, in
+   * inverse square miles — the sum of what every sighting of it was worth.
    *
-   * Two numbers rather than one because latitude and longitude were not known
-   * the same way and did not improve at the same rate. A quadrant gives a
-   * latitude to a few miles on the first morning; a longitude is a guess at the
-   * day's run laid off from the last guess, and the only thing that ever
-   * improved one was running the same water again by a different reckoning and
-   * splitting the difference. So a coast's latitude firms up in one pass and its
-   * longitude takes a career, which is the shape of every chart of the period.
+   * Not a doubt about where the coast is: the chart has that right. It is how
+   * much surveying stands behind the stretch, and it is what the firm and
+   * dashed coastlines on the chart table are read off. Latitude firms up in a
+   * pass because a quadrant settles it; longitude takes many, because what a
+   * pilot brings to it is only ever the day's run laid off from the last guess.
    */
   wLat: number;
   wLon: number;
@@ -30,7 +27,7 @@ export interface ChartedPoint {
   passes: number;
   /** When it was last taken a sighting of, so one slow pass is not twenty. */
   obsT: number;
-  /** How far off the drawing is, in nautical miles. Never shown to the player. */
+  /** Kept at nought: the chart is drawn true. Retained so old saves load. */
   errorNm: number;
   land: number;
   t: number;
@@ -53,7 +50,7 @@ export interface ChartedPort {
 export interface Placename {
   id: string;
   name: string;
-  /** Where it was written, by the reckoning of the day it was written. */
+  /** Where the thing named actually is. */
   lat: number;
   lon: number;
   kind: 'cape' | 'bay' | 'river' | 'island' | 'shoal' | 'note';
@@ -68,13 +65,13 @@ export interface Placename {
 export interface SurveyResult {
   /** Coast nobody had drawn before. */
   fresh: CoastVertex[];
-  /** Coast that was drawn wrong and is now drawn better. */
+  /** Coast the Casa only had hearsay for, now run in person. */
   corrected: number;
   /** Coast that had been run before and has now been run again. */
   confirmed: number;
   /** Nautical miles of coastline this pass accounts for. */
   milesTaken: number;
-  /** Total error taken out of the chart, in miles. */
+  /** Miles of that hearsay coast turned into survey. */
   improvedNm?: number;
 }
 
@@ -87,12 +84,23 @@ export interface TrackPoint {
 /**
  * The ship's chart.
  *
- * Everything on it is drawn at the position the pilot reckoned he occupied when
- * he saw it. His reckoning is wrong, so his chart is wrong, and because he has
- * no way to measure longitude the error he builds into it is permanent. Sail
- * the same coast twice by different reckonings and you will draw it twice, in
- * two places. This is not a bug in the chart; it is what every chart of this
- * period actually was.
+ * The chart is the world, drawn true. Coast, towns and named places sit where
+ * they actually are and they never move.
+ *
+ * This used to plot everything at the position the pilot reckoned he occupied
+ * when he saw it, so that a bad reckoning built a bad chart and the paper
+ * carried the error for ever. It is what a chart of 1482 really was, and as a
+ * thing to play it was miserable: the coastline, the towns and the ship all
+ * slid about relative to one another depending on where the reckoning happened
+ * to be and what the lead had last said, and a player had nothing fixed to
+ * think against. A man can be lost. The world cannot.
+ *
+ * So the one thing allowed to be wrong is the ship's own position: `Navigator`
+ * still carries a reckoning that drifts, and the chart still draws her where
+ * she *thinks* she is. What the chart records about the world is simply true,
+ * and what it tracks about each stretch is how well the pilot knows it —
+ * whether he has run it himself or only has the Casa's word for it — which is
+ * knowledge, not geometry, and is what the firm and dashed coastlines mean.
  */
 export class Chart {
   points = new Map<string, ChartedPoint>();
@@ -120,23 +128,14 @@ export class Chart {
 
   /**
    * What a Portuguese pilot already has on his chart at the start of the
-   * campaign — and, much more importantly, how wrong it is.
+   * campaign, and how much of it he has actually seen.
    *
    * The coast from Flanders to the Gulf of Guinea had been sailed for sixty
-   * years by 1482, so it is on the chart. But it is on the chart the way a
-   * chart of 1482 actually had it: the *latitudes* are good, because every
-   * pilot on that coast carried a quadrant and the regimento, and the
-   * *longitudes* are badly out, because nobody on earth could measure one. Real
-   * charts of the period stretch Africa east-west by tens of leagues, and the
-   * further from Lisbon the worse it gets, because the error is cumulative down
-   * the coast.
-   *
-   * This is not decoration. Drawing the known world accurately meant there was
-   * nothing for a surveyor to do until he passed the equator — a fortnight of
-   * sailing before the game's central activity started. Drawing it the way it
-   * really was gives the player work from the first morning: the coast he can
-   * see is not where his chart says it is, and every landfall he makes on a
-   * place he knows lets him put a piece of it right.
+   * years by 1482, so it is on the chart — drawn true, like everything else
+   * here. What marks it out from coast he has run himself is `passes`, which
+   * is nought: the Casa's word for it, drawn faint and broken, worth something
+   * to steer by and not worth staking the ship on. Running it in person is
+   * what turns it firm, and that is the surveyor's work.
    */
   private seedKnownWorld(): void {
     const seedBoxes = [
@@ -157,47 +156,34 @@ export class Chart {
       }
     }
 
-    // The ports carry the same distortion as the coast they sit on: a place
-    // you have heard of is not a place whose position you know.
+    // The ports a Portuguese pilot has heard of are on the chart, where they
+    // are. What he does not have is the having-been-there, which is `passes`.
     for (const p of PORTS) {
       if (!p.known) continue;
       const at = anchorageOf(p);
-      const d = seededError(at.lat, at.lon);
       this.ports.set(p.id, {
         id: p.id,
-        lat: at.lat + d.dLat,
-        lon: at.lon + d.dLon,
+        lat: at.lat, lon: at.lon,
         visited: false, traded: false, t: 0,
-        ...seededWeights(d.dLat, d.dLon, at.lat), passes: 0,
+        wLat: SEEDED_W_LAT, wLon: SEEDED_W_LON, passes: 0,
       });
     }
   }
 
   /**
-   * Record whatever the lookout can see, drawn relative to the pilot's reckoned
-   * position rather than the true one, and averaged in with what the chart
-   * already says.
+   * Record whatever the lookout can see.
    *
-   * The averaging is the whole of how a chart of this period got better, and it
-   * is worth being exact about why. One pass down a coast draws it wherever the
-   * pilot's reckoning happened to be that day — sixty miles east on one voyage,
-   * forty west on the next, because a dead-reckoned longitude is a guess and the
-   * guesses fall on both sides. No single pass can tell you which of them is
-   * wrong. But lay a second pass over the first and split the difference, and a
-   * third over that, and the errors that fall either way cancel while the coast
-   * itself does not move. That is a consensus, arrived at with no instrument
-   * capable of measuring the thing being agreed on, and it is how the Casa's
-   * chart of Guinea was built: not by one man getting it right, but by forty
-   * men getting it wrong in different directions.
-   *
-   * Each sighting is weighted by what it is worth — the pilot's own doubt at
-   * that moment, and how far off the land was — so a landfall taken an hour
-   * after a good sun sight moves the chart, and a bearing taken at the end of
-   * three weeks of blue water hardly moves it at all.
+   * The coast goes down where it is. What a pass adds is not a position — the
+   * position was never in doubt — but standing: each sighting is weighted by
+   * what it is worth, the pilot's own doubt at that moment and how far off the
+   * land was, and it is the accumulated weight that decides whether a stretch
+   * is drawn firm or left as the Casa's hearsay.
    */
   survey(
     truePos: LatLon,
-    reckoned: LatLon,
+    // Kept in the signature: the reckoning no longer places anything on the
+    // chart, and callers have no reason to be rewritten for that.
+    _reckoned: LatLon,
     rangeNm: number,
     t: number,
     cartography: number,
@@ -212,34 +198,25 @@ export class Chart {
     let confirmed = 0;
     let improvedNm = 0;
 
-    const dLat = reckoned.lat - truePos.lat;
-    const dLon = wrap180(reckoned.lon - truePos.lon);
-
     for (const v of seen) {
       const key = `${v.land}:${v.index}`;
       const existing = this.points.get(key);
 
       // One slow pass along a coast is one sighting of each headland on it, not
       // the eighty the running survey would otherwise record between breakfast
-      // and dark. Without this a ship could sit hove to off a cape and average
-      // her own single opinion into a certainty.
+      // and dark.
       if (existing && existing.passes > 0 && t - existing.obsT < 12 * 3600) continue;
 
-      // The nearer the land and the better the cartographer, the better the
-      // relative survey, but the whole sheet is still displaced by the pilot's
-      // own positional error.
+      // Drawn where it is. The pilot's own doubt no longer displaces the
+      // coastline — it decides how much this sighting is *worth*, which is how
+      // firm the stretch ends up being drawn, and nothing else.
       const distNm = Math.hypot(
         (v.lat - truePos.lat) * 60,
         wrap180(v.lon - truePos.lon) * 60 * cosd(truePos.lat),
       );
-      const relativeErr = (0.02 + distNm * 0.004) * (1.4 - cartography);
-      const plottedLat = v.lat + dLat + (hash(key + t) - 0.5) * relativeErr;
-      const plottedLon = v.lon + dLon + (hash(key + 'y' + t) - 0.5) * relativeErr * 1.6;
-
-      // What this one sighting is worth, against what is already drawn — and
-      // never more than one pass of a coast can honestly be worth. See
-      // PASS_W_LON: a single reckoning is not allowed to carry the sheet.
-      const relNm = relativeErr * 60;
+      // A headland taken close aboard by a good cartographer is a better piece
+      // of survey than one raised half hull-down by a bad one.
+      const relNm = (1.2 + distNm * 0.24) * (1.4 - cartography);
       const wLat = 1 / (sigmaLatNm * sigmaLatNm + relNm * relNm + 0.25);
       const wLon = Math.min(
         1 / (sigmaLonNm * sigmaLonNm + relNm * relNm + 0.25), PASS_W_LON);
@@ -247,36 +224,32 @@ export class Chart {
       if (!existing) {
         newly.push(v);
         this.points.set(key, {
-          key, lat: plottedLat, lon: plottedLon,
+          key, lat: v.lat, lon: v.lon,
           wLat, wLon, passes: 1, obsT: t,
-          errorNm: errorOf(plottedLat, plottedLon, v),
+          errorNm: 0,
           land: v.land, t,
         });
         continue;
       }
 
-      const before = existing.errorNm;
-      const lat = (existing.lat * existing.wLat + plottedLat * wLat) / (existing.wLat + wLat);
-      const lon = existing.lon
-        + (wrap180(plottedLon - existing.lon) * wLon) / (existing.wLon + wLon);
-      existing.lat = lat;
-      existing.lon = lon;
-      // Capped, so that no amount of agreement makes a chart drawn by eye
-      // better than about half a mile, and so a stretch drawn a hundred times
-      // can still be moved by a hundred-and-first pass that disagrees.
+      // Coast that was on the chart only on the Casa's say-so, and has now
+      // been run in person. That is what the Casa paid a surveyor for: not
+      // moving a coastline, which nobody could verify, but replacing hearsay
+      // with a pilot who has been there and will put his name to it.
+      const wasHearsay = existing.passes === 0;
+
+      existing.lat = v.lat;
+      existing.lon = v.lon;
       existing.wLat = Math.min(existing.wLat + wLat, WEIGHT_CAP);
       existing.wLon = Math.min(existing.wLon + wLon, WEIGHT_CAP);
       existing.passes++;
       existing.obsT = t;
       existing.t = t;
-      existing.errorNm = errorOf(lat, lon, v);
+      existing.errorNm = 0;
 
-      if (before - existing.errorNm > 3) {
-        // Coast that was on the chart in the wrong place and is now in the
-        // right one. This is most of what a pilot on this route actually did,
-        // and it has to be worth something or the inherited chart is scenery.
+      if (wasHearsay) {
         corrected++;
-        improvedNm += before - existing.errorNm;
+        improvedNm += SEGMENT_NM;
       } else if (existing.passes > 1) {
         confirmed++;
       }
@@ -348,59 +321,48 @@ export class Chart {
   }
 
   /**
-   * Where the chart says a port is, which is not where it is.
+   * Where a port is, if this chart has heard of it at all.
    *
-   * This is what a pilot steers for and what he fixes himself by when he gets
-   * there, so it has to be askable. Returns null for a place he has never
-   * heard of, which is the honest answer and means he has nothing to steer for.
+   * Returns null for a place he has never heard of, which is the honest answer
+   * and means he has nothing to steer for — that part of the model stays: a
+   * chart can be *missing* a place, it just cannot be wrong about one.
    */
   believedPort(id: string): ChartedPort | null {
     return this.ports.get(id) ?? null;
   }
 
   /**
-   * Draw a port, or agree a little more with what is already drawn.
+   * Draw a port, or note that you have been there again.
    *
-   * A port is charted the way a coast is: the latitude a quadrant gives is
-   * taken almost at face value, and the longitude is one more opinion averaged
-   * into the opinions already on the paper. Visiting Arguim for the fifth time
-   * does not tell you where Arguim is; visiting it for the fifth time by five
-   * different reckonings does.
+   * The town goes on the chart where the town is. What a visit adds is the
+   * record of having made it — which is what the Casa buys, and what tells a
+   * player at a glance which of these places he has actually seen.
    */
   chartPort(
-    def: PortDef, reckoned: LatLon, truePos: LatLon, t: number, visited: boolean,
+    def: PortDef, _reckoned: LatLon, _truePos: LatLon, t: number, visited: boolean,
     sigmaLatNm = 12, sigmaLonNm = 30,
   ): boolean {
     const existing = this.ports.get(def.id);
     const at = anchorageOf(def);
-    // Plotted relative to the pilot's reckoning, like everything else.
-    const lat = at.lat + (reckoned.lat - truePos.lat);
-    const lon = at.lon + wrap180(reckoned.lon - truePos.lon);
 
-    // A landing puts the latitude beyond argument — the quadrant is ashore and
-    // steady and there is all day to use it — and does nothing whatever for the
-    // longitude, which is still only the day's run laid off from the last
-    // guess. That asymmetry is the whole reason ports of this period are drawn
-    // in the right parallel and the wrong meridian.
+    // What this visit is worth as survey. The position is not in question —
+    // the town is where the town is — so this only records that a pilot has
+    // now been there and what his fixes were worth when he was.
     const wLat = visited ? 1 / 0.25 : 1 / (sigmaLatNm * sigmaLatNm + 1);
-    // Capped the same way a coast sighting is. One arrival is one opinion,
-    // however confident the board claims to be when it comes alongside.
     const wLon = Math.min(1 / (sigmaLonNm * sigmaLonNm + 1), PASS_W_LON);
 
     if (!existing) {
       this.ports.set(def.id, {
-        id: def.id, lat, lon, visited, traded: false, t,
+        id: def.id, lat: at.lat, lon: at.lon, visited, traded: false, t,
         wLat, wLon, passes: 1,
       });
       return true;
     }
 
-    const eLat = existing.wLat ?? 1 / 25;
-    const eLon = existing.wLon ?? 1 / 900;
-    existing.lat = (existing.lat * eLat + lat * wLat) / (eLat + wLat);
-    existing.lon = existing.lon + (wrap180(lon - existing.lon) * wLon) / (eLon + wLon);
-    existing.wLat = Math.min(eLat + wLat, WEIGHT_CAP);
-    existing.wLon = Math.min(eLon + wLon, WEIGHT_CAP);
+    existing.lat = at.lat;
+    existing.lon = at.lon;
+    existing.wLat = Math.min((existing.wLat ?? SEEDED_W_LAT) + wLat, WEIGHT_CAP);
+    existing.wLon = Math.min((existing.wLon ?? SEEDED_W_LON) + wLon, WEIGHT_CAP);
     existing.passes = (existing.passes ?? 0) + 1;
     existing.visited = existing.visited || visited;
     existing.t = t;
@@ -408,87 +370,25 @@ export class Chart {
   }
 
   /**
-   * Move the sheet, not the pin.
-   *
-   * A chart is one piece of paper. When a pilot comes to anchor off a place he
-   * knows and finds it is not where he had drawn it, he does not rub out the
-   * town and leave the coastline round it alone — he shifts that part of the
-   * sheet, because the town and the coast either side of it were drawn in the
-   * same pass, from the same reckoning, with the same error in them.
-   *
-   * Nothing did this. Chart.chartPort moved the port and Chart.survey moved
-   * whatever coast happened to be in sight, on their own separate weights, and
-   * the coast out of sight to leeward was never touched at all. So a landfall
-   * could put the ship on a port that had just moved a long way while the
-   * coast it sits on had not, and the captain stood out of São Jorge da Mina
-   * to find Africa a long way from where his own chart had just placed him.
-   *
-   * The shift is damped by how well each stretch is held: coast the pilot has
-   * run twenty times and agrees with himself about does not move because one
-   * town turned out to be misplaced, and coast he has barely seen moves nearly
-   * all the way. It also falls off with distance, because a local fix is local
-   * evidence — it says nothing about a coast four hundred miles away.
-   */
-  realign(at: LatLon, dLat: number, dLon: number, radiusNm: number): number {
-    if (!Number.isFinite(dLat) || !Number.isFinite(dLon)) return 0;
-    if (Math.abs(dLat) < 1e-9 && Math.abs(dLon) < 1e-9) return 0;
-    const cosLat = Math.max(cosd(at.lat), 0.2);
-    let moved = 0;
-    for (const p of this.points.values()) {
-      const dNm = Math.hypot(
-        (p.lat - at.lat) * 60,
-        wrap180(p.lon - at.lon) * 60 * cosLat,
-      );
-      if (dNm > radiusNm) continue;
-      // Full strength under the fix, fading to nothing at the edge.
-      const near = 1 - (dNm / radiusNm) * (dNm / radiusNm);
-      // Resisted by how often the pilot has run this stretch himself, which is
-      // the only thing he actually knows about how well he has it.
-      //
-      // Not by the point's stored weight: a seeded vertex whose error happens
-      // to be small carries a huge weight, and weighting by that is weighting
-      // by an accuracy nobody aboard has measured or could. It also defeated
-      // the purpose — the one vertex on the bay that happened to be drawn
-      // right refused to move with the sheet, and became the piece of coast
-      // standing a hundred miles from where the chart had just put the ship.
-      //
-      // Coast inherited and never seen (no passes) goes with the town entire.
-      // Coast laid down a dozen times by a dozen reckonings holds its ground,
-      // because by then it is a consensus and the town is one opinion.
-      const share = near / (1 + p.passes * 0.5);
-      if (share < 0.01) continue;
-      p.lat += dLat * share;
-      p.lon = wrap180(p.lon + dLon * share);
-      const v = coastVertexByKey(p.key);
-      if (v) p.errorNm = errorOf(p.lat, p.lon, v);
-      moved++;
-    }
-    return moved;
-  }
-
-  /**
    * Write a name on the chart, pinned to the piece of coast it belongs to.
    *
    * A name is not a position, it is a *place* — that headland, the one we
-   * watered at — and when the chart later agrees that the headland is thirty
-   * miles further west than we drew it, the name has to go with it. Recording
-   * the reckoned latitude and longitude alone left every cape a captain ever
-   * named floating in open water the moment his own survey improved, which is
-   * the one thing a chart is not allowed to do to a pilot.
+   * watered at — so it hangs off the nearest charted vertex rather than
+   * floating on a pair of numbers. `at` is where the thing actually is.
    */
-  addPlace(name: string, kind: Placename['kind'], reckoned: LatLon, t: number): Placename {
+  addPlace(name: string, kind: Placename['kind'], at: LatLon, t: number): Placename {
     let anchorKey: string | undefined;
     let dLat = 0, dLon = 0, best = Infinity;
     for (const q of this.points.values()) {
       const d = Math.hypot(
-        (q.lat - reckoned.lat) * 60,
-        wrap180(q.lon - reckoned.lon) * 60 * cosd(reckoned.lat),
+        (q.lat - at.lat) * 60,
+        wrap180(q.lon - at.lon) * 60 * cosd(at.lat),
       );
       if (d < best) {
         best = d;
         anchorKey = q.key;
-        dLat = reckoned.lat - q.lat;
-        dLon = wrap180(reckoned.lon - q.lon);
+        dLat = at.lat - q.lat;
+        dLon = wrap180(at.lon - q.lon);
       }
     }
     // Further off than that and it is not a name for anything on this coast.
@@ -497,7 +397,7 @@ export class Chart {
     const p: Placename = {
       id: `pl${this.nextPlaceId++}`,
       name, kind,
-      lat: reckoned.lat, lon: reckoned.lon,
+      lat: at.lat, lon: at.lon,
       anchorKey, dLat, dLon,
       t,
     };
@@ -505,7 +405,7 @@ export class Chart {
     return p;
   }
 
-  /** Where a name sits now, which is wherever the coast it names has got to. */
+  /** Where a name sits: on the piece of coast it was given to. */
   placeAt(p: Placename): LatLon {
     if (!p.anchorKey) return { lat: p.lat, lon: p.lon };
     const a = this.points.get(p.anchorKey);
@@ -541,17 +441,16 @@ export class Chart {
   /**
    * Somebody else's sheet, copied onto yours.
    *
-   * This is not surveying and it must not feel like it. A pilot who lets you
-   * copy his coast hands you his errors along with his coast: what you get is a
-   * drawing good to within `accuracyNm` and no better, laid down in one
-   * afternoon over a stretch you may never have seen. It is worth having — it
-   * is how most of what Portugal knew travelled — and it is exactly why the
-   * Casa forbade it, and why a sheet of the Mina coast was worth killing for.
+   * This is not surveying and it must not feel like it. What a copied sheet
+   * gives you is *coast you have never seen*, laid down in one afternoon —
+   * which is worth having, is how most of what Portugal knew travelled, and is
+   * exactly why the Casa forbade it and why a sheet of the Mina coast was
+   * worth killing for.
    *
-   * It is deliberately weaker than running the coast yourself: the copy is
-   * entered at a fixed modest weight, so one honest pass of your own over the
-   * same headland will move it, and it never overwrites something you already
-   * know better.
+   * It is deliberately weaker than running the coast yourself: a copy is
+   * entered at a fixed modest standing and with no passes against it, so it
+   * draws as hearsay until you have been there, and one honest pass of your
+   * own counts for more than any number of copies.
    *
    * Returns the number of vertices the copy actually added or improved.
    */
@@ -561,23 +460,18 @@ export class Chart {
     for (const v of coastVerticesNear(centre, rangeNm)) {
       const key = `${v.land}:${v.index}`;
       const have = this.points.get(key);
-      if (have && have.errorNm <= accuracyNm) continue;
-      // His error, not yours, and the same every time you copy the same sheet.
-      const ang = hash(key + 'copy') * Math.PI * 2;
-      const off = accuracyNm * (0.35 + 0.65 * hash(key + 'copyr'));
-      const lat = v.lat + (off * Math.cos(ang)) / 60;
-      const lon = v.lon + (off * Math.sin(ang)) / (60 * Math.max(cosd(v.lat), 1e-6));
+      // Nothing to gain from a sheet no better than what you already hold.
+      if (have && have.wLon >= w) continue;
       if (have) {
-        have.lat = lat;
-        have.lon = lon;
+        have.lat = v.lat;
+        have.lon = v.lon;
         have.wLat = Math.min(Math.max(have.wLat, w), WEIGHT_CAP);
         have.wLon = Math.min(Math.max(have.wLon, w), WEIGHT_CAP);
-        have.errorNm = errorOf(lat, lon, v);
         have.t = t;
       } else {
         this.points.set(key, {
-          key, lat, lon, wLat: w, wLon: w, passes: 0, obsT: -1e9,
-          errorNm: errorOf(lat, lon, v), land: v.land, t,
+          key, lat: v.lat, lon: v.lon, wLat: w, wLon: w, passes: 0, obsT: -1e9,
+          errorNm: 0, land: v.land, t,
         });
       }
       gained++;
@@ -700,6 +594,39 @@ export class Chart {
     c.places = data.places ?? [];
     c.track = data.track ?? [];
     c.seen = new Map(data.seen ?? []);
+
+    // Every save written before the chart drew the world true carries a coast
+    // and a set of towns displaced by whatever the reckoning was doing the day
+    // each was drawn. Snap them all home on load, so a voyage in progress
+    // stops having Africa in two places. What the save is still allowed to
+    // keep is the *knowledge* — passes, weights, coverage — which is the part
+    // the pilot really earned.
+    for (const [key, pt] of c.points) {
+      const v = coastVertexByKey(key);
+      if (!v) { c.points.delete(key); continue; }
+      pt.lat = v.lat;
+      pt.lon = v.lon;
+      pt.errorNm = 0;
+    }
+    for (const cp of c.ports.values()) {
+      const def = PORTS.find((q) => q.id === cp.id);
+      if (!def) continue;
+      const at = anchorageOf(def);
+      cp.lat = at.lat;
+      cp.lon = at.lon;
+    }
+    // A name hangs off a vertex by an offset taken when it was written, and
+    // that offset was measured against a displaced coast. Re-hang it.
+    for (const pl of c.places) {
+      if (!pl.anchorKey) continue;
+      const v = coastVertexByKey(pl.anchorKey);
+      if (!v) { pl.anchorKey = undefined; continue; }
+      const drawn = c.points.get(pl.anchorKey);
+      if (!drawn) continue;
+      pl.dLat = pl.lat - drawn.lat;
+      pl.dLon = wrap180(pl.lon - drawn.lon);
+    }
+
     (c as any).lastTrackT = -1e9;
     (c as any).nextPlaceId = (c.places.length ?? 0) + 1;
     return c;
@@ -727,32 +654,9 @@ function r6(n: number): number {
  * check one. At Cape Verde that is a few leagues; at the Gulf of Guinea it is
  * the better part of a degree and a half, which is what actually happened.
  */
-function seededError(lat: number, lon: number): { dLat: number; dLon: number } {
-  const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
-
-  // A cumulative westward drift, growing with the distance south of Lisbon.
-  //
-  // This is the shape a real error of this kind has. Nobody measured a
-  // longitude; each pilot laid off his day's run from the last man's position,
-  // and every mile of error he made stayed in the chart for the man after him.
-  // So the further down the coast you go the further the paper is from the
-  // world, and it goes *one way* — the whole of Guinea slid west together —
-  // rather than scattering. Near Lisbon it is a mile or two; at Mina it is the
-  // better part of a degree and a half, which is what the charts of the period
-  // actually show.
-  const south = Math.min(Math.max((38.7 - lat) / 36, 0), 1.35);
-  const drift = -south * 1.35;
-  const wobble = (hash(key + 'x') - 0.5) * (0.16 + south * 0.34);
-  return {
-    // Latitude is nearly right: every pilot on that coast carried a quadrant.
-    dLat: (hash(key) - 0.5) * 0.09,
-    dLon: drift + wobble,
-  };
-}
-
 /**
- * The most a chart drawn by eye from a moving deck is ever allowed to be worth,
- * as a weight. Half a mile, which is finer than any of the instruments.
+ * The ceiling on how well established a stretch may get, as a weight, so that
+ * standing accumulates toward a limit rather than without bound.
  */
 const WEIGHT_CAP = 1 / (0.5 * 0.5);
 
@@ -800,30 +704,18 @@ const PASS_W_LON = 1 / (12 * 12);
  * A latitude anywhere is worth more than a longitude anywhere, because a
  * quadrant is an instrument and a day's run is an opinion.
  */
-function seededWeights(dLatDeg: number, dLonDeg: number, lat: number):
-{ wLat: number; wLon: number } {
-  const eLat = Math.abs(dLatDeg) * 60;
-  const eLon = Math.abs(dLonDeg) * 60 * cosd(lat);
-  return { wLat: 1 / (eLat * eLat + 4), wLon: 1 / (eLon * eLon + 9) };
-}
-
-/** What a chart saved before any of this was recorded is taken to be worth. */
+/** What the Casa's inherited word for a coast is worth, before you go there. */
 const SEEDED_W_LAT = 1 / (5 * 5);
 const SEEDED_W_LON = 1 / (55 * 55);
 
-function errorOf(lat: number, lon: number, v: { lat: number; lon: number }): number {
-  return Math.hypot((lat - v.lat) * 60, wrap180(lon - v.lon) * 60 * cosd(v.lat));
-}
+/** Median spacing of the coastline ring's vertices, for crediting survey. */
+const SEGMENT_NM = 47;
 
 function seededPoint(key: string, v: CoastVertex): ChartedPoint {
-  const d = seededError(v.lat, v.lon);
-  const lat = v.lat + d.dLat;
-  const lon = v.lon + d.dLon;
-  const w = seededWeights(d.dLat, d.dLon, v.lat);
   return {
-    key, lat, lon,
-    wLat: w.wLat, wLon: w.wLon, passes: 0, obsT: -1e9,
-    errorNm: Math.hypot(d.dLat * 60, d.dLon * 60 * cosd(v.lat)),
+    key, lat: v.lat, lon: v.lon,
+    wLat: SEEDED_W_LAT, wLon: SEEDED_W_LON, passes: 0, obsT: -1e9,
+    errorNm: 0,
     land: v.land,
     t: 0,
   };
@@ -850,14 +742,5 @@ export function sightingRangeNm(mastHeightM: number, visibilityNm: number, landH
   return Math.min(horizon, visibilityNm * 1.6);
 }
 
-function hash(s: string | number): number {
-  const str = String(s);
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < str.length; i++) {
-    h ^= str.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return ((h >>> 0) % 100000) / 100000;
-}
 
 export { NM };

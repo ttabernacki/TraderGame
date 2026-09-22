@@ -1326,10 +1326,10 @@ export class Game {
    * latitude you have from the quadrant, on a coast you are already in sight
    * of, was not hard at all: you ran down the parallel until the land came up
    * and then you asked the man at the masthead which way the town lay, and he
-   * told you, because he could see it. Without that the player was sailing to
-   * the charted position — which since the chart is wrong in longitude by a
-   * degree and a half off Guinea is open sea — finding nothing there, and
-   * having no way at all to convert "somewhere on this coast" into a course.
+   * told you, because he could see it. Without that a player whose reckoning
+   * has run out by a degree sails to where he *thinks* the town is, finds open
+   * water, and has no way at all to convert "somewhere on this coast" into a
+   * course.
    *
    * So: a port already on the chart, within the lookout's range, on a coast in
    * sight, bears thus-and-so. Places not yet charted are not included. This
@@ -1337,15 +1337,11 @@ export class Game {
    * an impossible search into a chase.
    *
    * The reach of the pilot's half of that was 60 miles, and it had to be more.
-   * The whole arrangement exists because the inherited chart is wrong in
-   * longitude — and six of the nineteen places on that chart are wrong by more
-   * than sixty miles, Mina by seventy-four and Axim by sixty-seven, which are
-   * the two richest landfalls on the coast. So a captain laid a course for
-   * Mina, sailed to the spot his chart called Mina, found open water, and asked
-   * the masthead which way the town lay; and because the town was seventy-four
-   * miles off and the search stopped at sixty, nobody aboard had anything to
-   * say. The recovery the comment above describes was unavailable at exactly
-   * the ports it was written for. See PILOT_REACH_NM.
+   * A reckoning three weeks old is out by more than sixty miles as a matter of
+   * course, so a captain laid a course for Mina, arrived where his board said
+   * Mina was, found open water, and asked the masthead which way the town lay
+   * — and because the search stopped at sixty miles, nobody aboard had
+   * anything to say. See PILOT_REACH_NM.
    */
   portInSight(wantId?: string): { def: PortDef; bearing: number; distNm: number; sure: boolean } | null {
     const eye = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
@@ -2494,8 +2490,8 @@ export class Game {
    *
    * Surveying happens silently every quarter of an hour and is the single
    * activity the whole game is named after, so it needs to say so — especially
-   * the first time a stretch of inherited coast turns out to be a long way from
-   * where Lisbon thinks it is, which is the moment the mapmaking becomes real.
+   * the first time a stretch the Casa only had hearsay for is run in person and
+   * goes down as survey, which is the moment the mapmaking becomes real.
    */
   /**
    * "Terra!"
@@ -2584,24 +2580,22 @@ export class Game {
   private announceSurvey(result: SurveyResult): void {
     if (this.clock.t - this.lastSurveyWord < 6 * 3600) return;
     this.lastSurveyWord = this.clock.t;
-    const improved = result.improvedNm ?? 0;
     // Under a dozen miles is a headland coming abeam, not a survey.
     if (result.milesTaken < 12) return;
-    if (result.corrected === 0) {
+    if (result.fresh.length > 0) {
       this.pushAlert(
         `The escrivão is drawing coast nobody has drawn before — ${Math.round(result.milesTaken)} miles of it.`,
         'note');
       return;
     }
-    if (improved > 40) {
+    if (result.corrected > 0) {
       this.pushAlert(
-        'This coast is not where the Lisbon chart puts it. The pilot is redrawing it.',
+        'Coast the Casa only had hearsay for, run in person and entered as survey.',
         'note');
       this.logEvent('navigation',
-        'Ran the coast in sight all forenoon and it does not agree with the chart we were given: '
-        + `${(improved / Math.max(result.corrected, 1)).toFixed(0)} miles out, and every league of `
-        + 'it the same way. Somebody laid off a bad day\u2019s run down here a long time ago and '
-        + 'every pilot since has copied him.');
+        'Ran the coast in sight all forenoon. It is on the Lisbon chart, but on it the way a '
+        + 'thing is when nobody who drew it had been there — a line copied from a line. It is '
+        + 'ours now, with a pilot\u2019s name against it.');
     }
   }
 
@@ -4301,7 +4295,8 @@ export class Game {
    */
   nameTheFeature(f: CoastFeature, given: string, worth: number): string {
     this.namedFeatures[f.id] = given;
-    this.chart.addPlace(given, f.kind, this.nav.estimated, this.clock.t);
+    // Named where the thing is, not where the board thought it was.
+    this.chart.addPlace(given, f.kind, { lat: f.lat, lon: f.lon }, this.clock.t);
     this.writeCoast(given, this.nav.estimated,
       `Named by me, ${this.clock.formatDate()}. `
       + `${this.sounding.depth.toFixed(0)} fathoms a mile off it, and the land behind `
@@ -6330,58 +6325,24 @@ export class Game {
     // reckoning she arrived on — an opinion formed at sea and independent of
     // what the chart already said. Fixing first and charting afterwards would
     // have every visit confirm the chart with the chart.
-    // Where the town stood on the paper before this arrival had its say. The
-    // sheet around it has to take whatever shift chartPort applies — see the
-    // realign below — so the two are read either side of the same call.
-    const drawnBefore = this.chart.believedPort(def.id);
-    const stoodAt = drawnBefore ? { lat: drawnBefore.lat, lon: drawnBefore.lon } : null;
     this.chart.chartPort(
       def, this.nav.estimated, this.ship.state.pos, this.clock.t, true,
       this.nav.sigmaLat, this.nav.sigmaLon,
     );
 
-    // Making a landfall on a place you already know fixes your position — but
-    // only as well as you know the place.
+    // Coming to an anchor off a town you know is a fix, and a good one.
     //
-    // A pilot who raises Arguim does not thereby learn his longitude. He learns
-    // that he is at Arguim, and then writes down whatever longitude his chart
-    // gives Arguim, which for most of this coast in 1482 was out by a degree
-    // and more. His latitude is a different matter: the quadrant is ashore, it
-    // is steady, and there is all day to use it, so that much is settled for
-    // good. Fixing him to the truth instead made the inherited chart's error
-    // self-correcting and the whole survey pointless — every port call quietly
-    // handed him a longitude nobody in Europe had.
+    // It used to be a fix only as good as the chart's own opinion of where the
+    // town was — the pilot learned that he was at Arguim and then wrote down
+    // whatever longitude his sheet gave Arguim, which was the period's real
+    // behaviour and is why the charts stayed wrong for a century. That went
+    // with the displaced chart: the sheet now draws the world true, so the
+    // town is where the town is, and standing in its roadstead tells you
+    // exactly where you are. The reckoning is still free to be wrong — it just
+    // stops being wrong the moment you can see a place you know.
     const rel = this.relationsFor(def.id);
     if (rel.met || def.known) {
-      const at = anchorageOf(def);
-      const believed = this.chart.believedPort(def.id);
-      const lonDoubt = believed ? Math.sqrt(1 / Math.max(believed.wLon, 1e-9)) : 1.2;
-      const target = { lat: at.lat, lon: believed ? believed.lon : at.lon };
-
-      // Moving the sheet, not the pin.
-      //
-      // The fix says the ship is at the town, and the town is not where the
-      // board had it. Everything drawn round that town was drawn in the same
-      // passes, from the same reckonings, with the same error in it — so it
-      // moves with the town. Leaving the coast where it was is what let a
-      // captain weigh from São Jorge da Mina and find Africa hundreds of miles
-      // from where his own chart had just put him: the port had been dragged
-      // across the gulf by an over-confident arrival and the coastline had
-      // not followed it. See Chart.realign.
-      if (believed && stoodAt) {
-        this.chart.realign(
-          // Centred where the sheet is, not where the pin has just been moved
-          // to. Centring on the new position looks for coast around a point
-          // the coast is not drawn anywhere near, and quietly does nothing in
-          // exactly the case that needs it most — the big corrections.
-          stoodAt,
-          believed.lat - stoodAt.lat,
-          wrap180(believed.lon - stoodAt.lon),
-          180,
-        );
-      }
-
-      this.nav.applyLandfall(target, this.clock.t, lonDoubt);
+      this.nav.applyLandfall(anchorageOf(def), this.clock.t);
     }
 
     this.crown.progressObjective('reach', def.id);
