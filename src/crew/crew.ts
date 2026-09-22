@@ -260,12 +260,24 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
   // interesting arithmetic in the genre: that the men dying is, in the one way
   // that matters for getting home, help.
   const mouths = Math.max(crew.count, 1) / Math.max(crew.complement, 1);
-  const rate = d * ctx.ration * mouths;
-  p.water -= rate;
-  p.biscuit -= rate;
-  p.saltMeat -= rate * 0.8;
-  p.wine -= rate * 0.6;
-  p.fresh -= d * 1.4 * mouths;
+
+  // A ship in a harbour does not eat her sea stores.
+  //
+  // She lies alongside and the company is fed off the quay: bread bought
+  // daily, water from the shore casks, whatever the market has. Draining the
+  // hold while she is moored made every hour in port a cost paid out of the
+  // one thing that decides whether the next passage can be attempted at all,
+  // so a captain who spent a fortnight in the yard put to sea with a fortnight
+  // less water than he started with and no way to see where it had gone. The
+  // stores are for the sea. They are struck below and left alone in port.
+  if (!ctx.ashore) {
+    const rate = d * ctx.ration * mouths;
+    p.water -= rate;
+    p.biscuit -= rate;
+    p.saltMeat -= rate * 0.8;
+    p.wine -= rate * 0.6;
+    p.fresh -= d * 1.4 * mouths;
+  }
 
   // A ship's company lying in a harbour eat the harbour's food.
   //
@@ -277,7 +289,11 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
   // entire company doing it. The debt clears about three times as fast as it
   // builds, so a month in a victualling port pays off a three-month passage.
   const victuals = ctx.ashore ? clamp(ctx.ashoreVictuals ?? 0, 0, 1) : 0;
-  if (victuals > 0.15) {
+  if (ctx.ashore) {
+    // Every day in a port is a day eating fresh, whatever the place has: even
+    // a poor roadstead has greens and a beach to land on, and the scurvy is a
+    // disease of the passage and not of the harbour. A good victualling port
+    // pays the debt off faster still.
     crew.daysWithoutFresh = Math.max(0, crew.daysWithoutFresh - d * (0.6 + victuals * 2.4));
   } else if (p.fresh <= 0) {
     p.fresh = 0;

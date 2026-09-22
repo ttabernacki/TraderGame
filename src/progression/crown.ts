@@ -325,7 +325,8 @@ const PATENT_TEMPLATES: {
       objectives: [
         { kind: 'reach', description: 'Call at Serra Leoa', target: 'serra-leoa', progress: 0, complete: false },
         { kind: 'contact', description: 'Come to terms with the Temne', target: 'temne', progress: 0, complete: false },
-        { kind: 'cargo', description: 'Bring home 40 quintais of malagueta', target: 'malagueta', amount: 40, progress: 0, complete: false },
+        // 40 against a best market of 47: buyable only by clearing the shelf.
+        { kind: 'cargo', description: 'Bring home 30 quintais of malagueta', target: 'malagueta', amount: 30, progress: 0, complete: false },
         { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },
       ],
     }),
@@ -385,7 +386,13 @@ const PATENT_TEMPLATES: {
       narrative:
         'The route is known and the Crown now wants volume. Load until she is down to her marks, establish a factory where you can, and understand that the Zamorin\'s Muslim merchants have had several years to think about what your arrival means for them.',
       objectives: [
-        { kind: 'cargo', description: 'Bring home 400 quintais of pepper', target: 'pimenta', amount: 400, progress: 0, complete: false },
+        // 400 was not buyable. Calicut is the richest pepper market on earth
+        // and holds under three hundred quintais at once, so the fleet's
+        // commission asked for more of the stuff than existed in any one place
+        // — and buying a market out entirely runs the price up against you as
+        // you do it. 240 is most of Calicut, or a call at two of the Malabar
+        // ports, which is the voyage this commission is describing.
+        { kind: 'cargo', description: 'Bring home 240 quintais of pepper', target: 'pimenta', amount: 240, progress: 0, complete: false },
         { kind: 'cargo', description: 'Bring home 60 quintais of cinnamon', target: 'canela', amount: 60, progress: 0, complete: false },
         { kind: 'contact', description: 'Secure a factory on the Malabar coast', target: 'malabar', progress: 0, complete: false },
         { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },

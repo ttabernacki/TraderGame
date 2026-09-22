@@ -4103,6 +4103,17 @@ export class Game {
     return null;
   }
 
+  /**
+   * When she moored, so the days alongside can be given back to the charters.
+   *
+   * A merchant's contract is for a passage, and the fortnight she spends on the
+   * blocks having her bottom breamed is not passage time. Counting it meant a
+   * captain who did the one obviously sensible thing before a long run — refit
+   * her first — was punished for it by a charter he could no longer make, which
+   * is the opposite of the decision the charter is supposed to create.
+   */
+  private dockedSinceT = 0;
+
   /** Charters still running, for the orders panel. */
   get activeVentures(): Venture[] {
     return this.ventures.filter((v) => !v.delivered && !v.failed);
@@ -4194,9 +4205,13 @@ export class Game {
   /** Charters delivered, and charters run out of time. */
   private checkVentures(days: number): void {
     void days;
+    // Nothing runs out while she is moored. The days alongside are handed back
+    // in weighAnchor, so failing a charter in port would be failing it on time
+    // that is about to be returned.
+    const inPort = this.dockedAt !== null;
     for (const v of this.ventures) {
       if (v.delivered || v.failed) continue;
-      if (this.clock.t > v.dueBy) {
+      if (!inPort && this.clock.t > v.dueBy) {
         v.failed = true;
         this.crown.standing = Math.max(0, this.crown.standing - v.penalty * 0.1);
         this.crown.gold -= v.penalty;
@@ -5816,6 +5831,26 @@ export class Game {
   }
 
   weighAnchor(): string {
+    // Give the charters back the days she lay alongside. Done here, once, on
+    // the elapsed time rather than accumulated per tick: rollIncidents can skip
+    // a tick on its cooldown, and a deadline that drifts by however many ticks
+    // happened to be swallowed is worse than one that does not move at all.
+    if (this.dockedAt) {
+      const held = Math.max(0, this.clock.t - this.dockedSinceT);
+      if (held > 0) {
+        let given = 0;
+        for (const v of this.ventures) {
+          if (v.delivered || v.failed) continue;
+          v.dueBy += held;
+          given++;
+        }
+        if (given > 0 && held > 0.5 * 86400) {
+          this.logEvent('trade',
+            `${(held / 86400).toFixed(0)} days alongside, which the freighters do not count `
+            + 'against the passage. Their dates move with her.');
+        }
+      }
+    }
     this.anchored = false;
     this.dockedAt = null;
     // Start the day's run from the moment she drops down the river, so the
@@ -6271,6 +6306,7 @@ export class Game {
 
   enterPort(def: PortDef): void {
     this.dockedAt = def.id;
+    this.dockedSinceT = this.clock.t;
     this.anchored = true;
     this.daysSincePort = 0;
     this.lastLandSeenT = this.clock.t;
@@ -7028,6 +7064,7 @@ export class Game {
       feitorias: this.feitorias,
       lettersSeen: this.lettersSeen,
       dockedAt: this.dockedAt,
+      dockedSinceT: this.dockedSinceT,
       anchored: this.anchored,
       ration: this.ration,
       pumpEffort: this.pumpEffort,
@@ -7118,6 +7155,7 @@ export class Game {
     g.visitedPorts = new Set(d.visited);
     g.log.entries = d.log ?? [];
     g.dockedAt = d.dockedAt;
+    (g as any).dockedSinceT = d.dockedSinceT ?? g.clock.t;
     g.anchored = d.anchored;
     g.ration = d.ration ?? 1;
     g.pumpEffort = d.pumpEffort ?? 0.15;

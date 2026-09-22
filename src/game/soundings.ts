@@ -320,7 +320,28 @@ interface Candidate {
  * most of a day and it does not name the place, but it gives the offing and the
  * ground, and the ground may be in the book.
  */
+/**
+ * Switched off.
+ *
+ * Naming a headland off the chart was meant to be the best fix in the game and
+ * the worst mistake in it. In play it is neither: the candidates are a list of
+ * names with a distance beside each, there is nothing on the deck that lets you
+ * tell one from another, and so it is not a judgement — it is a guess with a
+ * heavy penalty for losing. A mechanism that cannot be played well is not a
+ * hard decision, it is a dice roll wearing a decision's clothes, and this one
+ * rolled for the whole reckoning.
+ *
+ * The lead is the answer that was always the good one: standing in and sounding
+ * costs most of a day, names nothing, and tells you the truth. That is still
+ * here and still does everything it did, and the pilot's hint at a charted town
+ * (see Game.portInSight) covers the case this was invented for.
+ *
+ * Everything below is left intact and still under test. One flag brings it back.
+ */
+export const LANDFALL_NAMING = false;
+
 export function landfallScene(g: Game): SeaEvent | null {
+  if (!LANDFALL_NAMING) return null;
   // If the lookout can already name a place on this coast there is no question
   // to put: he is looking at a town that is on the chart and he says so. The
   // scene is for the other case, which is most of them — a coast up ahead, a
