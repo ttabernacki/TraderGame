@@ -190,6 +190,10 @@ function smokeTexture(): THREE.Texture | null {
   blob(h * 1.1, h * 1.26, h * 0.5, 0.5);
   blob(h * 0.8, h * 1.2, h * 0.38, 0.45);
   const tex = new THREE.CanvasTexture(c);
+  // Without this three reads the canvas as linear data and every town on the
+  // coast comes out dark and grey — the colours were picked in sRGB, which is
+  // what a canvas element gives back.
+  tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
   return tex;
 }

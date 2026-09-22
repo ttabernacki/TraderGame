@@ -58,7 +58,12 @@ void main() {
   vec3 d = normalize(vDir);
   float up = clamp(d.y, -0.2, 1.0);
 
-  vec3 col = mix(uHorizon, uZenith, pow(clamp(up, 0.0, 1.0), 0.55));
+  // The dome reaches its zenith colour more slowly than it did. At 0.55 the
+  // deep blue overhead took most of the frame the moment the zenith was made a
+  // real blue, and the sky went from pale to navy within a hand's breadth of
+  // the horizon — which is what a sky does through a polarising filter and not
+  // what it does over an ocean.
+  vec3 col = mix(uHorizon, uZenith, pow(clamp(up, 0.0, 1.0), 0.82));
 
   // Glow around the sun, strongest along the horizon at sunrise and sunset.
   float sunDot = max(dot(d, uSunDir), 0.0);
@@ -243,10 +248,14 @@ export class Sky {
     const sunColor = new THREE.Color();
     const ambient = new THREE.Color();
 
-    const dayZenith = new THREE.Color(0.16, 0.37, 0.72);
-    const dayHorizon = new THREE.Color(0.70, 0.80, 0.90);
-    const duskZenith = new THREE.Color(0.14, 0.16, 0.36);
-    const duskHorizon = new THREE.Color(0.86, 0.46, 0.24);
+    // Deeper overhead and warmer at the rim than before. A real tropical noon
+    // sky is a far stronger blue than a temperate one and the eye knows it;
+    // the old zenith was a pastel that went grey the moment the tone curve
+    // touched it.
+    const dayZenith = new THREE.Color(0.10, 0.32, 0.82);
+    const dayHorizon = new THREE.Color(0.66, 0.80, 0.94);
+    const duskZenith = new THREE.Color(0.11, 0.13, 0.38);
+    const duskHorizon = new THREE.Color(0.98, 0.44, 0.18);
     const nightZenith = new THREE.Color(0.008, 0.014, 0.045);
     const nightHorizon = new THREE.Color(0.03, 0.05, 0.10);
 
@@ -257,7 +266,10 @@ export class Sky {
       .lerp(new THREE.Color(1, 0.62, 0.34), twilight)
       .lerp(new THREE.Color(0.32, 0.40, 0.62), night);
 
-    ambient.copy(horizon).multiplyScalar(0.55).lerp(new THREE.Color(0.04, 0.06, 0.13), night * 0.8);
+    // More light off the sky dome. The shaded side of a hull under a bright sky
+    // is not black — it is lit by the whole upper hemisphere — and at 0.55 the
+    // ship's lee side and the underside of every sail were crushed to mud.
+    ambient.copy(horizon).multiplyScalar(0.72).lerp(new THREE.Color(0.05, 0.07, 0.16), night * 0.8);
 
     const overcast = clamp(cloud, 0, 1) * 0.85;
     const intensity = clamp(smoothstep(-6, 12, sun.altitude), 0.02, 1) * (1 - overcast * 0.55);

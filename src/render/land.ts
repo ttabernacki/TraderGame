@@ -605,10 +605,18 @@ function groundColour(lat: number, height: number, relief: number): THREE.Color 
   const equatorial = Math.exp(-Math.pow(lat / 11, 2));
   const temperate = clamp((a - 33) / 14, 0, 1);
 
-  const sand = new THREE.Color(0.78, 0.68, 0.48);
-  const jungle = new THREE.Color(0.16, 0.32, 0.14);
-  const scrub = new THREE.Color(0.42, 0.40, 0.24);
-  const green = new THREE.Color(0.26, 0.38, 0.20);
+  // The coast, in the colours it actually is.
+  //
+  // These were mixed to be safe and came out as four shades of the same olive:
+  // at any distance the Guinea forest, the Sahel scrub and the Barbary sand all
+  // resolved to one dun mass with no edge between them. The whole point of
+  // running down this coast is watching it change — a thousand miles of desert
+  // that turns green in an afternoon at Cabo Verde — and that only reads if the
+  // sand is really sand-coloured and the forest is really green.
+  const sand = new THREE.Color(0.88, 0.76, 0.50);
+  const jungle = new THREE.Color(0.11, 0.34, 0.11);
+  const scrub = new THREE.Color(0.52, 0.47, 0.22);
+  const green = new THREE.Color(0.24, 0.45, 0.18);
 
   const c = new THREE.Color();
   c.copy(scrub)
@@ -624,7 +632,8 @@ function groundColour(lat: number, height: number, relief: number): THREE.Color 
   // even grey from the beach to the skyline. Against the true peak, rock
   // appears where there is rock.
   const alt = clamp(height / Math.max(relief, 1), 0, 1);
-  c.lerp(new THREE.Color(0.46, 0.42, 0.38), clamp((alt - 0.35) / 0.5, 0, 1) * 0.6);
+  // Rock, which is warmer and browner than the neutral grey it was.
+  c.lerp(new THREE.Color(0.50, 0.42, 0.34), clamp((alt - 0.35) / 0.5, 0, 1) * 0.6);
 
   // Snow, where there is any. On a real summit, not a fraction of one: Madeira
   // stands 1861 metres over a subtropical sea and has none, and drawing a cap

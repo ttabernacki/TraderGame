@@ -6,6 +6,7 @@ import { Ocean } from './ocean';
 import { Sky, type SkyLighting } from './sky';
 import { ShipMesh } from './shipMesh';
 import { Spray } from './spray';
+import { depthAt, nearestShore } from '../world/landmass';
 import { hullClass, type HullClass } from '../ship/hull';
 import { initialSails } from '../ship/physics';
 import type { SailState } from '../ship/physics';
@@ -21,6 +22,14 @@ export type CameraMode = 'chase' | 'deck' | 'masthead' | 'beam';
  * the player nothing he could not get from the log.
  */
 const WATER_GAIN = 3.4;
+
+/** Soundings taken round the ship to colour the shallows. See updateShoals. */
+const SHOAL_SIZE = 64;
+const SHOAL_SPAN_M = 16000;
+/** How far she may run before they are taken again. */
+const SHOAL_REBUILD_M = 1000;
+/** And how often that may happen, in real milliseconds, whatever the clock does. */
+const SHOAL_MIN_MS = 350;
 
 /** The colour of light off the whole sky dome, which the zenith is bluer than. */
 const SKYLIGHT = new THREE.Color(0.72, 0.78, 0.86);
@@ -148,6 +157,9 @@ export class Renderer {
    * precision left to animate with.
    */
   private waveClock = 0;
+  // Tinted to the sky every frame (see the lighting update); this is only what
+  // it starts as. A fixed grey-blue haze over a saturated sea reads as dirt on
+  // the lens rather than as distance.
   private fog = new THREE.FogExp2(0x9ab4c8, 0.00006);
   private hullClass: HullClass;
   private shipPitch = 0;
@@ -216,10 +228,23 @@ export class Renderer {
     // A modern phone reports a device pixel ratio of three, which on a 390-point
     // screen is 1170 columns of a shader that was written for a desktop. Half of
     // that is indistinguishable at arm's length and roughly four times faster.
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, phone ? 1.5 : 2));
+    // Draw above the display where there is a machine to do it. The cost is
+    // real and it is paid in the one place it buys the most: rigging, the
+    // horizon line and the sun track are all near-pixel-width detail, and at
+    // 1:1 they crawl.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, phone ? 2 : 2.75));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    // ACES was costing the picture most of its colour.
+    //
+    // The ACES filmic curve is built for cinema: it rolls the highlights off
+    // hard and desaturates as it does it, which on a scene that is mostly sky
+    // and water — two large, bright, single-hued fields — turns a tropical
+    // afternoon into a grey one. The Khronos neutral curve keeps the same
+    // highlight protection (the sun track on the water still does not clip to
+    // white) and leaves the hue alone, which is the whole difference between a
+    // blue sea and a slate one.
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = 1.42;
     this.renderer.shadowMap.enabled = true;
     // The soft variant takes many more samples per fragment. On a phone that is
     // paid for on every frame for a softness nobody can see at that size.
@@ -400,6 +425,7 @@ export class Renderer {
     this.drawnHeading = f.heading;
     this.drawnHeel = f.heel;
 
+    this.updateShoals(f.pos);
     this.ocean.updateTrack(f.velocityE, f.velocityN, visualDt);
     this.ocean.setSea(
       {
@@ -577,6 +603,70 @@ export class Renderer {
     this.renderer.render(this.scene, this.camera);
   }
 
+  /**
+   * Take a field of soundings round the ship, so the water can be the colour
+   * the bottom makes it.
+   *
+   * Rebuilt only when she has run a kilometre, and skipped entirely when there
+   * is no land within reach — measured at eight milliseconds for a full grid
+   * close inshore and two in open water, which is a cost worth paying once a
+   * kilometre and not once a frame. Between rebuilds the field simply slides
+   * under her on an offset, so it stays put on the sea bed.
+   */
+  private shoalOrigin: LatLon | null = null;
+  private shoalDepths = new Float32Array(SHOAL_SIZE * SHOAL_SIZE);
+  private shoalBuiltAt = -1e9;
+
+  private updateShoals(pos: LatLon): void {
+    const mPerDegLat = 111320;
+    const mPerDegLon = mPerDegLat * Math.max(cosd(pos.lat), 1e-6);
+
+    if (this.shoalOrigin) {
+      const east = wrap180(pos.lon - this.shoalOrigin.lon) * mPerDegLon;
+      const north = (pos.lat - this.shoalOrigin.lat) * mPerDegLat;
+      this.ocean.setShoalOffset(east, north);
+      if (Math.abs(east) < SHOAL_REBUILD_M && Math.abs(north) < SHOAL_REBUILD_M) return;
+    }
+
+    // Distance alone is not a safe trigger.
+    //
+    // At eighteen hundred times real time she crosses the rebuild distance in
+    // about forty milliseconds of wall clock, so a rule written purely in
+    // metres asks for twenty rebuilds a second and spends a fifth of the frame
+    // budget taking soundings. The field is allowed to go stale instead: it
+    // keeps sliding on its offset, and where she outruns it the sample falls
+    // outside the texture and the water goes back to its deep colour, which is
+    // a great deal less noticeable than a stutter.
+    const now = performance.now();
+    if (now - this.shoalBuiltAt < SHOAL_MIN_MS) return;
+    this.shoalBuiltAt = now;
+
+    // Is there a bottom worth drawing at all? One query, and the whole thing is
+    // skipped in blue water — which is most of the game.
+    const shore = nearestShore(pos, SHOAL_SPAN_M / 1852);
+    if (shore.land < 0) {
+      this.shoalOrigin = null;
+      this.ocean.clearShoals();
+      return;
+    }
+
+    const half = SHOAL_SPAN_M / 2;
+    let i = 0;
+    for (let row = 0; row < SHOAL_SIZE; row++) {
+      // Row 0 is the south edge; the shader's v runs the same way as z does
+      // here, which is north-negative, so this is written to match vLocal.
+      const north = -half + (row / (SHOAL_SIZE - 1)) * SHOAL_SPAN_M;
+      const lat = pos.lat + north / mPerDegLat;
+      for (let col = 0; col < SHOAL_SIZE; col++) {
+        const east = -half + (col / (SHOAL_SIZE - 1)) * SHOAL_SPAN_M;
+        const lon = pos.lon + east / mPerDegLon;
+        this.shoalDepths[i++] = depthAt({ lat, lon });
+      }
+    }
+    this.shoalOrigin = { lat: pos.lat, lon: pos.lon };
+    this.ocean.setShoals(this.shoalDepths, SHOAL_SIZE, SHOAL_SPAN_M);
+  }
+
   private applyLighting(l: SkyLighting, visibilityNm: number): void {
     // The light itself is placed just clear of the ship rather than at the real
     // distance of the sun, so the shadow frustum stays tight enough to be sharp.
@@ -584,7 +674,16 @@ export class Renderer {
     this.sun.position.copy(l.sunDir).multiplyScalar(span * 2.5);
     this.sun.target.position.set(0, 0, 0);
     this.sun.color.copy(l.sunColor);
-    this.sun.intensity = l.intensity * 1.35;
+    // Daylight, at something like daylight's strength.
+    //
+    // This was 1.35 at full tropical noon, which under three's physical
+    // lighting is a bright room rather than the sun. Everything downstream was
+    // being asked to compensate — the sea colour, the sail material, the
+    // ambient — and none of them can, because what was missing was light. The
+    // neutral tone curve is what makes this safe: the highlights roll off
+    // instead of clipping, so the sun track on the water stays a track rather
+    // than a sheet of white.
+    this.sun.intensity = l.intensity * 3.1;
     // Shadows are meaningless once the sun is on the horizon, and the long
     // stretched maps they produce are worse than none.
     this.sun.castShadow = l.sunDir.y > 0.12;
@@ -595,7 +694,7 @@ export class Renderer {
     // piece of timber aboard a bright mint green.
     this.ambient.color.copy(l.zenith).lerp(SKYLIGHT, 0.55).multiplyScalar(1.5);
     this.ambient.groundColor.copy(l.horizon).multiplyScalar(0.55);
-    this.ambient.intensity = lerp(1.15, 0.26, l.night);
+    this.ambient.intensity = lerp(1.65, 0.3, l.night);
 
     // Visibility drives atmospheric extinction, so fog thickens in haze and rain.
     const visM = Math.max(visibilityNm, 0.15) * 1852;

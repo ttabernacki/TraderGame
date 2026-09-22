@@ -262,9 +262,11 @@ export class ShipMesh {
         map: makeSailTexture(build, isMain),
         transparent: true,
         // Canvas is thin enough that the sun glows through it, so a backlit sail
-        // is never just a black shape against the sky. Kept low: any more and it
-        // swamps the shading, and a sail with no shading on it has no shape.
-        emissive: 0x191710,
+        // is never just a black shape against the sky — and that glow is the
+        // single most recognisable thing about a square-rigged ship seen from
+        // astern. It was set so low it did nothing. Still short of swamping the
+        // shading, because a sail with no shading on it has no shape.
+        emissive: 0x3a352a,
       }),
     );
     pivot.add(sail);

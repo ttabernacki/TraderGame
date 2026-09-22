@@ -293,6 +293,16 @@ uniform vec3 uSkyColor;
 uniform vec3 uHorizonColor;
 uniform vec3 uDeepColor;
 uniform vec3 uShallowColor;
+// The bottom, as a field of soundings around the ship. See Ocean.setShoals:
+// one byte a sample over sixteen kilometres, rebuilt when she has moved a
+// kilometre, which is what lets shallow water be a colour instead of a number
+// on the lead line.
+uniform sampler2D uShoal;
+uniform float uShoalSpan;
+uniform vec2 uShoalOffset;
+uniform float uShoalOn;
+uniform vec3 uShoalColor;
+uniform vec3 uSandColor;
 uniform float uCrestMax;
 uniform float uFoamThreshold;
 uniform float uNight;
@@ -447,6 +457,34 @@ void main() {
   float slope = clamp(n.y, 0.0, 1.0);
   vec3 body = mix(uDeepColor, uShallowColor, pow(slope, 3.0) * 0.55);
 
+  // And then the bottom, which is most of what decides the colour of the sea.
+  //
+  // The body colour above is a function of wave slope alone, which means the
+  // water off a beach in three fathoms was drawn exactly the same deep blue as
+  // the middle of the Atlantic. Every coast in the game looked like open ocean
+  // right up to the sand. What actually happens is that once the bottom is
+  // within reach of the light, what comes back up is the bottom — so the sea
+  // goes green, then pale, and does it in a band that follows the shape of the
+  // shelf. It is the most recognisable thing about warm shallow water and it
+  // was simply absent.
+  float shoalMix = 0.0;
+  if (uShoalOn > 0.5) {
+    vec2 suv = (vLocal + uShoalOffset) / uShoalSpan + 0.5;
+    if (suv.x > 0.001 && suv.x < 0.999 && suv.y > 0.001 && suv.y < 0.999) {
+      float depth = texture2D(uShoal, suv).r * 80.0;
+      // Two ramps: deep blue gives way to shelf green over the first forty
+      // metres, and the last few fathoms go pale over sand.
+      float shelf = 1.0 - smoothstep(4.0, 42.0, depth);
+      float bank = 1.0 - smoothstep(0.8, 7.0, depth);
+      vec3 shoalBody = mix(uShoalColor, uSandColor, bank);
+      // Held back at a grazing view: a shelf seen from a mile off is mostly
+      // reflected sky whatever is under it, and letting the green run all the
+      // way to the horizon paints the whole bay poster-flat.
+      shoalMix = shelf * (1.0 - fresnel * 0.55);
+      body = mix(body, shoalBody, shoalMix);
+    }
+  }
+
   vec3 reflDir = reflect(-viewDir, n);
   float up = clamp(reflDir.y * 0.5 + 0.5, 0.0, 1.0);
   vec3 sky = mix(uHorizonColor, uSkyColor, pow(up, 0.7));
@@ -474,14 +512,30 @@ void main() {
   // sheet if it is let run: it is held down hard and narrowed.
   float sheen = pow(sunDot, 24.0) * 0.09;
 
-  vec3 col = mix(body, sky, fresnel * 0.70);
+  // Water at a grazing angle is very nearly a mirror, and holding the
+  // reflection down to seven tenths everywhere is what made the distance read
+  // as a dark band instead of as sky lying on the sea. Over a bright shelf it
+  // is pulled back again, because there the colour worth seeing is the bottom.
+  vec3 col = mix(body, sky, fresnel * mix(0.92, 0.62, shoalMix));
   col += uSunColor * (spec + sheen) * (1.0 - uNight * 0.82);
 
   // Light carried through the back of a wave, which is what makes a sea look
   // like water rather than like painted metal.
-  float through = pow(max(dot(viewDir, -uSunDir), 0.0), 3.0);
+  //
+  // Widened and given some colour. It was a narrow lobe that only appeared with
+  // the sun almost dead ahead, multiplied by a dark teal that barely showed —
+  // so the effect that does more than any other to make water look like water
+  // was, in practice, off. What it models is light entering the back of a wave
+  // and coming out of the face toward the eye, so it wants the thickness of the
+  // crest (height), the steepness of the face, and a broad falloff, because
+  // scattered light does not have a sharp lobe. The colour is the green of a
+  // wave held up to the sun.
+  float through = pow(max(dot(viewDir, -uSunDir), 0.0), 1.6);
   float lift = clamp(vWorld.y / max(uCrestMax, 0.2), 0.0, 1.0);
-  col += vec3(0.05, 0.22, 0.17) * through * lift * 0.9 * (1.0 - uNight);
+  // Steep faces glow; flat water does not.
+  float steepFace = clamp(1.0 - n.y, 0.0, 1.0);
+  float glow = through * (lift * lift) * (0.35 + steepFace * 1.5);
+  col += vec3(0.07, 0.40, 0.26) * glow * 1.35 * (1.0 - uNight);
 
   // Foam, but only where a crest is steep enough to be tumbling. Whitecaps do
   // not appear below about force four, and even in a gale they are scattered
@@ -640,8 +694,16 @@ export class Ocean {
         uSunColor: { value: new THREE.Color(1, 0.95, 0.85) },
         uSkyColor: { value: new THREE.Color(0.28, 0.45, 0.72) },
         uHorizonColor: { value: new THREE.Color(0.6, 0.72, 0.85) },
-        uDeepColor: { value: new THREE.Color(0.006, 0.029, 0.058) },
-        uShallowColor: { value: new THREE.Color(0.022, 0.115, 0.155) },
+        uDeepColor: { value: new THREE.Color(0.012, 0.062, 0.148) },
+        uShallowColor: { value: new THREE.Color(0.035, 0.235, 0.268) },
+        uShoal: { value: null as THREE.DataTexture | null },
+        uShoalSpan: { value: 16000 },
+        uShoalOffset: { value: new THREE.Vector2(0, 0) },
+        uShoalOn: { value: 0 },
+        // What water over a shelf looks like from above: the green of a few
+        // fathoms, and the pale sand-green of a bank you could stand on.
+        uShoalColor: { value: new THREE.Color(0.055, 0.42, 0.44) },
+        uSandColor: { value: new THREE.Color(0.30, 0.62, 0.56) },
         uCrestMax: { value: 1.2 },
         uFoamThreshold: { value: 1.0 },
         uNight: { value: 0 },
@@ -845,6 +907,12 @@ export class Ocean {
    * thousand miles of ocean, and only ever needs a single turn of phase on the
    * GPU.
    */
+  private shoalTex: THREE.DataTexture | null = null;
+  // Explicitly backed by an ArrayBuffer: three's DataTexture will not take the
+  // widened ArrayBufferLike that an unannotated Uint8Array infers to.
+  private shoalData: Uint8Array<ArrayBuffer> | null = null;
+  private shoalSize = 0;
+
   private advance(dEast: number, dNorth: number, dt: number): void {
     const TAU = Math.PI * 2;
     for (let i = 0; i < WAVE_COUNT; i++) {
@@ -867,6 +935,58 @@ export class Ocean {
     this.material.uniforms.uNoiseTime.value = this.noiseTime;
   }
 
+  /**
+   * Hand the water a field of soundings to colour itself by.
+   *
+   * `depths` is a square grid of metres, row-major, running south-to-north and
+   * west-to-east, covering `spanM` metres centred on the position the ship was
+   * at when it was built. The shader works in ship-local metres, so the offset
+   * between that position and where she is now is passed alongside and the
+   * whole field simply slides under her until it is rebuilt.
+   *
+   * Encoded to a byte a sample over eighty metres of depth. That is coarse and
+   * it is plenty: this only has to drive a colour ramp that is finished by
+   * forty metres, and a byte texture works on hardware where a float one does
+   * not.
+   */
+  setShoals(depths: Float32Array, size: number, spanM: number): void {
+    if (!this.shoalTex || this.shoalSize !== size) {
+      this.shoalTex?.dispose();
+      this.shoalSize = size;
+      this.shoalData = new Uint8Array(new ArrayBuffer(size * size));
+      this.shoalTex = new THREE.DataTexture(this.shoalData, size, size, THREE.RedFormat);
+      this.shoalTex.minFilter = THREE.LinearFilter;
+      this.shoalTex.magFilter = THREE.LinearFilter;
+      this.shoalTex.wrapS = THREE.ClampToEdgeWrapping;
+      this.shoalTex.wrapT = THREE.ClampToEdgeWrapping;
+      this.material.uniforms.uShoal.value = this.shoalTex;
+    }
+    const data = this.shoalData!;
+    for (let i = 0; i < size * size; i++) {
+      const d = depths[i];
+      // Land reads as nought, which is the shallowest the ramp goes; the land
+      // mesh is drawn over it anyway.
+      data[i] = d <= 0 ? 0 : Math.min(255, Math.round((d / 80) * 255));
+    }
+    this.shoalTex!.needsUpdate = true;
+    this.material.uniforms.uShoalSpan.value = spanM;
+    this.material.uniforms.uShoalOn.value = 1;
+    (this.material.uniforms.uShoalOffset.value as THREE.Vector2).set(0, 0);
+  }
+
+  /** No bottom within reach: the water is simply deep. */
+  clearShoals(): void {
+    this.material.uniforms.uShoalOn.value = 0;
+  }
+
+  /**
+   * How far she has run since the soundings were taken, in ship-local metres,
+   * so the field stays put on the sea bed while she moves over it.
+   */
+  setShoalOffset(east: number, north: number): void {
+    (this.material.uniforms.uShoalOffset.value as THREE.Vector2).set(east, -north);
+  }
+
   setLighting(
     sunDir: THREE.Vector3, sunColor: THREE.Color, sky: THREE.Color,
     horizon: THREE.Color, night: number, fogDensity: number,
@@ -879,14 +999,25 @@ export class Ocean {
     // The sea's distant colour: the horizon haze pulled well down toward deep
     // water, which is what puts a hard dark line under the sky where it belongs.
     (this.material.uniforms.uSeaFar.value as THREE.Color)
-      .copy(horizon).lerp(new THREE.Color(0.05, 0.12, 0.20), 0.42);
+      .copy(horizon).lerp(new THREE.Color(0.06, 0.20, 0.36), 0.46);
     this.material.uniforms.uNight.value = night;
     this.material.uniforms.uFogDensity.value = fogDensity;
 
+    // The water's own colour, which is the difference between an ocean and a
+    // wet road.
+    //
+    // Deep water was (0.006, 0.029, 0.058) — very nearly black, with barely a
+    // sixteenth of blue in it. That is defensible as physics and it is why the
+    // sea read as a dark grey mass under every sky: almost everything visible
+    // in it was reflected, so the surface took the sky's colour and had none of
+    // its own. Real blue water is dark *and* strongly blue, because what comes
+    // back up out of it has been filtered by twenty metres of sea. These are
+    // still dark — the deep is a twentieth of the brightness of the sky — but
+    // they carry the hue that makes the sea look like water.
     const deep = this.material.uniforms.uDeepColor.value as THREE.Color;
-    deep.setRGB(0.006, 0.029, 0.058).multiplyScalar(1 - night * 0.72);
+    deep.setRGB(0.012, 0.062, 0.148).multiplyScalar(1 - night * 0.72);
     const shallow = this.material.uniforms.uShallowColor.value as THREE.Color;
-    shallow.setRGB(0.022, 0.115, 0.155).multiplyScalar(1 - night * 0.7);
+    shallow.setRGB(0.035, 0.235, 0.268).multiplyScalar(1 - night * 0.7);
   }
 
   /**
@@ -925,6 +1056,7 @@ export class Ocean {
   }
 
   dispose(): void {
+    this.shoalTex?.dispose();
     this.mesh.geometry.dispose();
     this.material.dispose();
   }
