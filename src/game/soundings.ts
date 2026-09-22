@@ -1,5 +1,5 @@
 import {
-  NM, clamp, cosd, haversine, sind, wrap360, type LatLon,
+  NM, clamp, cosd, haversine, sind, wrap180, wrap360, type LatLon,
 } from '../core/math';
 import {
   LEAD_REACH_M, bottomAt, elevationAt, groundAgrees, groundCellKey, nearestShore,
@@ -174,7 +174,15 @@ export function castLead(g: Game): LeadCast {
     // Knowing the patch of bottom is knowing the place. It fixes her no better
     // than the reckoning that wrote the page did, which is the whole ethic of
     // the chart in this game — but it fixes her.
-    nav.applyLandfall({ lat: known.lat, lon: known.lon }, g.clock.t, Math.max(known.doubt, 2.5));
+    //
+    // And that ethic has to be paid for in the latitude as well. This used to
+    // take the page's doubt for the longitude and then quietly assert six
+    // tenths of a mile in latitude, which is a precision no page written off a
+    // three-week reckoning has ever had.
+    nav.applyLandfall(
+      { lat: known.lat, lon: known.lon }, g.clock.t,
+      Math.max(known.doubt, 2.5), Math.max(known.doubt * 0.5, 2.5),
+    );
   }
 
   writeSounding(g, cell, fathoms, ground, recognised);
@@ -389,18 +397,50 @@ export function landfallScene(g: Game): SeaEvent | null {
 
 function identify(g: Game, c: Candidate): string {
   const right = c.fromTruthNm < 55;
-  g.nav.applyLandfall({ lat: c.lat, lon: c.lon }, g.clock.t, c.doubtNm);
+  // Where the board stood before it was moved. Read after applyLandfall it is
+  // the candidate's own longitude, so the shift always came out "east".
+  const was = { ...g.nav.estimated };
+  // What the board is worth afterwards.
+  //
+  // Two things decide it, and only one of them can be known. The first is how
+  // well the chart has the place he has named — that is `doubtNm`, and it is
+  // why fixing on a coast Lisbon drew badly is worth less than fixing on one
+  // he surveyed himself. The second is whether he has named the right place at
+  // all, which nothing aboard can tell him.
+  //
+  // So what is carried forward is the size of the leap: a pilot who shifts the
+  // board four miles is as sure as the chart is, and one who shifts it two
+  // hundred has staked everything on a shape against a book and ought to be
+  // watching his latitude like a hawk until a sight settles it. That keeps the
+  // error circle honest, keeps the noon sight being offered, and leaves the
+  // mistake catchable — without telling him he made one.
+  const leap = c.fromReckoningNm;
+  g.nav.applyLandfall(
+    { lat: c.lat, lon: c.lon }, g.clock.t,
+    Math.max(c.doubtNm, leap * 0.35),
+    Math.max(2.5, leap * 0.22),
+  );
+  // How far the board just moved. Said the same way whether he is right or
+  // wrong, because it is a fact about the paper and not about the coast — the
+  // master writes the shift in either way, and it is the only thing the player
+  // is given to be uneasy about. Without it the reckoning could be thrown two
+  // hundred miles by one click with nothing on screen to mark it.
+  const shift = leap > 25
+    ? ` The board goes ${leap.toFixed(0)} miles ${wrap180(c.lon - was.lon) < 0 ? 'west' : 'east'} `
+      + 'to agree with him, which the master enters without comment and without looking up.'
+    : '';
+
   if (right) {
     g.crew.morale = clamp(g.crew.morale + 0.06, 0, 1);
     return `It is ${c.name}, and within an hour there is no doubt of it — the shape of the thing `
       + 'against the book, the bearing of the point opening as she runs down, the ground the lead '
       + 'brings up. The board is squared off from it and for the first time since the last sight '
-      + 'the ship knows where she is. The pilot is insufferable for two days.';
+      + `the ship knows where she is. The pilot is insufferable for two days.${shift}`;
   }
   // Nothing tells him. That is the point of the mechanism.
   return `It is ${c.name}, says the pilot, and rules the board off from it with a great deal of `
     + 'confidence, and the master writes it in, and the watch is changed. Everything about the '
-    + 'afternoon is exactly as it would be if he were right.';
+    + `afternoon is exactly as it would be if he were right.${shift}`;
 }
 
 /** How the shore lies, which the book records for every headland worth naming. */

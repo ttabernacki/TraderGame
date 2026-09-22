@@ -220,9 +220,26 @@ export class Navigator {
    * made, so a port he has run down a dozen times gives him a good departure
    * and one he has only read about gives him a bad one.
    */
-  applyLandfall(known: LatLon, t: number, sigmaLonNm = 1.2): void {
+  applyLandfall(known: LatLon, t: number, sigmaLonNm = 1.2, sigmaLatNm = 0.6): void {
     this.estimated = { ...known };
-    this.sigmaLat = 0.6;
+    // The latitude doubt is an argument now, and the reason is the worst bug
+    // this navigation model has had.
+    //
+    // It used to be hard-set to 0.6 miles by every landfall, including one
+    // where the pilot had just named the wrong headland. Identifying a
+    // landfall is allowed to throw the reckoning hundreds of miles — that is
+    // the whole mechanism and it stays — but setting the doubt to nothing
+    // while doing it meant the chart drew an error circle the size of a full
+    // stop around a position that was two hundred miles wrong, and the player
+    // was never given one signal that anything had happened. He sailed on
+    // confidently, the coast appeared to have moved, and the only thing that
+    // ever put it right was blundering into a port.
+    //
+    // A pilot who has just moved his board a long way on the strength of a
+    // hill he likes the look of is not thereby certain, and the board should
+    // say so. Being wrong is the game; being wrong with no way to find out is
+    // not.
+    this.sigmaLat = clamp(sigmaLatNm, 0.6, 90);
     this.sigmaLon = clamp(sigmaLonNm, 1.2, 90);
     this.lastFixT = t;
     this.milesSinceFix = 0;
