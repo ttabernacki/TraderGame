@@ -501,6 +501,27 @@ export function coastSegmentsNear(p: LatLon, nm: number): CoastSegment[] {
  * of the globe — the carreira runs along the shores of Africa, Arabia and
  * India, and a chart of the Baltic says nothing about how the voyage is going.
  */
+/**
+ * Where a charted vertex really is, by the key the chart files it under.
+ *
+ * The chart holds only where the pilot *drew* each vertex, so anything that
+ * moves the drawing has to be able to ask the world where the thing actually
+ * is in order to say how wrong the paper still is.
+ */
+export function coastVertexByKey(key: string): CoastVertex | null {
+  build();
+  const sep = key.indexOf(':');
+  if (sep < 0) return null;
+  const li = Number(key.slice(0, sep));
+  const vi = Number(key.slice(sep + 1));
+  if (!Number.isInteger(li) || !Number.isInteger(vi) || li < 0 || vi < 0) return null;
+  const L = prepared[li];
+  if (!L) return null;
+  const i = vi * 2;
+  if (i + 1 >= L.ring.length) return null;
+  return { land: li, index: vi, lat: L.ring[i], lon: L.ring[i + 1] };
+}
+
 export function coastVertexKeysInBox(
   latMin: number, latMax: number, lonMin: number, lonMax: number,
 ): Set<string> {

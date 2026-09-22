@@ -57,6 +57,14 @@ export class Navigator {
 
   /** Miles run since anything corrected the reckoning. */
   milesSinceFix = 0;
+  /**
+   * Miles run since anything actually fixed the *longitude* — a landfall, a
+   * lunar, a page of the book recognised. A noon sight does not reset this,
+   * because a quadrant cannot see a longitude, and the doubt the pilot is
+   * entitled to claim in longitude is a function of this and not of how many
+   * times he has looked at the pole star.
+   */
+  milesSinceLongitude = 0;
   /** Simulated seconds of the last observation or landfall. */
   lastFixT = 0;
 
@@ -169,6 +177,7 @@ export class Navigator {
     this.sigmaLat = Math.sqrt(this.sigmaLat * this.sigmaLat + runNm * LAT_DRIFT * drift);
     this.sigmaLon = Math.sqrt(this.sigmaLon * this.sigmaLon + runNm * LON_DRIFT * drift);
     this.milesSinceFix += runNm;
+    this.milesSinceLongitude += runNm;
 
     this.accumCourse += reckonedCourse * runNm;
     this.accumDist += runNm;
@@ -205,7 +214,30 @@ export class Navigator {
     // what makes the reckoning wrong — a bad log line, a wandering helmsman —
     // puts her out in both at once, and finding one out tells the pilot
     // something about the other. Only a little: this is not a longitude.
-    this.sigmaLon = Math.max(this.sigmaLon * 0.88, 1.2);
+    //
+    // And never below what the run itself can justify, which is the whole of
+    // the worst bug this chart has had.
+    //
+    // Twelve hundredths off the doubt per sight compounds. Twenty noon sights
+    // on the way down to Mina — which is what a diligent pilot takes, and what
+    // the game teaches him to take — carried a seventy-five-mile longitude
+    // doubt under six miles, while the actual error went on growing the whole
+    // way. That false figure is not cosmetic: it is the *weight* the arriving
+    // reckoning carries into Chart.chartPort and Chart.survey. A reckoning
+    // claiming six miles beats a chart that honestly says seventy-five by two
+    // orders of magnitude, so the first port he entered was redrawn hundreds
+    // of miles from where it had been, applyLandfall planted him on it with
+    // six miles of certainty, and the coast either side of it — surveyed at
+    // its own weights, or not resurveyed at all — stayed where it was. Which
+    // is a captain standing out of São Jorge da Mina to find the coast of
+    // Africa several hundred miles from where his own chart has just put him.
+    //
+    // A quadrant cannot see longitude. The most a latitude sight can do is
+    // take out the part of the error common to both coordinates, and that part
+    // does not get smaller because you looked at the pole star again. So the
+    // floor is the doubt the run since the last real longitude fix has earned.
+    const earned = Math.sqrt(1.44 + this.milesSinceLongitude * LON_DRIFT * 0.45);
+    this.sigmaLon = Math.max(this.sigmaLon * 0.88, Math.min(earned, this.sigmaLon), 1.2);
     this.lastFixT = t;
     this.milesSinceFix = 0;
     this.fixes.push({ t, latitude: lat, method, sigma: sigmaDeg, body });
@@ -243,6 +275,7 @@ export class Navigator {
     this.sigmaLon = clamp(sigmaLonNm, 1.2, 90);
     this.lastFixT = t;
     this.milesSinceFix = 0;
+    this.milesSinceLongitude = 0;
     this.fixes.push({ t, latitude: known.lat, method: 'Landfall', sigma: 0.02, body: 'the land' });
   }
 
@@ -278,6 +311,7 @@ export class Navigator {
     this.sigmaLon = Math.sqrt(1 / (wObs + wLon));
     this.lastFixT = t;
     this.milesSinceFix = 0;
+    this.milesSinceLongitude = 0;
 
     const movedNm = Math.hypot(
       (this.estimated.lat - from.lat) * 60,
@@ -368,6 +402,7 @@ export class Navigator {
     this.estimated.lon = wrap180((lon * wObs + this.estimated.lon * wDr) / (wObs + wDr));
     this.sigmaLon = Math.sqrt(1 / (wObs + wDr));
     this.lastFixT = t;
+    this.milesSinceLongitude = 0;
     this.fixes.push({ t, latitude: this.estimated.lat, method: 'Lunar distance', sigma: sigmaNm / 60, body: 'the moon' });
     if (this.fixes.length > 200) this.fixes.shift();
   }

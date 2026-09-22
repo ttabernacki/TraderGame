@@ -1,6 +1,7 @@
 import { NM, cosd, wrap180, type LatLon } from '../core/math';
 import {
-  coastSegmentsNear, coastVertexKeysInBox, coastVerticesNear, type CoastVertex,
+  coastSegmentsNear, coastVertexByKey, coastVertexKeysInBox, coastVerticesNear,
+  type CoastVertex,
 } from '../world/landmass';
 import { PORTS, anchorageOf, type PortDef } from '../world/ports';
 
@@ -235,10 +236,13 @@ export class Chart {
       const plottedLat = v.lat + dLat + (hash(key + t) - 0.5) * relativeErr;
       const plottedLon = v.lon + dLon + (hash(key + 'y' + t) - 0.5) * relativeErr * 1.6;
 
-      // What this one sighting is worth, against what is already drawn.
+      // What this one sighting is worth, against what is already drawn — and
+      // never more than one pass of a coast can honestly be worth. See
+      // PASS_W_LON: a single reckoning is not allowed to carry the sheet.
       const relNm = relativeErr * 60;
       const wLat = 1 / (sigmaLatNm * sigmaLatNm + relNm * relNm + 0.25);
-      const wLon = 1 / (sigmaLonNm * sigmaLonNm + relNm * relNm + 0.25);
+      const wLon = Math.min(
+        1 / (sigmaLonNm * sigmaLonNm + relNm * relNm + 0.25), PASS_W_LON);
 
       if (!existing) {
         newly.push(v);
@@ -379,7 +383,9 @@ export class Chart {
     // guess. That asymmetry is the whole reason ports of this period are drawn
     // in the right parallel and the wrong meridian.
     const wLat = visited ? 1 / 0.25 : 1 / (sigmaLatNm * sigmaLatNm + 1);
-    const wLon = 1 / (sigmaLonNm * sigmaLonNm + 1);
+    // Capped the same way a coast sighting is. One arrival is one opinion,
+    // however confident the board claims to be when it comes alongside.
+    const wLon = Math.min(1 / (sigmaLonNm * sigmaLonNm + 1), PASS_W_LON);
 
     if (!existing) {
       this.ports.set(def.id, {
@@ -399,6 +405,65 @@ export class Chart {
     existing.visited = existing.visited || visited;
     existing.t = t;
     return false;
+  }
+
+  /**
+   * Move the sheet, not the pin.
+   *
+   * A chart is one piece of paper. When a pilot comes to anchor off a place he
+   * knows and finds it is not where he had drawn it, he does not rub out the
+   * town and leave the coastline round it alone — he shifts that part of the
+   * sheet, because the town and the coast either side of it were drawn in the
+   * same pass, from the same reckoning, with the same error in them.
+   *
+   * Nothing did this. Chart.chartPort moved the port and Chart.survey moved
+   * whatever coast happened to be in sight, on their own separate weights, and
+   * the coast out of sight to leeward was never touched at all. So a landfall
+   * could put the ship on a port that had just moved a long way while the
+   * coast it sits on had not, and the captain stood out of São Jorge da Mina
+   * to find Africa a long way from where his own chart had just placed him.
+   *
+   * The shift is damped by how well each stretch is held: coast the pilot has
+   * run twenty times and agrees with himself about does not move because one
+   * town turned out to be misplaced, and coast he has barely seen moves nearly
+   * all the way. It also falls off with distance, because a local fix is local
+   * evidence — it says nothing about a coast four hundred miles away.
+   */
+  realign(at: LatLon, dLat: number, dLon: number, radiusNm: number): number {
+    if (!Number.isFinite(dLat) || !Number.isFinite(dLon)) return 0;
+    if (Math.abs(dLat) < 1e-9 && Math.abs(dLon) < 1e-9) return 0;
+    const cosLat = Math.max(cosd(at.lat), 0.2);
+    let moved = 0;
+    for (const p of this.points.values()) {
+      const dNm = Math.hypot(
+        (p.lat - at.lat) * 60,
+        wrap180(p.lon - at.lon) * 60 * cosLat,
+      );
+      if (dNm > radiusNm) continue;
+      // Full strength under the fix, fading to nothing at the edge.
+      const near = 1 - (dNm / radiusNm) * (dNm / radiusNm);
+      // Resisted by how often the pilot has run this stretch himself, which is
+      // the only thing he actually knows about how well he has it.
+      //
+      // Not by the point's stored weight: a seeded vertex whose error happens
+      // to be small carries a huge weight, and weighting by that is weighting
+      // by an accuracy nobody aboard has measured or could. It also defeated
+      // the purpose — the one vertex on the bay that happened to be drawn
+      // right refused to move with the sheet, and became the piece of coast
+      // standing a hundred miles from where the chart had just put the ship.
+      //
+      // Coast inherited and never seen (no passes) goes with the town entire.
+      // Coast laid down a dozen times by a dozen reckonings holds its ground,
+      // because by then it is a consensus and the town is one opinion.
+      const share = near / (1 + p.passes * 0.5);
+      if (share < 0.01) continue;
+      p.lat += dLat * share;
+      p.lon = wrap180(p.lon + dLon * share);
+      const v = coastVertexByKey(p.key);
+      if (v) p.errorNm = errorOf(p.lat, p.lon, v);
+      moved++;
+    }
+    return moved;
   }
 
   /**
@@ -701,6 +766,25 @@ const WEIGHT_CAP = 1 / (0.5 * 0.5);
  * what he is drawing with. That gradient is the chart of 1482.
  */
 export const AGREED_W = 1 / (18 * 18);
+
+/**
+ * The most one pass is ever worth in longitude: twelve miles.
+ *
+ * A longitude is a guess at the day's run laid off from the last guess, and no
+ * single arrival at a place is better evidence of where the place is than
+ * that, whatever figure the board happens to be carrying. Without this cap one
+ * reckoning claiming six miles of accuracy — which a run of noon sights used
+ * to manufacture out of nothing; see Navigator.applyLatitude — outweighed a
+ * seeded chart honestly claiming seventy-five by two orders of magnitude, and
+ * dragged a port bodily across the Gulf of Guinea on one visit while the coast
+ * either side of it stayed put.
+ *
+ * The consensus this model is built on needs many passes disagreeing in
+ * different directions. It does not survive any one of them being taken as
+ * gospel.
+ */
+const PASS_W_LON = 1 / (12 * 12);
+
 
 /**
  * What the inherited chart counts for when a fresh sighting disagrees with it.

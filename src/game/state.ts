@@ -6330,6 +6330,11 @@ export class Game {
     // reckoning she arrived on — an opinion formed at sea and independent of
     // what the chart already said. Fixing first and charting afterwards would
     // have every visit confirm the chart with the chart.
+    // Where the town stood on the paper before this arrival had its say. The
+    // sheet around it has to take whatever shift chartPort applies — see the
+    // realign below — so the two are read either side of the same call.
+    const drawnBefore = this.chart.believedPort(def.id);
+    const stoodAt = drawnBefore ? { lat: drawnBefore.lat, lon: drawnBefore.lon } : null;
     this.chart.chartPort(
       def, this.nav.estimated, this.ship.state.pos, this.clock.t, true,
       this.nav.sigmaLat, this.nav.sigmaLon,
@@ -6351,11 +6356,32 @@ export class Game {
       const at = anchorageOf(def);
       const believed = this.chart.believedPort(def.id);
       const lonDoubt = believed ? Math.sqrt(1 / Math.max(believed.wLon, 1e-9)) : 1.2;
-      this.nav.applyLandfall(
-        { lat: at.lat, lon: believed ? believed.lon : at.lon },
-        this.clock.t,
-        lonDoubt,
-      );
+      const target = { lat: at.lat, lon: believed ? believed.lon : at.lon };
+
+      // Moving the sheet, not the pin.
+      //
+      // The fix says the ship is at the town, and the town is not where the
+      // board had it. Everything drawn round that town was drawn in the same
+      // passes, from the same reckonings, with the same error in it — so it
+      // moves with the town. Leaving the coast where it was is what let a
+      // captain weigh from São Jorge da Mina and find Africa hundreds of miles
+      // from where his own chart had just put him: the port had been dragged
+      // across the gulf by an over-confident arrival and the coastline had
+      // not followed it. See Chart.realign.
+      if (believed && stoodAt) {
+        this.chart.realign(
+          // Centred where the sheet is, not where the pin has just been moved
+          // to. Centring on the new position looks for coast around a point
+          // the coast is not drawn anywhere near, and quietly does nothing in
+          // exactly the case that needs it most — the big corrections.
+          stoodAt,
+          believed.lat - stoodAt.lat,
+          wrap180(believed.lon - stoodAt.lon),
+          180,
+        );
+      }
+
+      this.nav.applyLandfall(target, this.clock.t, lonDoubt);
     }
 
     this.crown.progressObjective('reach', def.id);
