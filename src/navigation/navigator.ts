@@ -247,6 +247,51 @@ export class Navigator {
   }
 
   /**
+   * A position recalled from the pilot's own book.
+   *
+   * Recognising a patch of bottom he has been over before is a fix, but it is
+   * only ever as good as the board that wrote the page. This used to assert
+   * the page's position outright with three miles of confidence — a flat
+   * three miles, whatever the reckoning had been doing on the day — and that
+   * is the bug that threw a ship out of São Jorge da Mina and left the coast
+   * of Africa several hundred miles to the west of her. The cast she made
+   * coming in, on a board two hundred miles out, was read straight back to
+   * her on the way out as though it were a landfall.
+   *
+   * So it is blended rather than asserted, on the page's own doubt against
+   * the board's. A page written when the pilot was two hundred miles out
+   * barely moves a board he has just fixed in harbour; a good page corrects
+   * a bad board almost entirely. Returns the miles the board moved.
+   */
+  rememberedFix(at: LatLon, doubtNm: number, t: number): number {
+    const wObs = 1 / (doubtNm * doubtNm + 1e-6);
+    const wLat = 1 / (this.sigmaLat * this.sigmaLat + 1e-6);
+    const wLon = 1 / (this.sigmaLon * this.sigmaLon + 1e-6);
+    const from = { ...this.estimated };
+
+    this.estimated.lat = (at.lat * wObs + this.estimated.lat * wLat) / (wObs + wLat);
+    // Longitude through the short way round, so a page either side of the
+    // meridian is not averaged the long way about the world.
+    this.estimated.lon = wrap180(this.estimated.lon
+      + (wrap180(at.lon - this.estimated.lon) * wObs) / (wObs + wLon));
+    this.sigmaLat = Math.sqrt(1 / (wObs + wLat));
+    this.sigmaLon = Math.sqrt(1 / (wObs + wLon));
+    this.lastFixT = t;
+    this.milesSinceFix = 0;
+
+    const movedNm = Math.hypot(
+      (this.estimated.lat - from.lat) * 60,
+      wrap180(this.estimated.lon - from.lon) * 60 * cosd(from.lat),
+    );
+    this.fixes.push({
+      t, latitude: this.estimated.lat, method: 'The book',
+      sigma: this.sigmaLat / 60, body: 'the ground',
+    });
+    if (this.fixes.length > 200) this.fixes.shift();
+    return movedNm;
+  }
+
+  /**
    * A position line by the lead.
    *
    * The lead does not give a position. It gives a *distance from the coast*,

@@ -88,7 +88,17 @@ export interface Note {
    * A fact the rest of the game can act on. See {@link Rutter.knows}.
    * Free-form so that new hooks do not need a new note type.
    */
-  fact?: { tag: string; value?: number; target?: string };
+  /**
+   * `lat`, `lon` and `doubt` are the reckoning the line was written on, and
+   * how wrong the pilot knew it might be. A page carries one position for the
+   * whole page — the one it was opened at, which may be a first cast years and
+   * several hundred miles ago — so anything that reads a position back out of
+   * the book has to have the fact's own, and the doubt that goes with it.
+   */
+  fact?: {
+    tag: string; value?: number; target?: string;
+    lat?: number; lon?: number; doubt?: number;
+  };
 }
 
 export interface Entry {
@@ -215,10 +225,19 @@ export class Rutter {
       || (opts.fact && n.fact && n.fact.tag === opts.fact.tag
         && n.fact.target === opts.fact.target));
     if (same) {
-      if (CONFIDENCE_WEIGHT[confidence] > CONFIDENCE_WEIGHT[same.confidence]) {
+      // A line already on the page is replaced when the new one is better
+      // founded — either believed harder, or written on a surer reckoning.
+      // Without the second test a fact recorded once when the board was two
+      // hundred miles out stayed on the page for the whole voyage, because
+      // every later observation of the same thing carried the same confidence
+      // and was silently dropped.
+      const surer = opts.fact?.doubt !== undefined && same.fact?.doubt !== undefined
+        && opts.fact.doubt < same.fact.doubt;
+      if (surer || CONFIDENCE_WEIGHT[confidence] > CONFIDENCE_WEIGHT[same.confidence]) {
         same.text = text;
         same.confidence = confidence;
         same.source = opts.source;
+        same.fact = opts.fact ?? same.fact;
         same.t = t;
         return same;
       }

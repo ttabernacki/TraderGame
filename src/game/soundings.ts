@@ -169,29 +169,34 @@ export function castLead(g: Game): LeadCast {
   const cell = groundCellKey(truth);
   const known = recallSounding(g, cell);
   let recognised: string | undefined;
+  let recalledMove = 0;
   if (known && groundAgrees(known.ground, ground) && Math.abs(known.fathoms - fathoms) < 9) {
     recognised = known.where;
     // Knowing the patch of bottom is knowing the place. It fixes her no better
     // than the reckoning that wrote the page did, which is the whole ethic of
     // the chart in this game — but it fixes her.
     //
-    // And that ethic has to be paid for in the latitude as well. This used to
-    // take the page's doubt for the longitude and then quietly assert six
-    // tenths of a mile in latitude, which is a precision no page written off a
-    // three-week reckoning has ever had.
-    nav.applyLandfall(
-      { lat: known.lat, lon: known.lon }, g.clock.t,
-      Math.max(known.doubt, 2.5), Math.max(known.doubt * 0.5, 2.5),
+    // Blended against the board rather than asserted over it. Asserting it was
+    // what threw a ship standing out of São Jorge da Mina several hundred
+    // miles: the cast she made coming in, on a board two hundred miles out,
+    // was handed straight back to her on the way out as a three-mile fix, and
+    // the coast of Africa appeared to move. See Navigator.rememberedFix.
+    recalledMove = nav.rememberedFix(
+      { lat: known.lat, lon: known.lon }, Math.max(known.doubt, 2.5), g.clock.t,
     );
   }
 
-  writeSounding(g, cell, fathoms, ground, recognised);
+  writeSounding(g, cell, fathoms, ground);
 
   const call = `By the deep, ${fathoms.toFixed(0)}. ${capitalise(ground)} on the tallow.`;
   g.logEvent('navigation', call
     + (recognised
       ? ` The pilot has the book open before the lead is inboard: this is the ground off `
-        + `${recognised}, written down in his own hand, and he knows precisely where she is.`
+        + `${recognised}, written down in his own hand.`
+        + (recalledMove > 2
+          ? ` The page is surer than the board and the board comes across to it — `
+            + `${recalledMove.toFixed(0)} miles.`
+          : ' It agrees with where he already had her.')
       : Number.isFinite(believedOff)
         ? ` It puts her ${offing.toFixed(0)} miles off the land, against `
           + (believedOff < 0
@@ -230,8 +235,19 @@ function recallSounding(g: Game, cell: string): RecalledSounding | null {
       return {
         ground,
         fathoms: n.fact.value ?? 0,
-        lat: e.lat, lon: e.lon,
-        doubt: 3,
+        // The cast's own reckoned position, not the page's. A page is opened
+        // under the name of the nearest thing on the chart and keeps for ever
+        // the position it was opened at, so reading the entry handed back
+        // wherever the *first* cast ever filed under that name happened to
+        // be — which on a coast run twice is a different stretch of it.
+        lat: n.fact.lat ?? e.lat,
+        lon: n.fact.lon ?? e.lon,
+        // And the doubt the board carried when it was written, which used to
+        // be a flat three miles however wrong the pilot had been that day.
+        // A page out of an old save has no doubt recorded, and is therefore
+        // treated as worthless for position, which is the safe way to be
+        // wrong about it.
+        doubt: n.fact.doubt ?? 120,
         where: e.title,
       };
     }
@@ -248,17 +264,26 @@ function recallSounding(g: Game, cell: string): RecalledSounding | null {
  * the note's source field so a later cast can be compared against it.
  */
 function writeSounding(
-  g: Game, cell: string, fathoms: number, ground: Ground, recognised?: string,
+  g: Game, cell: string, fathoms: number, ground: Ground,
 ): void {
-  if (recognised) return;
   const where = nearestName(g) ?? `the coast in ${Math.abs(g.nav.estimated.lat).toFixed(0)}° `
     + `${g.nav.estimated.lat >= 0 ? 'north' : 'south'}`;
   const { entry } = g.rutter.open(
     'coast', `coast:${where}`, where, g.nav.estimated, g.clock.t);
+  // The position and the doubt go on the line, not on the page. A second cast
+  // over the same ground on a surer board overwrites the first — see
+  // Rutter.note — which is how a pilot's book actually gets better.
   g.rutter.note(entry,
     `Soundings: ${fathoms.toFixed(0)} fathoms, ${ground}.`,
     'observed', g.clock.t,
-    { source: ground, fact: { tag: 'sounding', value: fathoms, target: cell } });
+    {
+      source: ground,
+      fact: {
+        tag: 'sounding', value: fathoms, target: cell,
+        lat: g.nav.estimated.lat, lon: g.nav.estimated.lon,
+        doubt: Math.hypot(g.nav.sigmaLat, g.nav.sigmaLon),
+      },
+    });
 }
 
 /** The nearest named thing on the chart, by the pilot's own reckoning. */

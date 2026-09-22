@@ -460,6 +460,11 @@ export class Renderer {
       halfBeam: this.hullClass.beam * 0.5,
       halfLength: this.hullClass.lwl * 0.5,
       rigHeight: this.hullClass.masts.reduce((a, m) => Math.max(a, m.ceHeight), 0) * 1.1,
+      // Waterline to rail. There is no freeboard on the hull class, and half
+      // the beam is the right order for a ship of this period once the
+      // castles are counted — which is all the shadow needs, since it only
+      // decides where the solid part of the silhouette stops.
+      hullHeight: this.hullClass.beam * 0.55,
       shadow: clamp(lighting.intensity * 1.3, 0, 1),
     });
 
@@ -670,9 +675,34 @@ export class Renderer {
   private applyLighting(l: SkyLighting, visibilityNm: number): void {
     // The light itself is placed just clear of the ship rather than at the real
     // distance of the sun, so the shadow frustum stays tight enough to be sharp.
+    //
+    // But "clear of the ship" has to mean clear of the *masthead*, and a fixed
+    // distance along the sun vector does not. At a low sun the light was being
+    // set down at fifteen metres — below her own trucks — with the shadow
+    // camera's near plane a metre in front of it, so the top of the rig fell
+    // behind the near plane and her masts stopped casting anything at all
+    // while her hull went on casting. That is the shadow going wrong at
+    // exactly the hours it is most visible.
     const span = Math.max(this.hullClass.lwl, 30) * 1.6;
-    this.sun.position.copy(l.sunDir).multiplyScalar(span * 2.5);
+    const rigTop = this.hullClass.masts.reduce((a, m) => Math.max(a, m.ceHeight), 0) * 1.6;
+    const reach = Math.max(span * 2.5, (rigTop + span * 0.5) / Math.max(l.sunDir.y, 0.12));
+    this.sun.position.copy(l.sunDir).multiplyScalar(reach);
     this.sun.target.position.set(0, 0, 0);
+
+    // And the frustum has to hold the shadow, which lengthens as the sun
+    // drops: at twenty degrees of altitude a masthead throws its shadow three
+    // times its own height, well past a box sized for the hull. Widened along
+    // with the sun's altitude rather than fixed, and the far plane kept behind
+    // the light wherever it has been put.
+    const stretch = clamp(1 / Math.max(l.sunDir.y, 0.18), 1, 4.2);
+    const cam = this.sun.shadow.camera;
+    const half = span * Math.sqrt(stretch);
+    if (Math.abs(cam.right - half) > 0.5 || cam.far < reach + span * 2) {
+      cam.left = -half; cam.right = half;
+      cam.top = half; cam.bottom = -half;
+      cam.far = reach + span * 3;
+      cam.updateProjectionMatrix();
+    }
     this.sun.color.copy(l.sunColor);
     // Daylight, at something like daylight's strength.
     //
