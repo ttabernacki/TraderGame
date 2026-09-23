@@ -110,6 +110,22 @@ void main() {
 }
 `;
 
+/** A radial falloff, white at the centre and gone at the rim. */
+function glowTexture(): THREE.Texture {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d')!;
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.25, 'rgba(255,255,255,0.45)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 export interface SkyLighting {
   sunDir: THREE.Vector3;
   sunColor: THREE.Color;
@@ -119,6 +135,13 @@ export interface SkyLighting {
   /** 0 full day, 1 full night. */
   night: number;
   intensity: number;
+  /**
+   * How much the moon is lighting the night, 0 to 1: up, full, and the sky
+   * clear. When it is, `sunDir` and `sunColor` are the moon's, so everything
+   * downstream that is lit by "the sun" — the key light, the shadows, the
+   * glitter on the water — is lit by the moon instead.
+   */
+  moon: number;
 }
 
 export class Sky {
@@ -134,6 +157,8 @@ export class Sky {
   private linePositions: Float32Array;
   private sunSprite: THREE.Mesh;
   private moonSprite: THREE.Mesh;
+  /** A soft disc of light behind the moon, which is how a bright moon reads. */
+  private moonGlow: THREE.Mesh;
 
   private lastUpdate = -1e9;
   private lastLat = 999;
@@ -219,9 +244,19 @@ export class Sky {
     this.sunSprite.renderOrder = -88;
     this.group.add(this.sunSprite);
 
+    this.moonGlow = new THREE.Mesh(
+      new THREE.CircleGeometry(420, 32),
+      new THREE.MeshBasicMaterial({
+        color: 0x9fb6e0, transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, map: glowTexture(),
+      }),
+    );
+    this.moonGlow.renderOrder = -87.5;
+    this.group.add(this.moonGlow);
+
     this.moonSprite = new THREE.Mesh(
-      new THREE.CircleGeometry(95, 24),
-      new THREE.MeshBasicMaterial({ color: 0xdde3ee, transparent: true, depthWrite: false }),
+      new THREE.CircleGeometry(125, 32),
+      new THREE.MeshBasicMaterial({ color: 0xf2f5fb, transparent: true, depthWrite: false }),
     );
     this.moonSprite.renderOrder = -87;
     this.group.add(this.moonSprite);
@@ -256,11 +291,28 @@ export class Sky {
     const dayHorizon = new THREE.Color(0.66, 0.80, 0.94);
     const duskZenith = new THREE.Color(0.11, 0.13, 0.38);
     const duskHorizon = new THREE.Color(0.98, 0.44, 0.18);
-    const nightZenith = new THREE.Color(0.008, 0.014, 0.045);
-    const nightHorizon = new THREE.Color(0.03, 0.05, 0.10);
+    // Night is not black. With no moon at all a clear tropical sky over open
+    // water still shows a horizon, the loom of the sea and the ship's own
+    // shape against the stars, and a sky this dark read as a switched-off
+    // screen rather than as night.
+    const nightZenith = new THREE.Color(0.016, 0.028, 0.075);
+    const nightHorizon = new THREE.Color(0.055, 0.085, 0.16);
 
-    zenith.copy(dayZenith).lerp(duskZenith, twilight).lerp(nightZenith, night);
-    horizon.copy(dayHorizon).lerp(duskHorizon, twilight).lerp(nightHorizon, night);
+    // And the moon, which is most of what a night at sea actually looks like.
+    // Its light is scaled by how much of the disc is lit and how high it is,
+    // and a sky full of cloud puts it out.
+    const moon = moonPosition(lat, lon, dayFromEpoch, hourLocal);
+    const moonDir = dirFromAltAz(moon.altitude, moon.azimuth);
+    const overcast = clamp(cloud, 0, 1) * 0.85;
+    const moonUp = smoothstep(-1, 10, moon.altitude) * (0.12 + 0.88 * moon.phase)
+      * (1 - overcast * 0.85);
+    const moonlight = night * moonUp;
+
+    zenith.copy(dayZenith).lerp(duskZenith, twilight).lerp(nightZenith, night)
+      // A moonlit sky is a deep clear blue, not black.
+      .lerp(new THREE.Color(0.04, 0.08, 0.20), moonlight * 0.85);
+    horizon.copy(dayHorizon).lerp(duskHorizon, twilight).lerp(nightHorizon, night)
+      .lerp(new THREE.Color(0.11, 0.16, 0.28), moonlight * 0.85);
 
     sunColor.setRGB(1, 0.96, 0.88)
       .lerp(new THREE.Color(1, 0.62, 0.34), twilight)
@@ -269,17 +321,30 @@ export class Sky {
     // More light off the sky dome. The shaded side of a hull under a bright sky
     // is not black — it is lit by the whole upper hemisphere — and at 0.55 the
     // ship's lee side and the underside of every sail were crushed to mud.
-    ambient.copy(horizon).multiplyScalar(0.72).lerp(new THREE.Color(0.05, 0.07, 0.16), night * 0.8);
+    ambient.copy(horizon).multiplyScalar(0.72)
+      .lerp(new THREE.Color(0.09, 0.12, 0.24).lerp(new THREE.Color(0.14, 0.19, 0.34), moonlight), night * 0.8);
 
-    const overcast = clamp(cloud, 0, 1) * 0.85;
-    const intensity = clamp(smoothstep(-6, 12, sun.altitude), 0.02, 1) * (1 - overcast * 0.55);
+    let intensity = clamp(smoothstep(-6, 12, sun.altitude), 0.02, 1) * (1 - overcast * 0.55);
+
+    // Once the sun is well down, the key light is the moon's: its direction,
+    // a cold silver, and a strength that at the full is enough to throw a
+    // shadow and lay a path of light across the water. The swap happens where
+    // the sun's own light has already gone to nothing, so there is no jump.
+    let keyDir = sunDir;
+    if (night > 0.6 && moon.altitude > -1) {
+      keyDir = moonDir;
+      sunColor.setRGB(0.72, 0.82, 1.0);
+      intensity = Math.max(intensity, moonlight * 0.34);
+    }
 
     // --- Dome --------------------------------------------------------------
     (this.domeMaterial.uniforms.uZenith.value as THREE.Color).copy(zenith);
     (this.domeMaterial.uniforms.uHorizon.value as THREE.Color).copy(horizon);
-    (this.domeMaterial.uniforms.uSunDir.value as THREE.Vector3).copy(sunDir);
+    (this.domeMaterial.uniforms.uSunDir.value as THREE.Vector3).copy(keyDir);
+    // Round the moon, a silver halo in place of the sun's.
     (this.domeMaterial.uniforms.uSunGlow.value as THREE.Color)
-      .setRGB(1, 0.78, 0.5).lerp(new THREE.Color(0.15, 0.2, 0.35), night);
+      .setRGB(1, 0.78, 0.5).lerp(new THREE.Color(0.15, 0.2, 0.35), night)
+      .lerp(new THREE.Color(0.30, 0.38, 0.58), moonlight);
     this.domeMaterial.uniforms.uNight.value = night;
     this.domeMaterial.uniforms.uOvercast.value = overcast;
 
@@ -289,12 +354,14 @@ export class Sky {
     (this.sunSprite.material as THREE.MeshBasicMaterial).opacity =
       clamp(smoothstep(-3, 2, sun.altitude) * (1 - overcast * 0.9), 0, 1);
 
-    const moon = moonPosition(lat, lon, dayFromEpoch, hourLocal);
-    const moonDir = dirFromAltAz(moon.altitude, moon.azimuth);
     this.moonSprite.position.copy(moonDir).multiplyScalar(SKY_RADIUS * 0.93);
     this.moonSprite.lookAt(0, 0, 0);
     (this.moonSprite.material as THREE.MeshBasicMaterial).opacity =
-      clamp(smoothstep(-2, 4, moon.altitude) * (0.25 + moon.phase * 0.75) * (1 - overcast * 0.9), 0, 1);
+      clamp(smoothstep(-2, 4, moon.altitude) * (0.35 + moon.phase * 0.65) * (1 - overcast * 0.9), 0, 1);
+    this.moonGlow.position.copy(moonDir).multiplyScalar(SKY_RADIUS * 0.935);
+    this.moonGlow.lookAt(0, 0, 0);
+    (this.moonGlow.material as THREE.MeshBasicMaterial).opacity =
+      clamp(smoothstep(-2, 4, moon.altitude) * moon.phase * night * (1 - overcast * 0.9), 0, 1) * 0.22;
 
     // --- Stars -------------------------------------------------------------
     const starVisibility = clamp(night * 1.35 - overcast * 1.1, 0, 1);
@@ -308,7 +375,7 @@ export class Sky {
       this.recomputeStars(lat, lon, dayFromEpoch, hourLocal, year);
     }
 
-    return { sunDir, sunColor, zenith, horizon, ambient, night, intensity };
+    return { sunDir: keyDir, sunColor, zenith, horizon, ambient, night, intensity, moon: moonlight };
   }
 
   private recomputeStars(

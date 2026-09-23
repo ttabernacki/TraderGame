@@ -308,6 +308,7 @@ uniform vec3 uSandColor;
 uniform float uCrestMax;
 uniform float uFoamThreshold;
 uniform float uNight;
+uniform float uMoon;
 uniform float uFogDensity;
 uniform vec3 uFogColor;
 uniform vec3 uSeaFar;
@@ -520,7 +521,11 @@ void main() {
   // as a dark band instead of as sky lying on the sea. Over a bright shelf it
   // is pulled back again, because there the colour worth seeing is the bottom.
   vec3 col = mix(body, sky, fresnel * mix(0.92, 0.62, shoalMix));
-  col += uSunColor * (spec + sheen) * (1.0 - uNight * 0.82);
+  // At night the key light is the moon's (see Sky.update), and its track on
+  // the water is the brightest thing in the scene — a broken silver road out
+  // to the horizon under it. So the night dimming gives way to the moon.
+  col += uSunColor * (spec + sheen * (1.0 + uMoon * 1.5))
+       * max(1.0 - uNight * 0.82, uMoon * 1.25);
 
   // Light carried through the back of a wave, which is what makes a sea look
   // like water rather than like painted metal.
@@ -739,6 +744,7 @@ export class Ocean {
         uCrestMax: { value: 1.2 },
         uFoamThreshold: { value: 1.0 },
         uNight: { value: 0 },
+        uMoon: { value: 0 },
         uFogDensity: { value: 0.00006 },
         uFogColor: { value: new THREE.Color(0.6, 0.72, 0.85) },
         uSeaFar: { value: new THREE.Color(0.3, 0.42, 0.55) },
@@ -1039,8 +1045,9 @@ export class Ocean {
 
   setLighting(
     sunDir: THREE.Vector3, sunColor: THREE.Color, sky: THREE.Color,
-    horizon: THREE.Color, night: number, fogDensity: number,
+    horizon: THREE.Color, night: number, fogDensity: number, moon = 0,
   ): void {
+    this.material.uniforms.uMoon.value = moon;
     (this.material.uniforms.uSunDir.value as THREE.Vector3).copy(sunDir);
     (this.material.uniforms.uSunColor.value as THREE.Color).copy(sunColor);
     (this.material.uniforms.uSkyColor.value as THREE.Color).copy(sky);
@@ -1065,9 +1072,9 @@ export class Ocean {
     // still dark — the deep is a twentieth of the brightness of the sky — but
     // they carry the hue that makes the sea look like water.
     const deep = this.material.uniforms.uDeepColor.value as THREE.Color;
-    deep.setRGB(0.012, 0.062, 0.148).multiplyScalar(1 - night * 0.72);
+    deep.setRGB(0.012, 0.062, 0.148).multiplyScalar(1 - night * (0.62 - moon * 0.2));
     const shallow = this.material.uniforms.uShallowColor.value as THREE.Color;
-    shallow.setRGB(0.035, 0.235, 0.268).multiplyScalar(1 - night * 0.7);
+    shallow.setRGB(0.035, 0.235, 0.268).multiplyScalar(1 - night * (0.6 - moon * 0.2));
     // And the bottom, which was never dimmed at all. What makes a shelf green
     // and a bank pale is sunlight going down to the sand and coming back up;
     // at night there is none, and the shallows were glowing turquoise under a

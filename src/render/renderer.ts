@@ -733,7 +733,9 @@ export class Renderer {
     // piece of timber aboard a bright mint green.
     this.ambient.color.copy(l.zenith).lerp(SKYLIGHT, 0.55).multiplyScalar(1.5);
     this.ambient.groundColor.copy(l.horizon).multiplyScalar(0.55);
-    this.ambient.intensity = lerp(1.65, 0.3, l.night);
+    // Night was 0.3 of the day's skylight, which crushed the ship to a
+    // silhouette you could not steer by. Half, and more under a moon.
+    this.ambient.intensity = lerp(1.65, 0.5 + l.moon * 0.35, l.night);
 
     // Visibility drives atmospheric extinction, so fog thickens in haze and rain.
     const visM = Math.max(visibilityNm, 0.15) * 1852;
@@ -742,7 +744,7 @@ export class Renderer {
     // white a couple of miles out and leaves a pale strip under the horizon, so
     // the sea gets a good deal less of it than the air does.
     const fogDensity = 1.15 / visM;
-    this.ocean.setLighting(l.sunDir, l.sunColor, l.zenith, l.horizon, l.night, fogDensity);
+    this.ocean.setLighting(l.sunDir, l.sunColor, l.zenith, l.horizon, l.night, fogDensity, l.moon);
     this.fog.color.copy(l.horizon);
     this.fog.density = fogDensity * 0.85;
   }
