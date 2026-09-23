@@ -233,7 +233,11 @@ export class Ui {
         this.overlay.append(new EpilogueView(g, () => this.cb.onNewGame(g.difficulty, g.origin)).root);
         break;
       case 'gameover':
-        this.overlay.append(new GameOverView(g, g.gameOverReason ?? 'The ship was lost.', () => this.cb.onNewGame(g.difficulty, g.origin)).root);
+        this.overlay.append(new GameOverView(
+          g, g.gameOverReason ?? 'The ship was lost.',
+          () => this.cb.onNewGame(g.difficulty, g.origin),
+          () => { g.fitOutAfterLoss(); this.setMode('port'); },
+        ).root);
         break;
       case 'title':
         this.showTitle();

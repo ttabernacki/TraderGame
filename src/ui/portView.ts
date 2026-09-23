@@ -91,7 +91,11 @@ export class PortView {
         // into the market and is told no.
         primary: def.people !== 'portuguese' && !rel.mayTrade,
       }),
-      button('Weigh anchor  (Space)', () => { g.weighAnchor(); this.onClose(); },
+      button('Weigh anchor  (Space)', () => {
+        const why = g.cannotWeigh();
+        if (why) { this.notice = { text: why, grave: true }; this.render(); return; }
+        g.weighAnchor(); this.onClose();
+      },
         { primary: def.people === 'portuguese' || rel.mayTrade }),
     );
 

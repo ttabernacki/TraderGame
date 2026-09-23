@@ -598,6 +598,10 @@ export class Renderer {
     if (this.settlements.needsRebuild(f.pos, landRange, eyeM)) {
       this.settlements.rebuild(f.pos, landRange, eyeM);
     }
+    // Carry both across the gap between rebuilds, so the coast goes by rather
+    // than riding along with her and then jumping. See Land.follow.
+    this.land.follow(f.pos);
+    this.settlements.follow(f.pos);
     this.settlements.setFog(lighting.horizon, clamp(1 - f.visibilityNm / 24, 0, 0.7));
     // On the rigging clock, which runs on real seconds: smoke boils at the rate
     // smoke boils whatever the game's clock is set to.
@@ -658,10 +662,15 @@ export class Renderer {
     const half = SHOAL_SPAN_M / 2;
     let i = 0;
     for (let row = 0; row < SHOAL_SIZE; row++) {
-      // Row 0 is the south edge; the shader's v runs the same way as z does
-      // here, which is north-negative, so this is written to match vLocal.
-      const north = -half + (row / (SHOAL_SIZE - 1)) * SHOAL_SPAN_M;
-      const lat = pos.lat + north / mPerDegLat;
+      // The shader samples v along the scene's z, which runs *south*: row 0 is
+      // z = -half, which is the north edge. This was written as the south edge,
+      // so the whole field was mirrored north and south about the ship — the
+      // shallows lay on the wrong side of her, slid the wrong way as she moved,
+      // and jumped back every time the field was rebuilt, which is the water
+      // flickering in and out. Checked against depthAt() directly: before, 72
+      // of 72 discriminating points matched the mirror and none the bottom.
+      const z = -half + (row / (SHOAL_SIZE - 1)) * SHOAL_SPAN_M;
+      const lat = pos.lat - z / mPerDegLat;
       for (let col = 0; col < SHOAL_SIZE; col++) {
         const east = -half + (col / (SHOAL_SIZE - 1)) * SHOAL_SPAN_M;
         const lon = pos.lon + east / mPerDegLon;

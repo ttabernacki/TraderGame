@@ -50,7 +50,11 @@ export class ShoreView {
       el('div', { style: { marginRight: 'auto', fontSize: '13.5px' } },
         `${g.clock.formatDate()} · ${g.crew.provisions.water.toFixed(0)} days of water`),
       button('The chart  (C)', () => this.onChart()),
-      button('Weigh anchor  (Space)', () => { g.weighAnchor(); this.onClose(); }, { primary: true }),
+      button('Weigh anchor  (Space)', () => {
+        const why = g.cannotWeigh();
+        if (why) { this.notice = why; this.render(); return; }
+        g.weighAnchor(); this.onClose();
+      }, { primary: true }),
     );
 
     clear(this.body);

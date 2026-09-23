@@ -1068,6 +1068,15 @@ export class Ocean {
     deep.setRGB(0.012, 0.062, 0.148).multiplyScalar(1 - night * 0.72);
     const shallow = this.material.uniforms.uShallowColor.value as THREE.Color;
     shallow.setRGB(0.035, 0.235, 0.268).multiplyScalar(1 - night * 0.7);
+    // And the bottom, which was never dimmed at all. What makes a shelf green
+    // and a bank pale is sunlight going down to the sand and coming back up;
+    // at night there is none, and the shallows were glowing turquoise under a
+    // black sky. Darker even than the deep, because the moon does not reach
+    // the bottom either.
+    const shoal = this.material.uniforms.uShoalColor.value as THREE.Color;
+    shoal.setRGB(0.055, 0.42, 0.44).multiplyScalar(1 - night * 0.9);
+    const sand = this.material.uniforms.uSandColor.value as THREE.Color;
+    sand.setRGB(0.30, 0.62, 0.56).multiplyScalar(1 - night * 0.93);
   }
 
   /**

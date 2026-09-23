@@ -4090,6 +4090,10 @@ export class Game {
     this.crew.complement = h.crewFull;
     this.crew.count = Math.min(this.crew.count, h.crewFull);
     this.refreshEnvironment();
+    if (this.crew.count < h.crewMin) {
+      this.pushAlert(`The ${h.name} wants ${h.crewMin} men to sail her and you have `
+        + `${this.crew.count}. Ship hands before you weigh.`, 'warning');
+    }
     this.logEvent('crown',
       `Shifted your flag into the ${h.name}. ${h.blurb} The yard allowed `
       + `${this.tradeInValue()} against the old ship and her fitting-out, so she cost `
@@ -5825,7 +5829,37 @@ export class Game {
     if (this.clock.scaleIndex > 2) this.clock.scaleIndex = 2;
   }
 
+  /**
+   * The fewest able men who can work her at all. Below this at sea she is lost
+   * — see updateCrewAndShip — so it is also the line nobody may weigh under.
+   */
+  hullWorkingMinimum(): number {
+    return Math.max(4, Math.round(this.ship.baseHull.crewMin * 0.28));
+  }
+
+  /**
+   * Why she cannot put to sea, or null.
+   *
+   * A Nau da Índia wants seventy men and a caravel carries twenty-four. Shifting
+   * the flag keeps the company you had, and weighing with them used to be
+   * allowed — and four ticks later the game ended, because nineteen men cannot
+   * work a four-hundred-ton ship and the check that says so runs at sea. The
+   * same arithmetic, asked on the quay, is a refusal with a reason instead of a
+   * loss with none. A small margin over the line itself, so the first man to
+   * go down with a fever does not end the voyage.
+   */
+  cannotWeigh(): string | null {
+    const able = ableHands(this.crew);
+    const need = Math.max(this.hullWorkingMinimum() + 3, Math.ceil(this.ship.baseHull.crewMin * 0.5));
+    if (able >= need) return null;
+    return `She cannot be worked with ${able} able men — the ${this.ship.baseHull.name} wants `
+      + `${this.ship.baseHull.crewMin} to sail her properly and will not put to sea with fewer than `
+      + `${need}. Ship more hands before you weigh.`;
+  }
+
   weighAnchor(): string {
+    const refused = this.cannotWeigh();
+    if (refused) return refused;
     // Give the charters back the days she lay alongside. Done here, once, on
     // the elapsed time rather than accumulated per tick: rollIncidents can skip
     // a tick on its cooldown, and a deadline that drifts by however many ticks
@@ -6470,6 +6504,96 @@ export class Game {
       lat: this.nav.estimated.lat,
       lon: this.nav.estimated.lon,
     });
+  }
+
+  /**
+   * The ship is lost; the captain is not.
+   *
+   * Losing her used to end the game, which on this route was never how it went
+   * — Dias lost ships, Cabral lost more than half his fleet, and every one of
+   * the men who survived went out again. So a loss is now the end of a voyage,
+   * not of a career. What stays is everything that is the captain's rather than
+   * the ship's: his skills and unspent points, his title and renown, the
+   * commission he holds, the chart and the book, every people he has met, his
+   * stations ashore, his debts and his purse. What went down is the hull, the
+   * cargo, the stores and the men who did not come home.
+   *
+   * The survivors are carried home in whatever passes — the time that takes is
+   * charged by the distance — and at Lisbon the Casa finds him a caravel, as it
+   * did at the start. It is a setback measured in months and in the ship he had
+   * built up, which is what a wreck should cost.
+   */
+  fitOutAfterLoss(): void {
+    const lost = this.ship.name;
+    const home = anchorageOf(portDef('lisboa'));
+    const passageNm = haversine(this.ship.state.pos, home) / NM;
+    const days = Math.round(clamp(14 + passageNm / 70, 14, 240));
+    this.clock.t += days * 86400;
+
+    // The hull, the hold and the stores.
+    const name = lost.startsWith('Nova ') ? lost : `Nova ${lost}`;
+    this.ship = new Ship(name, 'caravela-latina', home, 200);
+
+    // The company. Named officers who came through it are still his; the men
+    // are a fresh muster off the quay. Anybody left at a station ashore was
+    // never aboard and is untouched.
+    const officers = this.crew.officers.filter((o) => o.alive);
+    const deaths = this.crew.deaths;
+    this.crew = newCrew(hullClass('caravela-latina').crewFull, this.rng);
+    this.crew.officers = officers;
+    this.crew.deaths = deaths;
+    this.wardroomCache = null;
+    for (const h of this.hands) {
+      if (h.alive && !h.aboard && !h.fate) h.aboard = true;
+    }
+
+    // The reckoning starts again from the quay; the instruments he had learned
+    // to use are bought again with the ship's stores and are his as before.
+    const kit = { ...this.nav.kit };
+    const leeway = this.nav.leewayAllowance;
+    const drift = this.nav.driftScale;
+    this.nav = new Navigator(home, this.seed ^ Math.floor(this.clock.t));
+    this.nav.kit = kit;
+    this.nav.leewayAllowance = leeway;
+    this.nav.driftScale = drift;
+    this.nav.lastFixT = this.clock.t;
+
+    // Everything that was happening at sea stops happening.
+    this.encounter = null;
+    this.consort = null;
+    this.gale = newGale();
+    this.pendingEvent = null;
+    this.pendingScenes = [];
+    this.route = [];
+    this.helmOrder = null;
+    this.latitudeOrder = null;
+    this.orderedCanvas = 0;
+    this.backing = false;
+    this.shoreHere = null;
+    this.shoreReport = null;
+    for (const v of this.ventures) {
+      if (!v.delivered && !v.failed) v.failed = true;
+    }
+    this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
+
+    // Home.
+    this.dockedAt = 'lisboa';
+    this.anchored = true;
+    this.dockedSinceT = this.clock.t;
+    this.daysSincePort = 0;
+    this.lastLandSeenT = this.clock.t;
+    this.landInSight = true;
+    this.gameOverReason = null;
+    this.mode = 'port';
+    this.refreshEnvironment();
+    this.markets.refresh('lisboa', this.clock.t);
+    this.refreshPortBusiness(portDef('lisboa'));
+
+    this.logEvent('crown',
+      `The survivors of the ${lost} came home to the Tagus ${days} days after she was lost. `
+      + `The Casa has found you the ${name}, a caravel, stored and watered and with a fresh `
+      + 'company off the quay. Your commission, your chart and your book are as you left them.',
+      true);
   }
 
   endGame(reason: string): void {

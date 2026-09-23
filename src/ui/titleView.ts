@@ -112,7 +112,7 @@ export class TitleView {
 export class GameOverView {
   root = el('div', { class: 'screen' });
 
-  constructor(g: Game, reason: string, onRestart: () => void) {
+  constructor(g: Game, reason: string, onRestart: () => void, onFitOut: () => void) {
     const days = Math.floor((g.clock.t - 0) / 86400);
     const body = el('div', { class: 'screen-body' },
       el('div', { class: 'scroll-narrow' },
@@ -135,6 +135,12 @@ export class GameOverView {
           days > 400
             ? 'Ships were lost on this route at a rate that would close any trade but this one, and the survivors went out again the following season.'
             : 'It happened to better navigators than you, and it happened to most of them within sight of land.'),
+        card('What you keep',
+          el('p', {}, 'The ship is lost; the captain is not. Your skills, title and renown, your '
+            + 'commission, the chart, the book, every people you have met, your stations ashore, '
+            + 'your purse and your debts all come home with you. The Casa will find you a caravel '
+            + 'at Lisbon and a fresh company off the quay.'),
+        ),
       ),
     );
 
@@ -144,7 +150,10 @@ export class GameOverView {
         el('div', { class: 'sub' }, g.ship.name),
       ),
       body,
-      el('div', { class: 'screen-foot' }, button('Fit out another ship', onRestart, { primary: true })),
+      el('div', { class: 'screen-foot' },
+        button('Begin a new career', onRestart),
+        button('Fit out another ship', onFitOut, { primary: true }),
+      ),
     );
   }
 }

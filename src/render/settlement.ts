@@ -237,6 +237,26 @@ export class Settlements {
     });
   }
 
+  /**
+   * Slide the built band under the ship between rebuilds.
+   *
+   * The scene is drawn round the ship, and the band is built in metres from
+   * wherever she was when it was last rebuilt — but nothing moved it after
+   * that. So for the quarter mile between rebuilds the coast sailed along with
+   * her, fixed to the ship, and then jumped a quarter of a mile at once when the
+   * next rebuild caught up: a coastline that advanced in steps rather than going
+   * by. This carries it the ship's own displacement since the build, every
+   * frame, by the same projection the build used, so between rebuilds it moves
+   * exactly as the land would and the rebuild itself lands on the same place.
+   */
+  follow(pos: LatLon): void {
+    if (this.lastOrigin.lat > 900) return;
+    const mPerDegLat = NM * 60;
+    const mPerDegLon = mPerDegLat * Math.max(cosd(this.lastOrigin.lat), 1e-6);
+    this.group.position.x = -wrap180(pos.lon - this.lastOrigin.lon) * mPerDegLon;
+    this.group.position.z = (pos.lat - this.lastOrigin.lat) * mPerDegLat;
+  }
+
   needsRebuild(origin: LatLon, rangeNm: number, eyeM: number): boolean {
     const dLat = Math.abs(origin.lat - this.lastOrigin.lat) * 60;
     const dLon = Math.abs(wrap180(origin.lon - this.lastOrigin.lon)) * 60 * cosd(origin.lat);
