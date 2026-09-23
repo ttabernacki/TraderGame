@@ -30,6 +30,9 @@ function inkScale(): number {
  * mark showing where the ship truly is, because no such information exists
  * aboard.
  */
+/** How long coast you discovered stays inked fresh on the chart: a season. */
+const FRESH_INK_S = 120 * 86400;
+
 export class ChartView {
   root = el('div', { class: 'screen' });
 
@@ -889,7 +892,10 @@ export class ChartView {
       // Casa's word for it. Home waters come out firm without your having sailed
       // them, because sixty years of Portuguese pilots got there first; Guinea
       // comes out dashed until you have been, because they did not.
-      const grade = p.wLon >= AGREED_W ? 2 : p.passes > 0 ? 1 : 0;
+      // Coast this captain was the first to draw, in fresh red ink for a season,
+      // so what he has added to the world stands out from what he inherited.
+      const fresh = p.born !== undefined && g.clock.t - p.born < FRESH_INK_S;
+      const grade = fresh ? 3 : p.wLon >= AGREED_W ? 2 : p.passes > 0 ? 1 : 0;
       arr.push({ index: idx, lat: p.lat, lon: p.lon, grade });
     }
 
@@ -922,6 +928,9 @@ export class ChartView {
           // Drawn, but on one man's reckoning on one day.
           ctx.strokeStyle = '#6b4f30';
           ctx.lineWidth = 1.4;
+        } else if (grade === 3) {
+          ctx.strokeStyle = '#a3302a';
+          ctx.lineWidth = 2.1;
         }
         ctx.beginPath();
         for (let i = 0; i < run.length; i++) {
@@ -933,8 +942,8 @@ export class ChartView {
         // A little hachuring on the landward side, portolan fashion. Only on
         // coast the pilot has run often enough that his own reckonings agree
         // about where it is.
-        if (grade === 2) {
-          ctx.globalAlpha = 0.2;
+        if (grade === 2 || grade === 3) {
+          ctx.globalAlpha = grade === 3 ? 0.16 : 0.2;
           ctx.lineWidth = 3.5;
           ctx.stroke();
         }
@@ -1347,6 +1356,7 @@ function buildLegend(): HTMLElement {
   const item = (color: string, label: string) =>
     el('div', {}, el('i', { style: { background: color } }), el('span', {}, label));
   return el('div', { class: 'chart-legend' },
+    item('#a3302a', 'Coast you were the first to draw'),
     item('#4a3520', 'Coast you have surveyed'),
     item('#6b4f30', 'Run once, in one day\u2019s passage'),
     item('rgba(74,53,32,0.42)', 'The Casa\u2019s word for it — nobody aboard has seen it'),

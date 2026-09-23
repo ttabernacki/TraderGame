@@ -277,6 +277,7 @@ const BUILDERS: Record<string, Build> = {
       id: 'hail:interloper',
       title: `A ${NATION_NAME[s.nation]} sail, south of the line`,
       severity: 'warning',
+      facts: { odds },
       text: `She is where no ship but a Portuguese one is permitted to be, and she has known it `
         + `since she raised you, which is why she spent four hours trying to lose you.\n\n`
         + `${s.master} is a long way from Palos and does not pretend otherwise. "We are in this `
@@ -345,6 +346,7 @@ const BUILDERS: Record<string, Build> = {
       id: 'hail:corsair',
       title: 'She has run you down',
       severity: 'grave',
+      facts: { odds },
       text: `She has had the heels of you since the forenoon watch and there is nothing more to `
         + `be done about it. A lateen caravel out of the Barbary coast with sixty men in her `
         + `and no cargo at all, which in this ocean means one trade and only one.\n\n`

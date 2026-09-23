@@ -145,6 +145,14 @@ export class Renderer {
   cameraMode: CameraMode = 'chase';
   /** User look offsets, in degrees. */
   lookYaw = 0;
+  /**
+   * A look the camera takes of its own accord — toward land raised for the
+   * first time — and then gives back. Eased in and out so it reads as a head
+   * turning, not a cut.
+   */
+  private glanceTarget = 0;
+  private glanceUntil = 0;
+  private glanceYaw = 0;
   lookPitch = -8;
   distance = 42;
 
@@ -286,6 +294,15 @@ export class Renderer {
     this.sun.shadow.normalBias = 0.06;
 
     this.resize();
+  }
+
+  /**
+   * Turn the view toward a bearing relative to her head for a few seconds, the
+   * way everybody on deck turns when the masthead sings out.
+   */
+  glance(relativeDeg: number, seconds = 8): void {
+    this.glanceTarget = ((relativeDeg % 360) + 540) % 360 - 180;
+    this.glanceUntil = performance.now() + seconds * 1000;
   }
 
   /**
@@ -818,7 +835,9 @@ export class Renderer {
         // the helm over swings her visibly across the frame before the view
         // settles in behind her again. Without the lag a turn is invisible.
         this.chaseYaw = wrapAngle(this.chaseYaw + wrapAngle(hdg - this.chaseYaw) * clamp(dt * 1.6, 0, 1));
-        const az = this.chaseYaw + Math.PI + this.lookYaw * DEG;
+        const wantGlance = performance.now() < this.glanceUntil ? this.glanceTarget : 0;
+        this.glanceYaw += (wantGlance - this.glanceYaw) * clamp(dt * 0.9, 0, 1);
+        const az = this.chaseYaw + Math.PI + (this.lookYaw + this.glanceYaw) * DEG;
         const pitch = clamp(this.lookPitch, -45, 40) * DEG;
         const horizontal = Math.cos(pitch) * this.distance;
         desired.set(

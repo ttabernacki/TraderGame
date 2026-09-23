@@ -262,7 +262,7 @@ export class Ui {
       this.touch.setRate(g.clock.scaleLabel);
       this.bar.setRate(g.clock.scaleLabel, g.clock.paused || g.clock.scaleIndex === 0);
       this.bar.setAnchored(g.anchored || !!g.dockedAt);
-      this.events.show(g.pendingEvent);
+      this.events.show(g.pendingEvent, g.pendingEvent ? g.counselOn(g.pendingEvent) : []);
       // The controls go quiet while a decision is outstanding: pressing the
       // helm against a ship whose clock is stopped only reads as a bug.
       this.touch.setVisible(!g.pendingEvent);
@@ -271,7 +271,7 @@ export class Ui {
       // The Casa's scenes are played at court and a man comes back off the
       // beach in a port, so the card has to be able to come up over both — it
       // only ever rendered on the sailing screen before.
-      this.events.show(g.pendingEvent);
+      this.events.show(g.pendingEvent, g.pendingEvent ? g.counselOn(g.pendingEvent) : []);
     } else {
       this.events.show(null);
     }

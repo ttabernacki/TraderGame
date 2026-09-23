@@ -1473,6 +1473,14 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
 }
 .event-choice-label { font-size: 15px; }
 .event-choice-detail { font-size: 12.5px; color: var(--ink-faint); font-style: italic; }
+.event-choice-backers { font-size: 11.5px; color: var(--gold); letter-spacing: .02em; margin-top: 2px; }
+/* The wardroom: who said what, before the captain decides. */
+.event-counsel { display: flex; flex-direction: column; gap: 9px; margin: -4px 0 16px;
+  padding: 10px 12px; border-left: 2px solid rgba(200,164,78,.45); background: rgba(196,176,136,.06); border-radius: 2px; }
+.event-counsel-line { display: flex; flex-direction: column; gap: 2px; }
+.event-counsel-who { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-faint); }
+.event-counsel-says { font-family: var(--serif); font-size: 14.5px; line-height: 1.5; color: var(--cream); font-style: italic; }
+@media (max-width: 560px) { .event-counsel-says { font-size: 13.5px; } }
 
 @media (max-width: 560px) {
   .event-card { padding: 16px 16px 14px; }

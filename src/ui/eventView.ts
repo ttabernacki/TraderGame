@@ -1,3 +1,4 @@
+import type { Counsel } from '../game/counsel';
 import type { SeaEvent } from '../game/seaEvents';
 import { el } from './dom';
 
@@ -18,7 +19,7 @@ export class EventView {
   }
 
   /** Show this event, or clear the card when there is none. */
-  show(event: SeaEvent | null): void {
+  show(event: SeaEvent | null, counsel: Counsel[] = []): void {
     if (!event) {
       if (this.showing !== null) {
         this.showing = null;
@@ -33,6 +34,9 @@ export class EventView {
 
     const choices = el('div', { class: 'event-choices' });
     (event.choices ?? []).forEach((c, i) => {
+      // Who is behind this course, by name, on the button itself — so the
+      // choice reads as siding with somebody, which is what it is.
+      const backers = counsel.filter((k) => k.backs === i).map((k) => k.who.split(' ').pop());
       choices.append(el('button', {
         class: 'event-choice',
         type: 'button',
@@ -40,8 +44,20 @@ export class EventView {
       },
         el('span', { class: 'event-choice-label' }, c.label),
         el('span', { class: 'event-choice-detail' }, c.detail),
+        backers.length > 0
+          ? el('span', { class: 'event-choice-backers' }, `${backers.join(', ')} would do this`)
+          : null,
       ));
     });
+
+    // The wardroom, before the captain decides. See game/counsel.
+    const wardroom = counsel.length > 0
+      ? el('div', { class: 'event-counsel' },
+        ...counsel.map((k) => el('div', { class: 'event-counsel-line' },
+          el('span', { class: 'event-counsel-who' }, `${k.who}, ${k.office}`),
+          el('span', { class: 'event-counsel-says' }, `\u201c${k.says}\u201d`),
+        )))
+      : null;
 
     this.root.replaceChildren(el('div', { class: `event-card ${event.severity}` },
       el('div', { class: 'event-title' }, event.title),
@@ -50,6 +66,7 @@ export class EventView {
       // happened, who is standing where, what they are waiting for — arrived on
       // screen as a single grey slab.
       ...event.text.split(/\n\s*\n/).map((para) => el('p', { class: 'event-text' }, para.trim())),
+      wardroom,
       choices,
     ));
     // So a keyboard player can answer without reaching for the mouse.

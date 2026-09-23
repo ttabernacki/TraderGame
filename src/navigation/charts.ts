@@ -29,6 +29,12 @@ export interface ChartedPoint {
   obsT: number;
   /** Kept at nought: the chart is drawn true. Retained so old saves load. */
   errorNm: number;
+  /**
+   * When this captain first put it on paper, for coast nobody had drawn
+   * before him. Unset for the Casa's inherited coast and for copied sheets.
+   * The chart table inks it differently while it is fresh.
+   */
+  born?: number;
   land: number;
   t: number;
 }
@@ -227,7 +233,7 @@ export class Chart {
           key, lat: v.lat, lon: v.lon,
           wLat, wLon, passes: 1, obsT: t,
           errorNm: 0,
-          land: v.land, t,
+          land: v.land, t, born: t,
         });
         continue;
       }
@@ -544,6 +550,7 @@ export class Chart {
         .map((p) => [
           p.key, r6(p.lat), r6(p.lon), r(p.wLat, 6), r(p.wLon, 6),
           p.passes, Math.round(p.obsT), r(p.errorNm, 3), p.land, Math.round(p.t),
+          p.born !== undefined ? Math.round(p.born) : 0,
         ]),
       ports: [...this.ports.values()]
         .filter((p) => p.passes > 0 || p.visited || p.traded)
@@ -565,6 +572,7 @@ export class Chart {
         c.points.set(a[0], {
           key: a[0], lat: a[1], lon: a[2], wLat: a[3], wLon: a[4],
           passes: a[5], obsT: a[6], errorNm: a[7], land: a[8], t: a[9],
+          born: a[10] ? a[10] : undefined,
         });
       }
       for (const a of data.ports ?? []) {

@@ -1,4 +1,5 @@
 import { Clock } from '../core/clock';
+import { counselFor, type Counsel } from './counsel';
 import {
   NM, angleDelta, atan2d, bearingTo, clamp, compassPoint, cosd, formatBearing, formatLat,
   formatLon, haversine, lerp, rhumbStep, sind, toENU, wrap180, wrap360, type LatLon,
@@ -2324,6 +2325,7 @@ export class Game {
           this.correctedNm += result.improvedNm ?? 0;
           this.announceSurvey(result);
         }
+        if (result.fresh.length > 0) this.raiseNewCoast(result.fresh, pos);
       }
     }
   }
@@ -4502,6 +4504,7 @@ export class Game {
       id: 'aground',
       title: 'She has taken the ground',
       severity: 'grave',
+      facts: { hours: outlook.hours },
       text: `She went on making four knots and stopped in her own length, and everything not `
         + `secured went forward along the deck with her.\n\n${outlook.text}\n\n`
         + 'The carpenter is sounding the well. Nothing is coming in yet.',
@@ -6505,6 +6508,91 @@ export class Game {
       lon: this.nav.estimated.lon,
     });
   }
+
+  /** Set when the camera should turn to look at something; see main. */
+  lookCue: { bearing: number; id: number } | null = null;
+  private lookCueId = 0;
+  /** When coast nobody had drawn last came up over the horizon. */
+  private lastNewCoastT = -1e9;
+
+  /**
+   * Land nobody has put on a chart, coming up over the horizon.
+   *
+   * The whole game is named after this and it used to arrive as a line in the
+   * corner of the screen. It is the moment now: the view turns to it, the
+   * lookout's cry goes up, the chart starts drawing it in fresh ink, and the
+   * captain has a choice to make about it with the wardroom's opinions in his
+   * ear — run it close and draw it properly, or keep the offing and draw it
+   * from a distance. Once per new stretch: a coast run for a week is one
+   * discovery, not seven hundred.
+   */
+  private raiseNewCoast(fresh: { lat: number; lon: number }[], at: LatLon): void {
+    const quiet = this.clock.t - this.lastNewCoastT;
+    this.lastNewCoastT = this.clock.t;
+    if (quiet < 18 * 3600 || this.dockedAt || this.pendingEvent) return;
+    // Nearest of it, which is what the masthead is pointing at.
+    let best = fresh[0];
+    let bestD = Infinity;
+    for (const v of fresh) {
+      const d = haversine(at, v);
+      if (d < bestD) { bestD = d; best = v; }
+    }
+    const bearing = bearingTo(at, best);
+    const distNm = bestD / NM;
+    this.lookCue = { bearing, id: ++this.lookCueId };
+    this.pushAlert(`Land! ${compassPoint(bearing)}, and nobody has drawn it.`, 'grave');
+    const deg = Math.abs(this.nav.estimated.lat).toFixed(0);
+    const hemi = this.nav.estimated.lat >= 0 ? 'north' : 'south';
+    this.pendingScenes.push({
+      id: 'newcoast',
+      title: 'Land nobody has charted',
+      severity: 'warning',
+      text: `"Terra!" from the masthead, and then a long silence while the man up there makes `
+        + `sure. Land on the ${compassPoint(bearing).toLowerCase()} bow, ${distNm.toFixed(0)} `
+        + `miles off by the look of it, and there is nothing on the chart for it at all. The `
+        + `Casa\u2019s sheet ends a long way north of here.\n\n`
+        + `Every man who can get a foot on the rail is at it. The escrivão has the sheet out and `
+        + `a pen cut. Somewhere about ${deg}° ${hemi}, by the reckoning, which is the only thing `
+        + 'anybody aboard is sure of.',
+      choices: [
+        {
+          label: 'Stand in and run it close',
+          detail: 'Close enough to see the rivers and the surf, which is how a coast is drawn '
+            + 'properly. Close enough for the ground to come up, too.',
+          resolve: (g: Game) => {
+            g.helmOrder = bearing;
+            return 'Put her head in toward it with the lead going and a man in each top. By the '
+              + 'change of the watch there were trees on it, and a line of surf, and the escrivão '
+              + 'had not looked up from the sheet in an hour.';
+          },
+        },
+        {
+          label: 'Keep your offing',
+          detail: 'Draw what can be seen from here and keep sea room. Less of it goes down, '
+            + 'and none of it is ground under her.',
+          resolve: () => 'Kept her head where it was and let the land lie along the horizon. The '
+            + 'escrivão drew what he could make out and wrote "seen from the offing" against all '
+            + 'of it, which is a pilot\u2019s way of saying he would not stake a ship on it.',
+        },
+      ],
+    });
+  }
+
+  /**
+   * What the wardroom says about the decision in front of the captain.
+   *
+   * Asked once per scene and remembered, so the men do not change their minds
+   * every frame the card is on the screen.
+   */
+  counselOn(e: SeaEvent): Counsel[] {
+    let c = this.counselCache.get(e);
+    if (!c) {
+      c = counselFor(this, e, this.clock.t);
+      this.counselCache.set(e, c);
+    }
+    return c;
+  }
+  private counselCache = new WeakMap<SeaEvent, Counsel[]>();
 
   /**
    * The ship is lost; the captain is not.

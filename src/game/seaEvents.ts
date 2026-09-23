@@ -35,6 +35,12 @@ export interface SeaEvent {
   text: string;
   severity: Severity;
   choices?: SeaChoice[];
+  /**
+   * The numbers the scene was built on — whether she will claw off, how long
+   * until the flood, the odds of a boarding — for the officers to argue from.
+   * See game/counsel. Never shown.
+   */
+  facts?: Record<string, number>;
 }
 
 /** Everything an event needs to know about the ship's situation. */

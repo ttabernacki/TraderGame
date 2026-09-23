@@ -49,6 +49,8 @@ let game: Game | null = null;
 /** The ship sailing behind the title screen, which belongs to no campaign. */
 let demo: Game | null = null;
 let renderer: Renderer | null = null;
+/** The last look the game asked the camera to take, so each is taken once. */
+let lastLookCue = -1;
 let renderedHullId = '';
 /** Seconds the title scene has been running, for the camera's slow sweep. */
 let titleT = 0;
@@ -332,6 +334,10 @@ function frame(now: number): void {
 
     const frame = buildFrame(shown);
     renderer.render(frame, realDt, simDt);
+    if (game?.lookCue && game.lookCue.id !== lastLookCue) {
+      lastLookCue = game.lookCue.id;
+      renderer.glance(game.lookCue.bearing - game.displayHeading);
+    }
     sound.update({
       windKnots: frame.windKnots,
       apparentKnots: frame.apparentKnots,

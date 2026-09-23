@@ -254,6 +254,7 @@ function leeShoreScene(g: Game, lee: LeeShore): SeaEvent {
     id: 'gale:leeshore',
     title: 'A lee shore',
     severity: 'grave',
+    facts: { holding: holding ? 1 : 0, lightHolds: lightened >= 0 ? 1 : 0, depth: deepM },
     text: `Land on the ${compassish(lee.bearing)} and the wind blowing straight onto it at `
       + `${w.speed.toFixed(0)} knots.\n\n`
       + `The master has it in chalk on the deck and everybody forward has already worked it out `
