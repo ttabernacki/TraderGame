@@ -20,7 +20,7 @@ import { people } from '../world/peoples';
  * the thing eighty miles further on is the game working correctly.
  */
 
-export type LeadKind = 'port' | 'passage' | 'goods' | 'water' | 'peril';
+export type LeadKind = 'port' | 'passage' | 'goods' | 'water' | 'peril' | 'island';
 
 export interface Lead {
   id: string;
@@ -43,6 +43,11 @@ export interface Lead {
   followed: boolean;
   /** Set when the player reached the place and it was not there. */
   false: boolean;
+  /** An ocean island (or a phantom) this tale is about. See game/farLand. */
+  isle?: string;
+  phantom?: boolean;
+  /** The rumoured spot has been sailed and nothing was in sight. */
+  searched?: boolean;
 }
 
 /** How much a teller can be relied on, which sets how far out his rumour is. */
@@ -161,7 +166,7 @@ function buildRumourText(
  * which is the whole difference between a rumour and a chart.
  */
 export function checkLead(lead: Lead, pos: LatLon): 'found' | 'empty' | null {
-  if (lead.followed) return null;
+  if (lead.followed || lead.isle) return null;
   if (lead.targetPort) {
     const def = portDef(lead.targetPort);
     if (haversine(pos, { lat: def.lat, lon: def.lon }) / NM < 22) return 'found';

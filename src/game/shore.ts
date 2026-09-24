@@ -1,6 +1,7 @@
 import { NM, clamp, cosd, haversine, sind, type LatLon } from '../core/math';
 import { elevationAt, nearestShore } from '../world/landmass';
 import { PORTS, anchorageOf } from '../world/ports';
+import { isleByLand } from '../world/isles';
 import type { Rng } from '../core/rng';
 
 /**
@@ -95,6 +96,19 @@ export function shorePlaceAt(at: LatLon): ShorePlace {
   const water = clamp(wet * 0.85 + reliefBonus, 0, 1);
   const wood = clamp(wet * 1.05 - 0.1, 0, 1);
   const food = clamp(wet * 0.7 + (peopleId ? 0.25 : 0) + reliefBonus * 0.4, 0, 1);
+
+  // An ocean island is what it is, whatever its latitude says: Ascension sits
+  // in the equatorial rain belt and has not a spring on it.
+  const isle = shore.land >= 0 ? isleByLand(shore.land) : null;
+  if (isle) {
+    const peopled = isle.id === 'brasil' || isle.id === 'madagascar';
+    return {
+      peopleId: peopled ? peopleId : null,
+      nearestPortId, nearestPortNm,
+      water: isle.water, wood: isle.wood, food: isle.food, relief,
+      describe: isle.shore,
+    };
+  }
 
   return {
     peopleId,

@@ -119,6 +119,11 @@ import {
   type Feitoria, type WorkId,
 } from '../progression/feitoria';
 import { rollFeitoriaScene } from './feitoriaEvents';
+import {
+  closeIsleLeads, dirWord, hearOfIsland, historyCatchesUp, isleInSight, isleScene, newIsleState, readTheSea,
+  searchRumours, type IsleState,
+} from './farLand';
+import { ISLES, landIndexOf, type OceanIsle } from '../world/isles';
 
 /**
  * Latitude of the deepest Portuguese penetration at the start of play.
@@ -4145,6 +4150,8 @@ export class Game {
       }
     }
 
+    this.watchForLand();
+
     // The first time she is south of anything in the Portuguese record.
     if (!this.passedTheKnown && pos.lat < BEYOND_LAT) {
       this.passedTheKnown = true;
@@ -5491,6 +5498,14 @@ export class Game {
   }
 
   /** Rumours heard and not yet run down. */
+  /** Enter a piece of hearsay about land to seaward. See farLand. */
+  addIsleLead(l: Omit<Lead, 'id' | 'heard' | 'followed' | 'false'>): Lead {
+    const lead: Lead = { ...l, id: `l${this.nextLeadId++}`, heard: this.clock.t, followed: false, false: false };
+    this.leads.push(lead);
+    this.logEvent('note', lead.text, true);
+    return lead;
+  }
+
   get openLeads(): Lead[] {
     return this.leads.filter((l) => !l.followed);
   }
@@ -5617,6 +5632,87 @@ export class Game {
   namedFeatures: Record<string, string> = {};
   /** Features raised from the masthead, so each is offered once. */
   private foundFeatures: string[] = [];
+
+  /** Islands found, tales heard on the quay, and the signs the sea has given. See farLand. */
+  isles: IsleState = newIsleState();
+
+  /** Turn the view to something on the horizon. */
+  cueLook(bearing: number): void {
+    this.lookCue = { bearing, id: ++this.lookCueId };
+  }
+
+  /**
+   * Enter an ocean island under a name — or under none — and, if the boats go
+   * in, take what it has. See farLand.isleScene.
+   */
+  nameTheIsle(isle: OceanIsle, given: string, landed: boolean): string {
+    const at = { lat: isle.lat, lon: isle.lon };
+    const name = given || `An island at ${formatLat(this.nav.estimated.lat)}`;
+    this.isles.found[isle.id] = { name, t: this.clock.t, landed, by: 'you' };
+    closeIsleLeads(this, isle.id);
+    const worth = Math.round(isle.value * (given ? (landed ? 1 : 0.8) : 0.3));
+    if (given) this.chart.addPlace(given, 'island', at, this.clock.t);
+    this.crown.record('island', name, this.nav.estimated, worth, this.clock.t);
+    this.chartedThisPassage += 30;
+    this.crown.chartedSincePatent += 30;
+    this.crew.morale = clamp(this.crew.morale + (landed ? 0.14 : 0.06), 0, 1);
+    this.writeCoast(name, this.nav.estimated,
+      `${given ? `Named by me, ${this.clock.formatDate()}` : `Raised ${this.clock.formatDate()}, no name given`}. `
+      + `Water ${isle.water > 0.7 ? 'plentiful' : isle.water > 0.25 ? 'scant' : 'none'}; `
+      + `${isle.food > 0.5 ? 'food to be had' : 'little to eat'}${landed ? '' : ' (from the offing)'}.`);
+    this.logEvent('discovery',
+      `${given ? `Entered this island as ${given}` : 'Entered an island in the book without a name'}, at `
+      + `${formatLat(this.nav.estimated.lat)}, ${formatLon(this.nav.estimated.lon)} by the reckoning.`, true);
+    this.announceDiscovery('named', 'An island on no chart', name,
+      given ? 'Found and named' : 'Found', `By the ${this.ship.name}, ${this.clock.formatDate()} \u00b7 ${worth} renown at court`);
+    if (!landed) {
+      return given
+        ? `${given}. On the chart under your hand, and she stands on.`
+        : 'A position in the book. The pilot does not like the blank against it and says so.';
+    }
+    this.clock.t += 86400;
+    const p = this.crew.provisions;
+    const water = Math.round(45 * isle.water);
+    const fresh = Math.round(40 * isle.food);
+    p.water = Math.min(Math.max(p.water, 120), p.water + water);
+    p.fresh = Math.min(90, p.fresh + fresh);
+    if (fresh > 8) this.crew.daysWithoutFresh = 0;
+    this.crew.daysSinceLandfall = 0;
+    this.crew.fatigue = clamp(this.crew.fatigue - 0.1, 0, 1);
+    this.nav.sigmaLat = Math.min(this.nav.sigmaLat, 4);
+    this.nav.sigmaLon = Math.min(this.nav.sigmaLon, 14);
+    return `${given}. ${isle.landing}\n\n`
+      + `${water > 4 ? `${water} days of water in the casks` : 'Not a cask filled'}, `
+      + `${fresh > 4 ? `${fresh} days of fresh food` : 'nothing green'}, and bearings off three points of it `
+      + 'on the sheet.';
+  }
+
+  /** The sea read, rumours searched, and islands raised: every tick at sea. */
+  private watchForLand(): void {
+    if (this.dockedAt || this.pendingEvent) return;
+    const sign = readTheSea(this);
+    if (sign) {
+      this.pushAlert(sign.text.split('. ')[0] + '.', 'note');
+      this.logEvent('note', sign.text, false);
+    }
+    const found = searchRumours(this);
+    if (found) this.pushAlert(found.split('. ')[0] + '.', 'note');
+    if (this.clock.t - this.isles.lastSightT < 600) return;
+    this.isles.lastSightT = this.clock.t;
+    const isle = isleInSight(this);
+    if (!isle) return;
+    if (this.clock.date.year > isle.year) {
+      historyCatchesUp(this);
+      return;
+    }
+    // Held open until the scene is answered, so it cannot fire twice.
+    this.isles.found[isle.id] = { name: '', t: this.clock.t, landed: false, by: 'you' };
+    this.easeTheClock(2);
+    this.lastNewCoastT = this.clock.t;
+    this.pushAlert(`Land! An island to the ${dirWord(bearingTo(this.ship.state.pos, isle))}, and on nobody\u2019s chart.`, 'grave');
+    this.cueLook(bearingTo(this.ship.state.pos, isle));
+    this.pendingScenes.push(isleScene(this, isle, saintOfDay(this.clock)));
+  }
 
   /**
    * Enter a headland under a name, which is the act the whole thing is about.
@@ -7615,6 +7711,13 @@ export class Game {
 
     this.crown.progressObjective('reach', def.id);
 
+    // News of land other men have found, and whatever the quay is saying.
+    for (const isle of historyCatchesUp(this)) {
+      this.logEvent('discovery', `News on the quay: ${isle.by} has found an island and called it `
+        + `${isle.suggested}. The Casa has it on the sheet now.`, true);
+    }
+    if (hearOfIsland(this, def.id)) this.pushAlert('A tale on the quay of land to seaward. It is on the chart with a query.', 'note');
+
     // Pillars are the King's business and the Casa ships them: every sailing
     // from the Tagus carries three, and nobody has to remember to ask.
     if (def.id === 'lisboa') this.crown.padraoStock = Math.max(this.crown.padraoStock, 3);
@@ -7802,6 +7905,15 @@ export class Game {
    * discovery, not seven hundred.
    */
   private raiseNewCoast(fresh: { lat: number; lon: number }[], at: LatLon): void {
+    // An island that has its own scene is announced there, not twice.
+    const isleLands = new Set(ISLES.filter((i) => {
+      const f = this.isles.found[i.id];
+      return !f || this.clock.t - f.t < 86400;
+    }).map(landIndexOf));
+    if (fresh.some((v) => isleLands.has((v as { land?: number }).land ?? -1))) {
+      this.lastNewCoastT = this.clock.t;
+      return;
+    }
     const quiet = this.clock.t - this.lastNewCoastT;
     this.lastNewCoastT = this.clock.t;
     if (quiet < 18 * 3600 || this.dockedAt || this.pendingEvent) return;
@@ -8611,6 +8723,7 @@ export class Game {
       latitudeOrder: this.latitudeOrder,
       namedFeatures: this.namedFeatures,
       foundFeatures: this.foundFeatures,
+      isles: this.isles,
       coastOrder: this.coastOrder,
       tutorial: this.tutorial,
       seenChart: this.seenChart,
@@ -8718,6 +8831,9 @@ export class Game {
     g.latitudeOrder = d.latitudeOrder ?? null;
     g.namedFeatures = d.namedFeatures ?? {};
     g.foundFeatures = d.foundFeatures ?? [];
+    g.isles = { ...newIsleState(), ...(d.isles ?? {}) };
+    // An island raised with its scene still unanswered when the game was saved.
+    for (const [id, f] of Object.entries(g.isles.found)) if (!f.name) delete g.isles.found[id];
     g.coastOrder = d.coastOrder ?? null;
     g.finance = Ledger.deserialize(d.finance);
     g.propositionsSeen = d.propositionsSeen ?? [];

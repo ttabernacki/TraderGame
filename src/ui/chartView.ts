@@ -785,6 +785,7 @@ export class ChartView {
     this.regardPanel(g);
     if (this.showPlaces) this.drawPlaces(ctx, g);
     this.drawLeads(ctx, g);
+    this.drawSigns(ctx, g);
     this.drawPadroes(ctx, g);
     this.drawRivalFrontier(ctx, g, rect);
     this.drawCourse(ctx, g);
@@ -1163,6 +1164,47 @@ export class ChartView {
     }
   }
 
+  /**
+   * Signs of land: a pencilled ray from where the reckoning had her, along the
+   * bearing the birds or the cloud gave, with the doubt either side of it as a
+   * faint wedge. Two of them crossing is where to look. See game/farLand.
+   */
+  private drawSigns(ctx: CanvasRenderingContext2D, g: Game): void {
+    const now = g.clock.t;
+    const LEN = 260;
+    const end = (lat: number, lon: number, b: number, nm: number) => this.toScreen(
+      lat + (nm * Math.cos(b * Math.PI / 180)) / 60,
+      lon + (nm * Math.sin(b * Math.PI / 180)) / (60 * Math.max(Math.cos(lat * Math.PI / 180), 0.2)),
+    );
+    for (const sg of g.isles.signs) {
+      if (sg.bearing === null) continue;
+      const age = (now - sg.t) / 86400;
+      const alpha = Math.max(0.2, 1 - age / 20);
+      const o = this.toScreen(sg.lat, sg.lon);
+      const tip = end(sg.lat, sg.lon, sg.bearing, LEN);
+      const l = end(sg.lat, sg.lon, sg.bearing - sg.spread, LEN);
+      const r = end(sg.lat, sg.lon, sg.bearing + sg.spread, LEN);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = 'rgba(40, 90, 110, 0.07)';
+      ctx.beginPath();
+      ctx.moveTo(o.x, o.y); ctx.lineTo(l.x, l.y); ctx.lineTo(r.x, r.y); ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(40, 90, 110, 0.75)';
+      ctx.lineWidth = 1.1;
+      ctx.setLineDash(sg.kind === 'cloud' ? [] : [5, 3]);
+      ctx.beginPath();
+      ctx.moveTo(o.x, o.y); ctx.lineTo(tip.x, tip.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(40, 90, 110, 0.9)';
+      ctx.font = `italic ${(10 * this.ink).toFixed(1)}px serif`;
+      const word = { birds: 'birds', cloud: 'cloud', drift: 'drift', swell: 'swell', stray: 'a bird' }[sg.kind];
+      ctx.fillText(word, o.x + 4, o.y - 4);
+      ctx.restore();
+    }
+  }
+
   /** Where each open mission wants the ship next. */
   private drawQuestMarks(ctx: CanvasRenderingContext2D, g: Game): void {
     for (const q of g.quests) {
@@ -1468,6 +1510,7 @@ function buildLegend(): HTMLElement {
     item('#a83228', 'Portuguese factory'),
     item('#3c5a8a', 'A padrão of yours'),
     item('rgba(170,130,70,0.55)', 'Where a rumour points'),
+    item('rgba(40,90,110,0.75)', 'A sign of land, and which way it points'),
     item('rgba(110,34,92,0.6)', 'How far the other man has got'),
     item('rgba(60,90,138,0.75)', 'The wind, as your book has it this month'),
     item('rgba(40,110,110,0.7)', 'The set of the water'),

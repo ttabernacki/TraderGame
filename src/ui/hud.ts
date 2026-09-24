@@ -796,6 +796,7 @@ function kindShort(kind: string): string {
     case 'water': return 'a bay with good water';
     case 'passage': return 'a way through';
     case 'peril': return 'a warning worth heeding';
+    case 'island': return 'an island on no chart';
     default: return 'a town nobody has charted';
   }
 }

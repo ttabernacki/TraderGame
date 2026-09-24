@@ -3,6 +3,7 @@ import {
   LANDMASSES, coastSegmentsNear, coastVertexByKey, coastVertexKeysInBox, coastVerticesNear,
   type CoastVertex,
 } from '../world/landmass';
+import { KNOWN_IN_1482, landIndexById } from '../world/isles';
 import { PORTS, anchorageOf, type PortDef } from '../world/ports';
 
 export interface ChartedPoint {
@@ -182,6 +183,12 @@ export class Chart {
       }
     }
 
+    // The Gulf of Guinea islands, found in 1471-73 and south of the boxes.
+    for (const id of KNOWN_IN_1482) {
+      const li = landIndexById(id);
+      if (li >= 0) this.seedLand(li);
+    }
+
     // The ports a Portuguese pilot has heard of are on the chart, where they
     // are. What he does not have is the having-been-there, which is `passes`.
     for (const p of PORTS) {
@@ -194,6 +201,20 @@ export class Chart {
         visited: false, traded: false, t: 0,
         wLat: SEEDED_W_LAT, wLon: SEEDED_W_LON, passes: 0,
       });
+    }
+  }
+
+  /**
+   * Put a whole landmass on the sheet as the Casa would have it: hearsay,
+   * drawn with the inherited error, never run. For land somebody else found.
+   */
+  seedLand(li: number): void {
+    const ring = LANDMASSES[li]?.ring;
+    if (!ring) return;
+    for (let i = 0; i < ring.length; i += 2) {
+      const key = `${li}:${i / 2}`;
+      if (this.points.has(key)) continue;
+      this.points.set(key, seededPoint(key, { land: li, index: i / 2, lat: ring[i], lon: ring[i + 1] }));
     }
   }
 
