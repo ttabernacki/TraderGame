@@ -1,3 +1,4 @@
+import { POLITY_BY_ID } from '../diplomacy/polities';
 import { NM, clamp, haversine, type LatLon } from '../core/math';
 import type { SeaEvent, SeaChoice } from '../game/seaEvents';
 import type { Game } from '../game/state';
@@ -160,7 +161,9 @@ const caravel: QuestDef = {
   title: 'The Lost Caravel',
   blurb: 'Find what became of the São Brás, lost south of the Congo three years ago.',
   offeredAt: ['funchal', 'lagos', 'lisboa'],
-  available: () => true,
+  // Lost south of the Congo, so it is heard of once the Congo is: the
+  // second act. Offered in the first it sent a new captain past three acts.
+  available: (g) => g.chronicle.act >= 2,
   offer: () => ({
     who: 'Isabel da Costa, on the quay',
     text: 'A woman in mourning black has been waiting for any captain bound south. Her husband, '
@@ -769,7 +772,8 @@ const prester: QuestDef = {
   title: 'The Letter to Prester John',
   blurb: 'Carry the King’s letter toward the Christian king of the Indies.',
   offeredAt: ['lisboa'],
-  available: (g) => g.crown.lifetimeStanding >= 60,
+  // The King sent Covilhã east in 1487, the year Dias sailed: the Cape act.
+  available: (g) => g.chronicle.act >= 3 && g.crown.lifetimeStanding >= 60,
   offer: () => ({
     who: 'The King, in private audience',
     text: 'João II gives you a letter in Latin and in the tongue of the Abyssinians, sealed with '
@@ -997,6 +1001,7 @@ const zamorin: QuestDef = {
                 if (coral >= 5) gg.ship.removeCargo('coral', 5); else gg.ship.removeCargo('ouro', 5);
                 q.flags.audience = 'good';
                 gg.shiftPeopleRegard(portDef('calecute').people, 0.3);
+                leaveToTrade(gg, 'calicut', { trust: 0.15, respect: 0.1 }, 'the Zamorin accepted your gift');
                 return go(gg, q, 'merchants', 'The Zamorin accepted our gift and gave leave to trade. '
                   + 'The Moorish merchants have already begun working against us.');
               },
@@ -1007,6 +1012,7 @@ const zamorin: QuestDef = {
               resolve: (gg) => {
                 q.flags.audience = 'poor';
                 gg.shiftPeopleRegard(portDef('calecute').people, -0.2);
+                leaveToTrade(gg, 'calicut', { respect: -0.15 }, 'the court laughed at your presents');
                 return go(gg, q, 'merchants', 'The court laughed at our gifts. The Zamorin gave '
                   + 'grudging leave to trade, and the Moors are delighted.');
               },
@@ -1018,6 +1024,7 @@ const zamorin: QuestDef = {
                 const ok = gg.crown.lifetimeStanding >= 340;
                 q.flags.audience = ok ? 'good' : 'poor';
                 gg.shiftPeopleRegard(portDef('calecute').people, ok ? 0.2 : -0.1);
+                leaveToTrade(gg, 'calicut', ok ? { trust: 0.1, respect: 0.15 } : { respect: -0.1 }, 'the King of Portugal\u2019s letter was read');
                 return go(gg, q, 'merchants', ok
                   ? 'The Zamorin read the King’s letter with interest. Leave to trade is given.'
                   : 'The Zamorin asked who the King of Portugal was. Leave to trade, grudgingly.');
@@ -1099,6 +1106,7 @@ const zamorin: QuestDef = {
             detail: 'Every gun into the town until they are returned. There is no coming back from this.',
             resolve: (gg) => {
               gg.shiftPeopleRegard(portDef('calecute').people, -1);
+              gg.adjustPolity('calicut', { trust: -0.6, respect: 0.3 }, 'you bombarded the town');
               q.flags.war = true;
               return go(gg, q, 'cochim', 'Bombarded Calecute for a day. The factors came back in a canoe. There is war with the Zamorin now. Cochim wants an ally against him.');
             },
@@ -1119,7 +1127,8 @@ const zamorin: QuestDef = {
             resolve: (gg) => {
               q.flags.cochim = 'ally';
               gg.shiftPeopleRegard(portDef('cochim').people, 0.4);
-              return go(gg, q, 'home', 'Allied with Cochim. The pepper is ours. Now carry the first great cargo home — forty quintals at least.');
+              allyWithCochin(gg);
+              return go(gg, q, 'home', 'Allied with Cochim, with ground for a factory. Now load the pepper — forty quintals at least — and sail.');
             },
           },
           {
@@ -1128,34 +1137,43 @@ const zamorin: QuestDef = {
             resolve: (gg) => {
               if (q.flags.war || !gg.rng.chance(0.5)) {
                 q.flags.cochim = 'ally';
-                return go(gg, q, 'home', 'The treaty would not hold, but Cochim is our friend. Carry the first great cargo home — forty quintals at least.');
+                allyWithCochin(gg);
+                return go(gg, q, 'home', 'The treaty would not hold, but Cochim is our friend, and gives ground for a factory. Load the pepper — forty quintals at least — and sail.');
               }
               q.flags.cochim = 'treaty';
               gg.shiftPeopleRegard(portDef('cochim').people, 0.3);
               gg.shiftPeopleRegard(portDef('calecute').people, 0.3);
-              return go(gg, q, 'home', 'Calecute and Cochim both trade with us under one treaty. Carry the first great cargo home — forty quintals at least.');
+              leaveToTrade(gg, 'cochin', { trust: 0.2 }, 'a treaty with Calecute and Cochim together');
+              leaveToTrade(gg, 'calicut', { trust: 0.2 }, 'a treaty with Calecute and Cochim together');
+              gg.relationsFor('cochim').factory = true;
+              return go(gg, q, 'home', 'Calecute and Cochim both trade with us under one treaty, and Cochim gives ground for a factory. Load the pepper — forty quintals at least — and sail.');
             },
           },
         ]),
     },
+    // The thread ends on the Malabar coast, with the pepper stowed and the
+    // bows turned for home. The landing on the Tagus is the chronicle's —
+    // Act V — and used to be this thread's too, on the same forty quintals,
+    // so the one homecoming was told twice in a row.
     home: {
-      goal: () => 'Bring at least forty quintals of pepper home to Lisbon.',
-      marker: () => portMark('lisboa', 'The pepper fleet'),
-      when: (g, _q, port) => port === 'lisboa' && g.ship.quantityOf('pimenta') >= 40,
-      scene: (_g, q) => scene(q, 'home', 'Pepper on the Tagus',
-        'The whole of Lisbon is on the waterfront. The smell of the hold reaches the Terreiro do Paço.',
+      goal: () => 'Load at least forty quintals of pepper on the Malabar coast and sail for home.',
+      marker: () => portMark('cochim', 'The pepper'),
+      when: (g) => !g.dockedAt && g.ship.quantityOf('pimenta') >= 40
+        && (near(g, anchorageOf(portDef('cochim')), 60) || near(g, anchorageOf(portDef('calecute')), 60)),
+      scene: (_g, q) => scene(q, 'home', 'The pepper is stowed',
+        'The last boat comes off from the beach low in the water, and the hold smells of nothing '
+        + 'but pepper. The pilots say the monsoon will carry you west within the week.',
         [{
-          label: 'Report to the King',
-          detail: 'The road to India is open.',
+          label: 'Turn her for home',
+          detail: 'The Tagus, and the King.',
           resolve: (gg) => {
-            renown(gg, 400);
-            gg.crown.gold += 500;
+            renown(gg, 250);
             return end(gg, q, q.flags.war ? 'war' : q.flags.cochim === 'treaty' ? 'peace' : 'empire',
               q.flags.war
-                ? 'The first pepper fleet is home, bought with a war on the Malabar coast that will last a century.'
+                ? 'The first pepper is stowed, bought with a war on the Malabar coast that will last a century.'
                 : q.flags.cochim === 'treaty'
-                  ? 'The first pepper fleet is home, and every port on the Malabar coast trades under our treaty.'
-                  : 'The first pepper fleet is home. Cochim is ours, and the Zamorin waits.');
+                  ? 'The first pepper is stowed, and every port on the Malabar coast trades under our treaty.'
+                  : 'The first pepper is stowed. Cochim is ours, and the Zamorin waits.');
           },
         }]),
     },
@@ -1163,6 +1181,29 @@ const zamorin: QuestDef = {
 };
 
 export const QUESTS: Record<QuestId, QuestDef> = { caravel, leak, kongo, prester, zamorin };
+
+/** Leave to trade across a whole state, as an audience would give it, and the court's opinion with it. */
+function leaveToTrade(g: Game, polity: string, d: { trust?: number; respect?: number; interest?: number }, why: string): void {
+  const pol = POLITY_BY_ID.get(polity);
+  if (!pol) return;
+  const st = g.polityState(polity);
+  st.met = true;
+  for (const id of pol.ports) { const r = g.relationsFor(id); r.met = true; r.mayTrade = true; }
+  g.adjustPolity(polity, d, why);
+}
+
+/** The Cochin alliance, written into the courts: an ally against the Zamorin, and ground for a factory. */
+function allyWithCochin(g: Game): void {
+  leaveToTrade(g, 'cochin', { trust: 0.3, interest: 0.2 }, 'allied with you against the Zamorin');
+  g.relationsFor('cochim').factory = true;
+  if (!g.diplomacy.agreements.some((a) => a.polity === 'cochin' && a.kind === 'ally' && a.status === 'open')) {
+    g.diplomacy.agreements.push({
+      id: g.diplomacy.nextId++, polity: 'cochin', kind: 'ally', against: 'calicut',
+      text: 'Stand with Cochin against Calicut', made: g.clock.t, status: 'open',
+    });
+  }
+  g.adjustPolity('calicut', { trust: -0.25 }, 'allied with Cochin against them');
+}
 
 function QUEST_STATE_OUTCOME(g: Game, id: QuestId): string | undefined {
   return g.quests.find((q) => q.id === id)?.outcome;

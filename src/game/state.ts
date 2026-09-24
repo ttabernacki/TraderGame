@@ -7,7 +7,7 @@ import {
 } from '../diplomacy/courts';
 import { POLITIES, POLITY_BY_ID, polityOfPort, politiesOfPeople, type PolityDef } from '../diplomacy/polities';
 import {
-  chronicleAnswered, chronicleDue, chronicleFromProgress, hullAllowed, newChronicle, patentAllowed,
+  ACT_CHARGE, chronicleAnswered, chronicleDue, chronicleFromProgress, hullAllowed, newChronicle, patentAllowed,
   type ChronicleState,
 } from '../progression/chronicle';
 import {
@@ -226,6 +226,7 @@ export class Game {
 
   /** The story beats due now: the chronicle first, then the quest lines. */
   checkStory(): void {
+    this.refreshObjectives();
     const c = this.chronicle;
     // A scene put and since lost is put again.
     c.pending = c.pending.filter((id) => this.pendingEvent?.id === `chronicle:${id}`
@@ -242,7 +243,33 @@ export class Game {
 
   /** Commissions the King will offer, in this act of the career. */
   commissionOffers() {
-    return this.crown.offers(this.clock.date.year, (title) => patentAllowed(this.chronicle.act, title));
+    const act = this.chronicle.act;
+    // Act I's commission waits on the island voyage the pilot teaches; after
+    // that, each act's own commission is always on the table.
+    return this.crown.offers(this.clock.date.year, (title) => patentAllowed(act, title),
+      act >= 2 ? ACT_CHARGE[act] : undefined);
+  }
+
+  /**
+   * Commission objectives that are standing facts rather than events: leave to
+   * trade with a people, a factory on their coast. A captain who already has
+   * them when he takes the commission has them — the objective used to wait
+   * for a first contact that had happened two voyages before.
+   */
+  refreshObjectives(): void {
+    const p = this.crown.patent;
+    if (!p || p.complete) return;
+    for (const o of p.objectives) {
+      if (o.complete || !o.target) continue;
+      const ports = PORTS.filter((d) => d.people === o.target);
+      if (o.kind === 'contact' && ports.some((d) => this.relations.get(d.id)?.mayTrade)) {
+        o.complete = true; o.progress = 1;
+      }
+      if (o.kind === 'factory' && ports.some((d) => this.relations.get(d.id)?.factory
+          || this.liveFactories.some((f) => f.portId === d.id))) {
+        o.complete = true; o.progress = 1;
+      }
+    }
   }
 
   /** Hulls the yards will build, in this act. */
@@ -5204,7 +5231,7 @@ export class Game {
    * her first — was punished for it by a charter he could no longer make, which
    * is the opposite of the decision the charter is supposed to create.
    */
-  private dockedSinceT = 0;
+  dockedSinceT = 0;
 
   /** Charters still running, for the orders panel. */
   get activeVentures(): Venture[] {

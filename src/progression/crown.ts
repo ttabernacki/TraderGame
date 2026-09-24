@@ -157,7 +157,7 @@ export const LANDMARKS: Landmark[] = [
 // ---------------------------------------------------------------------------
 
 export type ObjectiveKind =
-  | 'reach' | 'chart' | 'contact' | 'cargo' | 'padrao' | 'name' | 'return';
+  | 'reach' | 'chart' | 'contact' | 'factory' | 'cargo' | 'padrao' | 'name' | 'return';
 
 export interface Objective {
   kind: ObjectiveKind;
@@ -372,7 +372,8 @@ const PATENT_TEMPLATES: {
         { kind: 'reach', description: 'Round the Cape of Good Hope', target: 'boa-esperanca', progress: 0, complete: false },
         { kind: 'contact', description: 'Open relations with a people of the eastern coast', target: 'swahili', progress: 0, complete: false },
         { kind: 'reach', description: 'Reach Calicut', target: 'calecute', progress: 0, complete: false },
-        { kind: 'cargo', description: 'Bring home 120 quintais of pepper', target: 'pimenta', amount: 120, progress: 0, complete: false },
+        // A sample, not a cargo: the cargo is the next act's. See progression/chronicle.
+        { kind: 'cargo', description: 'Bring home 60 quintais of pepper', target: 'pimenta', amount: 60, progress: 0, complete: false },
         { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },
       ],
     }),
@@ -394,7 +395,7 @@ const PATENT_TEMPLATES: {
         // ports, which is the voyage this commission is describing.
         { kind: 'cargo', description: 'Bring home 240 quintais of pepper', target: 'pimenta', amount: 240, progress: 0, complete: false },
         { kind: 'cargo', description: 'Bring home 60 quintais of cinnamon', target: 'canela', amount: 60, progress: 0, complete: false },
-        { kind: 'contact', description: 'Secure a factory on the Malabar coast', target: 'malabar', progress: 0, complete: false },
+        { kind: 'factory', description: 'Secure a factory on the Malabar coast', target: 'malabar', progress: 0, complete: false },
         { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },
       ],
     }),
@@ -475,10 +476,12 @@ export class Crown {
   }
 
   /** Patents the Crown will consider issuing right now. */
-  offers(year: number, allowed: (title: string) => boolean = () => true): Patent[] {
+  offers(year: number, allowed: (title: string) => boolean = () => true, charge?: string): Patent[] {
     const monarch = monarchAt(year);
-    return PATENT_TEMPLATES
-      .filter((t) => this.lifetimeStanding >= t.minStanding)
+    const built = PATENT_TEMPLATES
+      // The act's own commission is offered whatever the captain's renown: the
+      // King does not open an act and then refuse the voyage it is for.
+      .filter((t) => this.lifetimeStanding >= t.minStanding || t.build(new Rng(1), year).title === charge)
       // A voyage that opens the route is made once.
       //
       // completedPatents was written, saved, restored, and never once read —
@@ -502,8 +505,11 @@ export class Crown {
       .map((t) => t.build(this.rng, year))
       .filter((body) => !body.final || !this.completedPatents.includes(body.title))
       // Commissions belong to an act of the career. See progression/chronicle.
-      .filter((body) => allowed(body.title))
-      .slice(-3)
+      .filter((body) => allowed(body.title));
+    let chosen = built.slice(-3);
+    const own = built.find((b) => b.title === charge);
+    if (own) chosen = [own, ...chosen.filter((b) => b !== own)].slice(0, 3);
+    return chosen
       .map((body) => {
         return {
           ...body,
@@ -643,7 +649,7 @@ export class Crown {
       lines.push(`Commission "${this.patent.title}" discharged. ${pay} cruzados, ${renown} renown.`);
       // By title, so it identifies the commission and not the sheet of paper.
       this.completedPatents.push(this.patent.title);
-      if (this.patent.final) this.routeOpened = true;
+      // The career's ending is the chronicle's: the close of the last act.
       this.patent = null;
     }
 

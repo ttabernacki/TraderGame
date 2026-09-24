@@ -1,4 +1,4 @@
-import { ACTS, HISTORY, roman } from '../progression/chronicle';
+import { ACTS, ACT_CHARGE, HISTORY, actGoal, roman } from '../progression/chronicle';
 import { QUESTS, goalOf, markerOf } from '../progression/quests';
 import { NM, compassPoint, formatLat, formatLon, haversine } from '../core/math';
 import { OFFICER_ROLES } from '../crew/crew';
@@ -561,7 +561,10 @@ export class OrdersView {
           el('div', { class: 'act-sub' }, state === 'future' ? '' : `${a.title} \u00b7 ${a.years}`),
           state === 'now'
             ? el('div', { class: 'act-goal' },
-              c.goalMet ? 'Done. Carry the news to the King in Lisbon.' : a.goal)
+              c.goalMet ? 'Done. Carry the news to the King in Lisbon.' : actGoal(g, a.n))
+            : null,
+          state === 'now' && a.n >= 2 && ACT_CHARGE[a.n]
+            ? el('div', { class: 'act-changes' }, `The King\u2019s commission for it: \u201c${ACT_CHARGE[a.n]}\u201d${g.crown.completedPatents.includes(ACT_CHARGE[a.n]) ? ' \u2014 discharged' : g.crown.patent?.title === ACT_CHARGE[a.n] ? ' \u2014 yours' : ', at court in Lisbon'}.`)
             : null,
           state === 'past' ? el('div', { class: 'act-changes' }, a.changes) : null,
         );

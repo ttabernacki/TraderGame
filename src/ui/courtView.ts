@@ -1,3 +1,4 @@
+import { ACT_CHARGE, roman } from '../progression/chronicle';
 import { commissionPoints, monarchAt, nextTitle, type Patent } from '../progression/crown';
 import { rivalStanding } from '../progression/rival';
 import type { Game } from '../game/state';
@@ -222,6 +223,9 @@ export class CourtView {
         ...this.offers.map((p) => el('div', {
           style: { marginBottom: '17px', paddingBottom: '15px', borderBottom: '1px solid rgba(90,74,55,0.2)' },
         },
+          p.title === ACT_CHARGE[g.chronicle.act]
+            ? el('div', { class: 'quest-offer-eyebrow' }, `The King\u2019s charge for Act ${roman(g.chronicle.act)}`)
+            : null,
           el('div', { style: { fontSize: '16px', marginBottom: '6px' } }, p.title),
           el('p', { class: 'quote' }, p.narrative),
           el('ul', { class: 'list' }, ...p.objectives.map((o) => el('li', { style: { fontSize: '13.5px' } }, o.description))),

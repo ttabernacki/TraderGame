@@ -194,8 +194,12 @@ export const ACTS: ActDef[] = [
     title: 'A Armada',
     english: 'The Armada',
     years: '1495 –',
-    goal: 'Bring the first great cargo of pepper — forty quintals and more — home to Lisbon.',
-    met: (g) => g.dockedAt === 'lisboa' && g.ship.quantityOf('pimenta') >= 40,
+    goal: 'Bring the first great cargo of pepper — a hundred quintals — home to Lisbon, on a voyage begun in this act.',
+    // A voyage of this act: the pepper that closed Act IV does not open and
+    // close Act V on the same afternoon.
+    met: (g) => g.chronicle.opened.includes(5)
+      && g.dockedAt === 'lisboa' && g.ship.quantityOf('pimenta') >= 100
+      && g.dockedSinceT > Number(g.chronicle.flags.open5 ?? 0),
     changes: 'The Carreira da Índia: a fleet a year, round the Cape and back, for a hundred years.',
     opening: () => courtScene('act5:open', 'Act V — The Armada',
       'Ships are building on the Tagus that are bigger than anything Portugal has put to sea, '
@@ -203,7 +207,7 @@ export const ACTS: ActDef[] = [
       + 'The King wants the first pepper fleet. Not a sample: a cargo, landed on the Tagus, '
       + 'that pays for the whole enterprise and every one after it.',
       one('For the pepper', 'Bring home the first great cargo.', () =>
-        'The last act: pepper, forty quintals and more, on the Tagus.')),
+        'The last act: a hundred quintals of pepper on the Tagus.')),
     closing: () => courtScene('act5:close', 'The Carreira da Índia',
       'Lisbon has turned out to watch the pepper come ashore. The King rides down to the Ribeira '
       + 'himself. From this day there will be a fleet every year, round the Cape and back, and '
@@ -653,6 +657,34 @@ export function actDef(n: number): ActDef {
   return ACTS[Math.max(0, Math.min(ACTS.length - 1, n - 1))];
 }
 
+/**
+ * The act's goal as it reads now. History moves on without the player: once
+ * Dias is home the Cape is found, and the act is to follow him round it.
+ */
+export function actGoal(g: Game, n: number): string {
+  const h = g.chronicle.history;
+  if (n === 3 && h['dias-returns'] === 'dias' && !g.crown.landmarksFound.has('boa-esperanca')) {
+    return 'Dias has found the end of Africa. Round the Cape yourself, with his rutter, and see what lies beyond it.';
+  }
+  if (n === 4 && h['gama-returns'] === 'gama' && !g.crown.landmarksFound.has('india')) {
+    return 'Gama has been to Calecute and back. Follow his road across the Indian Ocean to the Malabar coast.';
+  }
+  return actDef(n).goal;
+}
+
+/**
+ * The King's formal commission for each act: the voyage the act asks for,
+ * written down with a reward. Always on offer while its act runs, whatever
+ * the captain's renown, and shown first.
+ */
+export const ACT_CHARGE: Record<number, string> = {
+  1: 'The Guinea trade',
+  2: 'Beyond the Congo',
+  3: 'The end of Africa',
+  4: 'The road to the Indies',
+  5: 'The pepper fleet',
+};
+
 /** Hulls the yards will build in this act. */
 export function hullAllowed(act: number, hullId: string): boolean {
   const need: Record<string, number> = { 'nau-pequena': 2, nau: 3, 'nau-da-india': 4 };
@@ -682,14 +714,25 @@ export function chronicleDue(g: Game, c: ChronicleState): SeaEvent | null {
   if (!c.goalMet && act.met(g)) {
     c.goalMet = true;
     g.pushAlert(`${act.english}: done. Carry the news to the King in Lisbon.`, 'note');
-    g.logEvent('crown', `Act ${c.act}, ${act.english}: ${act.goal} Done — the King must hear it in Lisbon.`, true);
+    g.logEvent('crown', `Act ${c.act}, ${act.english}: ${actGoal(g, c.act)} Done — the King must hear it in Lisbon.`, true);
   }
 
   if (inLisbon) {
     if (!c.opened.includes(c.act)) {
       c.opened.push(c.act);
-      g.announce('act', `Act ${roman(c.act)}`, act.english, `${act.title} · ${act.years}`, act.goal);
-      return act.opening(g, c);
+      c.flags[`open${c.act}`] = g.clock.t;
+      const goal = actGoal(g, c.act);
+      g.announce('act', `Act ${roman(c.act)}`, act.english, `${act.title} · ${act.years}`, goal);
+      const scene = act.opening(g, c);
+      // Ahead of the King: the goal was reached on an earlier voyage.
+      if (act.met(g)) {
+        scene.text += '\n\nHe stops. Somebody has whispered to him, and he looks at you. "You have already been there," he says. "Then tell me."';
+      } else if (goal !== act.goal) {
+        scene.text += `\n\n${goal}`;
+      }
+      const charge = ACT_CHARGE[c.act];
+      if (charge && c.act >= 2) scene.text += `\n\nThe Casa has the commission drawn up already: "${charge}".`;
+      return scene;
     }
     if (c.goalMet && c.act < ACTS.length) {
       const closing = act.closing(g, c);
