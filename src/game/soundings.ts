@@ -152,8 +152,8 @@ export function castLead(g: Game): LeadCast {
   // moon and had the state of the tide to within half an hour, which is most of
   // the correction. So it is his skill that decides how much of it he takes
   // out, and a good one gets his soundings down to the stretch of the line.
-  const readSigma = (0.9 + depth * 0.022) * (1.3 - nvSkill * 0.55)
-    + speed * 0.35;
+  const readSigma = ((0.9 + depth * 0.022) * (1.3 - nvSkill * 0.55)
+    + speed * 0.35) * g.ship.effects.leadSigma;
   const tide = readTide(truth, g.clock.t);
   const swing = tide ? (tide.range / 2) * tide.springs : 0.55;
   const tideSigma = swing * (1.05 - nvSkill * 0.8);

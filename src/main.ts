@@ -215,12 +215,14 @@ function resumeFrom(json: string): void {
 }
 
 function ensureRenderer(g: Game): void {
+  // Keyed on the rig as well as the hull: re-rigging her changes the model.
+  const key = `${g.ship.hullId}:${g.ship.rigOverride?.join(',') ?? ''}`;
   if (!renderer) {
     renderer = new Renderer(canvas, g.ship.hull);
-    renderedHullId = g.ship.hullId;
-  } else if (renderedHullId !== g.ship.hullId) {
+    renderedHullId = key;
+  } else if (renderedHullId !== key) {
     renderer.setHull(g.ship.hull);
-    renderedHullId = g.ship.hullId;
+    renderedHullId = key;
   }
 }
 

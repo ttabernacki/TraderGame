@@ -27,7 +27,7 @@ import { PORTS, anchorageOf, portDef, portsNear, type PortDef } from '../world/p
 import { people } from '../world/peoples';
 import { Ship } from '../ship/ship';
 import { HULL_CLASSES, hullClass } from '../ship/hull';
-import { UPGRADE_BY_ID } from '../ship/upgrades';
+import { UPGRADE_BY_ID, movesWithTheFlag, tierCap } from '../ship/upgrades';
 import {
   KNOTS, prudentCanvas, stepShip, type Environment, type ShipTuning, type StepResult,
 } from '../ship/physics';
@@ -3706,6 +3706,10 @@ export class Game {
     for (const s of wear.spoiled) {
       this.logEvent('note', `The ${s.toLowerCase()} in the hold is spoiled past saving and has been thrown over the side.`);
     }
+    // A sailmaker and spare canvas: blown-out sails are mended at sea.
+    if (this.ship.effects.sailRepair) {
+      for (const sl of this.ship.state.sails) sl.condition = Math.min(1, sl.condition + days * 0.06);
+    }
     // What the damp took, at what it cost: one line a good in the voyage's books.
     for (const l of wear.lost) {
       const book = currentBook(this.trade);
@@ -5217,10 +5221,26 @@ export class Game {
    */
   tradeInValue(): number {
     const hull = hullClass(this.ship.hullId);
-    const fitted = this.ship.upgrades.reduce(
+    // What goes with you into the new ship is not sold with the old one.
+    const fitted = this.ship.upgrades.filter((id) => !movesWithTheFlag(id)).reduce(
       (sum, id) => sum + (UPGRADE_BY_ID.get(id)?.cost ?? 0), 0);
     const wear = clamp(this.ship.condition.hull, 0.35, 1);
     return Math.round((hull.cost + fitted) * 0.55 * wear);
+  }
+
+  /** Fitted work that would come across into a new hull. */
+  carriedAcross(hullId: string): string[] {
+    return this.ship.upgrades.filter((id) => {
+      if (!movesWithTheFlag(id)) return false;
+      const u = UPGRADE_BY_ID.get(id)!;
+      return (!u.hulls || u.hulls.includes(hullId)) && u.tier <= tierCap(hullId);
+    });
+  }
+
+  /** What the yard charges to move it: half its price. */
+  carryCost(hullId: string): number {
+    return Math.round(this.carriedAcross(hullId)
+      .reduce((sum, id) => sum + (UPGRADE_BY_ID.get(id)?.cost ?? 0), 0) * 0.5);
   }
 
   /**
@@ -5235,7 +5255,8 @@ export class Game {
    */
   shiftFlag(hullId: string): string | null {
     const h = hullClass(hullId);
-    const price = Math.max(0, h.cost - this.tradeInValue());
+    const carried = this.carriedAcross(hullId);
+    const price = Math.max(0, h.cost - this.tradeInValue()) + this.carryCost(hullId);
     if (this.crown.gold + this.creditFree < price) return 'There is not enough in the purse.';
     const tons = this.ship.cargoTons;
     if (tons > h.hold + 0.001) {
@@ -5247,7 +5268,13 @@ export class Game {
 
     const old = this.ship;
     const next = new Ship(old.name, hullId, old.state.pos, old.state.heading);
-    for (const lot of old.cargo) next.addCargo(lot.goodId, lot.quantity, lot.cost);
+    // The rig, stores, quarters, instruments and arms come across if the new
+    // hull can take them; the hull and keel work stays with the old ship.
+    next.upgrades = carried;
+    next.reservedTons = old.reservedTons;
+    next.applyRigConversion();
+    next.refreshDerived();
+    for (const lot of old.cargo) next.addCargo(lot.goodId, lot.quantity, lot.cost, lot.q);
     next.state.heading = old.state.heading;
     this.ship = next;
     this.crew.complement = h.crewFull;
@@ -8139,7 +8166,8 @@ export class Game {
       }
       // She also crabs sideways, so her course made good is worse than she
       // points.
-      if (drive > 0) return clamp(beta + 7, 20, 88);
+      // Bowlines, a false keel and long lateen yards take a few degrees more.
+      if (drive > 0) return clamp(beta + 7 - this.ship.effects.pointing, 20, 88);
     }
     return 88;
   }

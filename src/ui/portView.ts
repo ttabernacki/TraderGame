@@ -10,7 +10,7 @@ import { formatDateAt } from '../core/clock';
 import { people } from '../world/peoples';
 import type { PortDef } from '../world/ports';
 import {
-  UPGRADES, UPGRADE_BY_ID, availableUpgrades, describeEffects, placesFor, placesUsed, type Upgrade,
+  SYSTEMS, UPGRADES, UPGRADE_BY_ID, describeEffects, nodeStatus, systemNodes, tierCap, yardLevel, type Upgrade,
 } from '../ship/upgrades';
 import { hullClass } from '../ship/hull';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
@@ -1247,73 +1247,67 @@ export class PortView {
         : el('p', {}, 'She wants nothing.'),
     ));
 
-    // Fittings. A hull has so many places, and what goes in them is a loadout:
-    // explorer, trader, fighter. See ship/upgrades.
-    const places = placesFor(g.ship.hullId);
-    const used = placesUsed(g.ship.upgrades);
-    const full = used >= places;
+    // The ship's systems, each a tree. See ship/upgrades.
+    const yard = yardLevel(def);
+    const cap = tierCap(g.ship.hullId);
     const effectLines = (u: Upgrade) => {
       const d = describeEffects(u.effects);
       return el('div', { class: 'fit-effects' },
         ...d.good.map((t) => el('span', { class: 'fit-good' }, t)),
         ...d.bad.map((t) => el('span', { class: 'fit-bad' }, t)),
+        u.tons > 0 ? el('span', { class: 'fit-bad' }, `${u.tons} t`) : null,
       );
     };
-    const fitted = g.ship.upgrades.map((id) => UPGRADE_BY_ID.get(id)).filter((u): u is Upgrade => !!u && !u.free);
-    const upgrades = availableUpgrades(g.ship.upgrades, g.ship.hullId, g.crown.lifetimeStanding);
-    const locked = UPGRADES.filter((u) => u.standing > g.crown.lifetimeStanding && !g.ship.upgrades.includes(u.id)
-      && (!u.hulls || u.hulls.includes(g.ship.hullId)));
-    const right = el('div', {});
-    right.append(card(`Fittings \u2014 ${used} of ${places} places`,
-      el('div', { class: 'fit-slots' },
-        ...Array.from({ length: places }, (_, k) => el('i', { class: k < used ? 'on' : '' }))),
-      el('p', { style: { fontSize: '13px' } },
-        `The ${hullClass(g.ship.hullId).name} has room for ${places} fittings. Choose them for the `
-        + 'voyage: a ship fitted for a long passage is not the ship fitted for a fight.'),
-      fitted.length === 0 ? el('p', { class: 'flavour' }, 'Nothing fitted. She is as the yard built her.') : null,
-      ...fitted.map((u) => el('div', { class: 'fit-row fitted' },
+    const node = (u: Upgrade) => {
+      const st = nodeStatus(u, g.ship.upgrades, g.ship.hullId, g.crown.lifetimeStanding, yard);
+      return el('div', { class: `sys-node ${st.state}`, title: u.blurb },
         el('div', { class: 'fit-title' },
           el('b', {}, u.english), el('span', {}, u.name),
-          button('Strip it out', () => {
-            g.ship.upgrades = g.ship.upgrades.filter((x) => x !== u.id);
-            g.ship.applyRigConversion();
-            g.ship.refreshDerived();
-            g.waitDays(1);
-            g.logEvent('note', `${u.english} taken out of her at the yard.`);
-            this.notice = { text: `${u.english} is out. The place is free.` };
-            this.render();
-          }, { disabled: def.refit < 0.4 }),
+          st.state === 'built'
+            ? el('em', { class: 'sys-built' }, 'built')
+            : st.state === 'open'
+              ? button(`${u.cost} cr \u00b7 ${u.days}d`, () => this.fitUpgrade(g, u.id), {
+                disabled: g.crown.gold < u.cost,
+                title: st.replaces.length ? `Replaces ${st.replaces.map((id) => UPGRADE_BY_ID.get(id)?.english).join(', ')}` : u.blurb,
+              })
+              : el('em', { class: 'sys-why' }, st.why),
         ),
         effectLines(u),
-      )),
+      );
+    };
+    const fx = g.ship.effects;
+    const right = el('div', {});
+    right.append(card(`Her systems \u2014 the yard here can do ${['nothing', 'the simple work', 'a real refit', 'anything'][yard]}`,
+      el('div', { class: 'sys-profile' },
+        el('span', {}, `Points ${Math.round(g.noGoAngle)}\u00b0 off the wind`),
+        el('span', {}, `Canvas ${Math.round(fx.sailArea * 100)}%`),
+        el('span', {}, `Strength ${Math.round(fx.strength * 100)}%`),
+        el('span', {}, `Hold ${g.ship.holdCapacity.toFixed(0)} t`),
+        el('span', {}, `Fittings weigh ${fx.tons} t`),
+        fx.guns ? el('span', {}, `${fx.guns} guns`) : null),
+      el('p', { style: { fontSize: '13px' } },
+        `A ${hullClass(g.ship.hullId).name} can be taken ${cap === 1 ? 'no further than the first work' : cap === 2 ? 'as far as the fork in each tree' : 'to the top of every tree'}. `
+        + 'At the fork she is fitted for one purpose or the other; changing branch is work for Lisbon. Everything built into her weighs something, and weight is room and speed.'),
     ));
-    const cats: [string, string][] = [['hull', 'Hull'], ['rig', 'Rig'], ['stores', 'Stores'], ['equipment', 'Equipment'], ['service', 'The yard\u2019s own work']];
-    right.append(card('What the yard will do',
-      def.refit < 0.4 ? el('div', { class: 'notice grave' }, 'There is no yard here. Fittings are done in a proper port.') : null,
-      ...cats.map(([cat, label]) => {
-        const list = upgrades.filter((u) => u.category === cat);
-        if (list.length === 0) return null;
-        return el('div', { class: 'fit-cat' },
-          el('div', { class: 'fit-cat-head' }, label),
-          ...list.map((u) => {
-            const needsPlace = !u.free && full;
-            return el('div', { class: 'fit-row' },
-              el('div', { class: 'fit-title' },
-                el('b', {}, u.english), el('span', {}, u.name),
-                button(`${u.cost} cr \u00b7 ${u.days}d`, () => this.fitUpgrade(g, u.id), {
-                  disabled: g.crown.gold < u.cost || def.refit < 0.4 || needsPlace,
-                  title: needsPlace ? 'No place free. Strip something out first.' : undefined,
-                }),
-              ),
-              effectLines(u),
-              el('div', { class: 'fit-blurb' }, u.blurb),
-            );
-          }));
-      }),
-      locked.length > 0
-        ? el('p', { class: 'fit-locked' }, `At more renown: ${locked.map((u) => `${u.english} (${u.standing})`).join(', ')}.`)
-        : null,
-    ));
+    for (const sys of SYSTEMS) {
+      const nodes = systemNodes(sys.id).filter((u) => !u.hulls || u.hulls.includes(g.ship.hullId));
+      const plan = nodes.filter((u) => u.tier === 0);
+      const trunk = nodes.filter((u) => u.tier === 1);
+      const a = nodes.filter((u) => u.branch === 'a');
+      const b = nodes.filter((u) => u.branch === 'b');
+      right.append(card(sys.english,
+        el('p', { class: 'fit-blurb' }, sys.blurb),
+        plan.length ? el('div', { class: 'fit-cat-head' }, 'Rig plan') : null,
+        ...plan.map(node),
+        ...trunk.map(node),
+        cap >= 2 ? el('div', { class: 'sys-fork' },
+          el('div', {}, el('div', { class: 'fit-cat-head' }, sys.a), ...a.filter((u) => u.tier <= cap).map(node)),
+          el('div', {}, el('div', { class: 'fit-cat-head' }, sys.b), ...b.filter((u) => u.tier <= cap).map(node)),
+        ) : null,
+      ));
+    }
+    const services = UPGRADES.filter((u) => u.service);
+    right.append(card('The yard\u2019s own work', ...services.map(node)));
 
     // A larger ship, once the Crown thinks you are worth one.
     const hulls = g.hullsForSale().filter((h) => h.id !== g.ship.hullId);
@@ -1323,10 +1317,10 @@ export class PortView {
       right.append(card('Ships lying in the river',
         el('p', { class: 'quote' },
           `The yard will allow ${tradeIn} cruzados against the ${hullClass(g.ship.hullId).name} `
-          + 'and everything fitted into her. What is bolted to this hull stays with it — you are '
-          + 'buying a ship, not moving one.'),
+          + 'and her hull and keel work. Her rig, stores, quarters, instruments and arms come across '
+          + 'into the new ship if it can take them, at half what they cost to fit.'),
         el('ul', { class: 'list' }, ...hulls.map((h) => {
-          const price = Math.max(0, h.cost - tradeIn);
+          const price = Math.max(0, h.cost - tradeIn) + g.carryCost(h.id);
           const tooFull = tons > h.hold + 0.001;
           return el('li', {},
             el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'baseline' } },
@@ -1412,23 +1406,30 @@ export class PortView {
 
   private fitUpgrade(g: Game, id: string): void {
     const u = UPGRADE_BY_ID.get(id)!;
-    if (!u.free && placesUsed(g.ship.upgrades) >= placesFor(g.ship.hullId)) {
-      this.notice = { text: 'No place free for it. Strip something out first.', grave: true };
-      this.render();
-      return;
-    }
+    const st = nodeStatus(u, g.ship.upgrades, g.ship.hullId, g.crown.lifetimeStanding, yardLevel(g.portHere!));
+    if (st.state !== 'open') { this.notice = { text: st.why || 'Already done.', grave: true }; this.render(); return; }
     if (g.crown.gold < u.cost) { this.notice = { text: 'Not enough in the purse.', grave: true }; this.render(); return; }
     g.crown.gold -= u.cost;
     if (id === 'breame') {
       g.ship.condition.fouling = 0;
     } else {
-      g.ship.upgrades.push(id);
+      // Taking the other branch, or another rig plan, strips out what it replaces.
+      const out = new Set(st.replaces);
+      if (u.tier === 2 && out.size > 0) {
+        for (const x of g.ship.upgrades) {
+          const v = UPGRADE_BY_ID.get(x);
+          if (v && v.system === u.system && v.tier === 3 && v.branch !== u.branch) out.add(x);
+        }
+      }
+      g.ship.upgrades = g.ship.upgrades.filter((x) => !out.has(x));
+      if (!g.ship.upgrades.includes(id)) g.ship.upgrades.push(id);
     }
     g.ship.applyRigConversion();
     g.ship.refreshDerived();
     g.waitDays(u.days);
-    g.logEvent('note', `${u.name} — ${u.days} days in the yard, ${u.cost} cruzados.`);
-    this.notice = { text: `${u.name} done. ${u.blurb}` };
+    const gone = st.replaces.map((x) => UPGRADE_BY_ID.get(x)?.english).filter(Boolean);
+    g.logEvent('note', `${u.english} \u2014 ${u.days} days in the yard, ${u.cost} cruzados.${gone.length ? ` Out came ${gone.join(', ')}.` : ''}`);
+    this.notice = { text: `${u.english} done. ${u.blurb}` };
     this.render();
   }
 

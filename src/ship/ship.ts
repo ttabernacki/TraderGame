@@ -55,10 +55,14 @@ export class Ship {
   get hull(): HullClass {
     const base = hullClass(this.hullId);
     const fx = this.effects;
-    if (fx.sailArea === 1 && fx.handiness === 1 && !this.rigOverride) return base;
+    if (fx.sailArea === 1 && fx.handiness === 1 && fx.tons === 0 && !this.rigOverride) return base;
+    // Everything built into her is weight, and a deep-laden ship is a slow
+    // one: a quarter of her canvas's worth of drive lost at her whole hold's
+    // weight in fittings, which nobody would ever build.
+    const burden = 1 - clamp(fx.tons / Math.max(base.hold, 1), 0, 0.6) * 0.25;
     const masts: MastSpec[] = base.masts.map((m, i) => ({
       ...m,
-      area: m.area * fx.sailArea,
+      area: m.area * fx.sailArea * burden,
       rig: this.rigOverride?.[i] ?? m.rig,
     }));
     return { ...base, masts, handiness: base.handiness * fx.handiness };
@@ -122,8 +126,13 @@ export class Ship {
 
   applyRigConversion(): void {
     const fx = this.effects;
-    if (!fx.convertRig) { this.rigOverride = null; return; }
-    this.rigOverride = this.baseHull.masts.map(() => fx.convertRig!);
+    if (!fx.convertRig) { this.rigOverride = null; this.refreshDerived(); return; }
+    // Mixed: square on the foremast to run with, lateen abaft it to point.
+    // (A topsail set on its own mast stays square: there is no lateen topsail.)
+    this.rigOverride = this.baseHull.masts.map((m, i) =>
+      fx.convertRig === 'mixed'
+        ? (i === 0 || m.name.startsWith('Gávea') ? 'square' : 'lateen')
+        : fx.convertRig as 'square' | 'lateen');
     this.refreshDerived();
   }
 

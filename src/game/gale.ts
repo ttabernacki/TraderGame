@@ -373,7 +373,7 @@ function clawOff(g: Game, lee: LeeShore, offKnots: number, lightened: boolean): 
 /** Every anchor she has, and the holding ground decides it. */
 function anchorIt(g: Game, lee: LeeShore): string {
   // The sheet anchor and a second cable: see ship/upgrades.
-  const ground = (g.sounding.depth < 28 ? 0.62 : 0.4) + (g.ship.effects.anchors ? 0.2 : 0);
+  const ground = (g.sounding.depth < 28 ? 0.62 : 0.4) + (g.ship.effects.anchors ? 0.2 : 0) + g.ship.effects.holding;
   const easing = clamp(1 - (g.weatherNow.wind.speed - GALE_KNOTS) / 26, 0.15, 1);
   g.clock.t += g.rng.range(12, 30) * 3600;
   g.crew.fatigue = clamp(g.crew.fatigue + 0.22, 0, 1);
