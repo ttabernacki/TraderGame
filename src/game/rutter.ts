@@ -293,14 +293,45 @@ export class Rutter {
     windFrom: number; windKnots: number; steadiness: number;
     currentToward: number; currentKnots: number; hours: number; settled: boolean;
   } | null {
-    const s = this.sea.get(regionKey(at, month));
-    if (!s || s.hours < 4) return null;
-    return describeSea(s);
+    // This month if the book has it, and the months either side if it does not:
+    // the wind in a square does not turn over on the first of the month.
+    for (const m of [month, ((month + 10) % 12) + 1, (month % 12) + 1]) {
+      const s = this.sea.get(regionKey(at, m));
+      if (s && s.hours >= 4) return describeSea(s);
+    }
+    return null;
   }
 
   /** Every square the book has anything to say about, for drawing on a chart. */
   seaNotes(): SeaNote[] {
     return [...this.sea.values()].filter((s) => s.hours >= 4);
+  }
+
+  /**
+   * Everything the book knows about the sea, one note per square, for a given
+   * month.
+   *
+   * Winds and currents are written down by square and by month, because this
+   * ocean changes with the season and a monsoon in March blows the other way
+   * in August. But what a pilot knows does not vanish when the calendar turns:
+   * a square he has sailed in May still tells him something in June. So each
+   * square gives the note nearest in the year to the month asked, and says how
+   * many months off it is, so the chart can draw last season's knowledge a
+   * little fainter than this season's instead of not at all.
+   */
+  seaForYear(month: number): { note: SeaNote; monthsOff: number }[] {
+    const best = new Map<string, { note: SeaNote; monthsOff: number }>();
+    for (const s of this.sea.values()) {
+      if (s.hours < 4) continue;
+      const d = Math.abs(s.month - month) % 12;
+      const off = Math.min(d, 12 - d);
+      const cell = `${s.lat},${s.lon}`;
+      const have = best.get(cell);
+      if (!have || off < have.monthsOff || (off === have.monthsOff && s.hours > have.note.hours)) {
+        best.set(cell, { note: s, monthsOff: off });
+      }
+    }
+    return [...best.values()];
   }
 
   // -------------------------------------------------------------------------

@@ -303,11 +303,11 @@ export class ChartView {
           'The names of places on the chart'),
         (g?.rutter.seaNotes().length ?? 0) > 0
           ? this.chip('Winds', this.showWinds, () => { this.showWinds = !this.showWinds; },
-            'The wind as your own book has it, for this month')
+            'The wind as your own book has it — this month bold, other seasons faint')
           : null,
         (g?.rutter.seaNotes().length ?? 0) > 0
           ? this.chip('Set', this.showSet, () => { this.showSet = !this.showSet; },
-            'The set of the water as your own book has it, for this month')
+            'The set of the water as your own book has it — this month bold, other seasons faint')
           : null,
         this.chip('Regard', this.showRegard, () => { this.showRegard = !this.showRegard; },
           'How each people you have met regards you, on their own coast'),
@@ -1001,8 +1001,10 @@ export class ChartView {
    */
   private drawSeaArrows(ctx: CanvasRenderingContext2D, g: Game, which: 'wind' | 'set'): void {
     const month = g.clock.date.month;
-    const notes = g.rutter.seaNotes().filter((s) => s.month === month);
-    if (notes.length === 0) return;
+    // Everything the book knows, not only this month's: each square drawn from
+    // the nearest month on record, fainter the further that is from now.
+    const known = g.rutter.seaForYear(month);
+    if (known.length === 0) return;
 
     // A hundred nautical miles: one day's run in a fair breeze, and so the
     // natural grain for a picture of the wind a passage would meet.
@@ -1010,13 +1012,14 @@ export class ChartView {
     const rect = this.canvas.getBoundingClientRect();
     ctx.save();
     ctx.lineCap = 'round';
-    for (const s of notes) {
+    for (const { note: s, monthsOff } of known) {
       const d = describeSea(s);
+      const season = monthsOff === 0 ? 1 : monthsOff === 1 ? 0.8 : monthsOff <= 3 ? 0.55 : 0.35;
       // How far the book is worth listening to here: hours run in the square,
       // and how much of that ran the one way.
       const sure = clamp(d.hours / 30, 0.15, 1) * clamp(d.steadiness + 0.3, 0.3, 1);
       if (which === 'set' && d.currentKnots < 0.15) continue;
-      const alpha = which === 'wind' ? 0.11 + sure * 0.19 : 0.10 + sure * 0.16;
+      const alpha = (which === 'wind' ? 0.11 + sure * 0.19 : 0.10 + sure * 0.16) * season;
       const toward = which === 'wind' ? d.windFrom + 180 : d.currentToward;
       const colour = which === 'wind' ? '58, 104, 168' : '40, 118, 116';
 
