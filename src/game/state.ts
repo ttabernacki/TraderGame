@@ -4284,7 +4284,7 @@ export class Game {
     if (this.namedFeatures[f.id]) {
       return { ok: false, message: `You have already called this place ${this.namedFeatures[f.id]}.` };
     }
-    return { ok: true, message: this.nameTheFeature(f, given, f.value) };
+    return { ok: true, message: this.nameTheFeature(f, given) };
   }
 
   /** The headland or river mouth she is up with, for the interface. */
@@ -4311,8 +4311,14 @@ export class Game {
    * for what the thing looked like from the deck, and usually decided in about
    * a minute by a man who had no idea anyone would still be using it.
    */
-  nameTheFeature(f: CoastFeature, given: string, worth: number): string {
+  nameTheFeature(f: CoastFeature, given: string): string {
     this.namedFeatures[f.id] = given;
+    // What it is worth at court. The same wherever the name is given — the
+    // chart table and the scene at the rail used to pay different amounts for
+    // the same headland — and much less for a coast the Casa already has on
+    // its sheets or that the other captain has already passed and named.
+    const heAhead = f.lat < 0 && this.rival.frontierLat < f.lat - 0.5;
+    const worth = Math.round(f.value * (this.beyondTheKnown ? 1.5 : 0.35) * (heAhead ? 0.25 : 1));
     // Named where the thing is, not where the board thought it was.
     this.chart.addPlace(given, f.kind, { lat: f.lat, lon: f.lon }, this.clock.t);
     this.writeCoast(given, this.nav.estimated,

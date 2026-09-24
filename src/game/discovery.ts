@@ -192,12 +192,10 @@ export function beyondScene(g: Game): SeaEvent {
 export function featureScene(g: Game, f: CoastFeature, saint: string): SeaEvent {
   const stones = g.crown.padraoStock;
   const landable = g.padraoLandable();
-  const beyond = g.beyondTheKnown;
-  const worth = Math.round(f.value * (beyond ? 1.5 : 1));
   const own = `${f.kind === 'river' ? 'Rio' : g.ship.state.pos.lat >= 0 ? 'Cabo' : 'Ponta'} de ${saint}`;
 
   const name = (given: string, withStone: boolean) => (gg: Game): string => {
-    const note = gg.nameTheFeature(f, given, worth);
+    const note = gg.nameTheFeature(f, given);
     if (!withStone) return note;
     return `${note}\n\n${gg.landThePadrao(f, given)}`;
   };
@@ -244,7 +242,7 @@ export function featureScene(g: Game, f: CoastFeature, saint: string): SeaEvent 
           + 'name it, and it will be their name on it.',
         resolve: (gg) => {
           gg.crown.record('coast', `${f.kind === 'river' ? 'A river' : 'A headland'} at `
-            + `${gg.nav.estimated.lat.toFixed(1)}`, gg.nav.estimated, Math.round(worth * 0.3),
+            + `${gg.nav.estimated.lat.toFixed(1)}`, gg.nav.estimated, Math.round(f.value * (gg.beyondTheKnown ? 0.45 : 0.1)),
           gg.clock.t);
           gg.chartedThisPassage += 12;
           gg.crown.chartedSincePatent += 12;
