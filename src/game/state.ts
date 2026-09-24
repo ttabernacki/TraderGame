@@ -1422,7 +1422,7 @@ export class Game {
 
   /** Whether there is any point putting the line over the side from here. */
   get inSoundings(): boolean {
-    return !this.dockedAt && this.sounding.depth <= LEAD_REACH_M;
+    return !this.dockedAt && this.sounding.depth <= LEAD_REACH_M * this.ship.effects.leadReach;
   }
 
   /**
@@ -2380,7 +2380,9 @@ export class Game {
     // The board kept properly is worth more than any instrument aboard, and
     // what an old pilot taught you stacks with it.
     this.nav.driftScale = (this.can('deadReckoning') ? 0.5 : 1)
-      * (this.has('oldPilotsHand') ? 0.67 : 1);
+      * (this.has('oldPilotsHand') ? 0.67 : 1)
+      // The chart room. See ship/upgrades.
+      * this.ship.effects.reckoning;
 
     const hours = simDt / 3600;
     this.distanceRun += Math.abs(this.physics.speedKnots) * hours;
@@ -2721,6 +2723,18 @@ export class Game {
       0, 1,
     );
 
+    // Rain into the casks, and fish over the side. See ship/upgrades.
+    if (!this.dockedAt) {
+      const fx = this.ship.effects;
+      const pv = this.crew.provisions;
+      if (fx.rainCatch && this.weatherNow.rain > 0.3) {
+        pv.water = Math.min(pv.water + days * this.weatherNow.rain * 3, 100 + fx.water);
+      }
+      if (fx.fishing && this.sounding.depth < 200 && Math.abs(this.physics.speedKnots) < 7) {
+        pv.fresh = Math.min(pv.fresh + days * 0.9, 30);
+      }
+    }
+
     const w = this.wardroom;
     const events = updateCrew(this.crew, {
       days,
@@ -2738,6 +2752,7 @@ export class Game {
       // The surgeon's book, if he ever finished it.
       surgeonBook: this.has('theRemedy'),
       galley: this.ship.effects.scurvy,
+      physic: this.ship.effects.sickness,
       // A chaplain who has made his peace with a larger world is worth more to
       // the men than one who is certain about everything.
       wardroomMoraleBonus: this.has('cureOfSouls') ? 0.004 : 0,
@@ -3987,6 +4002,13 @@ export class Game {
       return;
     }
 
+    // Presents kept for exactly this. See ship/upgrades.
+    if (this.ship.effects.gifts) {
+      this.shiftPeopleRegard(def.people, 0.15);
+      this.logEvent('contact', `The chest of presents was opened on the beach: scarlet cloth, `
+        + 'brass, hawk\u2019s bells, and a looking-glass that went from hand to hand for an hour. '
+        + 'Whatever they think of us, they think it more kindly.', true);
+    }
     this.crown.record('people', `The ${pe.name}`, this.nav.estimated, 18, this.clock.t);
     this.logEvent('contact',
       `First contact with the ${pe.name}. ${pe.blurb} They speak ${pe.language}, `

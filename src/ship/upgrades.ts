@@ -27,6 +27,20 @@ export interface UpgradeEffects {
   anchors?: boolean;
   /** Pieces of ordnance. */
   guns?: number;
+  /** Multiplies how far the masthead sees. */
+  lookout?: number;
+  /** Multiplies how fast the reckoning goes soft. */
+  reckoning?: number;
+  /** Multiplies how fast fevers and flux take hold. */
+  sickness?: number;
+  /** A chest of presents for peoples met for the first time. */
+  gifts?: boolean;
+  /** Canvas spread to catch rain into the casks. */
+  rainCatch?: boolean;
+  /** Lines and a net over the side: fresh food on the shelf. */
+  fishing?: boolean;
+  /** Multiplies how deep the lead can find bottom. */
+  leadReach?: number;
   /** Converts every lateen mast to square, or the reverse. */
   convertRig?: 'square' | 'lateen';
 }
@@ -101,6 +115,12 @@ export const UPGRADES: Upgrade[] = [
 
   // --- Hull ---------------------------------------------------------------
   {
+    id: 'forro', name: 'Forro dobrado', english: 'Sacrificial planking',
+    category: 'hull', cost: 200, standing: 0, days: 8,
+    effects: { foulingRate: 0.65, strength: 1.06, hold: -2 },
+    blurb: 'A second skin of thin planks over tarred hair, for the worm to eat instead of the hull. Cheap, and it slows the weed; it has to be renewed.',
+  },
+  {
     id: 'chumbo', name: 'Forro de chumbo', english: 'Lead sheathing',
     category: 'hull', cost: 520, standing: 40, days: 14,
     effects: { foulingRate: 0.35, hold: -4, sailArea: 0.97 },
@@ -125,6 +145,18 @@ export const UPGRADES: Upgrade[] = [
     category: 'rig', cost: 380, standing: 30, days: 8,
     effects: { sailArea: 1.2, strength: 0.94 },
     blurb: 'Small sails over the courses. A fifth more canvas and a knot or more in the trades. The top-hamper strains the masts in a blow.',
+  },
+  {
+    id: 'cevadeira', name: 'Cevadeira', english: 'Spritsail',
+    category: 'rig', cost: 160, standing: 10, days: 4,
+    effects: { handiness: 1.15, sailArea: 1.03, strength: 0.98 },
+    blurb: 'A small square sail under the bowsprit. It pays her head off smartly, so she comes about and wears in half the time. Another spar forward to lose in a sea.',
+  },
+  {
+    id: 'cesto', name: 'Cesto da gávea', english: 'Crow\u2019s nest',
+    category: 'rig', cost: 120, standing: 0, days: 2,
+    effects: { lookout: 1.25, strength: 0.98 },
+    blurb: 'A proper top at the masthead with a rail round it, where a man can stand a watch instead of clinging on. He sees a quarter further — land, shoal water, a sail.',
   },
   {
     id: 'bonetas', name: 'Bonetas', english: 'Bonnets',
@@ -159,6 +191,31 @@ export const UPGRADES: Upgrade[] = [
     blurb: 'Live hens, a goat, cress growing in wet sacking and a proper firebox to cook on. The scurvy comes on far more slowly. The deck is a farmyard.',
   },
 
+  {
+    id: 'toldos', name: 'Toldos de chuva', english: 'Rain awnings',
+    category: 'stores', cost: 90, standing: 0, days: 2,
+    effects: { rainCatch: true, handiness: 0.97 },
+    blurb: 'Old sails rigged as funnels over the casks. Every squall fills them. The deck is cluttered with gear that fouls the braces going about.',
+  },
+  {
+    id: 'pesca', name: 'Aparelho de pesca', english: 'Fishing gear',
+    category: 'stores', cost: 70, standing: 0, days: 1,
+    effects: { fishing: true, hold: -1 },
+    blurb: 'Lines, hooks, a net and a harpoon. On the shelf and near land the off watch feeds itself, and fresh fish holds off the scurvy like anything else fresh.',
+  },
+  {
+    id: 'botica', name: 'Botica', english: 'Apothecary\u2019s chest',
+    category: 'stores', cost: 260, standing: 15, days: 1,
+    effects: { sickness: 0.6, hold: -1 },
+    blurb: 'Theriac, rhubarb, quince paste, wine for the fevers and a surgeon\u2019s saw. Fevers and the flux take hold far less; nothing in it touches the scurvy.',
+  },
+  {
+    id: 'camara', name: 'Câmara do piloto', english: 'Pilot\u2019s chart room',
+    category: 'stores', cost: 340, standing: 25, days: 5,
+    effects: { reckoning: 0.75, hold: -3 },
+    blurb: 'A dry room aft with a table, a lamp and a traverse board kept properly every half-hour glass. The reckoning goes soft a quarter more slowly.',
+  },
+
   // --- Equipment ----------------------------------------------------------
   {
     id: 'bombas', name: 'Bombas de cadeia', english: 'Chain pumps',
@@ -179,6 +236,24 @@ export const UPGRADES: Upgrade[] = [
     blurb: 'The anchor of last resort, and a second cable to ride to. Ships are lost by dragging onto a lee shore with nothing left to let go.',
   },
   {
+    id: 'bercos', name: 'Berços', english: 'Swivel guns',
+    category: 'equipment', cost: 160, standing: 0, days: 2,
+    effects: { guns: 2, hold: -1 },
+    blurb: 'Little breech-loaders on the rails, swept across a deck at boarding range. Not enough to frighten a corsair, enough to make a boarding cost him.',
+  },
+  {
+    id: 'prumo', name: 'Prumo de alto mar', english: 'Deep-sea lead',
+    category: 'equipment', cost: 110, standing: 0, days: 1,
+    effects: { leadReach: 1.6, hold: -1 },
+    blurb: 'A fourteen-pound lead and two hundred fathoms of line. It finds bottom well outside the hundred-fathom line, where the first warning of a coast is.',
+  },
+  {
+    id: 'resgates', name: 'Arca de resgates', english: 'Chest of presents',
+    category: 'equipment', cost: 220, standing: 10, days: 1,
+    effects: { gifts: true, hold: -2 },
+    blurb: 'Scarlet cloth, brass basins, hawk\u2019s bells and a looking-glass, kept only for the first meeting with a people nobody has met. First impressions are made once.',
+  },
+  {
     id: 'bombardas', name: 'Bombardas', english: 'Bombards',
     category: 'equipment', cost: 450, standing: 30, days: 6,
     effects: { guns: 6, hold: -5 },
@@ -195,6 +270,7 @@ export function combineEffects(ids: string[]): Combined {
   const acc: Combined = {
     foulingRate: 1, keel: 1, strength: 1, sailArea: 1, hold: 0, water: 0,
     handiness: 1, pumping: 1, spoilage: 1, scurvy: 1, boat: false, anchors: false, guns: 0,
+    lookout: 1, reckoning: 1, sickness: 1, gifts: false, rainCatch: false, fishing: false, leadReach: 1,
   };
   for (const id of ids) {
     const u = UPGRADE_BY_ID.get(id);
@@ -213,6 +289,13 @@ export function combineEffects(ids: string[]): Combined {
     if (e.boat) acc.boat = true;
     if (e.anchors) acc.anchors = true;
     if (e.guns) acc.guns += e.guns;
+    if (e.lookout !== undefined) acc.lookout *= e.lookout;
+    if (e.reckoning !== undefined) acc.reckoning *= e.reckoning;
+    if (e.sickness !== undefined) acc.sickness *= e.sickness;
+    if (e.leadReach !== undefined) acc.leadReach *= e.leadReach;
+    if (e.gifts) acc.gifts = true;
+    if (e.rainCatch) acc.rainCatch = true;
+    if (e.fishing) acc.fishing = true;
     if (e.convertRig) acc.convertRig = e.convertRig;
   }
   return acc;
@@ -234,16 +317,23 @@ export function describeEffects(e: UpgradeEffects): { good: string[]; bad: strin
   if (e.foulingRate !== undefined && e.foulingRate < 1) good.push(`Fouls ${pct(e.foulingRate)} slower`);
   if (e.strength !== undefined) (e.strength > 1 ? good : bad).push(`${e.strength > 1 ? '+' : '\u2212'}${pct(e.strength)} strength in a storm`);
   if (e.keel !== undefined && e.keel > 1) good.push(`${pct(1 / e.keel)} less leeway`);
-  if (e.handiness !== undefined && e.handiness < 1) bad.push(`Comes about ${pct(e.handiness)} slower`);
+  if (e.handiness !== undefined) (e.handiness > 1 ? good : bad).push(`Comes about ${pct(e.handiness)} ${e.handiness > 1 ? 'faster' : 'slower'}`);
   if (e.sailArea !== undefined) (e.sailArea > 1 ? good : bad).push(`${e.sailArea > 1 ? '+' : '\u2212'}${pct(e.sailArea)} sail`);
-  if (e.hold !== undefined) (e.hold > 0 ? good : bad).push(`${e.hold > 0 ? '+' : '\u2212'}${Math.abs(e.hold)} tons of hold`);
+  if (e.hold !== undefined) (e.hold > 0 ? good : bad).push(`${e.hold > 0 ? '+' : '\u2212'}${Math.abs(e.hold)} ton${Math.abs(e.hold) === 1 ? '' : 's'} of hold`);
   if (e.water) good.push(`+${e.water} days of water`);
   if (e.pumping !== undefined) (e.pumping > 1 ? good : bad).push(e.pumping > 1 ? `Pumps clear ${e.pumping.toFixed(1)}\u00d7 the water` : `Pumping ${pct(e.pumping)} slower`);
   if (e.spoilage !== undefined && e.spoilage < 1) good.push(`${pct(e.spoilage)} less spoilage`);
   if (e.scurvy !== undefined && e.scurvy < 1) good.push(`Scurvy comes on ${pct(e.scurvy)} slower`);
   if (e.boat) good.push('Kedges her off the ground; lands a party through surf');
   if (e.anchors) good.push('Far better odds riding out a lee shore at anchor');
-  if (e.guns) good.push(`${e.guns} guns: boarding odds up, corsairs think twice`);
+  if (e.guns) good.push(e.guns >= 6 ? `${e.guns} guns: boarding odds up, corsairs think twice` : `${e.guns} guns: boarding odds up`);
+  if (e.lookout) good.push(`Sees ${pct(e.lookout)} further from the masthead`);
+  if (e.reckoning) good.push(`Reckoning goes soft ${pct(e.reckoning)} slower`);
+  if (e.sickness) good.push(`Fevers and flux ${pct(e.sickness)} less`);
+  if (e.leadReach) good.push(`Lead finds bottom ${pct(e.leadReach)} deeper`);
+  if (e.gifts) good.push('Better first meetings with new peoples');
+  if (e.rainCatch) good.push('Fills the casks in every squall');
+  if (e.fishing) good.push('Fresh fish on the shelf and near land');
   if (e.convertRig === 'square') { good.push('Much faster off the wind'); bad.push('Will not point within six points'); }
   if (e.convertRig === 'lateen') { good.push('Points high, claws off a lee shore'); bad.push('Slow running before the trades'); }
   return { good, bad };

@@ -195,6 +195,8 @@ export interface CrewUpdateContext {
   days: number;
   /** Multiplies how fast the scurvy comes on: the hen coops and the galley. */
   galley?: number;
+  /** Multiplies how fast fevers and flux take hold: the apothecary's chest. */
+  physic?: number;
   ashore: boolean;
   /**
    * How well the place she is lying in can feed a ship's company, 0 to 1 — a
@@ -404,7 +406,7 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
   // --- Other sickness -----------------------------------------------------
   const sickPressure = clamp(0.004 + (p.water < 20 ? 0.006 : 0) + ctx.exertion * 0.01, 0, 0.05);
   crew.sickness = clamp(
-    crew.sickness + d * (sickPressure - ctx.surgeonQuality * 0.006) - d * 0.004,
+    crew.sickness + d * (sickPressure * (ctx.physic ?? 1) - ctx.surgeonQuality * 0.006) - d * 0.004,
     0, 1,
   );
   if (crew.sickness > 0.3) mortality += d * (crew.sickness - 0.3) * 0.02;

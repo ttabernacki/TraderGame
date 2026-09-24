@@ -116,23 +116,24 @@ export function castLead(g: Game): LeadCast {
   const profile = g.knowsGroundAt(nav.estimated);
 
   const depth = g.sounding.depth;
-  if (depth > LEAD_REACH_M) {
+  const reach = LEAD_REACH_M * g.ship.effects.leadReach;
+  if (depth > reach) {
     // No bottom is not nothing. It says she is outside the hundred-fathom line,
     // and a reckoning that had her inside it was wrong.
-    const edge = offingFromDepth(LEAD_REACH_M);
+    const edge = offingFromDepth(reach);
     let moved = 0;
     if (profile && Number.isFinite(believedOff) && believedOff < edge) {
       moved = nav.applySounding(shoreBearing, edge, believedOff, 9, g.clock.t, 'no bottom').movedNm;
     }
     g.logEvent('navigation',
-      'The deep-sea lead goes down with a hundred fathoms of line on it and comes up dry. '
+      `The deep-sea lead goes down with ${Math.round(reach / 1.8288)} fathoms of line on it and comes up dry. `
       + 'No bottom.' + (moved > 1
         ? ` The reckoning had her inside the hundred-fathom line, so she is further off the land `
           + `than the board says — ${moved.toFixed(0)} miles of it.`
         : ' She is in blue water and the lead has nothing to tell you.'));
     return {
       ok: true,
-      message: 'No bottom at a hundred fathoms.',
+      message: `No bottom at ${Math.round(reach / 1.8288)} fathoms.`,
       movedNm: moved,
     };
   }

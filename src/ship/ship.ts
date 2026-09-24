@@ -53,7 +53,7 @@ export class Ship {
   get hull(): HullClass {
     const base = hullClass(this.hullId);
     const fx = this.effects;
-    if (fx.sailArea === 1 && !this.rigOverride) return base;
+    if (fx.sailArea === 1 && fx.handiness === 1 && !this.rigOverride) return base;
     const masts: MastSpec[] = base.masts.map((m, i) => ({
       ...m,
       area: m.area * fx.sailArea,
@@ -93,7 +93,7 @@ export class Ship {
 
   /** Height of the masthead above the water, which sets how far the lookout sees. */
   get mastHeight(): number {
-    return Math.max(...this.hull.masts.map((m) => m.ceHeight)) * 1.55;
+    return Math.max(...this.hull.masts.map((m) => m.ceHeight)) * 1.55 * this.effects.lookout;
   }
 
   /** Fraction of full canvas currently set, averaged across the masts. */
