@@ -499,6 +499,7 @@ export function rollGaleScene(g: Game): SeaEvent | null {
     g.gale = newGale();
     g.gale.startT = g.clock.t;
     g.galeRecord.weathered++;
+    g.practise('marinharia', 1);
   }
 
   const lee = leeShore(g);

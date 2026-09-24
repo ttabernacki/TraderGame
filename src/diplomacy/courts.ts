@@ -209,7 +209,7 @@ export function evaluate(g: Game, def: PolityDef, s: PolityState, deal: Deal): V
   const t = s.temper;
   const noise = (1 - deal.comprehension) * 0.25;
   const giftRatio = deal.giftValue / Math.max(expectedGift(def), 1);
-  const giftScore = clamp(giftRatio, 0, 1.6) * 0.25 + (deal.giftLoved ? 0.1 : 0) - (deal.giftScorned ? 0.2 : 0)
+  const giftScore = (clamp(giftRatio, 0, 1.6) * 0.25 + (deal.giftLoved ? 0.1 : 0)) * (g.can?.('giftsOfState') ? 1.5 : 1) - (deal.giftScorned ? 0.2 : 0)
     - (deal.giftValue > 0 && giftRatio < 0.3 ? 0.15 : 0);
   const protocol = deal.protocol === 'right' ? 0.12 : deal.protocol === 'wrong' ? -0.18 : 0;
   const factions = def.factions.map((f) => {

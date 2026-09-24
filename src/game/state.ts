@@ -43,13 +43,13 @@ import {
   type CrewState, type Officer,
 } from '../crew/crew';
 import {
-  NODE_BY_ID, buyNode, levelsOf, newCaptainSkills, perksOf, skill,
-  type CaptainSkills, type PerkId, type SkillSet,
+  NODE_BY_ID, SKILLS, addPractice, respec as respecSkillsOf, buyNode, levelsOf, migrateCaptain, newCaptainSkills, perksOf, skill,
+  type CaptainSkills, type PerkId, type SkillId, type SkillSet,
 } from '../crew/skills';
 import { Markets, type Listing } from '../economy/market';
 import {
   ANTWERP_DAYS, CASA_SHARE, CHEST_TONS, COMPETITION, LICENCE_YEARS, MONOPOLY, REGION_NAME, antwerpBid, antwerpWeight,
-  currentBook, decayAntwerp, gradeWord, licenceCost, newTrade, newsDelayDays, paymentAt, portsInRegion,
+  bookTotals, currentBook, decayAntwerp, gradeWord, licenceCost, newTrade, newsDelayDays, paymentAt, portsInRegion,
   qualityAtSource, qualityFactor, regionOf, rollShocks, shockDef, worldMod,
   type Contract, type EntryKind, type PriceSheet, type Quote, type Region, type Shock, type ShockDef, type TradeState,
 } from '../economy/trade';
@@ -553,6 +553,7 @@ export class Game {
       if (c.knots > 0.1) { weight = 0.8; best = c; }
     }
     if (!best || weight <= 0) return null;
+    if (this.can('setAndDrift')) weight = Math.min(1, weight + 0.18);
     return { toward: best.toward, knots: best.knots * weight * skillK };
   }
 
@@ -566,17 +567,18 @@ export class Game {
    * coast keeps her board honest without a sight.
    */
   private takeBearings(pos: LatLon): void {
-    if (this.clock.t - this.lastBearingsT < 4 * 3600) return;
+    const instinct = this.can('pilotsInstinct');
+    if (this.clock.t - this.lastBearingsT < (instinct ? 2 : 4) * 3600) return;
     const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
     const off = this.sounding.shoreDistNm;
-    if (off > range * 0.85 || off < 0.3) return;
+    if (off > range * (instinct ? 1 : 0.85) || off < 0.3) return;
     // Something on the paper to take bearings of: coast charted before today.
     if (!this.chart.knewCoastNear(pos, Math.min(range, 30), this.clock.t - 3600)) return;
     const shift = this.chart.localOffset(pos, 90);
     if (!shift) return;
     this.lastBearingsT = this.clock.t;
     const at = { lat: pos.lat + shift.dLat, lon: wrap180(pos.lon + shift.dLon) };
-    const sigma = 1.5 + off * 0.08 + (1.3 - skill(this.effectiveSkill, 'navegacao')) * 1.5;
+    const sigma = (1.5 + off * 0.08 + (1.3 - skill(this.effectiveSkill, 'navegacao')) * 1.5) * (instinct ? 0.5 : 1);
     const moved = this.nav.applyBearings(at, sigma, this.clock.t);
     if (moved > 15) {
       this.logEvent('navigation',
@@ -905,6 +907,19 @@ export class Game {
   }
 
   /**
+   * What doing a thing teaches: a point now and then in the discipline, to a
+   * cap, for the captain who actually works at it.
+   */
+  practise(tree: SkillId, amount: number): void {
+    const got = addPractice(this.captain, tree, amount);
+    if (got > 0) {
+      const name = SKILLS.find((x) => x.id === tree)?.english ?? tree;
+      this.logEvent('crown', `Practice has made you better at ${name.toLowerCase()}: ${got} point${got === 1 ? '' : 's'} to spend.`, true);
+      this.pushAlert(`${name}: +${got} point from practice.`, 'note');
+    }
+  }
+
+  /**
    * How the court reads your voyage, which depends on what kind of man you are.
    *
    * The Crown's man takes half again in renown and rather less in coin; the
@@ -938,6 +953,7 @@ export class Game {
   sellCharts(): number {
     if (!this.can('sheetTrade') && !this.can('cosmographer') && !this.has('theDraughtsman')) return 0;
     const rate = (this.can('cosmographer') ? 2.6 : 1.7)
+      * (this.can('casaClerks') ? 1.25 : 1) * (this.can('secretChart') ? 2 : 1)
       * (this.has('theDraughtsman') ? 1.5 : 1)
       // A new Christian selling the Crown's charts out of the back door is not
       // doing the same thing a fidalgo is doing, and the file says so.
@@ -1341,6 +1357,21 @@ export class Game {
     return this.bonds.has(id);
   }
 
+  /**
+   * The one reckoning-up a career allows: every point back, at court, for a
+   * hundred of the King's good opinion.
+   */
+  respecSkills(): string {
+    if (this.captain.respecUsed) return 'You have already done this once. A man is what he has made of himself.';
+    if (this.dockedAt !== 'lisboa') return 'This is done at court, in Lisbon.';
+    if (this.crown.standing < 100) return 'It costs a hundred renown, and you have not got it.';
+    this.crown.standing -= 100;
+    const back = respecSkillsOf(this.captain);
+    this.skillCache = null;
+    this.logEvent('crown', `You have unlearned what you were: ${back} points to spend again, and a hundred renown the poorer for the talk it caused.`, true);
+    return `${back} points returned.`;
+  }
+
   /** Spend on a node. Returns false if it was barred or unaffordable. */
   buySkill(id: string): boolean {
     if (!buyNode(this.captain, id)) return false;
@@ -1382,7 +1413,7 @@ export class Game {
    */
   get observingSea(): number {
     const sea = this.weatherNow.waveHeight;
-    return this.can('celestial') ? sea * 0.38 : sea;
+    return (this.can('celestial') ? sea * 0.38 : sea) * (this.can('guards') ? 0.8 : 1);
   }
 
   /**
@@ -1770,8 +1801,10 @@ export class Game {
     if (a.status !== 'open') return;
     a.status = 'kept';
     const def = POLITY_BY_ID.get(a.polity)!;
-    this.adjustPolity(a.polity, { trust: 0.25, interest: 0.1 }, `agreement kept — ${why}`);
-    spreadWord(this, a.polity, 0.06, 0.02, `The Portuguese kept their word to the ${def.title} of ${portDef(def.seat).name}.`);
+    const word = this.can('keptWord') ? 1.5 : 1;
+    this.adjustPolity(a.polity, { trust: 0.25 * word, interest: 0.1 }, `agreement kept — ${why}`);
+    this.practise('diplomacia', 1);
+    spreadWord(this, a.polity, 0.06 * word * word, 0.02, `The Portuguese kept their word to the ${def.title} of ${portDef(def.seat).name}.`);
     this.pushAlert(`Kept: ${a.text}.`, 'note');
   }
 
@@ -1796,7 +1829,7 @@ export class Game {
     if (!pol) return;
     const st = this.polityState(pol.id);
     if (!st.met) { st.met = true; st.rulerSince = this.clock.t; }
-    st.knowledge = clamp(st.knowledge + 0.06, 0, 1);
+    st.knowledge = clamp(st.knowledge + (this.can('readCourt') ? 0.12 : 0.06), 0, 1);
     // The rival has been here first, with presents and his own account of you.
     // Only on coasts he opened himself, and not if he is broken or bound to you.
     if (!st.rivalCourted && def.lat < -6.5 && def.lat >= this.rival.frontierLat
@@ -1874,16 +1907,28 @@ export class Game {
     const lines: string[] = [];
     if (pol) {
       const st = this.polityState(pol.id);
-      st.knowledge = clamp(st.knowledge + 0.12, 0, 1);
+      st.knowledge = clamp(st.knowledge + (this.can('readCourt') ? 0.24 : 0.12), 0, 1);
       verdict.factions.forEach((f) => { st.factions[f.id] = clamp((st.factions[f.id] ?? 0) * 0.6 + f.approval * 0.4, -1, 1); });
     }
     if (forced) {
       for (const port of pol?.ports ?? [def.id]) this.relationsFor(port).mayTrade = true;
+      const soft = this.can('gunboat') ? 0.5 : 1;
       if (pol) {
-        this.adjustPolity(pol.id, { trust: -0.6, respect: 0.45 }, 'the guns were run out');
-        spreadWord(this, pol.id, -0.15, 0.2, `The Portuguese ran out their guns at ${def.name} and took what they wanted.`);
-      } else rel.regard = clamp(rel.regard - 0.6, -1, 1);
-      return 'Leave to trade, given at the mouth of a gun. It will be remembered.';
+        this.adjustPolity(pol.id, { trust: -0.6 * soft, respect: 0.45 }, 'the guns were run out');
+        spreadWord(this, pol.id, -0.15 * soft, 0.2, `The Portuguese ran out their guns at ${def.name} and took what they wanted.`);
+      } else rel.regard = clamp(rel.regard - 0.6 * soft, -1, 1);
+      const extra: string[] = [];
+      if (this.can('tribute')) {
+        const gold = Math.round(100 + def.wealth * 400);
+        this.crown.gold += gold;
+        extra.push(`${gold} cruzados in tribute`);
+      }
+      if (this.can('viceroy')) {
+        rel.factory = true;
+        for (const port of pol?.ports ?? [def.id]) this.relationsFor(port).exclusive = true;
+        extra.push('ground for a feitoria and the trade to yourself');
+      }
+      return `Leave to trade, given at the mouth of a gun${extra.length ? `, with ${extra.join(' and ')}` : ''}. It will be remembered.`;
     }
     if (!verdict.accepted) {
       if (pol) this.adjustPolity(pol.id, { trust: 0.02, interest: -0.05 }, '');
@@ -1929,6 +1974,7 @@ export class Game {
         if (off === 'tribute') { this.crown.gold = Math.max(0, this.crown.gold - 150); }
       }
       this.adjustPolity(pol.id, { trust: 0.12, interest: 0.12 + deal.offers.length * 0.04, respect: 0.03 }, 'a treaty agreed');
+      this.practise('diplomacia', 1);
       spreadWord(this, pol.id, 0.05, 0.03, `The Portuguese made a treaty with the ${pol.title} of ${portDef(pol.seat).name}.`);
     } else {
       rel.regard = clamp(rel.regard + 0.2, -1, 1);
@@ -2005,7 +2051,7 @@ export class Game {
           rawAsk: l.ask, rawBid: l.bid,
           ask: l.ask * pay.coin,
           // A town short of coin pays you in what coin it has, and not much of it.
-          bid: l.bid / Math.sqrt(pay.coin) * (casa ? CASA_SHARE : 1),
+          bid: l.bid / Math.sqrt(pay.coin) * (casa ? (this.can('kingsPartner') ? 0.9 : CASA_SHARE) : 1),
           casa,
           barter: pay.takes[l.goodId] ?? 1,
         };
@@ -2084,7 +2130,8 @@ export class Game {
     this.ship.reservedTons = this.trade.quintaladas ? aboard.length * CHEST_TONS : 0;
     if (def.id !== 'lisboa' || this.trade.books.length > 1 || currentBook(this.trade).entries.length > 0) {
       // Expected, so granting it earns nothing; refusing it is remembered.
-      if (!this.trade.quintaladas) for (const o of aboard) o.loyalty = clamp(o.loyalty - 0.012, 0, 1);
+      if (!this.trade.quintaladas && !this.can('fairShares')) for (const o of aboard) o.loyalty = clamp(o.loyalty - 0.012, 0, 1);
+      if (this.can('fairShares')) this.crew.morale = clamp(this.crew.morale + 0.05, 0, 1);
     }
     // Contracts.
     for (const c of this.trade.contracts) {
@@ -2133,12 +2180,13 @@ export class Game {
       const pool = (act <= 2 ? ['acucar', 'malagueta', 'marfim', 'ouro', 'panos'] : act === 3 ? ['acucar', 'marfim', 'ouro', 'malagueta', 'perolas'] : ['canela', 'cravo', 'gengibre', 'noz', 'seda', 'perolas', 'calico', 'anil'])
         .filter((id) => !MONOPOLY.includes(id) || this.hasLicence(id));
       const houses = HOUSES.filter((h) => (this.finance.credit[h.id] ?? 0) >= h.floor);
-      for (let i = 0; i < 2 && pool.length > 0 && houses.length > 0; i++) {
+      const n = this.can('kingsPartner') ? 3 : 2;
+      for (let i = 0; i < n && pool.length > 0 && houses.length > 0; i++) {
         const goodId = pool[Math.floor(this.rng.next() * pool.length)];
         const h = houses[Math.floor(this.rng.next() * houses.length)];
         const gd = good(goodId);
         const value = this.rng.range(1200, 3200) * (act <= 2 ? 0.6 : 1);
-        const price = Math.round(gd.lisbon * this.rng.range(1.65, 1.9) * 10) / 10;
+        const price = Math.round(gd.lisbon * this.rng.range(1.65, 1.9) * (this.can('antwerpEarly') ? 1.08 : 1) * 10) / 10;
         const qty = Math.max(1, Math.round(value / price));
         this.trade.contracts.push({
           id: this.trade.nextId++, house: h.id, houseName: h.name, goodId, qty, price,
@@ -2212,7 +2260,7 @@ export class Game {
     this.markets.sell(port, goodId, take);
     this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
     if (quay) {
-      const caught = this.rng.chance(clamp(0.2 - skill(this.effectiveSkill, 'comercio') * 0.08, 0.06, 0.25));
+      const caught = this.rng.chance(clamp(0.2 - skill(this.effectiveSkill, 'comercio') * 0.08, 0.06, 0.25) * (this.can('licences') ? 0.5 : 1));
       if (caught) {
         const fine = Math.round(revenue * 0.25);
         this.crown.gold = Math.max(0, this.crown.gold - fine);
@@ -2274,7 +2322,7 @@ export class Game {
     const key = `${this.dockedAt}:${this.dockedSinceT}`;
     if (!this.haggle || this.haggle.key !== key) {
       const regard = this.relationsFor(this.dockedAt!).regard;
-      this.haggle = { key, patience: 3 + (regard > 0.4 ? 1 : 0), walked: false, closedUntil: 0, bias: this.rng.range(-0.06, 0.06) };
+      this.haggle = { key, patience: 3 + (regard > 0.4 ? 1 : 0) + (this.can('patience') ? 2 : 0), walked: false, closedUntil: 0, bias: this.rng.range(-0.06, 0.06) };
     }
     return this.haggle;
   }
@@ -2293,7 +2341,7 @@ export class Game {
   get barterFuzz(): number {
     const def = this.portHere;
     const interp = def ? hasInterpreterFor(this.crew, people(def.people).language) : null;
-    return clamp(0.15 - skill(this.effectiveSkill, 'comercio') * 0.08 - (interp ? 0.05 : 0), 0.02, 0.16);
+    return clamp((0.15 - skill(this.effectiveSkill, 'comercio') * 0.08 - (interp ? 0.05 : 0)) * (this.can('patience') ? 0.6 : 1), 0.02, 0.16);
   }
 
   get barterPatience(): { patience: number; walked: boolean; closed: boolean } {
@@ -2386,7 +2434,7 @@ export class Game {
       const ports = portsInRegion(r).filter((id) => this.chart.ports.has(id) && id !== def.id);
       if (ports.length === 0) continue;
       const far = newsDelayDays(regionOf(def.id), r);
-      out.push({ region: r, ports: ports.length, price: Math.round(15 + ports.length * 6 + far * 0.15) });
+      out.push({ region: r, ports: ports.length, price: Math.round((15 + ports.length * 6 + far * 0.15) * (this.can('brokers') ? 0.5 : 1)) });
     }
     return out;
   }
@@ -2403,7 +2451,7 @@ export class Game {
     for (const id of portsInRegion(r)) {
       if (!this.chart.ports.has(id) || id === here) continue;
       let falseGood: string | undefined;
-      if (!lied && this.rng.chance(hostile ? 0.35 : 0.1)) {
+      if (!lied && !this.can('brokers') && this.rng.chance(hostile ? 0.35 : 0.1)) {
         const wanted = Object.keys(portDef(id).wants);
         if (wanted.length) { falseGood = wanted[Math.floor(this.rng.next() * wanted.length)]; lied = true; }
       }
@@ -2414,7 +2462,7 @@ export class Game {
 
   buyLicence(goodId: string): string {
     if (this.dockedAt !== 'lisboa') return 'Licences are granted at the Casa, in Lisbon.';
-    const cost = licenceCost(goodId);
+    const cost = this.licencePrice(goodId);
     if (this.crown.gold < cost) return 'Not enough in the purse.';
     this.crown.gold -= cost;
     this.trade.licences[goodId] = Math.max(this.trade.licences[goodId] ?? 0, this.clock.t) + LICENCE_YEARS * 365 * 86400;
@@ -2423,9 +2471,14 @@ export class Game {
     return `Licensed for ${LICENCE_YEARS} years. The Casa will not stand at your scales for ${good(goodId).english.toLowerCase()}.`;
   }
 
-  /** The Casa's factor in Antwerp: from the third act. */
+  /** The Casa's factor in Antwerp: from the third act, or at once with a correspondent there. */
   get antwerpOpen(): boolean {
-    return this.dockedAt === 'lisboa' && this.chronicle.act >= 3;
+    return this.dockedAt === 'lisboa' && (this.chronicle.act >= 3 || this.can('antwerpEarly'));
+  }
+
+  /** What the King's licence for a good costs this captain. */
+  licencePrice(goodId: string): number {
+    return Math.round(licenceCost(goodId) * (this.can('licences') ? 0.5 : 1));
   }
 
   sellAntwerp(goodId: string, qty: number): string {
@@ -2466,6 +2519,9 @@ export class Game {
   private closeVoyageBook(): void {
     const b = currentBook(this.trade);
     if (b.entries.length === 0) return;
+    const net = bookTotals(b).net;
+    if (net > 0) this.practise('comercio', net);
+    if (this.crew.count >= this.crew.complement * 0.85) this.practise('lideranca', 1);
     b.end = this.clock.t;
     this.trade.books.push({ n: b.n + 1, start: this.clock.t, entries: [] });
     if (this.trade.books.length > 12) this.trade.books.splice(0, this.trade.books.length - 12);
@@ -2707,7 +2763,14 @@ export class Game {
     };
   }
 
+  /** How much more a master's canvas draws. See the seamanship tree. */
+  private get skillSail(): number {
+    return (this.can('crowd') ? 1.05 : 1) * (this.can('driveAcross') ? 1.08 : 1);
+  }
+
   private runPhysics(dt: number): StepResult {
+    const sail = this.skillSail;
+    if (this.ship.skillSail !== sail) { this.ship.skillSail = sail; this.ship.refreshDerived(); }
     return stepShip(
       this.ship.state, this.ship.hull, this.ship.derived,
       this.buildEnvironment(), this.tuning, dt,
@@ -3369,7 +3432,10 @@ export class Game {
     // Chart whatever the lookout can see, at intervals.
     if (this.clock.t - this.lastSurveyT > 900) {
       this.lastSurveyT = this.clock.t;
-      const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
+      const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility)
+        * (this.can('farSight') ? 1.33 : 1);
+      // Closing the traverse: each sighting counts for half as much again.
+      const tk = this.can('traverse') ? 0.82 : 1;
       if (this.sounding.shoreDistNm < range) {
         const result = this.chart.survey(
           pos, this.nav.estimated, range, this.clock.t, skill(eff, 'cartografia'),
@@ -3377,8 +3443,9 @@ export class Game {
           // A cape laid down an hour after a noon sight is worth having; the
           // same cape laid down at the end of three weeks of blue water is a
           // guess, and the chart treats it as one.
-          this.nav.sigmaLat, this.nav.sigmaLon, this.nav.legNm, this.nav.legNmLat,
+          this.nav.sigmaLat * tk, this.nav.sigmaLon * tk, this.nav.legNm, this.nav.legNmLat,
         );
+        if (result.milesTaken > 0) this.practise('cartografia', result.milesTaken);
         // Coast run in sight counts even when no ring vertex happened to fall
         // inside the horizon — which, with vertices forty-seven miles apart, is
         // most of the time.
@@ -3706,7 +3773,7 @@ export class Game {
       // What this particular place can put aboard. An emporium feeds a crew;
       // an open anchorage on a desert coast does not.
       ashoreVictuals: this.dockedAt ? portDef(this.dockedAt).refit : 0,
-      ration: this.ration,
+      ration: this.ration * (this.can('hardRations') ? 0.88 : 1),
       leadership: skill(eff, 'lideranca'),
       surgeonQuality: (surgeon ? surgeon.ability : 0) + w.physic,
       exertion,
@@ -3762,8 +3829,12 @@ export class Game {
     const usage = this.can('spare') ? 0.5 : this.can('press') ? 1.35 : 1;
     const wear = this.ship.age(days * usage, tempFactor, this.pumpEffort * crewFactor(this.crew, this.ship.baseHull.crewMin));
     if (wear.swamped) {
-      this.endGame('She filled faster than the pumps could clear her, and went down by the head.');
-      return;
+      if (this.reprieve('She was going down by the head. Every man who could stand was put on the pumps and the rest bailed with buckets, and at the end of the second night she was floating.')) {
+        this.ship.condition.bilge = this.ship.holdCapacity * 0.2;
+      } else {
+        this.endGame('She filled faster than the pumps could clear her, and went down by the head.');
+        return;
+      }
     }
     for (const s of wear.spoiled) {
       this.logEvent('note', `The ${s.toLowerCase()} in the hold is spoiled past saving and has been thrown over the side.`);
@@ -3798,7 +3869,7 @@ export class Game {
     const eff = this.effectiveSkill;
     const seamanship = skill(eff, 'marinharia');
     // Pressing her is paid for here and nowhere else.
-    const sparHazard = this.can('press') ? 1.85 : this.can('spare') ? 0.4 : 1;
+    const sparHazard = (this.can('press') ? 1.85 : this.can('spare') ? 0.4 : 1) * (this.can('driveAcross') ? 0.5 : 1);
 
     if (carried > prudent + 0.05 && wind > 14) {
       const over = carried - prudent;
@@ -3930,6 +4001,12 @@ export class Game {
     // on screen — a queue that grows for as long as the player is reading it.
     if (this.pendingEvent?.id === 'mutiny'
         || this.pendingScenes.some((s) => s.id === 'mutiny')) {
+      return;
+    }
+    // Nobody dares; or the lash has put it down before it came to anything.
+    if (this.can('nobodyDares') || (this.can('lash') && this.rng.chance(0.5))) {
+      this.crew.unrest = this.can('nobodyDares') ? 0.2 : 0.35;
+      this.logEvent('crew', 'There was talk in the forecastle. It stopped when you came forward, and it did not start again.');
       return;
     }
     const scene = mutinyScene(this);
@@ -6267,6 +6344,10 @@ export class Game {
 
   /** She is lost. The one ending that is not the end of a career. */
   wreckHer(): void {
+    if (this.reprieve('She struck and should have gone to pieces. You had the boats out, a kedge laid, the guns over the side and every man on the capstan before the next sea, and on the top of the flood she came off.')) {
+      this.ship.damage(0.25);
+      return;
+    }
     const lost = Math.max(1, Math.round(this.crew.count * this.rng.range(0.3, 0.7)));
     this.killHands(lost, 'Lost when she struck.');
     this.endGame('She was driven ashore in a gale and went to pieces in the surf. '
@@ -7879,6 +7960,15 @@ export class Game {
       true);
   }
 
+  /** Never lose a ship: the one time in a career the sea is refused. */
+  private reprieve(text: string): boolean {
+    if (!this.can('neverLose') || this.captain.reprieved) return false;
+    this.captain.reprieved = true;
+    this.logEvent('peril', text, true);
+    this.pushAlert('She should have been lost. She was not.', 'grave');
+    return true;
+  }
+
   endGame(reason: string): void {
     this.gameOverReason = reason;
     this.mode = 'gameover';
@@ -8229,7 +8319,7 @@ export class Game {
       // She also crabs sideways, so her course made good is worse than she
       // points.
       // Bowlines, a false keel and long lateen yards take a few degrees more.
-      if (drive > 0) return clamp(beta + 7 - this.ship.effects.pointing, 20, 88);
+      if (drive > 0) return clamp(beta + 7 - this.ship.effects.pointing - (this.can('windward') ? 2 : 0), 20, 88);
     }
     return 88;
   }
@@ -8392,7 +8482,12 @@ export class Game {
    * the last one is amended by the error the fix has just revealed.
    */
   private wireNavigator(): void {
-    this.nav.onCorrect = (c) => this.chart.amend(c);
+    this.nav.onCorrect = (c) => {
+      this.chart.amend(c);
+      // A sight worked is practice at the art.
+      const m = this.nav.fixes[this.nav.fixes.length - 1]?.method ?? '';
+      if (/Meridian|North Star|Lunar|star/i.test(m)) this.practise('navegacao', 1);
+    };
   }
 
   courseTo(portId: string): { bearing: number; distNm: number } | null {
@@ -8570,6 +8665,12 @@ export class Game {
     g.hands = d.hands ?? musterHands(g.rng);
     g.casa = d.casa ?? newCasa();
     g.captain = d.captain ?? newCaptainSkills();
+    // The trees were redrawn: a captain who learned the old shape is given his
+    // points back to spend again.
+    const refunded = migrateCaptain(g.captain);
+    if (refunded > 0) {
+      g.pushAlert(`The captain's book has been redrawn: ${refunded} points returned to spend again.`, 'note');
+    }
     g.bonds = new Set<BondId>(d.bonds ?? []);
     g.origin = d.origin ?? 'segundo';
     g.aimOffNm = d.aimOffNm ?? 0;

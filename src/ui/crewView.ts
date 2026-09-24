@@ -4,7 +4,7 @@ import {
   OFFICER_ROLES, ableHands, enduranceDays, healthWord, moraleWord,
 } from '../crew/crew';
 import {
-  SKILLS, blockedReason, nodesOf, rankOf, skill,
+  PRACTICE, SCHOOLS, SKILLS, blockedReason, costFor, nodesOf, rankOf, schoolOf, skill,
   type CaptainSkills, type SkillNode, type SkillSet,
 } from '../crew/skills';
 import { BONDS, ARC_BY_ID } from '../progression/arcs';
@@ -322,14 +322,19 @@ export class CrewView {
           ? `${c.points} point${c.points === 1 ? '' : 's'} to spend`
           : 'Nothing left to spend'),
         el('span', { style: { fontSize: '12.5px', color: 'var(--ink-soft)' } },
-          'Earned by discharging a commission — two to five, by the size of it.'),
+          'Earned by discharging commissions, and by practice at each art.'),
       ),
       el('p', { style: { fontStyle: 'italic', color: 'var(--ink-soft)', margin: '8px 0 0' } },
-        'Nothing is paid for sailing, and nothing for coming home without finishing what you '
-        + 'undertook. One more point for a voyage that brought home two places or peoples the '
-        + 'Crown never asked for. A career runs to twenty points if you take the great commissions '
-        + 'and go straight there, and half again as many if you work every one of them and look '
-        + 'about you on the way. A whole tree costs twelve. You will not see all of this.'),
+        'Each discipline has a trunk, then two schools. The first school node you learn is your school: '
+        + 'its three nodes and its capstone are yours to take. Two nodes of the other school may be learned '
+        + 'at twice the price; its capstone never. A school from the trunk to the capstone is fifteen points, '
+        + 'and a career is forty-odd.'),
+      g.dockedAt === 'lisboa' && !c.respecUsed && c.taken.length > 0
+        ? el('div', { class: 'row' }, button('Unlearn it all — once, for 100 renown', () => {
+          g.pushAlert(g.respecSkills(), 'note');
+          this.render();
+        }, { disabled: g.crown.standing < 100 }))
+        : null,
     ));
 
     host.append(el('div', { class: 'cols two' },
@@ -343,73 +348,52 @@ export class CrewView {
     const own = g.skills[s.id];
     const withOfficers = eff[s.id];
     const bonus = withOfficers - own;
+    const rule = PRACTICE[s.id];
+    const earned = c.earned?.[s.id] ?? 0;
+    const prog = c.practice?.[s.id] ?? 0;
+    const nodes = nodesOf(s.id);
+    const trunk = nodes.filter((n) => !n.school);
+    const mine = schoolOf(c, s.id);
+    const school = (k: 'a' | 'b') => el('div', { class: `skill-school${mine === k ? ' mine' : mine ? ' other' : ''}` },
+      el('div', { class: 'skill-school-head' }, SCHOOLS[s.id][k], mine === k ? el('em', {}, ' your school') : null),
+      ...nodes.filter((n) => n.school === k).map((n) => this.nodeRow(g, c, n)));
 
     return card(`${s.english} (${s.name})`,
       el('p', { style: { fontStyle: 'italic', color: 'var(--ink-soft)' } }, s.blurb),
       kv('Your own', `${own.toFixed(0)} — ${rankOf(own)}`),
       bonus > 0.5 ? kv('With your officers', `${withOfficers.toFixed(0)}`) : null,
       meter(skill(eff, s.id)),
-      el('ul', { class: 'list', style: { marginTop: '9px' } },
-        ...this.treeRows(g, c, s),
-      ),
+      kv('Practice', earned >= rule.cap
+        ? `all ${rule.cap} points earned`
+        : `${Math.floor(prog)} of ${rule.per} ${rule.unit} toward a point (${earned} of ${rule.cap})`),
+      el('ul', { class: 'list', style: { marginTop: '9px' } }, ...trunk.map((n) => this.nodeRow(g, c, n))),
+      el('div', { class: 'skill-fork' }, school('a'), school('b')),
     );
   }
 
-  /**
-   * One tree's nodes, with the fork announced before it rather than glued onto
-   * the two names. The player needs to know a choice is coming *before* he
-   * reads the first half of it.
-   */
-  private treeRows(g: Game, c: CaptainSkills, s: typeof SKILLS[number]): HTMLElement[] {
-    const nodes = nodesOf(s.id);
-    // The frontier is the lowest tier not yet paid for. Everything above it is
-    // blocked for the same reason, and printing that reason six times turns a
-    // tree into a wall of "comes first".
-    const frontier = nodes.find((n) => !nodes.some(
-      (m) => m.tier === n.tier && c.taken.includes(m.id)))?.tier ?? 99;
-
-    const out: HTMLElement[] = [];
-    let forkAnnounced = false;
-    for (const n of nodes) {
-      if (n.excludes && !forkAnnounced) {
-        forkAnnounced = true;
-        const decided = nodes.some((m) => m.excludes && c.taken.includes(m.id));
-        out.push(el('li', {
-          style: {
-            fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase',
-            color: 'var(--ink-soft)', marginTop: '4px', opacity: '0.75',
-          },
-        }, decided ? 'The road you took' : 'One road or the other, never both'));
-      }
-      out.push(this.nodeRow(g, c, n, frontier));
-    }
-    return out;
-  }
-
-  private nodeRow(g: Game, c: CaptainSkills, n: SkillNode, frontier: number): HTMLElement {
+  private nodeRow(g: Game, c: CaptainSkills, n: SkillNode): HTMLElement {
     const held = c.taken.includes(n.id);
     const why = blockedReason(c, n);
-    const shut = !held && !!n.excludes && c.taken.includes(n.excludes);
+    const price = costFor(c, n);
     const poor = !!why && why.endsWith(`you have ${c.points}.`);
-    // Affordability is the only thing that should not grey a node out: a player
-    // saving for it needs to read it clearly.
-    const dim = held ? '1' : shut ? '0.3' : why && !poor ? '0.5' : '0.85';
+    const shut = !held && !!why && /not for you|as far as/.test(why);
+    const dim = held ? '1' : shut ? '0.35' : why && !poor ? '0.55' : '0.9';
 
-    const row = el('li', { style: { opacity: dim, fontSize: '13px' } },
+    const row = el('li', { class: `skill-node${held ? ' held' : ''}${n.tier === 6 ? ' cap' : ''}`, style: { opacity: dim } },
       el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' } },
         el('span', {}, n.name),
         el('span', { class: held ? 'tag good' : 'tag' },
-          held ? 'held' : shut ? 'shut' : `${n.cost} pt${n.cost === 1 ? '' : 's'}`),
+          held ? 'held' : shut ? 'shut' : `${price} pt${price === 1 ? '' : 's'}${price > n.cost ? ', doubled' : ''}`),
       ),
       el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', margin: '3px 0 0', lineHeight: '1.5' } }, n.effect),
     );
 
     if (held || shut) return row;
     if (!why) {
-      row.append(button(`Learn it — ${n.cost} ${n.cost === 1 ? 'point' : 'points'}`, () => {
+      row.append(button(`Learn it — ${price} ${price === 1 ? 'point' : 'points'}`, () => {
         if (g.buySkill(n.id)) this.render();
       }, { ghost: true }));
-    } else if (poor || n.tier === frontier) {
+    } else {
       row.append(el('div', { style: { fontSize: '12px', color: 'var(--ink-soft)', marginTop: '4px' } }, why));
     }
     return row;

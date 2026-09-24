@@ -167,7 +167,7 @@ export interface JourneyResult {
 /** A place his walking makes real, drawn where he says it is rather than where it is. */
 function revealInlandKnowledge(g: Game, def: PortDef, errand: ErrandId): string {
   // The coast either side of where he came out, laid down from what he walked.
-  const drawn = g.chart.copyFrom({ lat: def.lat, lon: def.lon }, 260, 16, g.clock.t);
+  const drawn = g.chart.copyFrom({ lat: def.lat, lon: def.lon }, 260, g.can('copyist') ? 10 : 16, g.clock.t);
   // And somewhere he was told about, which is the part you can sail to.
   const far = PORTS.filter((p) => !g.chart.ports.has(p.id)
     && haversine({ lat: def.lat, lon: def.lon }, { lat: p.lat, lon: p.lon }) / NM

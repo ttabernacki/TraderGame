@@ -4,7 +4,7 @@ import { good, unitOf } from '../economy/goods';
 import { provisioningCost } from '../economy/market';
 import {
   ANTWERP, ANTWERP_DAYS, CASA_SHARE, CHEST_TONS, COMPETITION, MONOPOLY, REGION_NAME, antwerpBid, fairsAt, gradeWord,
-  licenceCost, paymentAt,
+  paymentAt,
 } from '../economy/trade';
 import { formatDateAt } from '../core/clock';
 import { people } from '../world/peoples';
@@ -600,8 +600,8 @@ export class PortView {
           el('span', {}, good(id).english),
           held
             ? el('span', { class: 'due' }, `licensed until ${formatDateAt(until)}`)
-            : button(`Licence — ${licenceCost(id)}`, () => { this.notice = { text: g.buyLicence(id) }; this.render(); },
-              { disabled: g.crown.gold < licenceCost(id) }));
+            : button(`Licence — ${g.licencePrice(id)}`, () => { this.notice = { text: g.buyLicence(id) }; this.render(); },
+              { disabled: g.crown.gold < g.licencePrice(id) }));
       }),
     );
   }

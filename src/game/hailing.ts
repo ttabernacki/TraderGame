@@ -110,7 +110,7 @@ function askThePosition(g: Game, quality: number): string {
 }
 
 function copyHisCoast(g: Game, s: Stranger, accuracyNm: number, rangeNm: number): string {
-  const gained = g.chart.copyFrom(g.ship.state.pos, rangeNm, accuracyNm, g.clock.t);
+  const gained = g.chart.copyFrom(g.ship.state.pos, rangeNm, accuracyNm * (g.can('copyist') ? 0.6 : 1), g.clock.t);
   // His soundings come with his coast.
   g.soundedGround.push({
     lat: g.ship.state.pos.lat, lon: g.ship.state.pos.lon, nm: rangeNm, source: `${s.master}\u2019s roteiro`,
