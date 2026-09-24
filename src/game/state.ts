@@ -2433,11 +2433,13 @@ export class Game {
       if (noTables && poleGone) {
         this.pushAlert(
           'No latitude to be had at all — the pole star is under the horizon astern and there '
-          + 'are no solar tables aboard. The reckoning is all you have.', 'grave');
+          + 'are no solar tables aboard. The reckoning is all you have until you buy the '
+          + 'Regimento do Astrolábio (Fitting out, in port).', 'grave');
       } else if (noTables) {
         this.pushAlert(
-          'No latitude again today. The sun is no use without tables; it wants a clear night '
-          + 'and the pole star.', 'warning');
+          'No latitude again today. The sun is no use without solar tables — the Regimento do '
+          + 'Astrolábio, 220 cruzados under Fitting out in port — so it wants a clear night and the '
+          + 'pole star.', 'warning');
       } else {
         const why = (sun?.reason ?? 'nothing to be had').replace(/\.$/, '');
         this.pushAlert(`No latitude again today — ${why.charAt(0).toLowerCase()}${why.slice(1)}.`,
