@@ -4,6 +4,13 @@ import type { HullClass, MastSpec } from '../ship/hull';
 import type { SailState } from '../ship/physics';
 
 const OAK = new THREE.Color(0xa8814f);
+/** Paint for the band above the wale, on a ship built to the captain's own lines. */
+const PAINT: Record<string, THREE.Color | null> = {
+  natural: null,
+  red: new THREE.Color(0x8a2e22),
+  black: new THREE.Color(0x221e1a),
+  ochre: new THREE.Color(0xb3893c),
+};
 const OAK_DARK = new THREE.Color(0x6d5030);
 const WALE = new THREE.Color(0x4a3520);
 const BOTTOM = new THREE.Color(0x5b5046);
@@ -161,10 +168,13 @@ export class ShipMesh {
     const B = hull.beam;
     const D = hull.draft;
 
-    this.group.add(buildHull(L, B, D));
+    // A ship built to the captain's lines carries her own castles and paint;
+    // the stock hulls keep the look they were modelled with.
+    const castle = hull.castles === undefined ? 1 : 0.3 + hull.castles * 0.95;
+    this.group.add(buildHull(L, B, D, PAINT[hull.paint ?? 'natural']));
     this.group.add(buildDeck(L, B, D));
-    this.group.add(buildSterncastle(L, B, D));
-    this.group.add(buildForecastle(L, B, D));
+    this.group.add(buildSterncastle(L, B, D, castle));
+    if (castle > 0.45) this.group.add(buildForecastle(L, B, D, castle));
     this.group.add(buildRails(L, B, D));
     this.group.add(buildDeckFittings(L, B, D));
 
@@ -259,7 +269,7 @@ export class ShipMesh {
       build.geometry,
       new THREE.MeshLambertMaterial({
         side: THREE.DoubleSide,
-        map: makeSailTexture(build, isMain),
+        map: makeSailTexture(build, isMain && hull.device !== 'plain'),
         transparent: true,
         // Canvas is thin enough that the sun glows through it, so a backlit sail
         // is never just a black shape against the sky — and that glow is the
@@ -728,7 +738,7 @@ function sectionWidth(v: number, t: number): number {
  * below the waterline, planked oak above it, and a heavy wale running the length
  * at the turn of the topsides.
  */
-function buildHull(L: number, B: number, D: number): THREE.Mesh {
+function buildHull(L: number, B: number, D: number, paint: THREE.Color | null = null): THREE.Mesh {
   const stations = 44;
   const rows = 22;
   const positions: number[] = [];
@@ -758,6 +768,8 @@ function buildHull(L: number, B: number, D: number): THREE.Mesh {
       c.copy(OAK).lerp(OAK_DARK, strake * 0.5 + Math.sin(t * 37) * 0.07 + 0.06);
     }
     c.lerp(WALE, waleness * 0.9);
+    // A painted band from the wale up to the rail.
+    if (paint && v > 0.7) c.lerp(paint, clamp((v - 0.7) / 0.05, 0, 1) * 0.78);
     colors.push(c.r, c.g, c.b);
   };
 
@@ -827,9 +839,9 @@ function buildDeck(L: number, B: number, D: number): THREE.Mesh {
   }));
 }
 
-function buildSterncastle(L: number, B: number, D: number): THREE.Group {
+function buildSterncastle(L: number, B: number, D: number, scale = 1): THREE.Group {
   const g = new THREE.Group();
-  const h = D * 0.72;
+  const h = D * 0.72 * scale;
   const deck = sheerAt(0.14) * D * FREEBOARD;
 
   const oak = new THREE.MeshLambertMaterial({ color: 0x6b4e30 });
@@ -1003,9 +1015,9 @@ function buildTransom(
   }));
 }
 
-function buildForecastle(L: number, B: number, D: number): THREE.Group {
+function buildForecastle(L: number, B: number, D: number, scale = 1): THREE.Group {
   const g = new THREE.Group();
-  const h = D * 0.42;
+  const h = D * 0.42 * scale;
   const deck = sheerAt(0.88) * D * FREEBOARD;
   const oak = new THREE.MeshLambertMaterial({ color: 0x6b4e30 });
   const trim = new THREE.MeshLambertMaterial({ color: 0x4a3520 });

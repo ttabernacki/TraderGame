@@ -38,6 +38,17 @@ export interface HullClass {
   /** Renown required from the Crown before one will be granted. */
   standing: number;
   blurb: string;
+  /** Height of her castles, 0 flush to 1 a carrack's; stock hulls default by size. */
+  castles?: number;
+  /** Multiplies her metacentric height: beam against depth, and the castles' top-weight. */
+  gmScale?: number;
+  /** Her paint and the device on her main course. */
+  paint?: 'natural' | 'red' | 'black' | 'ochre';
+  device?: 'cross' | 'plain';
+  /** Multiplies the risk to her spars when she is pressed: over-canvassed designs. */
+  sparStrain?: number;
+  /** Built to the captain's own lines. See ship/design. */
+  custom?: boolean;
 }
 
 const lateen = (name: string, area: number, ceHeight: number, station: number): MastSpec =>

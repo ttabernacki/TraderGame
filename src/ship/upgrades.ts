@@ -1,3 +1,4 @@
+import { HULL_BY_ID } from './hull';
 export type UpgradeCategory = 'hull' | 'rig' | 'stores' | 'equipment' | 'service';
 
 export interface UpgradeEffects {
@@ -119,7 +120,11 @@ export const TIER_CAP: Record<string, number> = {
 };
 
 export function tierCap(hullId: string): number {
-  return TIER_CAP[hullId] ?? 2;
+  if (TIER_CAP[hullId] !== undefined) return TIER_CAP[hullId];
+  // A ship built to your own lines takes what her size will bear.
+  const h = HULL_BY_ID.get(hullId);
+  if (!h) return 2;
+  return h.tons < 40 ? 1 : h.tons < 120 ? 2 : 3;
 }
 
 const NAUS = ['nau-pequena', 'nau', 'nau-da-india'];

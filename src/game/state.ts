@@ -124,6 +124,10 @@ import {
   searchRumours, type IsleState,
 } from './farLand';
 import { ISLES, landIndexOf, type OceanIsle } from '../world/isles';
+import {
+  assessDesign, hullFromDesign, polarTable, registerHull, tonsAllowed, buildDays, type ShipDesign,
+} from '../ship/design';
+import type { HullClass } from '../ship/hull';
 
 /**
  * Latitude of the deepest Portuguese penetration at the start of play.
@@ -3874,7 +3878,9 @@ export class Game {
     const eff = this.effectiveSkill;
     const seamanship = skill(eff, 'marinharia');
     // Pressing her is paid for here and nowhere else.
-    const sparHazard = (this.can('press') ? 1.85 : this.can('spare') ? 0.4 : 1) * (this.can('driveAcross') ? 0.5 : 1);
+    const sparHazard = (this.can('press') ? 1.85 : this.can('spare') ? 0.4 : 1) * (this.can('driveAcross') ? 0.5 : 1)
+      // A ship drawn with more canvas than her spars were ever meant to carry.
+      * (this.ship.baseHull.sparStrain ?? 1);
 
     if (carried > prudent + 0.05 && wind > 14) {
       const over = carried - prudent;
@@ -5365,6 +5371,81 @@ export class Game {
    * on her, because a hauled-out hull with her seams open is not worth what a
    * sound one is.
    */
+  // -------------------------------------------------------------------------
+  // A ship to your own lines. See ship/design.
+  // -------------------------------------------------------------------------
+
+  /** Hulls built to the captain's drawings, with their polar tables. */
+  designs: { hull: HullClass; polar: number[][]; design?: ShipDesign }[] = [];
+  /** The one on the stocks at the Ribeira, if any. */
+  building: { hullId: string; readyT: number; startT: number } | null = null;
+  /** When the flagship she now is was launched. */
+  flagship: { hullId: string; launchedT: number } | null = null;
+
+  /** What the draughtsman says about a design before a timber is cut. */
+  assess(d: ShipDesign) {
+    return assessDesign(d, this.chronicle.act);
+  }
+
+  /** Why the Ribeira will not lay this one down, or null when it will. */
+  commissionBlocked(d: ShipDesign): string | null {
+    if (this.dockedAt !== 'lisboa') return 'Ships are laid down at the Ribeira das Naus, in Lisbon.';
+    if (this.building) return 'There is already a ship of yours on the stocks.';
+    if (!d.name.trim()) return 'She wants a name before the keel is laid.';
+    const h = hullFromDesign(d, 'draught');
+    if (h.tons > tonsAllowed(this.chronicle.act)) {
+      return `The Ribeira will not lay down more than ${tonsAllowed(this.chronicle.act)} tonéis for you yet.`;
+    }
+    if (h.standing > this.crown.lifetimeStanding) {
+      return `A ship of ${h.tons} tonéis wants ${h.standing} renown behind it; you have ${this.crown.lifetimeStanding}.`;
+    }
+    if (this.crown.gold + this.creditFree < h.cost) return `She costs ${h.cost} cruzados, paid when the keel is laid.`;
+    return null;
+  }
+
+  /** Lay her down. The price is paid now; she is ready in her building time. */
+  commissionShip(d: ShipDesign): string | null {
+    const why = this.commissionBlocked(d);
+    if (why) return why;
+    const id = `custom-${this.designs.length + 1}`;
+    const hull = hullFromDesign({ ...d, name: d.name.trim() }, id);
+    const polar = polarTable(hull);
+    registerHull(hull, polar);
+    this.designs.push({ hull, polar, design: { ...d, masts: [...d.masts], name: d.name.trim() } });
+    if (this.crown.gold < hull.cost) this.drawCredit(hull.cost);
+    this.crown.gold -= hull.cost;
+    const days = buildDays(hull);
+    this.building = { hullId: id, readyT: this.clock.t + days * 86400, startT: this.clock.t };
+    this.logEvent('crown',
+      `The keel of the ${hull.name} is laid at the Ribeira das Naus: ${hull.tons} tonéis, `
+      + `${hull.lwl} metres on the waterline, ${hull.masts.length} ${hull.masts.length === 1 ? 'mast' : 'masts'}. `
+      + `${hull.cost} cruzados paid to the master shipwright, and she will be ready in ${Math.round(days / 30)} months.`, true);
+    return null;
+  }
+
+  /** Whether the ship on the stocks is ready to take your flag. */
+  get launchReady(): boolean {
+    return !!this.building && this.clock.t >= this.building.readyT;
+  }
+
+  /** Shift your flag into her. The old ship is sold to the yard. */
+  launchShip(): string | null {
+    if (!this.building) return 'There is nothing of yours on the stocks.';
+    if (this.dockedAt !== 'lisboa') return 'She is lying at the Ribeira, in Lisbon.';
+    if (!this.launchReady) return `She is not finished: ${Math.ceil((this.building.readyT - this.clock.t) / 86400)} days yet.`;
+    const id = this.building.hullId;
+    const h = hullClass(id);
+    const err = this.shiftFlag(id, true, h.name);
+    if (err) return err;
+    this.building = null;
+    this.flagship = { hullId: id, launchedT: this.clock.t };
+    this.logEvent('crown',
+      `The ${h.name} goes down the ways into the Tagus with the whole of the Ribeira cheering and the `
+      + 'chaplain throwing water at her. She is yours from the keel up, drawn by your hand, and there is '
+      + 'no other ship like her.', true);
+    return null;
+  }
+
   tradeInValue(): number {
     const hull = hullClass(this.ship.hullId);
     // What goes with you into the new ship is not sold with the old one.
@@ -5399,10 +5480,15 @@ export class Game {
    * a merchant's consignment or the cargo the King is expecting, failing both
    * without a word.
    */
-  shiftFlag(hullId: string): string | null {
+  shiftFlag(hullId: string, prepaid = false, name?: string): string | null {
     const h = hullClass(hullId);
     const carried = this.carriedAcross(hullId);
-    const price = Math.max(0, h.cost - this.tradeInValue()) + this.carryCost(hullId);
+    const allowed = this.tradeInValue();
+    // A ship already paid for on the stocks: the old one is sold to the yard
+    // and only the fittings carried across are charged against it.
+    const price = prepaid
+      ? this.carryCost(hullId) - allowed
+      : Math.max(0, h.cost - allowed) + this.carryCost(hullId);
     if (this.crown.gold + this.creditFree < price) return 'There is not enough in the purse.';
     const tons = this.ship.cargoTons;
     if (tons > h.hold + 0.001) {
@@ -5413,7 +5499,7 @@ export class Game {
     this.crown.gold -= price;
 
     const old = this.ship;
-    const next = new Ship(old.name, hullId, old.state.pos, old.state.heading);
+    const next = new Ship(name ?? old.name, hullId, old.state.pos, old.state.heading);
     // The rig, stores, quarters, instruments and arms come across if the new
     // hull can take them; the hull and keel work stays with the old ship.
     next.upgrades = carried;
@@ -5430,10 +5516,12 @@ export class Game {
       this.pushAlert(`The ${h.name} wants ${h.crewMin} men to sail her and you have `
         + `${this.crew.count}. Ship hands before you weigh.`, 'warning');
     }
-    this.logEvent('crown',
-      `Shifted your flag into the ${h.name}. ${h.blurb} The yard allowed `
-      + `${this.tradeInValue()} against the old ship and her fitting-out, so she cost `
-      + `${price} on the day.`, true);
+    this.logEvent('crown', prepaid
+      ? `Shifted your flag into the ${h.name}. The yard bought the old ship for ${allowed} cruzados`
+        + `${price > 0 ? `, and took ${price} more for carrying her fittings across` : `, and ${-price} came back to you after the fittings were carried across`}.`
+      : `Shifted your flag into the ${h.name}. ${h.blurb} The yard allowed `
+        + `${allowed} against the old ship and her fitting-out, so she cost `
+        + `${price} on the day.`, true);
     return null;
   }
 
@@ -7721,6 +7809,9 @@ export class Game {
     // Pillars are the King's business and the Casa ships them: every sailing
     // from the Tagus carries three, and nobody has to remember to ask.
     if (def.id === 'lisboa') this.crown.padraoStock = Math.max(this.crown.padraoStock, 3);
+    if (def.id === 'lisboa' && this.launchReady) {
+      this.pushAlert(`The ${hullClass(this.building!.hullId).name} is finished and lying at the Ribeira. Shift your flag from the shipwrights.`, 'note');
+    }
 
     this.writeUpPort(def, first);
 
@@ -8008,6 +8099,7 @@ export class Game {
     // The hull, the hold and the stores.
     const name = lost.startsWith('Nova ') ? lost : `Nova ${lost}`;
     this.ship = new Ship(name, 'caravela-latina', home, 200);
+    this.flagship = null;
 
     // The company. Named officers who came through it are still his; the men
     // are a fresh muster off the quay. Anybody left at a station ashore was
@@ -8724,6 +8816,9 @@ export class Game {
       namedFeatures: this.namedFeatures,
       foundFeatures: this.foundFeatures,
       isles: this.isles,
+      designs: this.designs,
+      building: this.building,
+      flagship: this.flagship,
       coastOrder: this.coastOrder,
       tutorial: this.tutorial,
       seenChart: this.seenChart,
@@ -8773,6 +8868,11 @@ export class Game {
     const g = new Game(d.seed);
     g.clock.t = d.t;
     g.clock.scaleIndex = d.scaleIndex ?? 1;
+    // Her own lines have to be known before she can be.
+    g.designs = d.designs ?? [];
+    for (const x of g.designs) registerHull(x.hull, x.polar);
+    g.building = d.building ?? null;
+    g.flagship = d.flagship ?? null;
     g.ship = Ship.deserialize(d.ship);
     g.crew = d.crew;
     g.hands = d.hands ?? musterHands(g.rng);

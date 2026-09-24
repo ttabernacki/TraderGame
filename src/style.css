@@ -2618,3 +2618,27 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
 .skill-school .skill-node { list-style: none; font-size: 13px; padding: 6px 0; border-bottom: 1px solid rgba(90, 74, 55, .12); }
 .skill-node.held { border-left: 3px solid #8a6c2e; padding-left: 8px; }
 .skill-node.cap > div:first-child span:first-child { font-weight: 600; }
+
+/* The Ribeira das Naus: a ship to your own lines. */
+.yard-profile { background: linear-gradient(#efe6cf, #e4d7b6); border: 1px solid rgba(90, 74, 55, .25); border-radius: 3px; margin: 6px 0 10px; }
+.yard-svg { display: block; width: 100%; height: auto; }
+.yard-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 720px) { .yard-grid { grid-template-columns: 1fr; } }
+.yard-row { display: grid; grid-template-columns: 9.5em minmax(0, 1fr) 5.5em; align-items: center; gap: 8px; font-size: 13px; margin: 4px 0; }
+.yard-row input[type=text], .yard-row select { grid-column: 2 / 4; min-width: 0; font: inherit; padding: 3px 5px; background: #f6efdc; border: 1px solid rgba(90, 74, 55, .35); color: var(--ink); }
+.yard-row input[type=checkbox] { justify-self: start; }
+.yard-row input[type=range] { width: 100%; accent-color: #8a5a2b; }
+.yard-label { color: var(--ink-soft); }
+.yard-val { font-variant-numeric: tabular-nums; text-align: right; }
+.yard-masts { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 6px 9.5em; }
+.yard-mast { font-size: 12px; padding: 3px 8px; }
+.yard-mast.square { background: #e9dfc6; }
+.yard-mast.lateen { background: #f3ecda; font-style: italic; }
+.yard-readout { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.yard-readout > div { display: flex; flex-direction: column; border-bottom: 1px dotted rgba(90, 74, 55, .25); padding: 3px 0; }
+.yard-readout .k { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-faint); }
+.yard-warn { margin: 8px 0; font-size: 12.5px; color: var(--warn); display: grid; gap: 4px; }
+.yard-action { display: grid; gap: 6px; margin-top: 8px; }
+.yard-why { font-size: 12px; color: var(--ink-soft); font-style: italic; }
+.yard-sisters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; font-size: 13px; }
+@media (max-width: 480px) { .yard-row { grid-template-columns: 1fr 4.5em; } .yard-row .yard-label { grid-column: 1 / 3; } .yard-row input[type=text], .yard-row select { grid-column: 1 / 3; } .yard-masts { margin-left: 0; } }

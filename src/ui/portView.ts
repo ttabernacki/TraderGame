@@ -13,6 +13,7 @@ import {
   SYSTEMS, UPGRADES, UPGRADE_BY_ID, describeEffects, nodeStatus, systemNodes, tierCap, yardLevel, type Upgrade,
 } from '../ship/upgrades';
 import { hullClass } from '../ship/hull';
+import { shipyardCard } from './shipyard';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
 import { OFFICER_ROLES } from '../crew/crew';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
@@ -1308,6 +1309,11 @@ export class PortView {
     }
     const services = UPGRADES.filter((u) => u.service);
     right.append(card('The yard\u2019s own work', ...services.map(node)));
+
+    // A ship to your own lines, at the Ribeira.
+    if (def.id === 'lisboa') {
+      right.append(shipyardCard(g, (text, grave) => { this.notice = { text, grave }; this.render(); }));
+    }
 
     // A larger ship, once the Crown thinks you are worth one.
     const hulls = g.hullsForSale().filter((h) => h.id !== g.ship.hullId);
