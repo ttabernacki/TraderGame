@@ -39,7 +39,7 @@ export class AudienceView {
       crew: g.crew,
       diplomacy: skill(g.effectiveSkill, 'diplomacia'),
       hasKingsLetter: g.crown.hasKingsLetter,
-      hasPadraoAboard: g.ship.upgrades.includes('padroes'),
+      hasPadraoAboard: g.crown.padraoStock > 0,
       standing: g.crown.lifetimeStanding,
       relations: g.relationsFor(g.dockedAt!),
       temperedFaith: g.has('cureOfSouls'),

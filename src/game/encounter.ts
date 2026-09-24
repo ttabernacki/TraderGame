@@ -104,6 +104,10 @@ export interface Stranger {
   spoken: boolean;
   /** She has made you out and formed an opinion. */
   awareT: number | null;
+  /** She is the other captain's ship. See progression/rivalEvents. */
+  rival?: boolean;
+  /** A course she is making for on her own account, sailed as well as she can. */
+  course?: number;
 }
 
 // -----------------------------------------------------------------------------
@@ -326,10 +330,10 @@ export function sailStranger(g: Game, s: Stranger, dt: number): void {
     case 'close':
     case 'hunt': want = toMe; break;
     case 'avoid': want = away; break;
-    default: want = s.heading; break;
+    default: want = s.course ?? s.heading; break;
   }
 
-  if (s.intent === 'hold' || s.intent === 'unaware') {
+  if ((s.intent === 'hold' || s.intent === 'unaware') && s.course === undefined) {
     // She is on her own passage and is not thinking about you at all — but she
     // still cannot sail into the wind's eye, so a holding course inside her
     // no-go is the one she would actually be on.

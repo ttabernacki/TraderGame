@@ -956,43 +956,42 @@ export class PortView {
     host.append(el('div', { class: 'cols two' }, left, right));
   }
 
-  /** What the factor is to buy while you are elsewhere. */
+  /**
+   * What the factor is to buy while you are elsewhere.
+   *
+   * It was a list of every good the town made with an Order button on each and
+   * a paragraph explaining weights. There is really one decision in it: a shed
+   * full of everything, or a corner of the hold of the one dear thing.
+   */
   private orderCard(g: Game, def: PortDef, f: Feitoria | null): HTMLElement {
     const options = buyable(def);
     const current: string[] = f ? f.buying : this.stationOrder;
-    return card('Standing orders',
+    const dearest = [...options].sort((a, b) => good(b).lisbon - good(a).lisbon)[0];
+    const set = (next: string[]) => {
+      if (f) this.notice = { text: g.setStandingOrder(next) };
+      else this.stationOrder = next;
+      this.render();
+    };
+    if (!dearest) {
+      return card('What he buys', el('p', {}, 'This place produces nothing anybody has a name for.'));
+    }
+    const focused = current.length === 1 && current[0] === dearest;
+    const pick = (on: boolean, title: string, detail: string, next: string[]) =>
+      el('button', {
+        class: `shore-action${on ? ' done' : ''}`, type: 'button',
+        onclick: () => set(next),
+      }, el('b', {}, `${on ? '\u2713 ' : ''}${title}`), el('span', {}, detail));
+    return card('What he buys',
       el('p', { style: { fontSize: '13px' } },
-        'What he is to buy, in preference. A town can only put so much trade through one man in '
-        + 'a year whatever it is worth by weight, so the value he accumulates is much the same '
-        + 'either way \u2014 what changes is how much of your hold it takes to carry it home. '
-        + 'Leave it empty and he buys whatever the place offers and fills the shed; name the '
-        + 'dearest thing here and the same money comes aboard in a corner of the hold, with the '
-        + 'rest of her free for something else.'),
-      ...options.map((id) => {
-        const gd = good(id);
-        const on = current.includes(id);
-        return el('div', {
-          style: {
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            gap: '10px', padding: '4px 0',
-          },
-        },
-          el('div', {},
-            el('span', {}, gd.name),
-            el('span', { style: { fontSize: '12.5px', color: 'var(--ink-soft)' } },
-              ` — about ${residentPrice(id, def).toFixed(1)} here, ${gd.lisbon} at Lisbon`),
-          ),
-          button(on ? 'Ordered' : 'Order', () => {
-            const next = on ? current.filter((x) => x !== id) : [...current, id].slice(0, 3);
-            if (f) this.notice = { text: g.setStandingOrder(next) };
-            else this.stationOrder = next;
-            this.render();
-          }, { primary: on }),
-        );
-      }),
-      options.length === 0
-        ? el('p', {}, 'This place produces nothing anybody has a name for.')
-        : null,
+        'He puts the same money through the town either way. What changes is how much of your '
+        + 'hold it takes to carry home.'),
+      el('div', { class: 'shore-actions' },
+        pick(!focused, 'Whatever the town offers',
+          'A full shed, and half your hold to bring it away.', []),
+        pick(focused, `Only ${good(dearest).english.toLowerCase()}`,
+          `About ${residentPrice(dearest, def).toFixed(1)} here and ${good(dearest).lisbon} at Lisbon. `
+          + 'The same money in a corner of the hold.', [dearest]),
+      ),
     );
   }
 
@@ -1196,9 +1195,6 @@ export class PortView {
     } else {
       g.ship.upgrades.push(id);
     }
-    // Pillars are consumed. Fitting them again re-stocks the hold, which is what
-    // a captain came back to Lisbon for between voyages.
-    if (id === 'padroes') g.crown.padraoStock += 6;
     g.ship.applyRigConversion();
     g.ship.refreshDerived();
     g.waitDays(u.days);

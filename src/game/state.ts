@@ -621,6 +621,7 @@ export class Game {
     this.dockedAt = 'lisboa';
     this.anchored = true;
     this.visitedPorts.add('lisboa');
+    this.crown.padraoStock = Math.max(this.crown.padraoStock, 3);
     this.lastLat = start.lat;
     this.displayHeading = this.ship.state.heading;
     // She lies in the Tagus with her position known to the yard of the quay, so
@@ -5516,6 +5517,82 @@ export class Game {
       true);
   }
 
+  /** The race south with the other captain, while it is being run. */
+  rivalRace: { targetLat: number; until: number } | null = null;
+
+  /** His ship, raised on the bow and standing the same way. */
+  putRivalOnTheSea(): void {
+    const pos = this.ship.state.pos;
+    const bearing = wrap360(this.ship.state.heading + (this.rng.chance(0.5) ? 25 : -25));
+    let at = rhumbStep(pos, bearing, 9 * NM);
+    if (isLand(at)) at = rhumbStep(pos, wrap360(this.ship.state.heading + 180), 6 * NM);
+    this.encounter = {
+      hullId: 'caravela-redonda',
+      nation: 'portuguese',
+      business: 'trader',
+      name: this.rival.ship.replace(/^the /, ''),
+      master: this.rival.name,
+      pos: at,
+      heading: this.ship.state.heading,
+      speedKnots: 0,
+      intent: 'hold',
+      read: 1,
+      guns: 4,
+      hands: 40,
+      sightedT: this.clock.t,
+      // The meeting is the card that raised him. He is not hailed twice.
+      spoken: true,
+      awareT: this.clock.t,
+      rival: true,
+    };
+    this.chaseOrder = 'hold';
+    this.seaRecord.sighted++;
+  }
+
+  /** Start the race. Returns the latitude it is to, in words. */
+  startRivalRace(): string {
+    const targetLat = this.ship.state.pos.lat - 1.5;
+    this.rivalRace = { targetLat, until: this.clock.t + 6 * 86400 };
+    if (this.encounter?.rival) this.encounter.course = 180;
+    const deg = Math.abs(targetLat);
+    return `${deg.toFixed(1)}\u00b0 ${targetLat >= 0 ? 'north' : 'south'}`;
+  }
+
+  /** Who is winning, and whether it is over. Called with the encounter. */
+  private judgeRivalRace(): void {
+    const race = this.rivalRace;
+    if (!race) return;
+    const him = this.encounter?.rival ? this.encounter : null;
+    const me = this.ship.state.pos.lat;
+    const heLat = him ? him.pos.lat : race.targetLat + 1;
+    const mine = me <= race.targetLat;
+    const his = heLat <= race.targetLat;
+    const timeUp = this.clock.t > race.until || !!this.dockedAt;
+    if (!mine && !his && !timeUp) return;
+    const won = mine && !his ? true : his && !mine ? false : me < heLat;
+    this.rivalRace = null;
+    if (him) him.course = undefined;
+    if (won) {
+      this.rival.frontierLat = Math.max(this.rival.frontierLat, race.targetLat + 1.2);
+      this.rival.standing = Math.max(0, this.rival.standing - 5);
+      this.crown.standing += 5;
+      this.crown.lifetimeStanding += 5;
+      this.crew.morale = clamp(this.crew.morale + 0.08, 0, 1);
+      this.pushAlert(`You beat ${this.rival.name} south. The coast ahead is yours to name.`, 'note');
+      this.logEvent('discovery', `Raced ${this.rival.name} south and was first by a clear `
+        + 'distance. He hauled his wind and stood away to the westward before dark, which is as '
+        + 'near as he will come to saying so.', true);
+    } else {
+      this.rival.frontierLat = Math.min(this.rival.frontierLat, race.targetLat - 0.8);
+      this.rival.standing += 5;
+      this.crew.morale = clamp(this.crew.morale - 0.05, 0, 1);
+      this.pushAlert(`${this.rival.name} is ahead of you, and pulling away.`, 'warning');
+      this.logEvent('note', `Lost the race south to ${this.rival.name}. ${this.rival.ship} was `
+        + 'hull down ahead by the second morning, and whatever is on the next stretch of coast '
+        + 'will have his name on it.', true);
+    }
+  }
+
   /** She is not there any more: the ship has come to an anchor or gone in. */
   private partCompany(): void {
     this.encounter = null;
@@ -5762,6 +5839,7 @@ export class Game {
   }
 
   private updateEncounter(simDt: number): void {
+    this.judgeRivalRace();
     const s = this.encounter;
     if (!s) return;
     // A sail in sight is the one thing in this game that must not be sailed in
@@ -5784,7 +5862,9 @@ export class Game {
     // Hull down and going away. Three hours of watching a topsail get smaller
     // is the commonest outcome of a sighting and it should be allowed to be.
     const gone = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility, 28) + 3;
-    if (range > gone) {
+    // During a race he is followed past the horizon: losing sight of him is
+    // not the same as him stopping.
+    if (range > gone && !(s.rival && this.rivalRace)) {
       this.pushAlert(s.spoken
         ? `${s.name} is hull down to the ${compassPoint(bearingTo(this.ship.state.pos, s.pos))}.`
         : 'She is gone. Nobody aboard will ever know whose she was.', 'note');
@@ -6403,6 +6483,10 @@ export class Game {
     }
 
     this.crown.progressObjective('reach', def.id);
+
+    // Pillars are the King's business and the Casa ships them: every sailing
+    // from the Tagus carries three, and nobody has to remember to ask.
+    if (def.id === 'lisboa') this.crown.padraoStock = Math.max(this.crown.padraoStock, 3);
 
     this.writeUpPort(def, first);
 
@@ -7202,25 +7286,6 @@ export class Game {
       });
     }
 
-    // A commission that wants pillars, and no pillars aboard. They are cut at
-    // Lisbon and nowhere else, so finding this out at the Congo is finding it
-    // out three months too late.
-    const wantsPadrao = this.crown.patent?.objectives.find(
-      (o) => o.kind === 'padrao' && !o.complete);
-    if (wantsPadrao) {
-      const have = this.crown.padraoStock;
-      const left = (wantsPadrao.amount ?? 1) - Math.floor(wantsPadrao.progress);
-      out.push({
-        label: 'Stone pillars',
-        value: have > 0 ? `${have} aboard` : 'None aboard',
-        state: have >= left ? 'good' : 'bad',
-        note: have >= left
-          ? undefined
-          : 'The King wants pillars set up and there are none in the hold. They are '
-            + 'cut and shipped at Lisbon, at the shipwrights, and nowhere else on the coast.',
-      });
-    }
-
     // A cargo commission with no room for the cargo is the quiet mistake.
     const wants = this.crown.patent?.objectives.find((o) => o.kind === 'cargo' && !o.complete);
     if (wants) {
@@ -7391,6 +7456,7 @@ export class Game {
       ventures: this.ventures,
       ventureOffers: this.ventureOffers,
       rival: this.rival,
+      rivalRace: this.rivalRace,
       nextVentureId: this.nextVentureId,
       nextLeadId: this.nextLeadId,
     });
@@ -7501,6 +7567,7 @@ export class Game {
     g.ventures = d.ventures ?? [];
     g.ventureOffers = d.ventureOffers ?? [];
     if (d.rival) g.rival = d.rival;
+    g.rivalRace = d.rivalRace ?? null;
     g.nextVentureId = d.nextVentureId ?? 1;
     g.nextLeadId = d.nextLeadId ?? 1;
     g.mode = 'sailing';

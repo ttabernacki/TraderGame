@@ -158,12 +158,6 @@ export const UPGRADES: Upgrade[] = [
     effects: {},
     blurb: 'Ships are lost by dragging onto a lee shore with nothing left to let go.',
   },
-  {
-    id: 'padroes', name: 'Padrões', english: 'Stone pillars',
-    category: 'equipment', cost: 90, standing: 20, days: 2,
-    effects: { hold: -3 },
-    blurb: 'Carved limestone pillars bearing the arms of Portugal, to be set up on every new headland. They are heavy, they take space, and the Crown counts them when you come home.',
-  },
 ];
 
 export const UPGRADE_BY_ID = new Map(UPGRADES.map((u) => [u.id, u]));

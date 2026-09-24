@@ -34,7 +34,7 @@ import type { Game } from './state';
 
 export function landmarkScene(g: Game, l: Landmark): SeaEvent {
   const stones = g.crown.padraoStock;
-  const carries = g.ship.upgrades.includes('padroes');
+  const carries = g.crown.padroesRaised > 0;
   const water = g.crew.provisions.water;
   const thin = water < 30;
 
@@ -52,7 +52,7 @@ export function landmarkScene(g: Game, l: Landmark): SeaEvent {
           ? 'The arms of Portugal on the headland, and your name under them. Everyone who comes after will read it.'
           : carries
             ? 'The pillars were all set up further north. You cannot claim what you cannot mark.'
-            : 'Cut limestone, carved with the arms, shipped at Lisbon. You did not take any. A headland you cannot mark is a headland somebody else will.',
+            : 'The stones went ashore at Lisbon to make room. A headland you cannot mark is a headland somebody else will.',
         resolve: (gg) => {
           if (gg.crown.padraoStock <= 0) {
             return 'There is no stone left in the hold. The carpenter offers to cut something out '
@@ -233,9 +233,8 @@ export function featureScene(g: Game, f: CoastFeature, saint: string): SeaEvent 
         resolve: name(f.suggested, true),
       }] : [{
         label: 'No pillar to land',
-        detail: g.ship.upgrades.includes('padroes')
-          ? 'The last of the stones went up further north. You cannot mark what you cannot mark.'
-          : 'You shipped no pillars at Lisbon. They are cut there and nowhere else.',
+        detail: 'The last of the stones went up further north. Lisbon will send more with the '
+          + 'next sailing.',
         resolve: () => 'The boat stays in the chocks. Whatever is done about this place will have '
           + 'to be done with ink.',
       }]),

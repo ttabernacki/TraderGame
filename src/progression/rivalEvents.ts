@@ -40,7 +40,11 @@ export const MEETINGS: RivalMeeting[] = [
   {
     id: 'sail',
     when: (g) => gapNm(g) < 90 && g.daysSincePort > 4,
-    build: (g) => ({
+    build: (g) => {
+      // He is a ship, and he is out there: put him on the sea where the
+      // player can see him and, if it comes to it, race him.
+      g.putRivalOnTheSea();
+      return {
       id: 'rival:sail',
       title: 'A sail, and she is one of ours',
       severity: 'note',
@@ -67,10 +71,10 @@ export const MEETINGS: RivalMeeting[] = [
           detail: 'He has seen you too. Whoever is round first has the naming of it.',
           resolve: (gg) => {
             move(gg, -0.2, `Raced ${gg.rival.name} for the next headland rather than speak him.`);
-            gg.rival.frontierLat += 1.2;
-            return 'Everything she will carry and some she will not. You are round the point by '
-              + 'dusk and he is four miles astern, and there is a man on his rail watching you the '
-              + 'whole way with a glass.';
+            const target = gg.startRivalRace();
+            return `Whoever is first a degree and a half to the south — about ${target} — has the `
+              + 'naming of whatever is there. Everything she will carry and some she will not; he '
+              + 'has seen you, and he is doing the same.';
           },
         },
         {
@@ -83,7 +87,8 @@ export const MEETINGS: RivalMeeting[] = [
           },
         },
       ],
-    }),
+      };
+    },
   },
 
   {
