@@ -13,7 +13,7 @@ import {
   capacityOf, regardWordF, stockTons, stockValue, troubleWord,
 } from '../progression/feitoria';
 
-type Tab = 'orders' | 'missions' | 'charters' | 'reports' | 'stations' | 'wardroom' | 'rival';
+type Tab = 'missions' | 'reports' | 'stations' | 'wardroom' | 'rival';
 
 /**
  * The captain's orders.
@@ -30,7 +30,7 @@ type Tab = 'orders' | 'missions' | 'charters' | 'reports' | 'stations' | 'wardro
 export class OrdersView {
   root = el('div', { class: 'screen' });
   private body = el('div', { class: 'screen-body' });
-  private tab: Tab = 'orders';
+  private tab: Tab = 'missions';
   private game: Game | null = null;
 
   constructor(private onClose: () => void, private onLayCourse: () => void) {
@@ -58,22 +58,21 @@ export class OrdersView {
     clear(this.body);
 
     const counts: Record<Tab, number> = {
-      orders: g.crown.patent ? g.crown.patent.objectives.filter((o) => !o.complete).length : 0,
-      missions: g.quests.filter((q) => !q.outcome).length,
-      charters: g.activeVentures.length,
+      missions: (g.crown.patent ? g.crown.patent.objectives.filter((o) => !o.complete).length : 0)
+        + g.quests.filter((q) => !q.outcome).length + g.activeVentures.length,
       reports: g.openLeads.length,
       stations: g.liveFactories.length,
       wardroom: g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length,
       rival: 0,
     };
     const names: Record<Tab, string> = {
-      orders: 'Commission', missions: 'Missions', charters: 'Charters', reports: 'Hearsay',
+      missions: 'Missions', reports: 'Hearsay',
       stations: 'Factories', wardroom: 'Wardroom', rival: 'Rival',
     };
 
     const tabs = (Object.keys(names) as Tab[])
       .filter((t) => t !== 'stations' || g.liveFactories.length > 0);
-    if (this.tab === 'stations' && g.liveFactories.length === 0) this.tab = 'orders';
+    if (this.tab === 'stations' && g.liveFactories.length === 0) this.tab = 'missions';
 
     this.body.append(el('div', { class: 'tabs' },
       ...tabs.map((t) => el('button', {
@@ -82,13 +81,18 @@ export class OrdersView {
       }, counts[t] > 0 ? `${names[t]} (${counts[t]})` : names[t])),
     ));
 
-    if (this.tab === 'orders') {
+    if (this.tab === 'missions') {
+      // Everything the ship is bound to, on one page: the King's commission,
+      // the long stories, and the merchants' charters.
+      this.body.append(el('h2', { class: 'fit-head' }, 'The King\u2019s commission'));
       this.renderCommission(g);
       const pc = this.pilotCard(g);
       if (pc) this.body.append(pc);
+      this.body.append(el('h2', { class: 'fit-head' }, 'Stories'));
+      this.renderMissions(g);
+      this.body.append(el('h2', { class: 'fit-head' }, 'Charters'));
+      this.renderCharters(g);
     }
-    else if (this.tab === 'missions') this.renderMissions(g);
-    else if (this.tab === 'charters') this.renderCharters(g);
     else if (this.tab === 'reports') this.renderLeads(g);
     else if (this.tab === 'stations') this.renderStations(g);
     else if (this.tab === 'wardroom') this.renderWardroom(g);
