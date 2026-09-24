@@ -2465,3 +2465,5 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
 .chart-regard-row span { flex: 1 1 auto; }
 .chart-regard-row em { font-style: normal; color: var(--ink-soft); white-space: nowrap; }
 @media (max-width: 860px) { .chart-regard { top: 104px; left: 8px; right: 8px; width: auto; } }
+/* The chosen tab stays legible under the pointer. */
+.screen .tabs button.active:hover:not(:disabled) { background: rgba(42, 31, 20, .92); color: var(--cream); border-color: var(--ink); }

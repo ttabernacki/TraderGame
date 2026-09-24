@@ -142,7 +142,7 @@ export class PortView {
           inner.append(el('h2', { class: 'fit-head' }, title), h);
         };
         part('Stores', (h) => this.renderStores(h, g));
-        part('Hands', (h) => this.renderHands(h, g));
+        part('The company', (h) => this.renderHands(h, g));
         part('Shipwrights', (h) => this.renderYard(h, g));
         break;
       }
@@ -646,9 +646,9 @@ export class PortView {
     const c = g.casa;
     const bias = g.settlementBias;
     const pct = (k: number) => (k === 1 ? 'as reported' : `${k > 1 ? '+' : ''}${Math.round((k - 1) * 100)}%`);
-    left.append(card('Your backers',
+    left.append(card('The Casa da Mina',
       el('div', { class: 'backer' },
-        kv('The Casa da Mina \u2014 Aires Tinoco', regardWord(c.regard)),
+        kv('Aires Tinoco, contador', regardWord(c.regard)),
         el('div', { class: 'backer-terms' },
           c.pact ? `His arrangement: your private returns entered generously, for ${c.pactFee ?? 0} cruzados at every settlement. There is a paper.`
             : c.patron ? 'He has decided you are worth protecting, and works your account himself.'
@@ -658,13 +658,6 @@ export class PortView {
         el('div', { class: 'backer-terms' },
           `At settlement: coin ${pct(bias.gold)}, renown ${pct(bias.standing)}.`),
       ),
-      ...g.finance.byRegard().map((h) => el('div', { class: 'backer' },
-        kv(h.name, `${Math.round(g.finance.credit[h.id])} credit`),
-        el('div', { class: 'backer-terms' },
-          g.finance.owedTo(h.id) > 0
-            ? `${Math.round(g.finance.owedTo(h.id))} cruzados owed.`
-            : 'Nothing owed.'),
-      )),
       g.finance.shareOut > 0
         ? el('p', { style: { fontSize: '13px' } },
           `${Math.round(g.finance.shareOut * 100)}% of everything this voyage lands belongs to the sharers.`)
