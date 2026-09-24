@@ -2459,3 +2459,9 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
 .backer { padding: 6px 0 8px; border-bottom: 1px solid rgba(90, 74, 55, .14); }
 .backer:last-of-type { border-bottom: none; }
 .backer-terms { font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; }
+.chart-regard { position: absolute; top: calc(120px + var(--safe-t)); right: calc(14px + var(--safe-r)); width: 250px; max-width: calc(100% - 28px); background: rgba(255, 250, 235, .9); border: 1px solid rgba(90, 74, 55, .35); border-radius: 3px; padding: 9px 12px 10px; font-size: 12.5px; }
+.chart-regard-row { display: flex; align-items: baseline; gap: 7px; padding: 2px 0; line-height: 1.4; }
+.chart-regard-row i { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; align-self: center; }
+.chart-regard-row span { flex: 1 1 auto; }
+.chart-regard-row em { font-style: normal; color: var(--ink-soft); white-space: nowrap; }
+@media (max-width: 860px) { .chart-regard { top: 104px; left: 8px; right: 8px; width: auto; } }

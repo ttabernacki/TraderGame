@@ -1,6 +1,7 @@
 import { clamp, compassPoint, cosd, formatLat, formatLon, wrap180 } from '../core/math';
 import { LANDMASSES } from '../world/landmass';
 import { PORTS, portDef } from '../world/ports';
+import { people } from '../world/peoples';
 import type { Game } from '../game/state';
 import { append, button, clear, el } from './dom';
 import { AGREED_W } from '../navigation/charts';
@@ -64,6 +65,8 @@ export class ChartView {
   private showWinds = true;
   /** And the set of the water, which is off until he goes looking for it. */
   private showSet = false;
+  /** Each people's regard for you, drawn on their ports. */
+  private showRegard = false;
   private selectedPort: string | null = null;
   /**
    * The spot on the paper the pilot has his dividers on.
@@ -306,6 +309,8 @@ export class ChartView {
           ? this.chip('Set', this.showSet, () => { this.showSet = !this.showSet; },
             'The set of the water as your own book has it, for this month')
           : null,
+        this.chip('Regard', this.showRegard, () => { this.showRegard = !this.showRegard; },
+          'How each people you have met regards you, on their own coast'),
         this.chip('Centre', false, () => {
           if (g) this.centre = { ...g.nav.estimated };
         }, 'Bring the chart back to where she thinks she is'),
@@ -773,6 +778,7 @@ export class ChartView {
     this.drawChartedCoast(ctx, g);
     if (this.showTrack) this.drawTrack(ctx, g);
     this.drawPorts(ctx, g);
+    this.regardPanel(g);
     if (this.showPlaces) this.drawPlaces(ctx, g);
     this.drawLeads(ctx, g);
     this.drawPadroes(ctx, g);
@@ -1080,6 +1086,20 @@ export class ChartView {
       const selected = this.selectedPort === cp.id;
       const size = def.size === 'emporium' ? 5.5 : def.size === 'city' ? 4.5 : def.size === 'town' ? 3.5 : 2.5;
 
+      // Their regard for you, as a wash round the town: the diplomacy of a
+      // career, readable at a glance and on the coast where it happened.
+      if (this.showRegard && def.people !== 'portuguese' && rel.met) {
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, size + 9, 0, Math.PI * 2);
+        ctx.fillStyle = regardColour(rel.regard, 0.28);
+        ctx.fill();
+        ctx.lineWidth = rel.mayTrade ? 1.8 : 1;
+        ctx.setLineDash(rel.mayTrade ? [] : [3, 3]);
+        ctx.strokeStyle = regardColour(rel.regard, 0.85);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
       ctx.beginPath();
       ctx.arc(s.x, s.y, size, 0, Math.PI * 2);
       ctx.fillStyle = def.feitoria || rel.factory
@@ -1135,6 +1155,37 @@ export class ChartView {
       ctx.fillStyle = 'rgba(122, 74, 32, 0.9)';
       ctx.fillText(shortSource(l.source), s.x + r + 4, s.y + 3.5);
     }
+  }
+
+  /** The peoples you have met, and what each of them thinks of you. */
+  private regardPanel(g: Game): void {
+    const host = this.wrap.querySelector('.chart-regard') as HTMLElement | null;
+    if (!this.showRegard) { host?.remove(); return; }
+    const byPeople = new Map<string, { sum: number; n: number; trade: number; ports: number }>();
+    for (const def of PORTS) {
+      if (def.people === 'portuguese') continue;
+      const rel = g.relationsFor(def.id);
+      if (!rel.met) continue;
+      const e = byPeople.get(def.people) ?? { sum: 0, n: 0, trade: 0, ports: 0 };
+      e.sum += rel.regard; e.n++; e.ports++;
+      if (rel.mayTrade) e.trade++;
+      byPeople.set(def.people, e);
+    }
+    const panel = host ?? el('div', { class: 'chart-regard' });
+    clear(panel);
+    panel.append(el('div', { class: 'chart-voyage-title' }, 'Their regard for you'));
+    if (byPeople.size === 0) {
+      panel.append(el('div', { class: 'chart-regard-row' }, 'You have met nobody yet.'));
+    }
+    for (const [id, e] of [...byPeople.entries()].sort((a, b) => b[1].sum / b[1].n - a[1].sum / a[1].n)) {
+      const r = e.sum / e.n;
+      panel.append(el('div', { class: 'chart-regard-row' },
+        el('i', { style: { background: regardColour(r, 0.9) } }),
+        el('span', {}, people(id).name),
+        el('em', {}, `${regardWordOf(r)}${e.trade > 0 ? ` \u00b7 trade at ${e.trade} of ${e.ports}` : ''}`),
+      ));
+    }
+    if (!host) this.wrap.append(panel);
   }
 
   /** Pillars standing. The only mark on this chart that is not an opinion. */
@@ -1375,4 +1426,21 @@ function buildLegend(): HTMLElement {
 function shortSource(source: string): string {
   const at = source.lastIndexOf(' at ');
   return at > 0 ? source.slice(0, at) : source;
+}
+
+/** Hostile red through wary amber to friendly green. */
+function regardColour(r: number, a: number): string {
+  const t = Math.max(0, Math.min(1, (r + 1) / 2));
+  const lerp = (x: number, y: number, k: number) => Math.round(x + (y - x) * k);
+  const [c0, c1, c2] = [[168, 50, 40], [196, 125, 42], [77, 122, 62]];
+  const [from, to, k] = t < 0.5 ? [c0, c1, t * 2] : [c1, c2, (t - 0.5) * 2];
+  return `rgba(${lerp(from[0], to[0], k)}, ${lerp(from[1], to[1], k)}, ${lerp(from[2], to[2], k)}, ${a})`;
+}
+
+function regardWordOf(r: number): string {
+  if (r > 0.6) return 'Friends';
+  if (r > 0.25) return 'Well disposed';
+  if (r > -0.1) return 'Wary';
+  if (r > -0.45) return 'Unfriendly';
+  return 'Hostile';
 }
