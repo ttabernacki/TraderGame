@@ -389,7 +389,7 @@ export function strangerThinks(g: Game, s: Stranger, rangeNm: number): void {
 
   const mine = g.ship.hull;
   const hers = hullClass(s.hullId);
-  const outgunned = mine.tons > hers.tons * 1.6;
+  const outgunned = mine.tons > hers.tons * 1.6 || g.ship.effects.guns >= 6;
 
   switch (s.business) {
     case 'corsair':

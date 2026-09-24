@@ -48,7 +48,9 @@ export function prizeValue(g: Game, s: Stranger): number {
  * killed at all, and a ship that is barely stronger pays for it.
  */
 export function boardingOdds(g: Game, s: Stranger): number {
-  const mine = g.crew.count * (0.6 + g.crew.morale * 0.6) + g.ship.hull.tons * 0.06;
+  // Guns count for about four men apiece at the moment of boarding.
+  const mine = g.crew.count * (0.6 + g.crew.morale * 0.6) + g.ship.hull.tons * 0.06
+    + g.ship.effects.guns * 4;
   const hers = s.hands * (s.business === 'corsair' ? 1.35 : 0.9) + hullClass(s.hullId).tons * 0.06;
   return clamp(mine / (mine + hers), 0.05, 0.95);
 }

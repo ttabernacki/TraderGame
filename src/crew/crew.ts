@@ -193,6 +193,8 @@ export interface CrewEvent {
 export interface CrewUpdateContext {
   /** Simulated days elapsed this step. */
   days: number;
+  /** Multiplies how fast the scurvy comes on: the hen coops and the galley. */
+  galley?: number;
   ashore: boolean;
   /**
    * How well the place she is lying in can feed a ship's company, 0 to 1 — a
@@ -369,7 +371,9 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
     const over = crew.daysWithoutFresh - 34;
     const rateScurvy = d * (0.004 + over * 0.00115) * (1 - ctx.surgeonQuality * 0.18)
       // A ship stored on the surgeon's principle rather than the Casa's.
-      * (ctx.surgeonBook ? 0.5 : 1);
+      * (ctx.surgeonBook ? 0.5 : 1)
+      // Hens, a goat and cress in wet sacking. See ship/upgrades.
+      * (ctx.galley ?? 1);
     const before = crew.scurvy;
     crew.scurvy = clamp(crew.scurvy + rateScurvy, 0, 1);
     if (before < 0.12 && crew.scurvy >= 0.12) {

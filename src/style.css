@@ -2496,3 +2496,22 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
 .mission-where { font-size: 12px; font-style: italic; color: #6a3a78; margin-top: 3px; }
 .mission-log { margin: 6px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.55; color: var(--ink-soft); }
 .mission-log li { margin-bottom: 3px; }
+
+/* The yard: fitting places and what each fitting does, for good and ill. */
+.fit-slots { display: flex; gap: 5px; margin: 2px 0 9px; }
+.fit-slots i { width: 22px; height: 10px; border: 1px solid rgba(90, 74, 55, .45); border-radius: 2px; }
+.fit-slots i.on { background: #8a6c2e; border-color: #6a5220; }
+.fit-cat { margin-bottom: 10px; }
+.fit-cat-head { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-faint); margin: 8px 0 4px; }
+.fit-row { padding: 8px 0 9px; border-bottom: 1px solid rgba(90, 74, 55, .14); }
+.fit-row:last-child { border-bottom: none; }
+.fit-row.fitted { border-left: 3px solid #8a6c2e; padding-left: 10px; margin-bottom: 4px; }
+.fit-title { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.fit-title b { font-weight: 400; font-size: 15px; }
+.fit-title span { font-size: 12px; color: var(--ink-soft); font-style: italic; margin-right: auto; }
+.fit-effects { display: flex; flex-wrap: wrap; gap: 4px 6px; margin-top: 5px; }
+.fit-good, .fit-bad { font-size: 11.5px; padding: 1px 7px; border-radius: 9px; border: 1px solid; }
+.fit-good { color: #3f6a31; border-color: rgba(77, 122, 62, .45); background: rgba(77, 122, 62, .08); }
+.fit-bad { color: #8a3a2a; border-color: rgba(168, 50, 40, .4); background: rgba(168, 50, 40, .06); }
+.fit-blurb { font-size: 12.5px; color: var(--ink-soft); margin-top: 5px; line-height: 1.5; }
+.fit-locked { font-size: 12px; font-style: italic; color: var(--ink-faint); margin-top: 8px; }

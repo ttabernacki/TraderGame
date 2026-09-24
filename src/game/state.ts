@@ -2737,6 +2737,7 @@ export class Game {
       rng: this.rng,
       // The surgeon's book, if he ever finished it.
       surgeonBook: this.has('theRemedy'),
+      galley: this.ship.effects.scurvy,
       // A chaplain who has made his peace with a larger world is worth more to
       // the men than one who is certain about everything.
       wardroomMoraleBonus: this.has('cureOfSouls') ? 0.004 : 0,
@@ -4562,7 +4563,9 @@ export class Game {
    * fixes by sailing, "not today" is a thing he fixes by waiting.
    */
   padraoLandable(): { ok: boolean; reason: string } {
-    if (this.weatherNow.waveHeight > 2.2 || this.weatherNow.wind.speed > 22) {
+    // A longboat lives in surf that would swamp the skiff.
+    const boat = this.ship.effects.boat;
+    if (this.weatherNow.waveHeight > (boat ? 3.2 : 2.2) || this.weatherNow.wind.speed > (boat ? 28 : 22)) {
       return { ok: false, reason: 'No boat could land on that beach today.' };
     }
     if (this.sounding.shoreDistNm > 6) {
@@ -4605,7 +4608,8 @@ export class Game {
     const off = Math.max(0, this.sounding.shoreDistNm - 3);
     const hours = 9 + (off / Math.max(this.physics.speedKnots, 2.5));
     const workable = (): { ok: boolean; reason: string } => {
-      if (this.weatherNow.waveHeight > 2.2 || this.weatherNow.wind.speed > 22) {
+      const boat = this.ship.effects.boat;
+      if (this.weatherNow.waveHeight > (boat ? 3.2 : 2.2) || this.weatherNow.wind.speed > (boat ? 28 : 22)) {
         return { ok: false, reason: 'No boat could land on that beach today.' };
       }
       if (ableHands(this.crew) < 10) {
@@ -4772,9 +4776,18 @@ export class Game {
             shiftAll(g.hands, -0.08);
             // Lying over on the ground works her, and how much depends on
             // what state she was already in.
-            const hurt = g.rng.range(0.04, 0.13) * (2 - g.ship.condition.hull);
+            // Without a proper longboat the kedge goes out in the skiff, not
+            // far enough, and she lies on the ground longer working herself.
+            const boat = g.ship.effects.boat;
+            const hurt = g.rng.range(0.04, 0.13) * (2 - g.ship.condition.hull) * (boat ? 0.6 : 1.4);
             g.ship.damage(hurt);
             (g as any).floatHerOff();
+            if (!boat) {
+              return 'The kedge went out in the skiff, which is the wrong boat for it, and not half '
+                + 'as far as it should have. She lay over on the ebb and ground herself against '
+                + 'the bottom for hours before the flood floated her. The carpenter wants a word '
+                + 'about a proper longboat.';
+            }
             return `A kedge laid out astern in the boat and the company at the capstan every `
               + `hour of the ebb for nothing. She lay over about fifteen degrees at low water `
               + `with the sea breaking under her counter and everybody aboard listening to her, `
