@@ -2447,3 +2447,12 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
 .event-eyebrow { font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: #8fa9bd; margin-bottom: 4px; }
 .event-card.council .event-text { font-size: 15px; }
 .event-card.council .event-counsel { padding: 11px 13px; background: rgba(143, 169, 189, .08); border-radius: 3px; margin-top: -6px; }
+
+.fit-head { font-size: 13px; font-weight: 400; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); margin: 22px 0 10px; padding-bottom: 5px; border-bottom: 1px solid rgba(90, 74, 55, .28); }
+.fit-head:first-child { margin-top: 0; }
+.port-character { border: 1px solid rgba(90, 74, 55, .3); border-top: 3px solid #8a3a2a; background: rgba(255, 250, 238, .55); border-radius: 3px; padding: 12px 15px 13px; margin-bottom: 13px; }
+.port-character-eyebrow { font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-faint); }
+.port-character h2 { margin: 3px 0 8px; font-size: 20px; font-weight: 400; }
+.port-character p { margin: 0 0 7px; font-size: 14px; line-height: 1.6; }
+.port-character-danger { color: #8a3a2a; font-style: italic; }
+.port-character-quest { margin-top: 9px; padding-top: 9px; border-top: 1px dashed rgba(90, 74, 55, .35); }

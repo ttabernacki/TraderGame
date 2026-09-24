@@ -1,3 +1,4 @@
+import { characterOf } from '../world/portCharacter';
 import { clamp } from '../core/math';
 import { good, unitOf } from '../economy/goods';
 import { Markets, provisioningCost, type Listing } from '../economy/market';
@@ -27,7 +28,7 @@ import {
 import type { Game } from '../game/state';
 import { append, button, card, clear, el, kv, plural } from './dom';
 
-type Tab = 'town' | 'market' | 'freight' | 'money' | 'station' | 'stores' | 'yard' | 'hands';
+type Tab = 'town' | 'market' | 'freight' | 'money' | 'station' | 'fit';
 
 /** Everything that happens at anchor: the market, the yard, and the wardroom. */
 export class PortView {
@@ -105,9 +106,9 @@ export class PortView {
       ['market', 'Market'],
       ['freight', g.ventureOffers.length > 0 ? `Freight (${g.ventureOffers.length})` : 'Freight'],
       ['money', g.finance.owedTo() > 0 ? `Counting house (${g.finance.owedTo().toFixed(0)})` : 'Counting house'],
-      ['stores', 'Stores'],
-      ['yard', 'Shipwrights'],
-      ['hands', 'Hands'],
+      // Stores, the yard and the hiring were three tabs for one errand: getting
+      // her ready for sea. They are one page now, in the order it is done.
+      ['fit', 'Fitting out'],
     ];
     // Only where there is one or where there could be: the tab is not a
     // permanent reminder of an article most captains never buy.
@@ -134,9 +135,17 @@ export class PortView {
       case 'freight': this.renderFreight(inner, g, rel); break;
       case 'money': this.renderMoney(inner, g); break;
       case 'station': this.renderStation(inner, g); break;
-      case 'stores': this.renderStores(inner, g); break;
-      case 'yard': this.renderYard(inner, g); break;
-      case 'hands': this.renderHands(inner, g); break;
+      case 'fit': {
+        const part = (title: string, fill: (h: HTMLElement) => void) => {
+          const h = el('div', {});
+          fill(h);
+          inner.append(el('h2', { class: 'fit-head' }, title), h);
+        };
+        part('Stores', (h) => this.renderStores(h, g));
+        part('Hands', (h) => this.renderHands(h, g));
+        part('Shipwrights', (h) => this.renderYard(h, g));
+        break;
+      }
     }
     this.body.append(inner);
   }
@@ -164,6 +173,29 @@ export class PortView {
     }
 
     left.append(card('', el('p', { style: { fontSize: '15px', lineHeight: '1.7' } }, def.blurb)));
+
+    // What makes this place itself. See world/portCharacter.
+    const ch = characterOf(def.id);
+    if (ch) {
+      const quest = g.questHere();
+      left.append(el('div', { class: 'port-character' },
+        el('div', { class: 'port-character-eyebrow' }, 'Known for'),
+        el('h2', {}, ch.signature),
+        ch.custom ? el('p', {}, ch.custom) : null,
+        ch.danger ? el('p', { class: 'port-character-danger' }, ch.danger) : null,
+        quest ? el('div', { class: 'port-character-quest' },
+          el('p', {}, quest.ask),
+          el('div', { class: 'row' },
+            button(`Give ${quest.qty} ${good(quest.good).english.toLowerCase()}`, () => {
+              this.notice = { text: g.doQuestHere() };
+              this.render();
+            }, { disabled: g.ship.quantityOf(quest.good) < quest.qty }),
+            el('span', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', alignSelf: 'center' } },
+              `${g.ship.quantityOf(quest.good).toFixed(0)} aboard`),
+          ),
+        ) : null,
+      ));
+    }
 
     // Voyages are lost in port, a fortnight before anybody notices. Every one
     // of these numbers already existed; every one was on a different screen.

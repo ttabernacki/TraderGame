@@ -1,5 +1,6 @@
 import { Clock } from '../core/clock';
 import { counselFor, type Counsel } from './counsel';
+import { characterOf } from '../world/portCharacter';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
 import { itczLatitude } from '../world/wind';
 import {
@@ -199,6 +200,8 @@ export class Game {
   relations = new Map<string, Relations>();
   /** Ports the player has actually entered. */
   visitedPorts = new Set<string>();
+  /** Errands done for towns. See world/portCharacter. */
+  portQuestsDone = new Set<string>();
 
   /** Rumours picked up in port, and the ones already run down. */
   leads: Lead[] = [];
@@ -6403,6 +6406,17 @@ export class Game {
 
     this.writeUpPort(def, first);
 
+    // What this place does to a ship that anchors in it.
+    const ch = characterOf(def.id);
+    if (ch) {
+      const said = ch.arrive?.(this, first) ?? null;
+      if (said) {
+        this.logEvent('landfall', said, true);
+        this.pushAlert(said.split('. ')[0] + '.', 'note');
+      }
+      if (first && ch.custom) this.pushAlert(`${def.name}: ${ch.signature}.`, 'note');
+    }
+
     if (first) {
       const value = def.discovery;
       if (value > 0) {
@@ -6901,6 +6915,34 @@ export class Game {
     this.pushAlert(`${name} added to the passage \u2014 ${this.route.length} marks.`, 'note');
   }
 
+  /** The errand this town has for you, if there is one still to do. */
+  questHere(): NonNullable<ReturnType<typeof characterOf>>['quest'] | null {
+    const def = this.portHere;
+    const q = def ? characterOf(def.id)?.quest : undefined;
+    if (!q || this.portQuestsDone.has(q.id)) return null;
+    return q;
+  }
+
+  /** Hand over what the town asked for. Returns what happened, or why not. */
+  doQuestHere(): string {
+    const def = this.portHere;
+    const q = this.questHere();
+    if (!def || !q) return 'There is nothing asked here.';
+    if (this.ship.quantityOf(q.good) < q.qty) return 'You do not have enough of it aboard.';
+    this.ship.removeCargo(q.good, q.qty);
+    this.portQuestsDone.add(q.id);
+    this.crown.gold += q.gold;
+    this.crown.standing += q.renown;
+    this.crown.lifetimeStanding += q.renown;
+    if (q.regard) this.shiftPeopleRegard(def.people, q.regard);
+    if (q.reveals) {
+      const r = portDef(q.reveals);
+      if (r) this.chart.chartPort(r, anchorageOf(r), anchorageOf(r), this.clock.t, false, 2, 4);
+    }
+    this.logEvent('trade', q.done, true);
+    return q.done;
+  }
+
   /**
    * Put a mark in front of the one she is steering for, so she goes there
    * first and then carries on with the passage as laid.
@@ -7333,6 +7375,7 @@ export class Game {
       gale: this.gale,
       galeRecord: this.galeRecord,
       route: this.route,
+      portQuestsDone: [...this.portQuestsDone],
       passageRecord: this.passageRecord,
       daysSincePort: this.daysSincePort,
       distanceRun: this.distanceRun,
@@ -7442,6 +7485,7 @@ export class Game {
     // Saves from before a passage could have more than one mark carry a single
     // destination; it becomes a route of one.
     g.route = d.route ?? (d.destination ? [d.destination] : []);
+    g.portQuestsDone = new Set<string>(d.portQuestsDone ?? []);
     g.passageRecord = { ...newPassageRecord(), ...(d.passageRecord ?? {}) };
     g.daysSincePort = d.daysSincePort ?? 0;
     g.distanceRun = d.distanceRun ?? 0;

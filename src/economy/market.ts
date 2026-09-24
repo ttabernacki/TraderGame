@@ -1,3 +1,4 @@
+import { priceMod } from '../world/portCharacter';
 import { clamp, lerp } from '../core/math';
 import { fbm1 } from '../core/rng';
 import { GOODS, good, type Good } from './goods';
@@ -271,6 +272,10 @@ export class Markets {
         ? mid * (1 - spread)
         : g.lisbon * this.middlemanFactor(def, abundance) * (1 + season) / (1 + glut * 1.5);
 
+      // What this town does to the price: its customs, its monopoly, the one
+      // thing it will pay anything for. See world/portCharacter.
+      const mod = priceMod(portId, g.id);
+
       out.push({
         goodId: g.id,
         stock: Math.floor(stock),
@@ -281,8 +286,8 @@ export class Markets {
         // prevent. The price at full glut is a fraction of the good's worth, so
         // this is a way to cut a loss and never a way to make money.
         appetite: Math.max(1, Math.floor(this.appetiteFor(def, g, hunger, abundance) * (1 - glut))),
-        ask: Math.max(0.4, mid * (1 + spread)),
-        bid: Math.max(0.2, bid),
+        ask: Math.max(0.4, mid * (1 + spread) * mod.ask),
+        bid: Math.max(0.2, bid * mod.bid),
         local: abundance > 0,
         wanted: hunger > 0,
       });
