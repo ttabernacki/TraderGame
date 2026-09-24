@@ -130,7 +130,7 @@ function portMark(id: string, label: string, nm = 25): QuestMarker {
  * Fill the book with a region's winds and currents, month by month — what a
  * pilot who had sailed it for years would have written down.
  */
-function writeTheSea(g: Game, lat0: number, lat1: number, lon0: number, lon1: number): number {
+export function writeTheSea(g: Game, lat0: number, lat1: number, lon0: number, lon1: number): number {
   let squares = 0;
   for (let lat = lat0; lat < lat1; lat += 5) {
     for (let lon = lon0; lon < lon1; lon += 5) {

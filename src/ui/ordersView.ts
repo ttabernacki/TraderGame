@@ -1,3 +1,4 @@
+import { ACTS, HISTORY, roman } from '../progression/chronicle';
 import { QUESTS, goalOf, markerOf } from '../progression/quests';
 import { NM, compassPoint, formatLat, formatLon, haversine } from '../core/math';
 import { OFFICER_ROLES } from '../crew/crew';
@@ -13,7 +14,7 @@ import {
   capacityOf, regardWordF, stockTons, stockValue, troubleWord,
 } from '../progression/feitoria';
 
-type Tab = 'missions' | 'reports' | 'stations' | 'wardroom' | 'rival';
+type Tab = 'chronicle' | 'missions' | 'reports' | 'stations' | 'wardroom' | 'rival';
 
 /**
  * The captain's orders.
@@ -30,7 +31,7 @@ type Tab = 'missions' | 'reports' | 'stations' | 'wardroom' | 'rival';
 export class OrdersView {
   root = el('div', { class: 'screen' });
   private body = el('div', { class: 'screen-body' });
-  private tab: Tab = 'missions';
+  private tab: Tab = 'chronicle';
   private game: Game | null = null;
 
   constructor(private onClose: () => void, private onLayCourse: () => void) {
@@ -58,6 +59,7 @@ export class OrdersView {
     clear(this.body);
 
     const counts: Record<Tab, number> = {
+      chronicle: 0,
       missions: (g.crown.patent ? g.crown.patent.objectives.filter((o) => !o.complete).length : 0)
         + g.quests.filter((q) => !q.outcome).length + g.activeVentures.length,
       reports: g.openLeads.length,
@@ -66,7 +68,7 @@ export class OrdersView {
       rival: 0,
     };
     const names: Record<Tab, string> = {
-      missions: 'Missions', reports: 'Hearsay',
+      chronicle: 'Chronicle', missions: 'Missions', reports: 'Hearsay',
       stations: 'Factories', wardroom: 'Wardroom', rival: 'Rival',
     };
 
@@ -81,7 +83,8 @@ export class OrdersView {
       }, counts[t] > 0 ? `${names[t]} (${counts[t]})` : names[t])),
     ));
 
-    if (this.tab === 'missions') {
+    if (this.tab === 'chronicle') this.renderChronicle(g);
+    else if (this.tab === 'missions') {
       // Everything the ship is bound to, on one page: the King's commission,
       // the long stories, and the merchants' charters.
       this.body.append(el('h2', { class: 'fit-head' }, 'The King\u2019s commission'));
@@ -380,6 +383,41 @@ export class OrdersView {
         + 'a time across a year at what a resident pays, and it is stacked on the floor waiting '
         + 'when you come. That is the whole of it, and the price of it is a man of yours living '
         + 'on that beach.'),
+    ));
+  }
+
+  /** The career as five acts, and the history it is happening inside. */
+  private renderChronicle(g: Game): void {
+    const c = g.chronicle;
+    this.body.append(el('div', { class: 'acts' },
+      ...ACTS.map((a) => {
+        const state = a.n < c.act ? 'past' : a.n === c.act ? 'now' : 'future';
+        return el('div', { class: `act ${state}` },
+          el('div', { class: 'act-num' }, `Act ${roman(a.n)}`),
+          el('div', { class: 'act-title' }, state === 'future' ? '\u2026' : a.english),
+          el('div', { class: 'act-sub' }, state === 'future' ? '' : `${a.title} \u00b7 ${a.years}`),
+          state === 'now'
+            ? el('div', { class: 'act-goal' },
+              c.goalMet ? 'Done. Carry the news to the King in Lisbon.' : a.goal)
+            : null,
+          state === 'past' ? el('div', { class: 'act-changes' }, a.changes) : null,
+        );
+      }),
+    ));
+    const d = g.clock.date;
+    this.body.append(el('h2', { class: 'fit-head' }, `The years \u2014 ${d.year}`));
+    this.body.append(el('ol', { class: 'history' },
+      ...HISTORY.map((h) => {
+        const past = c.history[h.id] !== undefined;
+        const due = !past && (d.year > h.year || (d.year === h.year && d.month >= h.month));
+        return el('li', { class: past ? 'past' : due ? 'due' : 'future' },
+          el('span', { class: 'history-year' }, String(h.year)),
+          el('span', { class: 'history-text' },
+            past ? h.summary(c)
+              : due ? `${h.title} \u2014 ${h.court ? 'the court is waiting for you in Lisbon.' : 'news is waiting in port.'}`
+                : '\u2026'),
+        );
+      }),
     ));
   }
 

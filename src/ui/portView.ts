@@ -59,6 +59,9 @@ export class PortView {
 
   open(g: Game): void {
     this.game = g;
+    // The story waits for the port screen: the King's summons at the start of
+    // a career, and whatever is due on arrival.
+    g.checkStory();
     this.tab = 'town';
     this.notice = null;
     this.quantities.clear();
@@ -1201,7 +1204,7 @@ export class PortView {
     ));
 
     // A larger ship, once the Crown thinks you are worth one.
-    const hulls = g.crown.availableHulls().filter((h) => h.id !== g.ship.hullId);
+    const hulls = g.hullsForSale().filter((h) => h.id !== g.ship.hullId);
     if (def.id === 'lisboa' && hulls.length > 0) {
       const tradeIn = g.tradeInValue();
       const tons = g.ship.cargoTons;

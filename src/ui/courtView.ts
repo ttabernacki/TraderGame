@@ -20,8 +20,11 @@ export class CourtView {
   open(g: Game): void {
     this.game = g;
     this.settlement = null;
+    // The King's business with the career: the act and the history. See
+    // progression/chronicle.
+    g.checkStory();
     g.crown.syncCargoObjectives((id) => g.ship.quantityOf(id));
-    this.offers = g.crown.patent ? [] : g.crown.offers(g.clock.date.year);
+    this.offers = g.crown.patent ? [] : g.commissionOffers();
     // The Casa has its own business with him, and it is transacted here.
     g.checkCasa();
     this.render();
@@ -166,7 +169,7 @@ export class CourtView {
 
           g.logEvent('crown',
             `Reported at court. ${s.gold} cruzados and ${s.standing} renown. ${g.crown.title.name}.`, true);
-          this.offers = g.crown.patent ? [] : g.crown.offers(g.clock.date.year);
+          this.offers = g.crown.patent ? [] : g.commissionOffers();
           this.render();
         }, { primary: true }),
       ));

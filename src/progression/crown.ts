@@ -475,7 +475,7 @@ export class Crown {
   }
 
   /** Patents the Crown will consider issuing right now. */
-  offers(year: number): Patent[] {
+  offers(year: number, allowed: (title: string) => boolean = () => true): Patent[] {
     const monarch = monarchAt(year);
     return PATENT_TEMPLATES
       .filter((t) => this.lifetimeStanding >= t.minStanding)
@@ -501,6 +501,8 @@ export class Crown {
       // looked at.
       .map((t) => t.build(this.rng, year))
       .filter((body) => !body.final || !this.completedPatents.includes(body.title))
+      // Commissions belong to an act of the career. See progression/chronicle.
+      .filter((body) => allowed(body.title))
       .slice(-3)
       .map((body) => {
         return {

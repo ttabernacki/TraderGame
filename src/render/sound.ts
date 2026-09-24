@@ -200,12 +200,12 @@ export class Sound {
    * A discovery: a slow rising figure on a low bell and a held drone under it,
    * so the moment has its own sound and is not confused with the watch bell.
    */
-  discovery(kind: 'sighted' | 'named'): void {
+  discovery(kind: 'sighted' | 'named' | 'act'): void {
     const ctx = this.ctx;
     if (!ctx || !this.master || this.muted) return;
     const t0 = ctx.currentTime + 0.05;
-    const base = kind === 'named' ? 196 : 220;
-    const steps = kind === 'named' ? [1, 1.26, 1.5, 2] : [1, 1.5, 1.34];
+    const base = kind === 'sighted' ? 220 : kind === 'act' ? 147 : 196;
+    const steps = kind === 'sighted' ? [1, 1.5, 1.34] : kind === 'act' ? [1, 1.5, 2, 2.52, 3] : [1, 1.26, 1.5, 2];
     steps.forEach((m, i) => this.ding(t0 + i * 0.42, base * m * 2, 0.11));
     // The drone: two detuned saws through a low filter, swelling and dying.
     const g = ctx.createGain();

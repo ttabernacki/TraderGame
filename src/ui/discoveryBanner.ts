@@ -13,7 +13,7 @@ export class DiscoveryBanner {
   root = el('div', { class: 'discovery', 'aria-live': 'polite' });
   private timer = 0;
 
-  show(cue: { kind: 'sighted' | 'named'; eyebrow: string; title: string; sub: string; line: string }): void {
+  show(cue: { kind: 'sighted' | 'named' | 'act'; eyebrow: string; title: string; sub: string; line: string }): void {
     window.clearTimeout(this.timer);
     this.root.className = `discovery ${cue.kind}`;
     this.root.replaceChildren(
@@ -28,6 +28,6 @@ export class DiscoveryBanner {
     void this.root.offsetWidth;
     this.root.classList.add('on');
     this.timer = window.setTimeout(() => this.root.classList.remove('on'),
-      cue.kind === 'named' ? 7500 : 6000);
+      cue.kind === 'sighted' ? 6000 : 8500);
   }
 }

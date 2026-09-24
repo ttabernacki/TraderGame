@@ -2,6 +2,10 @@ import { Clock } from '../core/clock';
 import { counselFor, type Counsel } from './counsel';
 import { characterOf } from '../world/portCharacter';
 import {
+  chronicleAnswered, chronicleDue, chronicleFromProgress, hullAllowed, newChronicle, patentAllowed,
+  type ChronicleState,
+} from '../progression/chronicle';
+import {
   QUESTS, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
 } from '../progression/quests';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
@@ -195,6 +199,50 @@ export class Game {
   relations = new Map<string, Relations>();
   /** Ports the player has actually entered. */
   visitedPorts = new Set<string>();
+  /** The career as five acts, and the history around it. See progression/chronicle. */
+  chronicle: ChronicleState = newChronicle();
+
+  /** The story beats due now: the chronicle first, then the quest lines. */
+  checkStory(): void {
+    const c = this.chronicle;
+    // A scene put and since lost is put again.
+    c.pending = c.pending.filter((id) => this.pendingEvent?.id === `chronicle:${id}`
+      || this.pendingScenes.some((x) => x.id === `chronicle:${id}`));
+    const s = chronicleDue(this, c);
+    if (s) {
+      this.easeTheClock(1);
+      if (!this.pendingEvent) this.pendingEvent = s;
+      else this.pendingScenes.push(s);
+      return;
+    }
+    this.checkQuests();
+  }
+
+  /** Commissions the King will offer, in this act of the career. */
+  commissionOffers() {
+    return this.crown.offers(this.clock.date.year, (title) => patentAllowed(this.chronicle.act, title));
+  }
+
+  /** Hulls the yards will build, in this act. */
+  hullsForSale() {
+    return this.crown.availableHulls().filter((h) => hullAllowed(this.chronicle.act, h.id));
+  }
+
+  /** A rumour pointing at a real place, told by somebody in the story. */
+  addLead(portId: string, text: string, source: string, errorNm: number, value: number): void {
+    if (this.leads.some((l) => l.targetPort === portId) || this.chart.ports.has(portId)) return;
+    const at = anchorageOf(portDef(portId));
+    const off = errorNm * 0.6;
+    const brg = this.rng.range(0, Math.PI * 2);
+    this.leads.push({
+      id: `l${this.nextLeadId++}`, kind: 'port', text, source,
+      lat: at.lat + (off * Math.cos(brg)) / 60,
+      lon: at.lon + (off * Math.sin(brg)) / 60 / Math.max(Math.cos((at.lat * Math.PI) / 180), 0.2),
+      errorNm, targetPort: portId, value, heard: this.clock.t, followed: false, false: false,
+    });
+    this.logEvent('note', `${text} (${source})`, true);
+  }
+
   /** The long stories. See progression/quests. */
   quests: QuestState[] = [];
   private lastQuestCheck = -1e9;
@@ -3113,7 +3161,7 @@ export class Game {
     // The long stories, when a beat of one happens out here.
     if (this.clock.t - this.lastQuestCheck > 1800 && !this.dockedAt && !this.pendingEvent) {
       this.lastQuestCheck = this.clock.t;
-      this.checkQuests();
+      this.checkStory();
     }
 
     // Ports coming into view.
@@ -4689,6 +4737,7 @@ export class Game {
     this.pendingEvent = null;
     if (!choice) return;
     const outcome = choice.resolve(this);
+    if (event.id.startsWith('chronicle:')) chronicleAnswered(this.chronicle, event.id);
     this.logEvent(event.severity === 'note' ? 'note' : 'peril', outcome, true);
     this.pushAlert(outcome, event.severity);
     this.refreshEnvironment();
@@ -4696,9 +4745,9 @@ export class Game {
     // beat waiting behind this one is brought forward, and the next beat of
     // the same story — if it happens here too — is put straight after.
     if (this.dockedAt && !this.pendingEvent) {
-      const i = this.pendingScenes.findIndex((x) => x.id.startsWith('quest:'));
+      const i = this.pendingScenes.findIndex((x) => x.id.startsWith('quest:') || x.id.startsWith('chronicle:'));
       if (i >= 0) this.pendingEvent = this.pendingScenes.splice(i, 1)[0];
-      else this.checkQuests();
+      else this.checkStory();
     }
   }
 
@@ -6591,7 +6640,7 @@ export class Game {
       else this.pendingEvent = word;
     }
     this.mode = 'port';
-    this.checkQuests();
+    this.checkStory();
     if (this.questOffersHere().length > 0) {
       this.pushAlert('Somebody here wants a word with the captain — see the Town.', 'note');
     }
@@ -6698,12 +6747,17 @@ export class Game {
    * the interface, which puts it up across the sea and rings for it.
    */
   discoveryCue: {
-    id: number; kind: 'sighted' | 'named';
+    id: number; kind: 'sighted' | 'named' | 'act';
     eyebrow: string; title: string; sub: string; line: string;
   } | null = null;
   private discoveryCueId = 0;
 
-  private announceDiscovery(kind: 'sighted' | 'named', eyebrow: string, title: string, sub: string, line: string): void {
+  /** Put a great moment up across the screen. */
+  announce(kind: 'sighted' | 'named' | 'act', eyebrow: string, title: string, sub: string, line: string): void {
+    this.announceDiscovery(kind, eyebrow, title, sub, line);
+  }
+
+  private announceDiscovery(kind: 'sighted' | 'named' | 'act', eyebrow: string, title: string, sub: string, line: string): void {
     this.discoveryCue = { id: ++this.discoveryCueId, kind, eyebrow, title, sub, line };
   }
   private lookCueId = 0;
@@ -7517,6 +7571,7 @@ export class Game {
       gale: this.gale,
       galeRecord: this.galeRecord,
       route: this.route,
+      chronicle: this.chronicle,
       quests: this.quests,
       soundedGround: this.soundedGround,
       portQuestsDone: [...this.portQuestsDone],
@@ -7627,6 +7682,7 @@ export class Game {
     g.portQuestsDone = new Set<string>(d.portQuestsDone ?? []);
     g.soundedGround = d.soundedGround ?? [];
     g.quests = d.quests ?? [];
+    g.chronicle = d.chronicle ?? chronicleFromProgress(g);
     refreshQuestPrices(g);
     g.passageRecord = { ...newPassageRecord(), ...(d.passageRecord ?? {}) };
     g.daysSincePort = d.daysSincePort ?? 0;
