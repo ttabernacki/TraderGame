@@ -1,4 +1,4 @@
-import { NM, clamp, haversine } from '../core/math';
+import { NM, haversine } from '../core/math';
 import { isLand } from '../world/landmass';
 import { PORTS, anchorageOf, type PortDef } from '../world/ports';
 import type { SeaEvent } from './seaEvents';
@@ -276,10 +276,4 @@ export function passageQuestion(g: Game, rec: PassageRecord): SeaEvent | null {
     if (s) { rec.capeT = t; return s; }
   }
   return null;
-}
-
-/** Used by counsel: how short is the water, as a fraction of what is needed. */
-export function waterShortfall(e: SeaEvent): number {
-  const f = e.facts ?? {};
-  return clamp((f.have ?? 0) / Math.max(f.need ?? 1, 1), 0, 3);
 }

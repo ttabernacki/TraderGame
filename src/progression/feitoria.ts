@@ -359,14 +359,6 @@ export function runFactory(
   return news;
 }
 
-/** How the books read, in one line. */
-export function factoryLine(f: Feitoria, def: PortDef): string {
-  if (f.lost) return `${def.name} — gone. ${f.lostWhy ?? ''}`.trim();
-  const tons = stockTons(f);
-  return `${def.name} — ${f.factor}, ${f.garrison} men, ${tons.toFixed(1)} tons in the shed, `
-    + `${Math.round(f.chest)} cruzados in the chest.`;
-}
-
 export function troubleWord(t: number): string {
   if (t >= 0.8) return 'It is going to be burned';
   if (t >= 0.58) return 'Bad, and getting worse';

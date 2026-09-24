@@ -59,12 +59,6 @@ export interface SaveMeta {
   bytes: number;
 }
 
-export interface SaveRecord {
-  meta: SaveMeta;
-  /** The compressed, base64 payload. */
-  data: string;
-}
-
 // ---------------------------------------------------------------------------
 // The format
 // ---------------------------------------------------------------------------

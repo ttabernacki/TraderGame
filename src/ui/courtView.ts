@@ -1,6 +1,5 @@
 import { commissionPoints, monarchAt, nextTitle, type Patent } from '../progression/crown';
 import { rivalStanding } from '../progression/rival';
-import { CONSORTS_ENABLED } from '../game/consort';
 import type { Game } from '../game/state';
 import { append, button, card, clear, el, kv, meter } from './dom';
 
@@ -243,14 +242,6 @@ export class CourtView {
                   + 'down to the quay with the commission, and are stowed in the ground tier. The '
                   + 'Casa does not send a man to raise pillars and leave him to find his own '
                   + 'stone.', true);
-              }
-              // The commissions that matter used to come with a second ship,
-              // which is how the Crown actually did it. She is switched off —
-              // see CONSORTS_ENABLED in game/consort — because a second ship's
-              // worth of management on top of this one read as nagging rather
-              // than as pressure. The code is all still there.
-              if (CONSORTS_ENABLED && !g.consort && p.standingReward >= 55) {
-                g.attachConsort(p.standingReward >= 240 ? 'nau' : 'caravela-latina');
               }
               this.offers = [];
               this.render();

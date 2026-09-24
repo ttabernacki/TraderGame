@@ -273,11 +273,6 @@ function finish(g: Game): void {
   g.pushAlert('The pilot has nothing more to teach you.', 'note');
 }
 
-/** How far through the first voyage the captain is, for the panel. */
-export function tutorialProgress(g: Game): { at: number; of: number } {
-  return { at: Math.min(g.tutorial.at, TUTORIAL.length), of: TUTORIAL.length };
-}
-
 /** Distance and bearing to the thing the current step is about, where there is one. */
 export function tutorialMark(g: Game, step: TutorialStep): string | null {
   const port = step.id === 'funchal' || step.id === 'sugar' || step.id === 'water'

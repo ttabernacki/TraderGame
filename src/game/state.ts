@@ -65,14 +65,6 @@ import {
 } from '../progression/inland';
 import { polarAt } from '../ship/polars';
 import { newTutorial, stepTutorial, type TutorialState, type TutorialStep } from './tutorial';
-import {
-  CONSORTS_ENABLED, TEMPERS as CONSORT_TEMPERS, consortReport, makeConsort, orderedOffing, sailConsort,
-  signalRangeNm, type Consort, type Station,
-} from './consort';
-import {
-  alongsideScene, assignedScene, galeRisk, herDamageScene, losingHerScene, searchScene,
-  wilfulScene,
-} from './consortEvents';
 import { rollOfficerEvent } from './officerEvents';
 import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty';
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
@@ -1699,7 +1691,6 @@ export class Game {
     // world produced one sighting a month instead of one a week.
     this.checkForSails(simDt / 86400);
     this.updateEncounter(simDt);
-    this.updateConsort(simDt);
     this.rollIncidents(simDt);
     this.expireAlerts();
   }
@@ -5601,13 +5592,6 @@ export class Game {
 
   /** Sail her, and see what the two of you have made of each other. */
   // -------------------------------------------------------------------------
-  // The consort
-  // -------------------------------------------------------------------------
-
-  /** The second ship, when there is one. */
-  consort: Consort | null = null;
-
-  // -------------------------------------------------------------------------
   // The first voyage
   // -------------------------------------------------------------------------
 
@@ -5648,194 +5632,6 @@ export class Game {
   /** Whether there is anything left for him to say. */
   get pilotAvailable(): boolean {
     return !this.tutorial.finished;
-  }
-
-  /** What became of the ships that sailed with you, for the last page. */
-  consortRecord = { assigned: 0, lost: 0, burned: 0, detached: 0, broughtHome: 0 };
-
-  /** So each of her scenes is asked once rather than every watch. */
-  private consortToldT = { losing: -1e9, hurt: -1e9, wilful: -1e9, search: -1e9 };
-
-  /**
-   * Sail her, and decide whether she is anybody's problem this watch.
-   *
-   * Sub-stepped for the same reason the strange sail is: at two hours a frame
-   * two ships keeping a mile of station cover thirty miles between decisions,
-   * and a consort whose station is only evaluated twice a day does not keep
-   * station — she oscillates across the flagship's wake in ten-mile sweeps.
-   * Five minutes a step is about a cable, which is finer than the station she
-   * is holding.
-   */
-  private updateConsort(simDt: number): void {
-    const c = this.consort;
-    if (!c) return;
-
-    if (this.dockedAt || this.anchored) {
-      // In harbour she is in harbour too, and her people are ashore with yours.
-      if (c.station !== 'detached') c.pos = { ...this.ship.state.pos };
-    } else {
-      let remaining = simDt;
-      while (remaining > 0) {
-        const step = Math.min(300, remaining);
-        sailConsort(this, c, step);
-        remaining -= step;
-      }
-    }
-
-    const days = simDt / 86400;
-    c.water = Math.max(0, c.water - days);
-
-    // What the weather does to her. She is out in the same gale you are, and
-    // the difference between the two ships is her captain and her condition —
-    // which is precisely what the player was choosing about when he decided
-    // whether to stand by her.
-    const risk = galeRisk(c, this.weatherNow.waveHeight, this.weatherNow.wind.speed);
-    if (risk > 0 && this.rng.chance(risk * days * 0.9)) {
-      c.condition = clamp(c.condition - this.rng.range(0.04, 0.16), 0, 1);
-      // Losing sight of her is the weather doing it, not the damage. A fleet
-      // scatters in a gale at night with the visibility down to nothing; it
-      // does not scatter because one ship sprung a plank.
-      const scatters = this.weatherNow.visibility < 6
-        || this.weatherNow.wind.speed > 38
-        || this.clock.hour < 5.5 || this.clock.hour > 19;
-      if (scatters && this.rng.chance(0.22)) {
-        c.lost = true;
-        c.missingSince = this.clock.t;
-        this.logEvent('peril',
-          `Lost sight of ${c.name} in the weather. She was on the quarter at dusk.`, true);
-      }
-    }
-
-    if (c.station === 'detached') { this.checkDetached(c); return; }
-
-    const rep = consortReport(this, c);
-    const range = signalRangeNm(this);
-    const t = this.clock.t;
-    const once = (k: keyof typeof this.consortToldT, everyDays: number) => {
-      if (t - this.consortToldT[k] < everyDays * 86400) return false;
-      this.consortToldT[k] = t;
-      return true;
-    };
-
-    // She is hurt badly enough to be a decision rather than a readout.
-    if (c.condition < 0.45 && !c.lost && rep.distNm < range * 2
-      && once('hurt', 30)) {
-      this.pendingScenes.push(herDamageScene(this, c));
-      return;
-    }
-
-    // She is dropping astern and the signal is about to go.
-    //
-    // No upper bound on the distance. There used to be one — the scene only
-    // fired between about nine and forty miles — and past that the game simply
-    // stopped mentioning her, so a consort who fell far enough behind became a
-    // ship the player owned, could not see, and was never asked about again.
-    // Far enough astern she is not dropping astern any more; she is lost, and
-    // that is the question that gets asked instead.
-    if (!c.lost && c.station !== 'scout' && rep.distNm > range * 1.3) {
-      if (rep.distNm > 45) {
-        c.lost = true;
-        c.missingSince = this.clock.t;
-        this.logEvent('peril',
-          `${c.name} is no longer in sight from the masthead. She was astern and losing ground `
-          + 'when the light went.', true);
-      } else if (once('losing', 12)) {
-        this.pendingScenes.push(losingHerScene(this, c));
-        return;
-      }
-    }
-
-    // She is gone and has been for long enough to be a question.
-    if (c.lost && t - (c.missingSince ?? t) > 1.5 * 86400 && once('search', 20)) {
-      this.pendingScenes.push(searchScene(this, c));
-      return;
-    }
-
-    // Her captain has his own ideas.
-    if (!c.lost && this.rng.chance(CONSORT_TEMPERS[c.temper].wilful * days) && once('wilful', 25)) {
-      this.pendingScenes.push(wilfulScene(this, c));
-    }
-  }
-
-  /** A detached ship makes her passage and is reported in, or is not. */
-  private checkDetached(c: Consort): void {
-    if (c.dueBack === undefined || this.clock.t < c.dueBack) return;
-    const home = haversine(c.pos, anchorageOf(portDef(c.boundFor ?? 'lisboa'))) / NM;
-    if (home < 40) {
-      this.consortRecord.broughtHome += 1;
-      this.crown.gold += Math.round(c.cargoTons * 14);
-      this.crown.standing += 10;
-      this.logEvent('note',
-        `Word at last of ${c.name}: she made ${portDef(c.boundFor ?? 'lisboa').name} and her `
-        + 'lading is sold. Her people are paid off and ashore.', true);
-      this.pushAlert(`${c.name} is safe in ${portDef(c.boundFor ?? 'lisboa').name}.`, 'note');
-    } else {
-      this.consortRecord.lost += 1;
-      this.crown.standing = Math.max(0, this.crown.standing - 8);
-      this.logEvent('peril',
-        `${c.name} never arrived. She was last spoken standing north and nothing has been `
-        + 'heard of her since.', true);
-      this.pushAlert(`${c.name} never arrived.`, 'grave');
-    }
-    this.consort = null;
-  }
-
-  /** Give the player a second ship. */
-  attachConsort(hullId = 'caravela-latina'): Consort {
-    const c = makeConsort(this.rng, hullId, this.ship.state.pos, this.ship.state.heading);
-    this.consort = c;
-    this.consortRecord.assigned += 1;
-    this.pendingScenes.push(assignedScene(this, c));
-    this.logEvent('note',
-      `${c.name}, ${c.captain} commanding, is attached to this commission.`, true);
-    return c;
-  }
-
-  /** Change her station. */
-  orderConsort(station: Station, offingNm?: number): string {
-    const c = this.consort;
-    if (!c) return 'There is no second ship.';
-    if (c.station === 'detached') {
-      return `${c.name} is detached and out of signal. Nothing you say reaches her.`;
-    }
-    if (c.lost) return `${c.name} is not in sight. There is nobody to signal.`;
-    c.station = station;
-    if (offingNm !== undefined) c.offingNm = offingNm;
-    const nm = orderedOffing(c);
-    switch (station) {
-      case 'alongside':
-        this.pendingScenes.push(alongsideScene(this, c));
-        return `Signalled ${c.name} to close and heave to.`;
-      case 'scout':
-        return `${c.name} is to range ${nm.toFixed(0)} miles ahead and close each evening.`;
-      case 'company':
-        return `${c.name} is to keep station ${nm.toFixed(1)} miles on the quarter.`;
-      default:
-        return 'Signalled.';
-    }
-  }
-
-  /** Send her away on her own errand. */
-  detachConsort(portId: string): string {
-    const c = this.consort;
-    if (!c) return 'There is no second ship.';
-    c.station = 'detached';
-    c.boundFor = portId;
-    const d = haversine(c.pos, anchorageOf(portDef(portId))) / NM;
-    c.dueBack = this.clock.t + (d / 80) * 86400 + 10 * 86400;
-    this.consortRecord.detached += 1;
-    this.logEvent('note',
-      `Detached ${c.name} for ${portDef(portId).name}. She is out of the voyage from today.`,
-      true);
-    return `${c.name} is detached for ${portDef(portId).name}. You will hear when she arrives.`;
-  }
-
-  /** What the interface shows about her. */
-  consortLine(): { line: string; state: string; worrying: boolean; distNm: number } | null {
-    const c = this.consort;
-    if (!c) return null;
-    const r = consortReport(this, c);
-    return { line: r.line, state: r.state, worrying: r.worrying, distNm: r.distNm };
   }
 
   private updateEncounter(simDt: number): void {
@@ -6763,7 +6559,6 @@ export class Game {
 
     // Everything that was happening at sea stops happening.
     this.encounter = null;
-    this.consort = null;
     this.gale = newGale();
     this.pendingEvent = null;
     this.pendingScenes = [];
@@ -7422,8 +7217,6 @@ export class Game {
       namedFeatures: this.namedFeatures,
       foundFeatures: this.foundFeatures,
       coastOrder: this.coastOrder,
-      consort: this.consort,
-      consortRecord: this.consortRecord,
       tutorial: this.tutorial,
       seenChart: this.seenChart,
       encounter: this.encounter,
@@ -7524,12 +7317,6 @@ export class Game {
     g.propositionsSeen = d.propositionsSeen ?? [];
     g.feitorias = d.feitorias ?? [];
     g.lettersSeen = d.lettersSeen ?? [];
-    // The second ship is switched off; see CONSORTS_ENABLED in game/consort.
-    // A voyage saved while she was still a feature loses her on load rather
-    // than sailing on with a ship nothing in the game will ever mention again.
-    g.consort = CONSORTS_ENABLED ? (d.consort ?? null) : null;
-    g.consortRecord = d.consortRecord
-      ?? { assigned: 0, lost: 0, burned: 0, detached: 0, broughtHome: 0 };
     // A voyage begun before the pilot existed is a voyage whose captain has
     // plainly worked it out for himself, so he is not started on lesson one.
     g.tutorial = d.tutorial ?? { on: false, at: 0, finished: true };
