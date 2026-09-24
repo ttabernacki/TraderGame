@@ -2,7 +2,8 @@ import { markerOf } from '../progression/quests';
 import { clamp, compassPoint, cosd, formatLat, formatLon, wrap180 } from '../core/math';
 import { LANDMASSES } from '../world/landmass';
 import { PORTS, portDef } from '../world/ports';
-import { people } from '../world/peoples';
+import { POLITY_BY_ID } from '../diplomacy/polities';
+import { standingWord } from '../diplomacy/courts';
 import type { Game } from '../game/state';
 import { append, button, clear, el } from './dom';
 import { AGREED_W } from '../navigation/charts';
@@ -779,6 +780,7 @@ export class ChartView {
     this.drawChartedCoast(ctx, g);
     if (this.showTrack) this.drawTrack(ctx, g);
     this.drawQuestMarks(ctx, g);
+    if (this.showRegard) this.drawCourtLines(ctx, g);
     this.drawPorts(ctx, g);
     this.regardPanel(g);
     if (this.showPlaces) this.drawPlaces(ctx, g);
@@ -1186,33 +1188,58 @@ export class ChartView {
   }
 
   /** The peoples you have met, and what each of them thinks of you. */
+  /**
+   * The politics of the coast, between the seats of the states you know: old
+   * friendships in green, feuds in red, and your own alliances in gold.
+   */
+  private drawCourtLines(ctx: CanvasRenderingContext2D, g: Game): void {
+    const known = g.knownPolities;
+    const ids = new Set(known.map((p) => p.id));
+    const seat = (id: string) => {
+      const d = portDef(POLITY_BY_ID.get(id)!.seat);
+      return this.toScreen(d.lat, d.lon);
+    };
+    const line = (a: string, b: string, colour: string, dash: number[], w: number) => {
+      const p = seat(a), q = seat(b);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      // A shallow bow, so a line along a coast does not lie on the coast.
+      const mx = (p.x + q.x) / 2 + (q.y - p.y) * 0.15, my = (p.y + q.y) / 2 - (q.x - p.x) * 0.15;
+      ctx.quadraticCurveTo(mx, my, q.x, q.y);
+      ctx.strokeStyle = colour; ctx.lineWidth = w; ctx.setLineDash(dash); ctx.stroke();
+    };
+    ctx.save();
+    for (const p of known) {
+      for (const f of p.feuds) if (ids.has(f) && p.id < f) line(p.id, f, 'rgba(168, 50, 40, 0.75)', [5, 4], 1.4);
+      for (const a of p.allies) if (ids.has(a) && p.id < a) line(p.id, a, 'rgba(77, 122, 62, 0.7)', [], 1.2);
+    }
+    for (const a of g.diplomacy.agreements) {
+      if (a.kind !== 'ally' || a.status !== 'open' || !a.against || !ids.has(a.against)) continue;
+      line(a.polity, a.against, 'rgba(200, 164, 78, 0.95)', [2, 3], 2.2);
+    }
+    ctx.restore();
+  }
+
   private regardPanel(g: Game): void {
     const host = this.wrap.querySelector('.chart-regard') as HTMLElement | null;
     if (!this.showRegard) { host?.remove(); return; }
-    const byPeople = new Map<string, { sum: number; n: number; trade: number; ports: number }>();
-    for (const def of PORTS) {
-      if (def.people === 'portuguese') continue;
-      const rel = g.relationsFor(def.id);
-      if (!rel.met) continue;
-      const e = byPeople.get(def.people) ?? { sum: 0, n: 0, trade: 0, ports: 0 };
-      e.sum += rel.regard; e.n++; e.ports++;
-      if (rel.mayTrade) e.trade++;
-      byPeople.set(def.people, e);
-    }
     const panel = host ?? el('div', { class: 'chart-regard' });
     clear(panel);
-    panel.append(el('div', { class: 'chart-voyage-title' }, 'Their regard for you'));
-    if (byPeople.size === 0) {
-      panel.append(el('div', { class: 'chart-regard-row' }, 'You have met nobody yet.'));
-    }
-    for (const [id, e] of [...byPeople.entries()].sort((a, b) => b[1].sum / b[1].n - a[1].sum / a[1].n)) {
-      const r = e.sum / e.n;
+    panel.append(el('div', { class: 'chart-voyage-title' }, 'The courts'));
+    const known = g.knownPolities;
+    if (known.length === 0) panel.append(el('div', { class: 'chart-regard-row' }, 'You have met nobody yet.'));
+    for (const p of [...known].sort((a, b) => g.polityState(b.id).trust - g.polityState(a.id).trust)) {
+      const st = g.polityState(p.id);
+      const r = st.trust * 0.6 + st.interest * 0.4;
+      const trade = p.ports.filter((id) => g.relationsFor(id).mayTrade).length;
       panel.append(el('div', { class: 'chart-regard-row' },
         el('i', { style: { background: regardColour(r, 0.9) } }),
-        el('span', {}, people(id).name),
-        el('em', {}, `${regardWordOf(r)}${e.trade > 0 ? ` \u00b7 trade at ${e.trade} of ${e.ports}` : ''}`),
+        el('span', {}, p.name),
+        el('em', {}, `${standingWord(st)}${trade > 0 ? ` \u00b7 trade at ${trade} of ${p.ports.length}` : ''}`),
       ));
     }
+    panel.append(el('div', { class: 'chart-regard-key' },
+      el('span', { class: 'feud' }, 'feud'), el('span', { class: 'kin' }, 'friends'), el('span', { class: 'yours' }, 'your alliance')));
     if (!host) this.wrap.append(panel);
   }
 
@@ -1463,12 +1490,4 @@ function regardColour(r: number, a: number): string {
   const [c0, c1, c2] = [[168, 50, 40], [196, 125, 42], [77, 122, 62]];
   const [from, to, k] = t < 0.5 ? [c0, c1, t * 2] : [c1, c2, (t - 0.5) * 2];
   return `rgba(${lerp(from[0], to[0], k)}, ${lerp(from[1], to[1], k)}, ${lerp(from[2], to[2], k)}, ${a})`;
-}
-
-function regardWordOf(r: number): string {
-  if (r > 0.6) return 'Friends';
-  if (r > 0.25) return 'Well disposed';
-  if (r > -0.1) return 'Wary';
-  if (r > -0.45) return 'Unfriendly';
-  return 'Hostile';
 }

@@ -202,7 +202,10 @@ function flagsAt(g: Game, at: LatLon): { nation: Nation; business: Business; w: 
   // is aboard and how far you are from a gun.
   if (lat > 20 && lat < 38) {
     out.push({ nation: 'moorish', business: 'trader', w: people === 'moor' ? 2.2 : 0.9 });
-    out.push({ nation: 'moorish', business: 'corsair', w: lat > 28 ? 1.1 : 0.35 });
+    // A friendly sultan's galleys keep his coast, and the corsairs know whose
+    // friend you are.
+    const ally = g.alliedWatersAt(at.lat, at.lon);
+    out.push({ nation: 'moorish', business: 'corsair', w: (lat > 28 ? 1.1 : 0.35) * (ally ? 0.3 : 1) });
   }
 
   // Somebody in trouble, anywhere, and more likely the worse the weather has
@@ -395,7 +398,7 @@ export function strangerThinks(g: Game, s: Stranger, rangeNm: number): void {
     case 'corsair':
       // A corsair takes weak ships and leaves strong ones, which is the whole
       // of the trade.
-      s.intent = outgunned ? 'avoid' : 'hunt';
+      s.intent = outgunned || (g.alliedWatersAt(s.pos.lat, s.pos.lon) && g.rng.chance(0.6)) ? 'avoid' : 'hunt';
       break;
     case 'interloper':
       s.intent = 'avoid';

@@ -7,14 +7,17 @@ import { daysLeft, ventureLine } from '../progression/ventures';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
 import { officerOpinion } from '../game/officerEvents';
 import type { Game } from '../game/state';
-import { button, card, clear, el, kv } from './dom';
+import { button, card, clear, el, kv, meter } from './dom';
+import { good } from '../economy/goods';
+import { POLITY_BY_ID, TEMPER_WORD } from '../diplomacy/polities';
+import { measureWord, rulerName, standingWord } from '../diplomacy/courts';
 import { house, kindName } from '../economy/finance';
 import { portDef } from '../world/ports';
 import {
   capacityOf, regardWordF, stockTons, stockValue, troubleWord,
 } from '../progression/feitoria';
 
-type Tab = 'chronicle' | 'missions' | 'reports' | 'stations' | 'wardroom' | 'rival';
+type Tab = 'chronicle' | 'missions' | 'courts' | 'reports' | 'stations' | 'wardroom' | 'rival';
 
 /**
  * The captain's orders.
@@ -62,13 +65,14 @@ export class OrdersView {
       chronicle: 0,
       missions: (g.crown.patent ? g.crown.patent.objectives.filter((o) => !o.complete).length : 0)
         + g.quests.filter((q) => !q.outcome).length + g.activeVentures.length,
+      courts: g.diplomacy.agreements.filter((a) => a.status === 'open').length,
       reports: g.openLeads.length,
       stations: g.liveFactories.length,
       wardroom: g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length,
       rival: 0,
     };
     const names: Record<Tab, string> = {
-      chronicle: 'Chronicle', missions: 'Missions', reports: 'Hearsay',
+      chronicle: 'Chronicle', missions: 'Missions', courts: 'Courts', reports: 'Hearsay',
       stations: 'Factories', wardroom: 'Wardroom', rival: 'Rival',
     };
 
@@ -96,6 +100,7 @@ export class OrdersView {
       this.body.append(el('h2', { class: 'fit-head' }, 'Charters'));
       this.renderCharters(g);
     }
+    else if (this.tab === 'courts') this.renderCourts(g);
     else if (this.tab === 'reports') this.renderLeads(g);
     else if (this.tab === 'stations') this.renderStations(g);
     else if (this.tab === 'wardroom') this.renderWardroom(g);
@@ -384,6 +389,63 @@ export class OrdersView {
         + 'when you come. That is the whole of it, and the price of it is a man of yours living '
         + 'on that beach.'),
     ));
+  }
+
+  /** Every state you have dealt with: who rules, where you stand, what you owe. */
+  private renderCourts(g: Game): void {
+    const known = g.knownPolities;
+    if (known.length === 0) {
+      this.body.append(card('No courts yet',
+        el('p', { class: 'flavour' }, 'Every coast beyond Portugal belongs to somebody. The first time you are brought before a ruler, his court goes into this book: who he is, what his people want, and what you have promised him.')));
+      return;
+    }
+    const now = g.clock.t;
+    const order = [...known].sort((a, b) => {
+      const oa = g.diplomacy.agreements.some((x) => x.polity === a.id && x.status === 'open') ? 1 : 0;
+      const ob = g.diplomacy.agreements.some((x) => x.polity === b.id && x.status === 'open') ? 1 : 0;
+      return ob - oa || g.polityState(b.id).trust - g.polityState(a.id).trust;
+    });
+    const grid = el('div', { class: 'cols two' });
+    for (const p of order) {
+      const st = g.polityState(p.id);
+      const agreements = g.diplomacy.agreements.filter((a) => a.polity === p.id);
+      const open = agreements.filter((a) => a.status === 'open');
+      const kept = agreements.filter((a) => a.status === 'kept').length;
+      const broken = agreements.filter((a) => a.status === 'broken').length;
+      const coming = g.diplomacy.word.filter((w) => w.polity === p.id).length;
+      const feuds = p.feuds.map((f) => POLITY_BY_ID.get(f)?.name).filter(Boolean).join(', ');
+      grid.append(card(p.name,
+        kv(p.title, `${rulerName(p, st)}${st.knowledge >= 0.2 ? ` \u2014 ${TEMPER_WORD[st.temper]}` : ''}`),
+        kv('Where you stand', standingWord(st), st.trust < -0.2 ? 'bad' : st.trust < 0.1 ? 'warn' : ''),
+        el('div', { class: 'measures' },
+          el('span', {}, `Trust: ${measureWord(st.trust)}`),
+          el('span', {}, `Respect: ${measureWord(st.respect)}`),
+          el('span', {}, `Interest: ${measureWord(st.interest)}`)),
+        kv('What you know of them', st.knowledge < 0.2 ? 'Very little' : st.knowledge < 0.45 ? 'Something' : st.knowledge < 0.7 ? 'A good deal' : 'As much as any stranger can'),
+        st.knowledge >= 0.2 ? kv('They want', p.wants.map((w) => good(w).english).join(', ')) : null,
+        feuds ? kv('At odds with', feuds) : null,
+        st.knowledge >= 0.35
+          ? el('div', { class: 'court-factions' },
+            el('div', { class: 'court-factions-head' }, 'The court'),
+            ...p.factions.map((f) => el('div', { class: 'court-faction' },
+              el('span', {}, f.name),
+              el('span', { class: 'court-weight' }, `${Math.round(f.weight * 100)}%`),
+              meter(((st.factions[f.id] ?? 0) + 1) / 2, (st.factions[f.id] ?? 0) < -0.1 ? 'bad' : (st.factions[f.id] ?? 0) < 0.15 ? 'warn' : ''))))
+          : null,
+        open.length > 0 ? el('div', { class: 'terms-head' }, 'What you have promised') : null,
+        ...open.map((a) => {
+          const days = a.due !== undefined ? Math.round((a.due - now) / 86400) : null;
+          return el('div', { class: `court-agreement${days !== null && days < 60 ? ' late' : ''}` },
+            el('span', {}, a.text),
+            el('span', { class: 'due' }, days === null ? 'standing' : `${days} days`));
+        }),
+        kept + broken > 0 ? kv('Your word', `${kept} kept, ${broken} broken`, broken > kept ? 'bad' : '') : null,
+        (st.news ?? []).length > 0 ? el('div', { class: 'terms-head' }, 'Lately') : null,
+        ...(st.news ?? []).slice().reverse().map((n) => el('div', { class: 'court-news' }, n.text)),
+        coming > 0 ? el('div', { class: 'court-news' }, `Word of your doings is on the road to them (${coming}).`) : null,
+      ));
+    }
+    this.body.append(grid);
   }
 
   /** The career as five acts, and the history it is happening inside. */

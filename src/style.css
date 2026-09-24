@@ -2538,3 +2538,32 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
 /* Legible over the parchment screens as well as the sea, and clear of the scene card. */
 .discovery { top: 3%; padding: 14px 22px 16px; border-radius: 4px; background: radial-gradient(ellipse at center, rgba(12, 9, 6, .78), rgba(12, 9, 6, .55) 70%, rgba(12, 9, 6, 0)); }
 .discovery { background: rgba(14, 10, 6, .8); border: 1px solid rgba(226, 192, 122, .35); border-radius: 6px; box-shadow: 0 12px 40px rgba(0, 0, 0, .45); }
+
+/* --------------------------------------------------------------------------
+   Courts: the audience and the Courts page
+   -------------------------------------------------------------------------- */
+.measures { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0; font-size: 13px; color: var(--ink-soft); }
+.court-factions { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.court-factions-head { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-faint); }
+.court-faction { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; align-items: baseline; font-size: 13.5px; }
+.court-faction > :nth-child(3) { grid-column: 1 / -1; }
+.court-weight { font-size: 11.5px; color: var(--ink-faint); font-variant-numeric: tabular-nums; }
+.audience-hint { font-style: italic; color: var(--green); font-size: 13.5px; }
+.gift-row { display: flex; align-items: center; gap: 12px; padding: 7px 0; border-bottom: 1px solid rgba(90, 74, 55, 0.15); }
+.gift-row input { width: 64px; }
+.gift-row .tag { margin-left: 6px; }
+.gift-sub { font-size: 12px; color: var(--ink-soft); }
+.terms-head { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-faint); margin: 12px 0 4px; }
+.term { display: flex; align-items: baseline; gap: 9px; padding: 5px 0; font-size: 14px; cursor: pointer; }
+.term em { font-size: 12px; color: var(--ink-faint); margin-left: auto; }
+.term.off { opacity: 0.55; cursor: default; }
+.court-news { font-size: 13px; color: var(--ink-soft); font-style: italic; margin: 3px 0; }
+.court-agreement { display: flex; justify-content: space-between; gap: 10px; font-size: 13.5px; padding: 3px 0; }
+.court-agreement .due { color: var(--ink-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.court-agreement.late .due { color: var(--red); }
+.chart-regard-row em { white-space: normal; text-align: right; }
+.chart-regard-key { display: flex; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--ink-soft); }
+.chart-regard-key span::before { content: ''; display: inline-block; width: 14px; height: 0; margin-right: 4px; vertical-align: middle; border-top: 2px solid; }
+.chart-regard-key .feud::before { border-top: 2px dashed var(--red); }
+.chart-regard-key .kin::before { border-color: var(--green); }
+.chart-regard-key .yours::before { border-top: 2px dotted var(--gold); }

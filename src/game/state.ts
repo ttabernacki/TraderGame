@@ -2,6 +2,11 @@ import { Clock } from '../core/clock';
 import { counselFor, type Counsel } from './counsel';
 import { characterOf } from '../world/portCharacter';
 import {
+  crisisFor, newDiplomacy, newPolityState, regardDelta, rulerName, spreadWord,
+  type Agreement, type Deal, type DiplomacyState, type Verdict,
+} from '../diplomacy/courts';
+import { POLITIES, POLITY_BY_ID, polityOfPort, politiesOfPeople, type PolityDef } from '../diplomacy/polities';
+import {
   chronicleAnswered, chronicleDue, chronicleFromProgress, hullAllowed, newChronicle, patentAllowed,
   type ChronicleState,
 } from '../progression/chronicle';
@@ -1558,7 +1563,257 @@ export class Game {
       const r = this.relationsFor(p.id);
       r.regard = clamp(r.regard + delta, -1, 1);
     }
+    // The states of that people feel it too. See diplomacy/courts.
+    for (const def of politiesOfPeople(peopleId)) {
+      const st = this.diplomacy.polities[def.id];
+      if (!st) continue;
+      st.trust = clamp(st.trust + delta * 0.7, -1, 1);
+      st.interest = clamp(st.interest + delta * 0.3, -1, 1);
+    }
   }
+
+  // -------------------------------------------------------------------------
+  // States and courts. See diplomacy/polities and diplomacy/courts.
+  // -------------------------------------------------------------------------
+
+  diplomacy: DiplomacyState = newDiplomacy();
+
+  polityState(id: string) {
+    let st = this.diplomacy.polities[id];
+    if (!st) {
+      st = newPolityState(POLITY_BY_ID.get(id)!);
+      this.diplomacy.polities[id] = st;
+    }
+    return st;
+  }
+
+  /** Move a state's measures, and the regard of all its ports with them. */
+  adjustPolity(id: string, d: { trust?: number; respect?: number; interest?: number }, why = ''): void {
+    const def = POLITY_BY_ID.get(id);
+    if (!def) return;
+    const st = this.polityState(id);
+    st.trust = clamp(st.trust + (d.trust ?? 0), -1, 1);
+    st.respect = clamp(st.respect + (d.respect ?? 0), -1, 1);
+    st.interest = clamp(st.interest + (d.interest ?? 0), -1, 1);
+    const rd = regardDelta(d);
+    if (rd !== 0) {
+      for (const port of def.ports) {
+        const r = this.relationsFor(port);
+        r.regard = clamp(r.regard + rd, -1, 1);
+      }
+    }
+    if (why) {
+      this.logEvent('contact', `${def.name}: ${why}.`);
+      st.news = [...(st.news ?? []), { t: this.clock.t, text: why }].slice(-5);
+    }
+  }
+
+  /**
+   * The state whose waters these are, if it is a friend: within 300 nm of the
+   * seat of a state that trusts you. Its galleys and its pilots keep the coast,
+   * and a corsair who knows whose friend you are looks for somebody else.
+   */
+  alliedWatersAt(lat: number, lon: number): PolityDef | null {
+    for (const p of POLITIES) {
+      const st = this.diplomacy.polities[p.id];
+      if (!st?.met || st.trust < 0.4) continue;
+      const a = anchorageOf(portDef(p.seat));
+      if (haversine({ lat, lon }, a) / NM < 300) return p;
+    }
+    return null;
+  }
+
+  /** An agreement not kept. The state remembers, and its neighbours hear. */
+  breakAgreement(a: Agreement, why: string): void {
+    if (a.status !== 'open') return;
+    a.status = 'broken';
+    const def = POLITY_BY_ID.get(a.polity)!;
+    this.adjustPolity(a.polity, { trust: -0.4, respect: -0.05 }, `agreement broken — ${why}`);
+    spreadWord(this, a.polity, -0.12, 0, `The Portuguese broke their word to the ${def.title} of ${portDef(def.seat).name}.`);
+    this.pushAlert(`Broken: ${a.text} (${def.name}).`, 'grave');
+  }
+
+  private keepAgreement(a: Agreement, why: string): void {
+    if (a.status !== 'open') return;
+    a.status = 'kept';
+    const def = POLITY_BY_ID.get(a.polity)!;
+    this.adjustPolity(a.polity, { trust: 0.25, interest: 0.1 }, `agreement kept — ${why}`);
+    spreadWord(this, a.polity, 0.06, 0.02, `The Portuguese kept their word to the ${def.title} of ${portDef(def.seat).name}.`);
+    this.pushAlert(`Kept: ${a.text}.`, 'note');
+  }
+
+  /** A new ruler. How he starts with you depends on what you did. */
+  successionIn(id: string, trustAfter: number): void {
+    const def = POLITY_BY_ID.get(id)!;
+    const st = this.polityState(id);
+    st.ruler = Math.min(st.ruler + 1, def.rulers.length - 1);
+    st.rulerSince = this.clock.t;
+    const temps = ['proud', 'pious', 'mercantile', 'wary', 'warlike'] as const;
+    st.temper = temps[Math.floor(this.rng.next() * temps.length)];
+    // Half of what the old ruler thought of you survives him.
+    const next = clamp(st.trust * 0.5 + trustAfter, -1, 1);
+    this.adjustPolity(id, { trust: next - st.trust });
+    this.logEvent('contact', `${def.name}: ${rulerName(def, st)} is ${def.title} now.`, true);
+  }
+
+  /** Arriving at a port of a state: what they know of you, and what is due. */
+  private visitPolity(def: PortDef): void {
+    const pol = polityOfPort(def.id);
+    this.checkAgreements(pol?.id ?? null);
+    if (!pol) return;
+    const st = this.polityState(pol.id);
+    if (!st.met) { st.met = true; st.rulerSince = this.clock.t; }
+    st.knowledge = clamp(st.knowledge + 0.06, 0, 1);
+    // The rival has been here first, with presents and his own account of you.
+    // Only on coasts he opened himself, and not if he is broken or bound to you.
+    if (!st.rivalCourted && def.lat < -6.5 && def.lat >= this.rival.frontierLat
+        && !this.rival.ruined && !this.rival.compact) {
+      st.rivalCourted = true;
+      const bound = this.diplomacy.agreements.some((a) => a.polity === pol.id && a.status !== 'broken');
+      if (!bound && st.trust < 0.45) {
+        this.adjustPolity(pol.id, { interest: -0.12, trust: -0.05 }, `${this.rival.name} was here before you, with presents`);
+        this.pushAlert(`${this.rival.name} has been at this court before you, and left presents and opinions.`, 'warning');
+      } else {
+        this.adjustPolity(pol.id, { respect: 0.04 }, `sent ${this.rival.name} away — they are bound to you`);
+      }
+    }
+    // Word that has reached them since the last time.
+    const now = this.clock.t;
+    const arrived = this.diplomacy.word.filter((w) => w.polity === pol.id && w.arrive <= now);
+    this.diplomacy.word = this.diplomacy.word.filter((w) => !(w.polity === pol.id && w.arrive <= now));
+    for (const w of arrived) {
+      this.adjustPolity(pol.id, { trust: w.trust, respect: w.respect });
+      st.heard.push(w.text);
+    }
+    if (st.heard.length > 0) {
+      const said = st.heard.slice(-2).join(' ');
+      this.logEvent('contact', `At ${def.name} they have heard of you. ${said}`, true);
+      this.pushAlert(`They have heard of you here: ${st.heard[st.heard.length - 1]}`, 'note');
+      st.heard = [];
+    }
+    // A great ally shows you his waters.
+    if (st.trust > 0.55 && !this.soundedGround.some((g) => g.source === `the ${pol.title}\u2019s pilots`)) {
+      const a = anchorageOf(portDef(pol.seat));
+      this.soundedGround.push({ lat: a.lat, lon: a.lon, nm: 250, source: `the ${pol.title}\u2019s pilots` });
+      this.logEvent('contact', `The ${pol.title} of ${portDef(pol.seat).name} has lent you his pilots: the soundings of his coast are in your book.`, true);
+    }
+    // Once in a long while, something happens at court that needs you.
+    if (st.met && this.relationsFor(def.id).met && now - st.lastCrisisT > 240 * 86400
+        && now - st.rulerSince > 60 * 86400 && this.rng.chance(0.35)) {
+      st.lastCrisisT = now;
+      const c = crisisFor(this, pol, st);
+      if (c) this.pendingScenes.push(c);
+    }
+  }
+
+  /** Deliveries made, returns kept, deadlines passed. */
+  checkAgreements(polityHere: string | null): void {
+    const now = this.clock.t;
+    for (const a of this.diplomacy.agreements) {
+      if (a.status !== 'open') continue;
+      if (a.kind === 'envoy' && this.dockedAt === 'lisboa') {
+        this.keepAgreement(a, 'the envoy has seen the King');
+        this.crown.standing += 20; this.crown.lifetimeStanding += 20;
+        continue;
+      }
+      if (polityHere === a.polity) {
+        if (a.kind === 'return' && now - a.made > 120 * 86400) { this.keepAgreement(a, 'came back as promised'); continue; }
+        if (a.kind === 'deliver' && a.goodId && a.qty && this.ship.quantityOf(a.goodId) >= a.qty) {
+          this.ship.removeCargo(a.goodId, a.qty);
+          this.keepAgreement(a, `${a.qty} ${good(a.goodId).english.toLowerCase()} delivered`);
+          continue;
+        }
+      }
+      if (a.due !== undefined && now > a.due) this.breakAgreement(a, 'the time ran out');
+    }
+  }
+
+  /**
+   * The treaty an audience has come to. Grants what was agreed, writes down
+   * what was promised, and tells the neighbours.
+   */
+  concludeTreaty(def: PortDef, deal: Deal, verdict: Verdict, forced = false): string {
+    const pol = polityOfPort(def.id);
+    const rel = this.relationsFor(def.id);
+    const pe = people(def.people);
+    rel.met = true;
+    rel.visits += 1;
+    const lines: string[] = [];
+    if (pol) {
+      const st = this.polityState(pol.id);
+      st.knowledge = clamp(st.knowledge + 0.12, 0, 1);
+      verdict.factions.forEach((f) => { st.factions[f.id] = clamp((st.factions[f.id] ?? 0) * 0.6 + f.approval * 0.4, -1, 1); });
+    }
+    if (forced) {
+      for (const port of pol?.ports ?? [def.id]) this.relationsFor(port).mayTrade = true;
+      if (pol) {
+        this.adjustPolity(pol.id, { trust: -0.6, respect: 0.45 }, 'the guns were run out');
+        spreadWord(this, pol.id, -0.15, 0.2, `The Portuguese ran out their guns at ${def.name} and took what they wanted.`);
+      } else rel.regard = clamp(rel.regard - 0.6, -1, 1);
+      return 'Leave to trade, given at the mouth of a gun. It will be remembered.';
+    }
+    if (!verdict.accepted) {
+      if (pol) this.adjustPolity(pol.id, { trust: 0.02, interest: -0.05 }, '');
+      return 'Nothing was agreed. You were heard, and sent back to your ship.';
+    }
+    const now = this.clock.t;
+    for (const ask of deal.asks) {
+      if (ask === 'trade') { for (const port of pol?.ports ?? [def.id]) this.relationsFor(port).mayTrade = true; lines.push('leave to trade'); }
+      if (ask === 'factory') { rel.factory = true; rel.mayTrade = true; this.crown.record('port', `Feitoria at ${def.name}`, this.nav.estimated, 45, now); lines.push('ground for a feitoria'); }
+      if (ask === 'exclusive') { for (const port of pol?.ports ?? [def.id]) this.relationsFor(port).exclusive = true; lines.push('exclusive terms'); }
+      if (ask === 'pilot') {
+        const a = anchorageOf(def);
+        this.soundedGround.push({ lat: a.lat, lon: a.lon, nm: 200, source: `the pilots of ${def.name}` });
+        lines.push('a pilot and his soundings');
+      }
+      if (ask === 'padrao') {
+        rel.padrao = true;
+        if (this.crown.padraoStock > 0) {
+          this.crown.padraoStock -= 1;
+          this.crown.padroesRaised += 1;
+          this.crown.progressObjective('padrao', undefined, 1);
+          this.crown.record('padrao', `Padrão at ${def.name}`, this.nav.estimated, 12, now);
+          this.crown.padraoSites.push({ name: `Padrão at ${def.name}`, lat: this.nav.estimated.lat, lon: this.nav.estimated.lon, t: now });
+          lines.push('a padrão on the headland');
+        } else lines.push('leave for a padrão, and no stone to set');
+      }
+    }
+    if (pol) {
+      const due = now + 540 * 86400;
+      for (const off of deal.offers) {
+        const id = this.diplomacy.nextId++;
+        if (off === 'return') this.diplomacy.agreements.push({ id, polity: pol.id, kind: 'return', text: `Return to ${pol.name} with a cargo`, made: now, due, status: 'open' });
+        if (off === 'deliver') {
+          const goodId = pol.wants[0];
+          const qty = goodId === 'cavalos' ? 4 : goodId === 'ouro' ? 5 : goodId === 'coral' ? 10 : 20;
+          this.diplomacy.agreements.push({ id, polity: pol.id, kind: 'deliver', goodId, qty, text: `Bring ${qty} ${good(goodId).english.toLowerCase()} to ${pol.name}`, made: now, due, status: 'open' });
+        }
+        if (off === 'ally' && pol.feuds.length > 0) {
+          this.diplomacy.agreements.push({ id, polity: pol.id, kind: 'ally', against: pol.feuds[0], text: `Stand with ${pol.name} against ${POLITY_BY_ID.get(pol.feuds[0])?.name}`, made: now, status: 'open' });
+          this.adjustPolity(pol.feuds[0], { trust: -0.25 }, `allied with their enemy, ${pol.name}`);
+        }
+        if (off === 'envoy') this.diplomacy.agreements.push({ id, polity: pol.id, kind: 'envoy', text: `Carry ${pol.name}\u2019s envoy to Lisbon`, made: now, due: now + 365 * 86400, status: 'open' });
+        if (off === 'tribute') { this.crown.gold = Math.max(0, this.crown.gold - 150); }
+      }
+      this.adjustPolity(pol.id, { trust: 0.12, interest: 0.12 + deal.offers.length * 0.04, respect: 0.03 }, 'a treaty agreed');
+      spreadWord(this, pol.id, 0.05, 0.03, `The Portuguese made a treaty with the ${pol.title} of ${portDef(pol.seat).name}.`);
+    } else {
+      rel.regard = clamp(rel.regard + 0.2, -1, 1);
+    }
+    if (rel.mayTrade && !this.visitedPorts.has(`${def.id}:traded`)) {
+      this.visitedPorts.add(`${def.id}:traded`);
+      this.crown.progressObjective('contact', pe.id);
+      const value = Math.round(def.discovery * 0.5);
+      if (value > 0) this.crown.record('people', `Contact with the ${pe.name} at ${def.name}`, this.nav.estimated, value, now);
+    }
+    return `Agreed: ${lines.join(', ') || 'friendship'}.`;
+  }
+
+  /** Every state you have dealt with, for the Courts page. */
+  get knownPolities(): PolityDef[] {
+    return POLITIES.filter((p) => this.diplomacy.polities[p.id]?.met);
+  }
+
 
   /**
    * Ship replacements at a port.
@@ -6554,6 +6809,7 @@ export class Game {
     // And whoever walked away from this beach two years ago may be standing on
     // it. See progression/inland.
     this.checkInland(def);
+    this.visitPolity(def);
     this.markets.refresh(def.id, this.clock.t);
     this.refreshPortBusiness(def);
     this.deliverVentures(def);
@@ -7571,6 +7827,7 @@ export class Game {
       gale: this.gale,
       galeRecord: this.galeRecord,
       route: this.route,
+      diplomacy: this.diplomacy,
       chronicle: this.chronicle,
       quests: this.quests,
       soundedGround: this.soundedGround,
@@ -7682,6 +7939,21 @@ export class Game {
     g.portQuestsDone = new Set<string>(d.portQuestsDone ?? []);
     g.soundedGround = d.soundedGround ?? [];
     g.quests = d.quests ?? [];
+    g.diplomacy = d.diplomacy ?? newDiplomacy();
+    // A career from before the courts: states you have dealt with are met, and
+    // start where your regard with their ports stood.
+    if (!d.diplomacy) {
+      for (const pol of POLITIES) {
+        const rels = pol.ports.map((id) => g.relations.get(id)).filter((r): r is NonNullable<typeof r> => !!r && r.met);
+        if (rels.length === 0) continue;
+        const st = g.diplomacy.polities[pol.id];
+        st.met = true;
+        const avg = rels.reduce((sum, r) => sum + r.regard, 0) / rels.length;
+        st.trust = clamp(avg, -1, 1);
+        st.interest = clamp(avg * 0.5 + 0.1, -1, 1);
+        st.knowledge = clamp(0.15 * rels.length, 0, 0.6);
+      }
+    }
     g.chronicle = d.chronicle ?? chronicleFromProgress(g);
     refreshQuestPrices(g);
     g.passageRecord = { ...newPassageRecord(), ...(d.passageRecord ?? {}) };

@@ -609,6 +609,7 @@ const kongo: QuestDef = {
             resolve: (gg) => {
               q.flags.court = 'ambassadors';
               renown(gg, 20 + Number(q.flags.envoys) * 8);
+              gg.adjustPolity('kongo', { trust: 0.2, respect: 0.1 }, 'their envoys were received in Lisbon as ambassadors');
               return go(gg, q, 'gifts', 'The King received the Kongo envoys as ambassadors, and '
                 + 'is sending masons, priests and tools back with them. The tools must go in our hold.');
             },
@@ -621,6 +622,7 @@ const kongo: QuestDef = {
               const good = !!hasOfficer(gg, 'lingua');
               q.flags.court = good ? 'spoke' : 'halting';
               renown(gg, good ? 45 : 15);
+              gg.adjustPolity('kongo', { trust: good ? 0.25 : 0.1, respect: 0.05 }, 'their envoys spoke before the King of Portugal');
               return go(gg, q, 'gifts', good
                 ? 'The eldest envoy spoke to the King through our língua for half an hour, and the '
                   + 'court was silent. The King is sending masons, priests and tools. The tools go in our hold.'
@@ -635,6 +637,7 @@ const kongo: QuestDef = {
               q.flags.court = 'curiosity';
               gg.crown.gold += 120;
               gg.shiftPeopleRegard('kongo', -0.35);
+              gg.adjustPolity('kongo', { respect: -0.2 }, 'their envoys were shown in Lisbon as a curiosity');
               return go(gg, q, 'gifts', 'The court paid well to see the Kongo envoys. They know '
                 + 'exactly what was done. The King still sends tools back, in our hold.');
             },
