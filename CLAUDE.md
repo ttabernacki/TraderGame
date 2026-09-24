@@ -2,13 +2,14 @@
 
 ## How to report back — this is not optional
 
-Be terse. Say what was broken and that it is fixed, in a few lines. That is all.
+Laconic. The final report after a commit is **3–5 bullets, one line each**, plus
+the artifact link. Nothing else.
 
-- No essays. No progress narration. No "here's what I did along the way".
-- No tables of measurements unless asked for them. Measure as much as you like —
-  just do not publish the workings.
-- No restating the user's problem back at them.
-- One short paragraph, or a few bullets. Then stop.
+- No mid-task narration or status updates ("now doing X", "checking Y"). Work silently.
+- No essays, no headers, no tables, no per-item breakdowns unless asked.
+- No explaining how something was verified or what was tried. Just what changed.
+- No restating the user's request. No closing offers or suggestions unless asked.
+- Only flag a problem if the user must act on it — one line.
 
 The user's words: *"I dont need you to tell me every single thing you do along
 the way. you are a tool. a calculator doesnt tell me what its thinking along the
