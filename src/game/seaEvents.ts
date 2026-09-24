@@ -41,6 +41,8 @@ export interface SeaEvent {
    * See game/counsel. Never shown.
    */
   facts?: Record<string, number>;
+  /** A question put at the chart table rather than something happening on deck. */
+  council?: boolean;
 }
 
 /** Everything an event needs to know about the ship's situation. */

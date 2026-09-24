@@ -1,5 +1,7 @@
 import { Clock } from '../core/clock';
 import { counselFor, type Counsel } from './counsel';
+import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
+import { itczLatitude } from '../world/wind';
 import {
   NM, angleDelta, atan2d, bearingTo, clamp, compassPoint, cosd, formatBearing, formatLat,
   formatLon, haversine, lerp, rhumbStep, sind, toENU, wrap180, wrap360, type LatLon,
@@ -548,6 +550,9 @@ export class Game {
   /** True while she is in soundings, so the cry is given once and not hourly. */
   private landInSight = false;
   private lastPortCheck = -1e9;
+  /** When each of the passage questions was last put. See game/passage. */
+  passageRecord: PassageRecord = newPassageRecord();
+  private lastPassageCheck = -1e9;
   /** When each port was last compared with what the book already said. */
   private lastRemembered = new Map<string, number>();
   /** When the sea was last written up, so the book is not scribbled in hourly. */
@@ -2973,6 +2978,18 @@ export class Game {
     if (!this.passedTheKnown && pos.lat < BEYOND_LAT) {
       this.passedTheKnown = true;
       this.pendingScenes.push(beyondScene(this));
+    }
+
+    // The questions a passage turns on: where to cross the line, how to round
+    // the Cape, whether the water will reach. Hourly, one at a time.
+    if (this.clock.t - this.lastPassageCheck > 3600 && !this.dockedAt && !this.anchored
+        && !this.pendingEvent && this.pendingScenes.length === 0) {
+      this.lastPassageCheck = this.clock.t;
+      const q = passageQuestion(this, this.passageRecord);
+      if (q) {
+        this.easeTheClock(2);
+        this.pendingScenes.push(q);
+      }
     }
 
     // Ports coming into view.
@@ -6884,6 +6901,28 @@ export class Game {
     this.pushAlert(`${name} added to the passage \u2014 ${this.route.length} marks.`, 'note');
   }
 
+  /**
+   * Put a mark in front of the one she is steering for, so she goes there
+   * first and then carries on with the passage as laid.
+   */
+  insertWaypointAhead(name: string, lat: number, lon: number, portId?: string): void {
+    if (this.route.length >= 12) this.route.pop();
+    this.route.unshift({ name, lat, lon, portId });
+    this.helmOrder = null;
+    this.standingCourse = null;
+    this.latitudeOrder = null;
+    this.coastOrder = null;
+    this.aimOffNm = 0;
+    this.markLaidAt = { ...this.nav.estimated };
+    this.markDistNm = haversine(this.nav.estimated, { lat, lon }) / NM;
+    this.pushAlert(`Course laid for ${name}, then on as before.`, 'note');
+  }
+
+  /** Where the calm belt lies this month. */
+  calmBeltLatitude(): number {
+    return itczLatitude(this.clock.dayOfYear);
+  }
+
   /** Strike one mark out of the passage, leaving the rest of it standing. */
   removeWaypoint(index: number): void {
     if (index < 0 || index >= this.route.length) return;
@@ -7294,6 +7333,7 @@ export class Game {
       gale: this.gale,
       galeRecord: this.galeRecord,
       route: this.route,
+      passageRecord: this.passageRecord,
       daysSincePort: this.daysSincePort,
       distanceRun: this.distanceRun,
       correctedNm: this.correctedNm,
@@ -7402,6 +7442,7 @@ export class Game {
     // Saves from before a passage could have more than one mark carry a single
     // destination; it becomes a route of one.
     g.route = d.route ?? (d.destination ? [d.destination] : []);
+    g.passageRecord = { ...newPassageRecord(), ...(d.passageRecord ?? {}) };
     g.daysSincePort = d.daysSincePort ?? 0;
     g.distanceRun = d.distanceRun ?? 0;
     g.correctedNm = d.correctedNm ?? 0;

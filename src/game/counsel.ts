@@ -87,6 +87,14 @@ const CATCH_RAIN = /^Spread the sails/;
 const LET_RAIN = /^Let it rain/;
 const INSHORE = /^Stand in/;
 const OFFING = /^Keep your offing/;
+const WEST = /^Stand away west/;
+const COAST = /^Keep in with the coast/;
+const STRAIGHT = /^Stand on as she is/;
+const WIDE = /^Stand south into the westerlies/;
+const CLOSE = /^Round close/;
+const DIVERT = /^Bear away for/;
+const SHORT = /^Put the company on short water/;
+const RAIN = /^Stand on and trust to the rain/;
 
 const RULES: Record<string, Rule> = {
   'gale:making': {
@@ -370,6 +378,92 @@ const RULES: Record<string, Rule> = {
         escrivao: 'He is none of our business without a commission. Let him be.',
         contramestre: 'Leave him, sir.',
         capelao: 'Leave him be.',
+      }],
+    ],
+  },
+
+  'passage:doldrums': {
+    voices: ['piloto', 'mestre', 'escrivao'],
+    right: (_g, e) => {
+      if (e.facts?.bight) return COAST;
+      if (e.facts?.south) return WEST;
+      return STRAIGHT;
+    },
+    bias: { piloto: WEST, mestre: STRAIGHT, escrivao: COAST },
+    args: [
+      [WEST, {
+        piloto: 'West, sir. Go through near the coast and the trade on the far side will head us '
+          + 'into the Bight and we shall spend a month getting out of it. From out west she lies '
+          + 'south on the one board.',
+        mestre: 'Take her west. It is leagues out of the way and it is still the quicker road, '
+          + 'which is the kind of thing only this ocean would do.',
+        escrivao: 'The pilots at Lagos all say west. I would not go against every one of them.',
+      }],
+      [COAST, {
+        piloto: 'Keep in with the land. There are breezes off it at night and a current along it '
+          + 'that runs east as fast as she can sail.',
+        mestre: 'The coast. At least there is water to be had along it if we are held up.',
+        escrivao: 'The coast road, sir. It is the one the Casa\u2019s ships use and there are '
+          + 'factors along it who will know our business.',
+      }],
+      [STRAIGHT, {
+        piloto: 'Straight through. The belt is no narrower anywhere else that I have seen written down.',
+        mestre: 'Stand on. Every league we sail out of our way is a league of water drunk for nothing.',
+        escrivao: 'Hold the course laid, sir. The King is paying by the month.',
+      }],
+    ],
+  },
+
+  'passage:cape': {
+    voices: ['piloto', 'mestre', 'contramestre'],
+    right: (g, e) => (e.facts?.winter || g.ship.condition.hull < 0.75 ? WIDE : CLOSE),
+    bias: { piloto: WIDE, mestre: CLOSE, contramestre: WIDE },
+    args: [
+      [WIDE, {
+        piloto: 'Wide. Dias went round close and did not see the Cape at all until he was coming '
+          + 'back. Give it forty leagues and the westerlies will do the rest.',
+        mestre: 'Wide, sir. There is no harbour on that coast I would trust her to in a westerly.',
+        contramestre: 'Stand off from it, sir. The men have heard the stories.',
+      }],
+      [CLOSE, {
+        piloto: 'Close in, this season. The wind is easterly off the land and she will be round '
+          + 'before anything changes.',
+        mestre: 'Round it close. She is sound and I do not want a week in the high latitudes with '
+          + 'this crew and these stores.',
+        contramestre: 'Close in, sir, and get it over with.',
+      }],
+    ],
+  },
+
+  'passage:water': {
+    voices: ['mestre', 'cirurgiao', 'piloto'],
+    right: (_g, e) => {
+      const f = e.facts ?? {};
+      const ratio = (f.have ?? 0) / Math.max(f.need ?? 1, 1);
+      if (ratio < 0.95 && f.port) return DIVERT;
+      if (ratio < 1.15) return SHORT;
+      return RAIN;
+    },
+    bias: { mestre: SHORT, cirurgiao: DIVERT, piloto: RAIN },
+    args: [
+      [DIVERT, {
+        mestre: 'Go and get water. I have sounded the casks twice and I would rather lose the week '
+          + 'than the men.',
+        cirurgiao: 'Water, sir, and fresh food if there is any. They are already drawn in the face.',
+        piloto: 'Bear away for it. I can find that anchorage; I cannot find rain.',
+      }],
+      [SHORT, {
+        mestre: 'Short water. It will reach if we are careful, and I will stand over the cask myself.',
+        cirurgiao: 'Short water, if it must be. But not for long — a man on two-thirds in this heat '
+          + 'is a sick man in three weeks.',
+        piloto: 'Put them on short. The wind will serve before it runs out, or it will not, and '
+          + 'either way we are better with more in the cask.',
+      }],
+      [RAIN, {
+        mestre: 'Stand on. It rains out here more often than it does not.',
+        cirurgiao: 'Let them drink, sir. A thirsty crew is a sick crew and a sick crew cannot work.',
+        piloto: 'Stand on. The squalls come through every afternoon at this latitude and each one is '
+          + 'a cask if the sails are spread for it.',
       }],
     ],
   },

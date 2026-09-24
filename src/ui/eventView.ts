@@ -59,7 +59,8 @@ export class EventView {
         )))
       : null;
 
-    this.root.replaceChildren(el('div', { class: `event-card ${event.severity}` },
+    this.root.replaceChildren(el('div', { class: `event-card ${event.severity}${event.council ? ' council' : ''}` },
+      event.council ? el('div', { class: 'event-eyebrow' }, 'At the chart table') : null,
       el('div', { class: 'event-title' }, event.title),
       // A blank line in the written text is a paragraph break and has to survive
       // as one. HTML collapses it, so a scene written in three beats — what
