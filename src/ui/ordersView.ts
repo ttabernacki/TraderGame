@@ -1,3 +1,4 @@
+import { QUESTS, goalOf, markerOf } from '../progression/quests';
 import { NM, compassPoint, formatLat, formatLon, haversine } from '../core/math';
 import { OFFICER_ROLES } from '../crew/crew';
 import { rivalStanding } from '../progression/rival';
@@ -12,7 +13,7 @@ import {
   capacityOf, regardWordF, stockTons, stockValue, troubleWord,
 } from '../progression/feitoria';
 
-type Tab = 'orders' | 'charters' | 'reports' | 'stations' | 'wardroom' | 'rival';
+type Tab = 'orders' | 'missions' | 'charters' | 'reports' | 'stations' | 'wardroom' | 'rival';
 
 /**
  * The captain's orders.
@@ -58,6 +59,7 @@ export class OrdersView {
 
     const counts: Record<Tab, number> = {
       orders: g.crown.patent ? g.crown.patent.objectives.filter((o) => !o.complete).length : 0,
+      missions: g.quests.filter((q) => !q.outcome).length,
       charters: g.activeVentures.length,
       reports: g.openLeads.length,
       stations: g.liveFactories.length,
@@ -65,7 +67,7 @@ export class OrdersView {
       rival: 0,
     };
     const names: Record<Tab, string> = {
-      orders: 'Commission', charters: 'Charters', reports: 'Hearsay',
+      orders: 'Commission', missions: 'Missions', charters: 'Charters', reports: 'Hearsay',
       stations: 'Factories', wardroom: 'Wardroom', rival: 'Rival',
     };
 
@@ -85,6 +87,7 @@ export class OrdersView {
       const pc = this.pilotCard(g);
       if (pc) this.body.append(pc);
     }
+    else if (this.tab === 'missions') this.renderMissions(g);
     else if (this.tab === 'charters') this.renderCharters(g);
     else if (this.tab === 'reports') this.renderLeads(g);
     else if (this.tab === 'stations') this.renderStations(g);
@@ -374,6 +377,35 @@ export class OrdersView {
         + 'when you come. That is the whole of it, and the price of it is a man of yours living '
         + 'on that beach.'),
     ));
+  }
+
+  /** The long stories: where each stands, and what has been done in it. */
+  private renderMissions(g: Game): void {
+    if (g.quests.length === 0) {
+      this.body.append(card('No missions',
+        el('p', {}, 'Nobody has asked you for anything beyond the King\u2019s business yet. '
+          + 'People with errands wait on the quays — at Funchal and Lagos, on the Guinea '
+          + 'coast, at the Kongo river, and at court once your name means something.'),
+      ));
+      return;
+    }
+    const open = g.quests.filter((q) => !q.outcome);
+    const done = g.quests.filter((q) => q.outcome);
+    for (const q of [...open, ...done]) {
+      const def = QUESTS[q.id];
+      const mark = markerOf(g, q);
+      this.body.append(el('div', { class: `mission${q.outcome ? ' done' : ''}` },
+        el('div', { class: 'mission-head' },
+          el('h3', {}, def.title),
+          el('span', {}, q.outcome ? 'Finished' : 'Under way'),
+        ),
+        q.outcome ? null : el('div', { class: 'mission-goal' },
+          el('b', {}, 'Now: '), goalOf(g, q),
+          mark ? el('div', { class: 'mission-where' }, `Marked on the chart: ${mark.label}`) : null),
+        el('ol', { class: 'mission-log' },
+          ...q.journal.map((j) => el('li', {}, j.text))),
+      ));
+    }
   }
 
   private renderRival(g: Game): void {

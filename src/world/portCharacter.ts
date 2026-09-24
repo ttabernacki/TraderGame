@@ -210,10 +210,19 @@ export function characterOf(portId: string): PortCharacter | null {
   return CHARACTER[portId] ?? null;
 }
 
+/** Prices a finished quest line has changed. See progression/quests. */
+let questMods: Record<string, Record<string, { ask?: number; bid?: number }>> = {};
+export function setQuestPriceMods(m: typeof questMods): void {
+  questMods = m;
+}
+
 /** Multipliers the market applies here. */
 export function priceMod(portId: string, goodId: string): { ask: number; bid: number } {
   const c = CHARACTER[portId];
-  if (!c) return { ask: 1, bid: 1 };
-  const m = c.prices?.[goodId];
-  return { ask: m?.ask ?? 1, bid: (m?.bid ?? 1) * (c.duty ?? 1) };
+  const q = questMods[portId]?.[goodId];
+  const m = c?.prices?.[goodId];
+  return {
+    ask: (m?.ask ?? 1) * (q?.ask ?? 1),
+    bid: (m?.bid ?? 1) * (c?.duty ?? 1) * (q?.bid ?? 1),
+  };
 }

@@ -1,3 +1,4 @@
+import { markerOf } from '../progression/quests';
 import { clamp, compassPoint, cosd, formatLat, formatLon, wrap180 } from '../core/math';
 import { LANDMASSES } from '../world/landmass';
 import { PORTS, portDef } from '../world/ports';
@@ -777,6 +778,7 @@ export class ChartView {
     if (this.showWinds && this.game) this.drawSeaArrows(ctx, this.game, 'wind');
     this.drawChartedCoast(ctx, g);
     if (this.showTrack) this.drawTrack(ctx, g);
+    this.drawQuestMarks(ctx, g);
     this.drawPorts(ctx, g);
     this.regardPanel(g);
     if (this.showPlaces) this.drawPlaces(ctx, g);
@@ -1157,6 +1159,29 @@ export class ChartView {
       ctx.font = `italic ${(10.5 * this.ink).toFixed(1)}px serif`;
       ctx.fillStyle = 'rgba(122, 74, 32, 0.9)';
       ctx.fillText(shortSource(l.source), s.x + r + 4, s.y + 3.5);
+    }
+  }
+
+  /** Where each open mission wants the ship next. */
+  private drawQuestMarks(ctx: CanvasRenderingContext2D, g: Game): void {
+    for (const q of g.quests) {
+      const m = markerOf(g, q);
+      if (!m) continue;
+      const c = this.toScreen(m.lat, m.lon);
+      const edge = this.toScreen(m.lat + m.nm / 60, m.lon);
+      const r = Math.max(Math.abs(edge.y - c.y), 7);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(122, 58, 140, 0.8)';
+      ctx.fillStyle = 'rgba(122, 58, 140, 0.08)';
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(96, 40, 112, 0.95)';
+      ctx.font = `italic ${(11.5 * this.ink).toFixed(1)}px serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(`\u2726 ${m.label}`, c.x, c.y - r - 5);
+      ctx.restore();
     }
   }
 

@@ -1,6 +1,9 @@
 import { Clock } from '../core/clock';
 import { counselFor, type Counsel } from './counsel';
 import { characterOf } from '../world/portCharacter';
+import {
+  QUESTS, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
+} from '../progression/quests';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
 import { itczLatitude } from '../world/wind';
 import {
@@ -192,6 +195,41 @@ export class Game {
   relations = new Map<string, Relations>();
   /** Ports the player has actually entered. */
   visitedPorts = new Set<string>();
+  /** The long stories. See progression/quests. */
+  quests: QuestState[] = [];
+  private lastQuestCheck = -1e9;
+
+  /** Threads somebody here would put to the captain. */
+  questOffersHere(): QuestDef[] {
+    return this.dockedAt ? offersAt(this, this.dockedAt) : [];
+  }
+
+  /** Take a thread up. Its first beat plays at once if it belongs here. */
+  acceptQuest(id: QuestId): string {
+    if (this.quests.some((q) => q.id === id)) return 'Already taken up.';
+    this.quests.push(newQuest(id, this.clock.t));
+    this.logEvent('crown', `Took up: ${QUESTS[id].title}. ${QUESTS[id].blurb}`, true);
+    this.checkQuests();
+    return `${QUESTS[id].title} — in the Book, under Missions.`;
+  }
+
+  /** Put whichever quest beat is due. In port, straight onto the screen. */
+  checkQuests(): void {
+    // A beat that was put and has since vanished — dropped from the queue by
+    // a port call, a lost ship, anything — is put again rather than leaving
+    // the whole story waiting on a card nobody will ever see.
+    for (const q of this.quests) {
+      if (!q.fired || q.outcome) continue;
+      const id = `quest:${q.id}:${q.step}`;
+      if (this.pendingEvent?.id !== id && !this.pendingScenes.some((x) => x.id === id)) q.fired = false;
+    }
+    const s = dueScene(this, this.dockedAt);
+    if (!s) return;
+    this.easeTheClock(1);
+    if (!this.pendingEvent) this.pendingEvent = s;
+    else this.pendingScenes.push(s);
+  }
+
   /** Errands done for towns. See world/portCharacter. */
   portQuestsDone = new Set<string>();
 
@@ -3056,6 +3094,12 @@ export class Game {
       }
     }
 
+    // The long stories, when a beat of one happens out here.
+    if (this.clock.t - this.lastQuestCheck > 1800 && !this.dockedAt && !this.pendingEvent) {
+      this.lastQuestCheck = this.clock.t;
+      this.checkQuests();
+    }
+
     // Ports coming into view.
     if (this.clock.t - this.lastPortCheck > 1800) {
       this.lastPortCheck = this.clock.t;
@@ -4622,6 +4666,14 @@ export class Game {
     this.logEvent(event.severity === 'note' ? 'note' : 'peril', outcome, true);
     this.pushAlert(outcome, event.severity);
     this.refreshEnvironment();
+    // In port the queue is not drained (the clock is stopped), so a story
+    // beat waiting behind this one is brought forward, and the next beat of
+    // the same story — if it happens here too — is put straight after.
+    if (this.dockedAt && !this.pendingEvent) {
+      const i = this.pendingScenes.findIndex((x) => x.id.startsWith('quest:'));
+      if (i >= 0) this.pendingEvent = this.pendingScenes.splice(i, 1)[0];
+      else this.checkQuests();
+    }
   }
 
   /**
@@ -6504,6 +6556,10 @@ export class Game {
       else this.pendingEvent = word;
     }
     this.mode = 'port';
+    this.checkQuests();
+    if (this.questOffersHere().length > 0) {
+      this.pushAlert('Somebody here wants a word with the captain — see the Town.', 'note');
+    }
   }
 
   /** Take on water, provisions and fresh food. Returns the cost. */
@@ -7426,6 +7482,7 @@ export class Game {
       gale: this.gale,
       galeRecord: this.galeRecord,
       route: this.route,
+      quests: this.quests,
       soundedGround: this.soundedGround,
       portQuestsDone: [...this.portQuestsDone],
       passageRecord: this.passageRecord,
@@ -7534,6 +7591,8 @@ export class Game {
     g.route = d.route ?? (d.destination ? [d.destination] : []);
     g.portQuestsDone = new Set<string>(d.portQuestsDone ?? []);
     g.soundedGround = d.soundedGround ?? [];
+    g.quests = d.quests ?? [];
+    refreshQuestPrices(g);
     g.passageRecord = { ...newPassageRecord(), ...(d.passageRecord ?? {}) };
     g.daysSincePort = d.daysSincePort ?? 0;
     g.distanceRun = d.distanceRun ?? 0;

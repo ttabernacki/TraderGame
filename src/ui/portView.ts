@@ -172,6 +172,22 @@ export class PortView {
       ));
     }
 
+    // Somebody on the quay with a story. See progression/quests.
+    for (const offer of g.questOffersHere()) {
+      const o = offer.offer(g);
+      left.append(el('div', { class: 'quest-offer' },
+        el('div', { class: 'quest-offer-eyebrow' }, o.who),
+        el('h2', {}, offer.title),
+        el('p', {}, o.text),
+        el('div', { class: 'row' },
+          button(o.accept, () => {
+            this.notice = { text: g.acceptQuest(offer.id) };
+            this.render();
+          }, { primary: true }),
+        ),
+      ));
+    }
+
     left.append(card('', el('p', { style: { fontSize: '15px', lineHeight: '1.7' } }, def.blurb)));
 
     // What makes this place itself. See world/portCharacter.
