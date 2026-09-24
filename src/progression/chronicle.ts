@@ -1,7 +1,7 @@
 import { clamp } from '../core/math';
 import type { SeaChoice, SeaEvent } from '../game/seaEvents';
 import type { Game } from '../game/state';
-import { anchorageOf, portDef } from '../world/ports';
+import { portDef } from '../world/ports';
 import { writeTheSea } from './quests';
 
 /**
@@ -640,7 +640,7 @@ export const HISTORY: HistoryEvent[] = [
         one('Mark it on the chart', '', (gg) => {
           if (!been) {
             const d = portDef('porto-seguro');
-            gg.chart.chartPort(d, anchorageOf(d), anchorageOf(d), gg.clock.t, false, 30, 60);
+            gg.chart.hearOfPort(d, 60, gg.clock.t);
           }
           renown(gg, been ? 80 : 0);
           return been ? 'The world knows now what you knew.' : 'Vera Cruz is on the chart: land in the west, inside the King’s line.';

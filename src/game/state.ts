@@ -35,7 +35,7 @@ import {
   RIG_PROFILES, optimalTrim, pointOfSail, sailForce, tackName, trimBand,
 } from '../ship/rig';
 import { Navigator } from '../navigation/navigator';
-import { Chart, sightingRangeNm, type SurveyResult } from '../navigation/charts';
+import { Chart, seededError, sightingRangeNm, type SurveyResult } from '../navigation/charts';
 import { sightOpportunities, type SightBody } from '../navigation/navigator';
 import { magneticVariation } from '../navigation/celestial';
 import {
@@ -512,6 +512,17 @@ export class Game {
     };
   }
 
+  /**
+   * The real town, if the lookout can see it: within the sighting range and no
+   * more than fifteen miles off, which is as far as a town is a thing to steer
+   * at rather than a smudge on a coast.
+   */
+  townInSight(portId: string): LatLon | null {
+    const at = anchorageOf(portDef(portId));
+    const range = Math.min(15, sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility));
+    return haversine(this.ship.state.pos, at) / NM <= range ? at : null;
+  }
+
   /** The mark she is steering for now, which is the first one left on the list. */
   get destination(): { name: string; lat: number; lon: number } | null {
     return this.route[0] ?? null;
@@ -727,6 +738,7 @@ export class Game {
     this.ship = new Ship('São Cristóvão', 'caravela-latina', start, 200);
     this.crew = newCrew(hullClass('caravela-latina').crewFull, this.rng);
     this.nav = new Navigator(start, seed);
+    this.wireNavigator();
     this.chart = new Chart();
     this.crown = new Crown(seed);
     this.markets = new Markets(seed);
@@ -1456,7 +1468,7 @@ export class Game {
    * Stretches of bottom whose soundings were bought or copied from somebody
    * who had run them. See knowsGroundAt.
    */
-  soundedGround: { lat: number; lon: number; nm: number; source: string }[] = [];
+  soundedGround: { lat: number; lon: number; nm: number; source: string; sigmaNm?: number }[] = [];
 
   /**
    * Whether the pilot knows how the bottom shoals toward the land here — which
@@ -1470,7 +1482,8 @@ export class Game {
    * you have bought or copied another pilot's soundings — and nowhere else.
    */
   knowsGroundAt(at: LatLon): string | null {
-    if (!this.beyondTheKnownAt(at)) return 'the Casa\u2019s roteiros';
+    // The best record first: a pilot who knows this coast by eye, then your
+    // own book, then the Casa's roteiros for the coast it has had for years.
     for (const g of this.soundedGround) {
       if (haversine(at, g) / NM <= g.nm) return g.source;
     }
@@ -1482,7 +1495,27 @@ export class Game {
         if (haversine(at, { lat: n.fact.lat, lon: n.fact.lon }) / NM <= 45) return 'your own book';
       }
     }
+    if (!this.beyondTheKnownAt(at)) return 'the Casa\u2019s roteiros';
     return null;
+  }
+
+  /**
+   * Whose soundings these are, and so which drawing of the coast they are
+   * measured against. A sounding figure is only as good as the chart it was
+   * written on: the Casa's roteiros sit on the Casa's sheet, with its errors;
+   * a local pilot's are taken off the real shore he can see from his own
+   * beach; your own are on your own chart. The lead matches the reckoning to
+   * that drawing, and to nothing else.
+   */
+  soundingFrame(at: LatLon): { source: string; shift: { dLat: number; dLon: number }; sigmaNm: number } | null {
+    const source = this.knowsGroundAt(at);
+    if (!source) return null;
+    if (source === 'the Casa\u2019s roteiros') return { source, shift: seededError(at.lat, at.lon), sigmaNm: 3 };
+    if (source === 'your own book') {
+      return { source, shift: this.chart.localOffset(at, 160) ?? { dLat: 0, dLon: 0 }, sigmaNm: 3 };
+    }
+    const g = this.soundedGround.find((x) => x.source === source);
+    return { source, shift: { dLat: 0, dLon: 0 }, sigmaNm: g?.sigmaNm ?? 4 };
   }
 
   /** What the local pilots ask for their soundings of this coast. */
@@ -2814,7 +2847,11 @@ export class Game {
     if (this.helmOrder === null && !dest && this.standingCourse === null && !this.latitudeOrder) {
       this.standingCourse = wrap360(this.ship.state.heading);
     }
-    const wanted = this.helmOrder ?? this.chaseCourse() ?? this.coastCourse() ?? this.latitudeCourse()
+    // A town the lookout can see is steered for by eye, whatever the board or
+    // the parallel being run says.
+    const port = this.route[0]?.portId;
+    const eye = dest && port && this.townInSight(port) ? dest.bearing : null;
+    const wanted = this.helmOrder ?? this.chaseCourse() ?? eye ?? this.coastCourse() ?? this.latitudeCourse()
       ?? dest?.bearing ?? this.standingCourse;
     if (wanted === null) return null;
     const windEye = this.weatherNow.wind.from;
@@ -3278,7 +3315,7 @@ export class Game {
           // A cape laid down an hour after a noon sight is worth having; the
           // same cape laid down at the end of three weeks of blue water is a
           // guess, and the chart treats it as one.
-          this.nav.sigmaLat, this.nav.sigmaLon,
+          this.nav.sigmaLat, this.nav.sigmaLon, this.nav.legNm, this.nav.legNmLat,
         );
         // Coast run in sight counts even when no ring vertex happened to fall
         // inside the horizon — which, with vertices forty-seven miles apart, is
@@ -3996,10 +4033,12 @@ export class Game {
       for (const near of portsNear(pos, range)) {
         const charted = this.chart.ports.get(near.def.id);
         this.crySettlementRaised(near.def, near.at, near.distNm);
-        if (charted) continue;
+        // A town in sight is laid down where the reckoning puts it — once a
+        // day at most, so a long look is one sighting and not forty.
+        if (charted && (charted.visited || this.clock.t - charted.t < 86400)) continue;
         const isNew = this.chart.chartPort(
           near.def, this.nav.estimated, pos, this.clock.t, false,
-          this.nav.sigmaLat, this.nav.sigmaLon,
+          this.nav.sigmaLat, this.nav.sigmaLon, this.nav.legNm, this.nav.legNmLat,
         );
         if (isNew) {
           const value = near.def.discovery;
@@ -4391,7 +4430,10 @@ export class Game {
     // away the portId the arrival message needs to tell a town from a mark.
     const d = this.route[0];
     if (!d) return;
-    const trueDist = haversine(this.ship.state.pos, { lat: d.lat, lon: d.lon }) / NM;
+    // A town is up with when she is up with the town — the real one, wherever
+    // the chart had it. A mark in open water exists only on the paper.
+    const real = d.portId ? anchorageOf(portDef(d.portId)) : d;
+    const trueDist = haversine(this.ship.state.pos, real) / NM;
     const estDist = haversine(this.nav.estimated, { lat: d.lat, lon: d.lon }) / NM;
     // A mark in open water is a position and nothing else, so she is up with
     // it when the reckoning says she is: there is nothing to see that would
@@ -7392,29 +7434,14 @@ export class Game {
 
     const first = !this.visitedPorts.has(def.id);
     this.visitedPorts.add(def.id);
-    // Drawn before the landfall fix, so what goes onto the paper is the
-    // reckoning she arrived on — an opinion formed at sea and independent of
-    // what the chart already said. Fixing first and charting afterwards would
-    // have every visit confirm the chart with the chart.
-    this.chart.chartPort(
-      def, this.nav.estimated, this.ship.state.pos, this.clock.t, true,
-      this.nav.sigmaLat, this.nav.sigmaLon,
-    );
-
-    // Coming to an anchor off a town you know is a fix, and a good one.
-    //
-    // It used to be a fix only as good as the chart's own opinion of where the
-    // town was — the pilot learned that he was at Arguim and then wrote down
-    // whatever longitude his sheet gave Arguim, which was the period's real
-    // behaviour and is why the charts stayed wrong for a century. That went
-    // with the displaced chart: the sheet now draws the world true, so the
-    // town is where the town is, and standing in its roadstead tells you
-    // exactly where you are. The reckoning is still free to be wrong — it just
-    // stops being wrong the moment you can see a place you know.
-    const rel = this.relationsFor(def.id);
-    if (rel.met || def.known) {
-      this.nav.applyLandfall(anchorageOf(def), this.clock.t);
-    }
+    // The town tells the pilot where he is. That is the best fix there is:
+    // the reckoning is put right, and the error it had been carrying is shared
+    // back over the coast drawn since the last fix (see Chart.amend). Then the
+    // town goes on the chart where it is, and the coast in sight of it is put
+    // right and the stretch around bent to meet it (Chart.settleAround).
+    this.nav.applyLandfall(anchorageOf(def), this.clock.t);
+    this.chart.chartPort(def, this.nav.estimated, this.ship.state.pos, this.clock.t, true);
+    this.chart.settleAround(anchorageOf(def), this.clock.t);
 
     this.crown.progressObjective('reach', def.id);
 
@@ -7723,6 +7750,8 @@ export class Game {
     this.nav.leewayAllowance = leeway;
     this.nav.driftScale = drift;
     this.nav.lastFixT = this.clock.t;
+    this.wireNavigator();
+    this.chart.leg = [];
 
     // Everything that was happening at sea stops happening.
     this.encounter = null;
@@ -7908,8 +7937,8 @@ export class Game {
       const def = PORTS.find((x) => x.id === o.target);
       if (!def) continue;
       const charted = this.chart.ports.get(def.id);
-      const at = charted ?? { lat: def.lat, lon: def.lon };
-      this.setDestination(def.name, at.lat, at.lon);
+      if (!charted) continue;
+      this.setDestination(def.name, charted.lat, charted.lon, def.id);
       return;
     }
   }
@@ -7983,7 +8012,8 @@ export class Game {
     if (q.regard) this.shiftPeopleRegard(def.people, q.regard);
     if (q.reveals) {
       const r = portDef(q.reveals);
-      if (r) this.chart.chartPort(r, anchorageOf(r), anchorageOf(r), this.clock.t, false, 2, 4);
+      // Told, not seen: on the chart where they say, which is near enough.
+      if (r) this.chart.hearOfPort(r, 25, this.clock.t, this.seed);
     }
     this.logEvent('trade', q.done, true);
     return q.done;
@@ -8047,9 +8077,14 @@ export class Game {
     name: string; bearing: number; distNm: number; hours: number; off: number;
   } | null {
     // Steered at the offing, not at the harbour: see aimOffNm.
-    const d = this.aimedMark;
-    if (!d) return null;
-    const from = this.nav.estimated;
+    const mark = this.aimedMark;
+    if (!mark) return null;
+    // Once the town is in sight the helmsman steers by eye, not by the board:
+    // the lookout can see where it actually is.
+    const port = this.route[0]?.portId;
+    const eye = port ? this.townInSight(port) : null;
+    const d = eye ? { name: mark.name, lat: eye.lat, lon: eye.lon } : mark;
+    const from = eye ? this.ship.state.pos : this.nav.estimated;
     const dLat = d.lat - from.lat;
     const dLon = angleDelta(from.lon, d.lon) * cosd(from.lat);
     const bearing = wrap360((Math.atan2(dLon, dLat) * 180) / Math.PI);
@@ -8260,6 +8295,14 @@ export class Game {
     }
 
     return out;
+  }
+
+  /**
+   * Every fix closes the traverse on the chart: whatever the pilot drew since
+   * the last one is amended by the error the fix has just revealed.
+   */
+  private wireNavigator(): void {
+    this.nav.onCorrect = (c) => this.chart.amend(c);
   }
 
   courseTo(portId: string): { bearing: number; distNm: number } | null {

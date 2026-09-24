@@ -291,7 +291,7 @@ const caravel: QuestDef = {
                 q.flags.tome = 'agent';
                 q.flags.book = true;
                 const at = anchorageOf(portDef(CASTAWAY));
-                gg.soundedGround.push({ lat: at.lat, lon: at.lon, nm: 400, source: 'Tomé Lopes' });
+                gg.soundedGround.push({ lat: at.lat, lon: at.lon, nm: 400, source: 'Tomé Lopes', sigmaNm: 8 });
                 gg.shiftPeopleRegard(portDef(CASTAWAY).people, 0.3);
                 const n = writeTheSea(gg, -45, -10, -30, 20);
                 return go(gg, q, 'home',

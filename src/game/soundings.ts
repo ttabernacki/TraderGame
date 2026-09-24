@@ -97,14 +97,19 @@ export function castLead(g: Game): LeadCast {
   // the correction describe two different stretches of coastline, and a fifty
   // mile disagreement gets applied along an axis that has nothing to do with
   // it. Measured off Arguim, that put the ship further out than it found her.
-  const believed = nearestShore(nav.estimated, 90);
-  // Signed, because a reckoning can perfectly well have run the ship up a
-  // hillside — that is what a bad reckoning looks like from inside — and the
-  // offing it implies is then a negative number. Taken unsigned, a board that
-  // had her nine miles inland was read as nine miles offshore, and the lead
-  // corrected her by two thirds of what she actually needed while reporting
-  // that it had fixed her. It also flips the axis: from a point on the land the
-  // nearest coast lies seaward, so the direction of the land is the other way.
+  //
+  //
+  // And the coast is the coast *as the soundings draw it*. A depth becomes a
+  // distance off only through somebody's record of how this bottom shoals, and
+  // that record was written against a chart: the Casa's roteiros against the
+  // Casa's sheet, a local pilot's against the real shore he knows by eye, your
+  // own against your own chart. The lead matches the reckoning to that drawing
+  // — it moves the board and nothing else — and it can be no truer than the
+  // drawing it is matched to.
+  const frame = g.soundingFrame(nav.estimated);
+  const believed = frame
+    ? nearestShore({ lat: nav.estimated.lat - frame.shift.dLat, lon: nav.estimated.lon - frame.shift.dLon }, 90)
+    : { land: -1, signed: Infinity, bearing: 0, distance: Infinity };
   const inland = believed.signed <= 0;
   const believedOff = believed.land >= 0 ? believed.signed / NM : Infinity;
   const shoreBearing = wrap360(believed.bearing + (inland ? 180 : 0));
@@ -113,7 +118,7 @@ export function castLead(g: Game): LeadCast {
   // a depth is a fact about the water and not a distance off. It is judged at
   // the reckoned position — the pilot looks for his soundings where he thinks
   // he is — so a board that is badly out can look in the wrong page.
-  const profile = g.knowsGroundAt(nav.estimated);
+  const profile = frame?.source ?? null;
 
   const depth = g.sounding.depth;
   const reach = LEAD_REACH_M * g.ship.effects.leadReach;
@@ -123,7 +128,7 @@ export function castLead(g: Game): LeadCast {
     const edge = offingFromDepth(reach);
     let moved = 0;
     if (profile && Number.isFinite(believedOff) && believedOff < edge) {
-      moved = nav.applySounding(shoreBearing, edge, believedOff, 9, g.clock.t, 'no bottom').movedNm;
+      moved = nav.applySounding(shoreBearing, edge, believedOff, Math.hypot(9, frame?.sigmaNm ?? 0), g.clock.t, 'no bottom').movedNm;
     }
     g.logEvent('navigation',
       `The deep-sea lead goes down with ${Math.round(reach / 1.8288)} fathoms of line on it and comes up dry. `
@@ -163,7 +168,7 @@ export function castLead(g: Game): LeadCast {
   // and a great deal where it is nearly flat.
   const slopeNm = (offingFromDepth(called + sigmaD) - offingFromDepth(Math.max(1, called - sigmaD))) / 2;
   // And the bottom is not the smooth ramp the rule pretends it is.
-  const sigmaOff = Math.hypot(Math.abs(slopeNm), 0.45 + offing * 0.055);
+  const sigmaOff = Math.hypot(Math.abs(slopeNm), 0.45 + offing * 0.055, frame?.sigmaNm ?? 0);
 
   let moved = 0;
   if (profile && Number.isFinite(believedOff)) {
@@ -192,7 +197,10 @@ export function castLead(g: Game): LeadCast {
     );
   }
 
-  writeSounding(g, cell, fathoms, ground, truth);
+  // Written where the pilot believes he is — his book has no other position to
+  // give it — with the doubt he had when he wrote it.
+  writeSounding(g, cell, fathoms, ground, nav.estimated,
+    Math.max(3, Math.hypot(nav.sigmaLat, nav.sigmaLon)));
 
   const call = `By the deep, ${fathoms.toFixed(0)}. ${capitalise(ground)} on the tallow.`;
   g.logEvent('navigation', call
@@ -270,16 +278,18 @@ function recallSounding(g: Game, cell: string): RecalledSounding | null {
  * the note's source field so a later cast can be compared against it.
  */
 function writeSounding(
-  g: Game, cell: string, fathoms: number, ground: Ground, at: LatLon,
+  g: Game, cell: string, fathoms: number, ground: Ground, at: LatLon, doubtNm: number,
 ): void {
   const where = nearestName(g) ?? `the coast in ${Math.abs(g.nav.estimated.lat).toFixed(0)}° `
     + `${g.nav.estimated.lat >= 0 ? 'north' : 'south'}`;
   const { entry } = g.rutter.open(
     'coast', `coast:${where}`, where, g.nav.estimated, g.clock.t);
-  // The patch of bottom is where it is. What the pilot wrote in his book is a
-  // note about a real place, so recognising that ground again tells him truly
-  // where he is — which is the whole value of a sounding book, and the reason
-  // the lead is worth heaving at all.
+  // The patch of bottom does not move, and the tallow and the depth identify
+  // it. What the book records is where the pilot *believed* he was when he
+  // sounded it, and how sure he was — so recognising the ground again puts the
+  // board back where it was then, no better than it was then. A sounding
+  // taken just out of a harbour is worth a great deal; one taken at the end of
+  // a month of blue water is worth what that reckoning was worth.
   g.rutter.note(entry,
     `Soundings: ${fathoms.toFixed(0)} fathoms, ${ground}.`,
     'observed', g.clock.t,
@@ -288,9 +298,7 @@ function writeSounding(
       fact: {
         tag: 'sounding', value: fathoms, target: cell,
         lat: at.lat, lon: at.lon,
-        // The ground cell is a few miles across, so knowing it puts her within
-        // a few miles and no closer.
-        doubt: 4,
+        doubt: doubtNm,
       },
     });
 }

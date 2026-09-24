@@ -68,6 +68,21 @@ export class Navigator {
   /** Simulated seconds of the last observation or landfall. */
   lastFixT = 0;
 
+  /**
+   * Miles run since the reckoning was last corrected by anything. The chart
+   * uses it to share a correction back along the leg; see Chart.amend.
+   */
+  legNm = 0;
+  /** The same, for latitude alone: a noon sight closes this leg and not the other. */
+  legNmLat = 0;
+
+  /**
+   * Told whenever an observation moves the reckoning: how far, how long each
+   * coordinate's leg was, and which coordinates the fix actually observed. Dead
+   * reckoning itself never calls this — only a fix does.
+   */
+  onCorrect: ((c: Correction) => void) | null = null;
+
   traverse: TraverseEntry[] = [];
   fixes: Fix[] = [];
 
@@ -178,6 +193,8 @@ export class Navigator {
     this.sigmaLon = Math.sqrt(this.sigmaLon * this.sigmaLon + runNm * LON_DRIFT * drift);
     this.milesSinceFix += runNm;
     this.milesSinceLongitude += runNm;
+    this.legNm += runNm;
+    this.legNmLat += runNm;
 
     this.accumCourse += reckonedCourse * runNm;
     this.accumDist += runNm;
@@ -200,8 +217,35 @@ export class Navigator {
     }
   }
 
+  /** Report a correction from `from` to the current estimate, and open a new leg. */
+  private corrected(from: LatLon, lat = true, lon = true): void {
+    const c: Correction = {
+      dLat: this.estimated.lat - from.lat,
+      dLon: wrap180(this.estimated.lon - from.lon),
+      legLat: this.legNmLat, legLon: this.legNm, lat, lon,
+    };
+    if (lat) this.legNmLat = 0;
+    if (lon) this.legNm = 0;
+    this.onCorrect?.(c);
+  }
+
+  /**
+   * Another pilot's position, taken over wholesale with his doubt: a fix like
+   * any other, as far as the chart is concerned.
+   */
+  setFix(at: LatLon, sigmaLatNm: number, sigmaLonNm: number, t: number): void {
+    const from = { ...this.estimated };
+    this.estimated = { ...at };
+    this.sigmaLat = Math.min(this.sigmaLat, sigmaLatNm);
+    this.sigmaLon = Math.min(this.sigmaLon, sigmaLonNm);
+    this.lastFixT = t;
+    this.milesSinceFix = 0;
+    this.corrected(from);
+  }
+
   /** Apply a latitude observation, which corrects latitude and nothing else. */
   applyLatitude(lat: number, sigmaDeg: number, method: string, body: string, t: number): void {
+    const from = { ...this.estimated };
     const sigmaNm = sigmaDeg * 60;
     // Weighted blend of the reckoning and the observation.
     const wObs = 1 / (sigmaNm * sigmaNm + 1e-6);
@@ -242,6 +286,7 @@ export class Navigator {
     this.milesSinceFix = 0;
     this.fixes.push({ t, latitude: lat, method, sigma: sigmaDeg, body });
     if (this.fixes.length > 200) this.fixes.shift();
+    this.corrected(from, true, false);
   }
 
   /**
@@ -253,6 +298,7 @@ export class Navigator {
    * and one he has only read about gives him a bad one.
    */
   applyLandfall(known: LatLon, t: number, sigmaLonNm = 1.2, sigmaLatNm = 0.6): void {
+    const from = { ...this.estimated };
     this.estimated = { ...known };
     // The latitude doubt is an argument now, and the reason is the worst bug
     // this navigation model has had.
@@ -277,6 +323,7 @@ export class Navigator {
     this.milesSinceFix = 0;
     this.milesSinceLongitude = 0;
     this.fixes.push({ t, latitude: known.lat, method: 'Landfall', sigma: 0.02, body: 'the land' });
+    this.corrected(from);
   }
 
   /**
@@ -322,6 +369,7 @@ export class Navigator {
       sigma: this.sigmaLat / 60, body: 'the ground',
     });
     if (this.fixes.length > 200) this.fixes.shift();
+    this.corrected(from);
     return movedNm;
   }
 
@@ -363,6 +411,7 @@ export class Navigator {
     const varObs = sigmaNm * sigmaNm;
     const k = varAxis / (varAxis + varObs);
     const move = k * delta;
+    const from = { ...this.estimated };
 
     this.estimated.lat -= (move * cN) / 60;
     this.estimated.lon = wrap180(
@@ -383,6 +432,7 @@ export class Navigator {
       t, latitude: this.estimated.lat, method: 'By the lead', sigma: sigmaNm / 60, body: note,
     });
     if (this.fixes.length > 200) this.fixes.shift();
+    this.corrected(from);
     return { movedNm: Math.abs(move) };
   }
 
@@ -397,6 +447,7 @@ export class Navigator {
    * open Atlantic from a thing you survive into a thing you cross on purpose.
    */
   applyLongitude(lon: number, sigmaNm: number, t: number): void {
+    const from = { ...this.estimated };
     const wObs = 1 / (sigmaNm * sigmaNm + 1e-6);
     const wDr = 1 / (this.sigmaLon * this.sigmaLon + 1e-6);
     this.estimated.lon = wrap180((lon * wObs + this.estimated.lon * wDr) / (wObs + wDr));
@@ -405,6 +456,7 @@ export class Navigator {
     this.milesSinceLongitude = 0;
     this.fixes.push({ t, latitude: this.estimated.lat, method: 'Lunar distance', sigma: sigmaNm / 60, body: 'the moon' });
     if (this.fixes.length > 200) this.fixes.shift();
+    this.corrected(from);
   }
 
   /** Error between the reckoning and the truth, in nautical miles. */
@@ -435,6 +487,18 @@ export class Navigator {
  */
 const LAT_DRIFT = 3.0;
 const LON_DRIFT = 5.5;
+
+/** What a fix did to the reckoning, for the chart to close the traverse with. */
+export interface Correction {
+  dLat: number;
+  dLon: number;
+  /** Miles of each coordinate's open leg. */
+  legLat: number;
+  legLon: number;
+  /** Which coordinates this fix observed and therefore closes. */
+  lat: boolean;
+  lon: boolean;
+}
 
 export type SightBody = 'sun' | 'polaris' | 'cruzeiro' | 'star';
 

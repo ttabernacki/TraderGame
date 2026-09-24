@@ -100,9 +100,7 @@ function askThePosition(g: Game, quality: number): string {
   // place he knew the position of.
   const errLat = g.rng.normal(0, quality * 0.12);
   const errLon = g.rng.normal(0, quality * 0.55);
-  g.nav.estimated = { lat: truth.lat + errLat, lon: truth.lon + errLon };
-  g.nav.sigmaLat = Math.min(g.nav.sigmaLat, quality * 9);
-  g.nav.sigmaLon = Math.min(g.nav.sigmaLon, quality * 34);
+  g.nav.setFix({ lat: truth.lat + errLat, lon: truth.lon + errLon }, quality * 9, quality * 34, g.clock.t);
   const moved = haversine(from, g.nav.estimated) / NM;
   return `His pilot gives his reckoning and ours is ${moved.toFixed(0)} miles from it. `
     + `${moved > 60
@@ -116,6 +114,7 @@ function copyHisCoast(g: Game, s: Stranger, accuracyNm: number, rangeNm: number)
   // His soundings come with his coast.
   g.soundedGround.push({
     lat: g.ship.state.pos.lat, lon: g.ship.state.pos.lon, nm: rangeNm, source: `${s.master}\u2019s roteiro`,
+    sigmaNm: accuracyNm,
   });
   if (gained === 0) {
     return 'His sheet is worse than ours and he is embarrassed about it. We gave him ours to '

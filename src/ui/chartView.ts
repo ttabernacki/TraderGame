@@ -101,7 +101,7 @@ export class ChartView {
     this.root.append(
       el('div', { class: 'screen-head' },
         el('h1', {}, 'The chart'),
-        el('div', { class: 'sub' }, 'The land is where the land is. You are where you think you are'),
+        el('div', { class: 'sub' }, 'The land as you have drawn it, and the ship where you reckon her'),
       ),
       el('div', { class: 'screen-body', style: { padding: '0', overflow: 'hidden' } }, this.wrap),
       el('div', { class: 'screen-foot' },
@@ -890,8 +890,7 @@ export class ChartView {
     //
     // The grade is read off what the pilot knows about the stretch and nothing
     // else: how many times he has run it, and what his fixes were worth when
-    // he did. It is not read off any error in the drawing — the chart draws
-    // the world true. What it tracks is who has actually seen it.
+    // he did — never off its real error, which nobody aboard can know.
     const byLand = new Map<number, { index: number; lat: number; lon: number; grade: number }[]>();
     for (const p of g.chart.points.values()) {
       const idx = Number(p.key.split(':')[1]);

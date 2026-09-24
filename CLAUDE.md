@@ -65,3 +65,22 @@ Bow is **+Z**, port is **+X**, up is +Y. `beta` is the bearing of the apparent
 wind's *source* off the bow, positive to starboard. So the wind blows toward
 `(sin β, −cos β)` in (x, z). `downwindInShip()` in `src/render/shipMesh.ts` is
 the single source of truth — pennant, telltales and sail belly all read it.
+
+## Navigation model — three frames, never mixed
+
+- **Ground truth** (`world/landmass`, `world/ports`, `ship.state.pos`): the real
+  coast, towns and ship. Never changes except by the ship physically moving.
+- **Reckoning** (`navigation/navigator`): where the pilot believes the ship is,
+  with a growing ellipse of doubt. Sights, the lead, the book and landfalls
+  correct *only this*; every correction goes through `Navigator.corrected`.
+- **Chart** (`navigation/charts`): where the pilot believes the coast and towns
+  are. Starts from the Casa's sheet (`seededError`), laid down at
+  `truth + (reckoned − truePos)` when sighted, amended back along the leg on
+  every fix (`Chart.amend`), fixed exactly at a town entered and bent to meet it
+  (`settleAround`), issued hearsay relaxed toward surveyed coast
+  (`relaxHearsay`). It converges on the truth; it never starts there.
+- The lead reads soundings in the frame of whoever took them
+  (`Game.soundingFrame`): Casa roteiros on the Casa's sheet, local pilots on the
+  real shore, your own book on your chart.
+- Steering and planning use reckoning + chart. Only the lookout (a town within
+  sight) and arrival checks use the truth.
