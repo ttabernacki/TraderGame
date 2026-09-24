@@ -215,10 +215,10 @@ export class AudienceView {
           el('input', {
             type: 'number', min: '0', max: String(Math.floor(c.quantity)), value: String(picked),
             'aria-label': `Give ${gd.english}`,
-            oninput: (e: Event) => {
+            onchange: (e: Event) => {
               const v = clamp(Number((e.target as HTMLInputElement).value), 0, Math.floor(c.quantity));
               if (v <= 0) this.giftPicks.delete(c.goodId); else this.giftPicks.set(c.goodId, v);
-              this.render();
+              setTimeout(() => this.render(), 0);
             },
           }));
       }),

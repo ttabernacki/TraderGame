@@ -9,6 +9,8 @@ import { officerOpinion } from '../game/officerEvents';
 import type { Game } from '../game/state';
 import { button, card, clear, el, kv, meter } from './dom';
 import { good } from '../economy/goods';
+import { FAIRS, bookTotals, currentBook, sheetAgeWord } from '../economy/trade';
+import { formatDateAt } from '../core/clock';
 import { POLITY_BY_ID, TEMPER_WORD } from '../diplomacy/polities';
 import { measureWord, rulerName, standingWord } from '../diplomacy/courts';
 import { house, kindName } from '../economy/finance';
@@ -17,7 +19,7 @@ import {
   capacityOf, regardWordF, stockTons, stockValue, troubleWord,
 } from '../progression/feitoria';
 
-type Tab = 'chronicle' | 'missions' | 'courts' | 'reports' | 'stations' | 'wardroom' | 'rival';
+type Tab = 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 'stations' | 'wardroom' | 'rival';
 
 /**
  * The captain's orders.
@@ -35,6 +37,7 @@ export class OrdersView {
   root = el('div', { class: 'screen' });
   private body = el('div', { class: 'screen-body' });
   private tab: Tab = 'chronicle';
+  private tradeGood = '';
   private game: Game | null = null;
 
   constructor(private onClose: () => void, private onLayCourse: () => void) {
@@ -65,6 +68,7 @@ export class OrdersView {
       chronicle: 0,
       missions: (g.crown.patent ? g.crown.patent.objectives.filter((o) => !o.complete).length : 0)
         + g.quests.filter((q) => !q.outcome).length + g.activeVentures.length,
+      trade: g.trade.contracts.filter((c) => c.status === 'open').length,
       courts: g.diplomacy.agreements.filter((a) => a.status === 'open').length,
       reports: g.openLeads.length,
       stations: g.liveFactories.length,
@@ -72,7 +76,7 @@ export class OrdersView {
       rival: 0,
     };
     const names: Record<Tab, string> = {
-      chronicle: 'Chronicle', missions: 'Missions', courts: 'Courts', reports: 'Hearsay',
+      chronicle: 'Chronicle', missions: 'Missions', trade: 'Trade', courts: 'Courts', reports: 'Hearsay',
       stations: 'Factories', wardroom: 'Wardroom', rival: 'Rival',
     };
 
@@ -100,6 +104,7 @@ export class OrdersView {
       this.body.append(el('h2', { class: 'fit-head' }, 'Charters'));
       this.renderCharters(g);
     }
+    else if (this.tab === 'trade') this.renderTrade(g);
     else if (this.tab === 'courts') this.renderCourts(g);
     else if (this.tab === 'reports') this.renderLeads(g);
     else if (this.tab === 'stations') this.renderStations(g);
@@ -389,6 +394,102 @@ export class OrdersView {
         + 'when you come. That is the whole of it, and the price of it is a man of yours living '
         + 'on that beach.'),
     ));
+  }
+
+  /**
+   * The merchant's book: the news, the prices he knows and how old they are,
+   * the seasons of the markets, what he has promised, and what the voyage has
+   * made so far.
+   */
+  private renderTrade(g: Game): void {
+    const t = g.trade;
+    const now = g.clock.t;
+    const left = el('div', {}), right = el('div', {});
+
+    // Prices, one good at a time across every port in the book.
+    const goods = new Set<string>();
+    for (const sh of Object.values(t.sheets)) for (const id of Object.keys(sh.quotes)) goods.add(id);
+    const list = [...goods].sort((a, b) => good(b).lisbon - good(a).lisbon);
+    if (!this.tradeGood || !goods.has(this.tradeGood)) this.tradeGood = g.ship.cargo.find((c) => goods.has(c.goodId))?.goodId ?? list[0] ?? '';
+    const quotes = this.tradeGood ? g.knownQuotes(this.tradeGood).sort((a, b) => (b.wanted ? b.bid : 0) - (a.wanted ? a.bid : 0) || a.ask - b.ask) : [];
+    left.append(card('Prices in your book',
+      list.length === 0 ? el('p', {}, 'You have no prices yet. Every market you trade in goes into the book, dated.') : el('select', {
+        'aria-label': 'Good', class: 'trade-select',
+        onchange: (e: Event) => { this.tradeGood = (e.target as HTMLSelectElement).value; this.render(); },
+      }, ...list.map((id) => el('option', { value: id, selected: id === this.tradeGood }, good(id).english))),
+      quotes.length > 0 ? el('div', { class: 'price-book' },
+        el('div', { class: 'price-row head' }, el('span', {}, 'Port'), el('span', { class: 'num' }, 'Ask'), el('span', { class: 'num' }, 'Offer'), el('span', { class: 'num' }, 'Seen')),
+        ...quotes.map((q) => el('div', { class: `price-row${q.days > 180 ? ' stale' : ''}` },
+          el('span', {}, q.port, q.source !== 'seen' ? el('em', {}, q.source === 'broker' ? ' (broker)' : ' (letter)') : null),
+          el('span', { class: 'num' }, q.local && q.ask > 0 ? q.ask.toFixed(1) : '\u2014'),
+          el('span', { class: 'num' }, q.bid > 0 ? `${q.bid.toFixed(1)}${q.wanted ? '' : '*'}` : '\u2014'),
+          el('span', { class: 'num' }, sheetAgeWord(q.days))))) : null,
+      quotes.some((q) => !q.wanted) ? el('p', { class: 'gift-sub' }, '* a middleman\u2019s price: nobody there wants it.') : null,
+    ));
+
+    // News.
+    const news = g.newsHeard;
+    left.append(card('News of the markets',
+      news.length === 0 ? el('p', {}, 'Nothing you have heard. News reaches you in port, as late as the last ship.') : null,
+      ...news.map((n) => el('div', { class: 'market-news' },
+        el('b', {}, n.def.title), ` \u2014 heard ${formatDateAt(n.heard)}. `, n.def.text,
+        n.shock.end < now ? el('em', {}, ' It may be over by now.') : null)),
+    ));
+
+    // Seasons.
+    const m = g.clock.date.month;
+    const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    left.append(card('The seasons of the markets',
+      ...FAIRS.map((f) => {
+        const known = f.ports.filter((id) => g.chart.ports.has(id)).map((id) => portDef(id).name);
+        const on = f.months.includes(m);
+        return el('div', { class: `fair-row${on ? ' on' : ''}` },
+          el('span', {}, el('b', {}, f.name), ` \u2014 ${known.length ? known.join(', ') : 'a coast you have not found'}`),
+          el('span', { class: 'due' }, on ? 'now' : f.months.map((x) => MONTH[x - 1]).join(' ')));
+      }),
+    ));
+
+    // Promises and the Crown.
+    const open = t.contracts.filter((c) => c.status === 'open');
+    right.append(card('Contracts',
+      open.length === 0 ? el('p', {}, 'None signed. The houses in Lisbon offer them at the Freight table.') : null,
+      ...open.map((c) => el('div', { class: `court-agreement${c.due - now < 60 * 86400 ? ' late' : ''}` },
+        el('span', {}, `${c.qty} ${good(c.goodId).english.toLowerCase()} to ${c.houseName} at ${c.price} (${g.ship.quantityOf(c.goodId).toFixed(0)} aboard)`),
+        el('span', { class: 'due' }, `${Math.round((c.due - now) / 86400)} days`))),
+    ));
+    const lic = Object.entries(t.licences).filter(([, u]) => u > now);
+    const ant = t.antwerp.reduce((s2, a) => s2 + a.amount, 0);
+    right.append(card('The Crown and the hold',
+      kv('Licences', lic.length ? lic.map(([id, u]) => `${good(id).english} to ${formatDateAt(u)}`).join('; ') : 'None: the Casa takes the King\u2019s goods at his price'),
+      kv('Officers\u2019 chests', t.quintaladas ? 'Granted' : 'Refused'),
+      ant > 0 ? kv('Owed from Antwerp', `${ant.toFixed(0)} cruzados`) : null,
+    ));
+
+    // The books.
+    const book = currentBook(t);
+    const tot = bookTotals(book);
+    right.append(card(`This voyage's books \u2014 voyage ${book.n}`,
+      kv('Laid out', `${tot.spent.toFixed(0)} cruzados`),
+      kv('Taken in', `${tot.taken.toFixed(0)} cruzados`),
+      tot.lost > 0 ? kv('Spoiled in the hold', `${tot.lost.toFixed(0)} cruzados of cost`, 'warn') : null,
+      kv('In hand on the voyage', `${tot.net >= 0 ? '' : '\u2212'}${Math.abs(tot.net).toFixed(0)} cruzados`, tot.net < 0 ? 'bad' : ''),
+      kv('Cargo aboard, at cost', `${g.ship.cargo.reduce((s2, c) => s2 + c.cost * c.quantity, 0).toFixed(0)} cruzados`),
+      el('div', { class: 'ledger-lines' },
+        ...book.entries.slice(-14).reverse().map((e) => el('div', { class: 'court-agreement' },
+          el('span', {}, e.text),
+          el('span', { class: `due${e.amount < 0 ? ' neg' : ''}` }, e.amount === 0 ? '' : `${e.amount > 0 ? '+' : '\u2212'}${Math.abs(e.amount).toFixed(0)}`)))),
+    ));
+    const past = t.books.slice(0, -1).reverse();
+    if (past.length > 0) {
+      right.append(card('Voyages past',
+        ...past.map((b) => {
+          const bt = bookTotals(b);
+          return el('div', { class: 'court-agreement' },
+            el('span', {}, `Voyage ${b.n}: ${formatDateAt(b.start)} \u2013 ${b.end ? formatDateAt(b.end) : ''}`),
+            el('span', { class: `due${bt.net < 0 ? ' neg' : ''}` }, `${bt.net >= 0 ? '+' : '\u2212'}${Math.abs(bt.net).toFixed(0)}`));
+        })));
+    }
+    this.body.append(el('div', { class: 'cols two' }, left, right));
   }
 
   /** Every state you have dealt with: who rules, where you stand, what you owe. */

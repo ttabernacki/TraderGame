@@ -9,6 +9,8 @@ export interface CargoLot {
   quantity: number;
   /** Average price paid, for the clerk's books and the profit reckoning. */
   cost: number;
+  /** 0-1: how good it is. Bought where it is best and kept dry, it is worth more. */
+  q?: number;
 }
 
 export interface ShipCondition {
@@ -83,8 +85,11 @@ export class Ship {
     return t;
   }
 
+  /** Tons of the hold given over to the officers' own chests. */
+  reservedTons = 0;
+
   get holdFree(): number {
-    return Math.max(0, this.holdCapacity - this.cargoTons);
+    return Math.max(0, this.holdCapacity - this.reservedTons - this.cargoTons);
   }
 
   get sailArea(): number {
@@ -122,7 +127,7 @@ export class Ship {
     this.refreshDerived();
   }
 
-  addCargo(goodId: string, quantity: number, unitPrice: number): number {
+  addCargo(goodId: string, quantity: number, unitPrice: number, q = 0.5): number {
     const g = good(goodId);
     const room = this.holdFree;
     const canTake = Math.min(quantity, Math.floor(room / g.bulk));
@@ -130,10 +135,11 @@ export class Ship {
     const existing = this.cargo.find((c) => c.goodId === goodId);
     if (existing) {
       const totalCost = existing.cost * existing.quantity + unitPrice * canTake;
+      existing.q = ((existing.q ?? 0.5) * existing.quantity + q * canTake) / (existing.quantity + canTake);
       existing.quantity += canTake;
       existing.cost = totalCost / existing.quantity;
     } else {
-      this.cargo.push({ goodId, quantity: canTake, cost: unitPrice });
+      this.cargo.push({ goodId, quantity: canTake, cost: unitPrice, q });
     }
     return canTake;
   }
@@ -165,7 +171,7 @@ export class Ship {
    * Daily wear: weed grows, the worm eats, seams work open, and cargo spoils in
    * a hold that is never dry.
    */
-  age(days: number, waterTempFactor: number, pumpEffort: number): { swamped: boolean; spoiled: string[] } {
+  age(days: number, waterTempFactor: number, pumpEffort: number): { swamped: boolean; spoiled: string[]; lost: { goodId: string; qty: number; cost: number }[] } {
     const fx = this.effects;
     this.condition.fouling = clamp(
       this.condition.fouling + days * 0.0042 * waterTempFactor * fx.foulingRate,
@@ -177,14 +183,18 @@ export class Ship {
     this.condition.bilge = Math.max(0, this.condition.bilge + days * leakRate - pumped);
 
     const spoiled: string[] = [];
+    const lostList: { goodId: string; qty: number; cost: number }[] = [];
     const damp = clamp(this.condition.bilge / Math.max(this.holdCapacity * 0.25, 1), 0, 1);
     for (const lot of [...this.cargo]) {
       const g = GOOD_BY_ID.get(lot.goodId);
       if (!g || g.spoilage <= 0) continue;
       const rate = g.spoilage * fx.spoilage * (1 + damp * 2.2) * (days / 30);
       const lost = lot.quantity * clamp(rate, 0, 0.9);
+      // What survives is worse for the voyage: pepper sweats, sugar runs, cloth mildews.
+      lot.q = clamp((lot.q ?? 0.5) - g.spoilage * (days / 30) * (1 + damp * 3) * 2.5, 0.05, 1);
       if (lost > 0.01) {
         lot.quantity -= lost;
+        lostList.push({ goodId: lot.goodId, qty: lost, cost: lot.cost });
         if (lot.quantity < 0.5) {
           this.cargo = this.cargo.filter((c) => c !== lot);
           spoiled.push(g.name);
@@ -193,7 +203,7 @@ export class Ship {
     }
 
     const swamped = this.condition.bilge > this.holdCapacity * 0.55;
-    return { swamped, spoiled };
+    return { swamped, spoiled, lost: lostList };
   }
 
   /** Storm and grounding damage. */

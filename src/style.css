@@ -2567,3 +2567,32 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
 .chart-regard-key .feud::before { border-top: 2px dashed var(--red); }
 .chart-regard-key .kin::before { border-color: var(--green); }
 .chart-regard-key .yours::before { border-top: 2px dotted var(--gold); }
+
+/* --------------------------------------------------------------------------
+   Trade: the market card, the barter table, the merchant's book
+   -------------------------------------------------------------------------- */
+.market-fair, .market-news { font-size: 13.5px; line-height: 1.55; margin-top: 8px; padding-left: 11px; border-left: 2px solid var(--gold); }
+.market-news { border-left-color: var(--warn); }
+.market-news em { color: var(--ink-faint); }
+.tabs.market-mode { margin: 14px 0 12px; }
+.barter-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid rgba(90, 74, 55, 0.15); font-size: 14px; }
+.barter-row input { width: 72px; flex: 0 0 auto; }
+.barter-row .tag { margin-left: 6px; }
+.trade-select { font: inherit; padding: 5px 8px; margin-bottom: 10px; background: #fffaf0; border: 1px solid rgba(90, 74, 55, 0.4); border-radius: 2px; max-width: 100%; }
+.price-book { display: flex; flex-direction: column; font-size: 13.5px; }
+.price-row { display: grid; grid-template-columns: 1fr 64px 64px 120px; gap: 8px; padding: 4px 0; border-bottom: 1px solid rgba(90, 74, 55, 0.12); align-items: baseline; }
+.price-row.head { font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-faint); }
+.price-row .num { text-align: right; font-variant-numeric: tabular-nums; }
+.price-row.stale { color: var(--ink-faint); }
+.price-row em { font-size: 12px; color: var(--ink-faint); }
+.fair-row { display: flex; justify-content: space-between; gap: 10px; padding: 4px 0; font-size: 13px; color: var(--ink-soft); }
+.fair-row.on { color: var(--ink); }
+.fair-row.on .due { color: var(--green); font-weight: bold; }
+.fair-row .due { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.court-agreement .due.neg { color: var(--red); }
+.ledger-lines { margin-top: 10px; border-top: 1px solid rgba(90, 74, 55, 0.2); padding-top: 6px; }
+@media (max-width: 560px) {
+  .price-row { grid-template-columns: 1fr 52px 52px; }
+  .price-row > :nth-child(4) { grid-column: 1 / -1; font-size: 11.5px; text-align: left; }
+}
+.audience-reading > span + span { margin-left: 10px; }

@@ -110,6 +110,12 @@ export class Markets {
     return Math.round(Math.min(units, affordable));
   }
 
+  /**
+   * Whatever the rest of the world is doing to this price: news, the season,
+   * other buyers. Set by the game; see economy/trade.
+   */
+  adjust: ((portId: string, goodId: string, t: number) => { ask: number; bid: number; stock: number }) | null = null;
+
   /** Ports whose inland road has been opened. */
   roads = new Set<string>();
 
@@ -208,7 +214,11 @@ export class Markets {
         s.stock[g.id] = lerp(cur, base, clamp(days / 90, 0, 1));
       }
       const glut = s.glut[g.id] ?? 0;
-      if (glut > 0) s.glut[g.id] = Math.max(0, glut - days / 120);
+      // Lisbon remembers a great landing of spice for a year: the whole of
+      // Europe's pepper came through one quay, and every cargo put on it
+      // pushed the price down for the next man.
+      const slow = portId === 'lisboa' && (g.category === 'spice' || g.category === 'precious');
+      if (glut > 0) s.glut[g.id] = Math.max(0, glut - days / (slow ? 365 : 120));
     }
   }
 
@@ -275,10 +285,11 @@ export class Markets {
       // What this town does to the price: its customs, its monopoly, the one
       // thing it will pay anything for. See world/portCharacter.
       const mod = priceMod(portId, g.id);
+      const world = this.adjust?.(portId, g.id, t) ?? { ask: 1, bid: 1, stock: 1 };
 
       out.push({
         goodId: g.id,
-        stock: Math.floor(stock),
+        stock: Math.floor(stock * world.stock),
         // Never quite zero. A market sated to the eyebrows still has somebody
         // who will take a little more if the price is bad enough, and a hard
         // stop at nought is how a captain ends up with a hold he can never
@@ -286,8 +297,8 @@ export class Markets {
         // prevent. The price at full glut is a fraction of the good's worth, so
         // this is a way to cut a loss and never a way to make money.
         appetite: Math.max(1, Math.floor(this.appetiteFor(def, g, hunger, abundance) * (1 - glut))),
-        ask: Math.max(0.4, mid * (1 + spread) * mod.ask),
-        bid: Math.max(0.2, bid * mod.bid),
+        ask: Math.max(0.4, mid * (1 + spread) * mod.ask * world.ask),
+        bid: Math.max(0.2, bid * mod.bid * world.bid),
         local: abundance > 0,
         wanted: hunger > 0,
       });

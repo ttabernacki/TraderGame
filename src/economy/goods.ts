@@ -34,6 +34,8 @@ export const GOODS: Good[] = [
   { id: 'pedras', name: 'Pedraria', english: 'Precious stones', category: 'precious', unit: 'lot', lisbon: 210, bulk: 0.002, spoilage: 0 },
   { id: 'perolas', name: 'Pérolas', english: 'Pearls', category: 'precious', unit: 'lot', lisbon: 95, bulk: 0.002, spoilage: 0 },
   { id: 'ambar', name: 'Âmbar-gris', english: 'Ambergris', category: 'precious', unit: 'arrátel', lisbon: 150, bulk: 0.001, spoilage: 0 },
+  { id: 'prata', name: 'Prata', english: 'Silver', category: 'precious', unit: 'marco', lisbon: 6, bulk: 0.001, spoilage: 0, note: 'German silver through Antwerp. India wanted it more than anything Portugal made.' },
+  { id: 'cobre', name: 'Cobre', english: 'Copper', category: 'metal', unit: 'quintal', lisbon: 9, bulk: 0.06, spoilage: 0, note: 'Copper from Hungary and the Harz, bought in Antwerp and wanted from Guinea to Malabar.' },
   { id: 'coral', name: 'Coral', english: 'Coral', category: 'precious', unit: 'arrátel', lisbon: 36, bulk: 0.002, spoilage: 0 },
 
   // Raw goods.

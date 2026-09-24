@@ -1,7 +1,12 @@
 import { characterOf } from '../world/portCharacter';
 import { clamp } from '../core/math';
 import { good, unitOf } from '../economy/goods';
-import { Markets, provisioningCost, type Listing } from '../economy/market';
+import { provisioningCost } from '../economy/market';
+import {
+  ANTWERP, ANTWERP_DAYS, CASA_SHARE, CHEST_TONS, COMPETITION, MONOPOLY, REGION_NAME, antwerpBid, fairsAt, gradeWord,
+  licenceCost, paymentAt,
+} from '../economy/trade';
+import { formatDateAt } from '../core/clock';
 import { people } from '../world/peoples';
 import type { PortDef } from '../world/ports';
 import {
@@ -10,7 +15,6 @@ import {
 import { hullClass } from '../ship/hull';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
 import { OFFICER_ROLES } from '../crew/crew';
-import { skill } from '../crew/skills';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
 import { RATING_LABEL, TEMPER, regardWord as handRegardWord } from '../crew/hands';
 import { ARC_BY_ID } from '../progression/arcs';
@@ -27,7 +31,7 @@ import {
   WORKS, buyable, capacityOf, regardWordF, residentPrice, stockTons, stockValue,
   troubleWord, type Feitoria,
 } from '../progression/feitoria';
-import type { Game } from '../game/state';
+import type { Game, TradeListing } from '../game/state';
 import { append, button, card, clear, el, kv, plural } from './dom';
 
 type Tab = 'town' | 'market' | 'freight' | 'money' | 'station' | 'fit';
@@ -43,6 +47,12 @@ export class PortView {
   private confirmSale: string | null = null;
   private game: Game | null = null;
   private quantities = new Map<string, number>();
+  private marketMode: 'scales' | 'barter' = 'scales';
+  private barterGive = new Map<string, number>();
+  private barterTake = new Map<string, number>();
+  private barterCoin = 0;
+  /** How his face reads this time, which changes each time you put it to him. */
+  private faceNoise = 0;
   private notice: { text: string; grave?: boolean } | null = null;
   /** Which officer the inland card has selected, until one is sent. */
   private inlandMan: string | null = null;
@@ -65,6 +75,7 @@ export class PortView {
     this.tab = 'town';
     this.notice = null;
     this.quantities.clear();
+    this.barterGive.clear(); this.barterTake.clear(); this.barterCoin = 0;
     if (g.dockedAt) g.markets.refresh(g.dockedAt, g.clock.t);
     this.render();
   }
@@ -316,31 +327,66 @@ export class PortView {
         'The market is closed to you. Nobody will deal until the governor says they may.'));
       return;
     }
+    const listings = g.marketHere();
 
-    const eff = g.effectiveSkill;
-    const tradeSkill = skill(eff, 'comercio');
-    // Standing with a people you have written up is standing you have earned:
-    // the page has their language, what they will take, who their king is, and
-    // a man who has all that is not a stranger on the beach.
-    const known = g.diplomaticEdge(def.people);
-    // Whatever is in the hold is on the counter too, even where the town never
-    // asked for it — otherwise a cargo bought for one market is dead weight
-    // everywhere else in the world and the captain cannot even see that it is.
-    const listings = g.markets.listings(
-      def.id, g.clock.t, rel.regard + known, tradeSkill,
-      g.ship.cargo.map((c) => c.goodId),
+    append(host,
+      el('div', { class: 'card' },
+        el('div', { class: 'purse-row' },
+          el('div', {}, kv('Purse', `${g.crown.gold.toFixed(0)} cruzados`)),
+          el('div', {}, kv('Hold free', `${g.ship.holdFree.toFixed(1)} of ${g.ship.holdCapacity} tons`
+            + (g.ship.reservedTons > 0 ? ` (${g.ship.reservedTons.toFixed(1)} in the officers’ chests)` : ''))),
+          el('div', {}, kv('Your bargaining', `${g.skills.comercio.toFixed(0)}`)),
+          g.creditLimit > 0
+            ? el('div', {}, kv('Credit',
+                `${g.creditFree.toFixed(0)} to draw` + (g.crown.debt > 0 ? ` · ${g.crown.debt.toFixed(0)} owed` : '')))
+            : null,
+        ),
+      ),
+      this.marketCard(g, def),
+      el('div', { class: 'tabs market-mode' },
+        el('button', { class: this.marketMode === 'scales' ? 'active' : '', onclick: () => { this.marketMode = 'scales'; this.render(); } }, 'At the scales, for coin'),
+        el('button', { class: this.marketMode === 'barter' ? 'active' : '', onclick: () => { this.marketMode = 'barter'; this.render(); } }, 'The barter table'),
+      ),
     );
 
-    // Not a table.
-    //
-    // The market had seven columns, the last of them a quantity box and two
-    // buttons, and on a phone the whole right-hand half of it was off the side
-    // of the screen — which meant the trading half of a trading game could not
-    // be played on a phone at all. This is a grid whose rows are laid out
-    // across on a wide screen and stacked into a card on a narrow one, with
-    // `display: contents` doing the switching, so the figures still line up in
-    // columns where there is room for columns and the controls are always
-    // reachable where there is not.
+    if (this.marketMode === 'barter') this.renderBarter(host, g, listings);
+    else this.renderScales(host, g, listings);
+
+    const extras = el('div', { class: 'cols two' });
+    const l2 = el('div', {}), r2 = el('div', {});
+    const eye = this.factorsEye(g);
+    if (eye) l2.append(eye);
+    const letters = this.lettersCard(g);
+    if (letters) l2.append(letters);
+    if (def.id === 'lisboa') {
+      r2.append(this.kingsGoodsCard(g));
+      const ant = this.antwerpCard(g);
+      if (ant) r2.append(ant);
+    }
+    extras.append(l2, r2);
+    host.append(extras);
+  }
+
+  /** What kind of market this is: what it takes, who else is buying, what is happening to it. */
+  private marketCard(g: Game, def: PortDef): HTMLElement {
+    const pay = paymentAt(def.id);
+    const comp = COMPETITION[def.id];
+    const level = g.competitionAt(def.id);
+    const fairs = fairsAt(def.id, g.clock.date.month);
+    const news = g.newsHeard.filter((n) => n.def.ports.includes(def.id) && n.shock.end > g.clock.t);
+    const takes = Object.entries(pay.takes).sort((a, b) => b[1] - a[1]).slice(0, 5)
+      .map(([id, m]) => `${good(id).english.toLowerCase()} (+${Math.round((m - 1) * 100)}%)`);
+    return card('This market',
+      kv('What they take', pay.line),
+      pay.coin > 1.02 ? kv('Coin', `buys about ${Math.round((1 - 1 / pay.coin) * 100)}% less than its face`, 'warn') : null,
+      takes.length ? kv('In barter they prize', takes.join(', ')) : null,
+      comp ? kv('Also buying', level < comp.level * 0.5 ? `${comp.who}, kept out by your treaty` : comp.who, level > 0.4 ? 'warn' : '') : null,
+      ...fairs.map((f) => el('div', { class: 'market-fair' }, el('b', {}, f.name), ' — ', f.text)),
+      ...news.map((n) => el('div', { class: 'market-news' }, el('b', {}, n.def.title), ' — ', n.def.text)),
+    );
+  }
+
+  private renderScales(host: HTMLElement, g: Game, listings: TradeListing[]): void {
     const grid = el('div', { class: 'trade-grid' },
       el('div', { class: 'trade-head' },
         el('div', {}, 'Goods'),
@@ -355,25 +401,28 @@ export class PortView {
 
     for (const l of listings) {
       const gd = good(l.goodId);
-      const held = g.ship.quantityOf(l.goodId);
+      const lot = g.ship.cargo.find((c) => c.goodId === l.goodId);
+      const held = lot?.quantity ?? 0;
       const qty = this.quantities.get(l.goodId) ?? 10;
       const margin = gd.lisbon / Math.max(l.ask, 0.01);
       const onCharter = consignedOf(g, l.goodId);
       const forCrown = commissionNeed(g, l.goodId);
+      const grade = lot ? gradeWord(lot.q ?? 0.5) : '';
 
       grid.append(el('div', { class: 'trade-row' },
         el('div', { class: 'trade-name' },
-          el('b', {}, gd.english),
-          el('span', {}, `${gd.name} · per ${gd.unit}`),
+          el('b', {}, gd.english, l.casa ? el('span', { class: 'tag warn', title: 'A royal monopoly: the Casa buys it at the King’s price.' }, 'the King’s') : null),
+          el('span', {}, `${gd.name} · per ${gd.unit}${l.barter > 1 ? ` · prized in barter` : ''}`),
         ),
         el('div', { class: 'trade-fig', 'data-k': 'They ask' },
           l.stock > 0 ? l.ask.toFixed(1) : '—'),
         el('div', {
           class: 'trade-fig', 'data-k': 'They offer',
           style: l.appetite > 0 && !l.wanted ? { opacity: '0.62', fontStyle: 'italic' } : undefined,
-          title: l.wanted ? undefined
-            : 'Nobody here wants it. One merchant will take a parcel off your hands to '
-              + 'move on elsewhere, and prices it accordingly.',
+          title: l.casa ? 'What the Casa pays: the King keeps the rest.'
+            : l.wanted ? undefined
+              : 'Nobody here wants it. One merchant will take a parcel off your hands to '
+                + 'move on elsewhere, and prices it accordingly.',
         }, l.appetite > 0 ? l.bid.toFixed(1) : '—'),
         el('div', {
           class: 'trade-fig', 'data-k': 'At Lisbon',
@@ -384,13 +433,13 @@ export class PortView {
         el('div', {
           class: 'trade-fig', 'data-k': 'In hold',
           title: onCharter > 0 ? 'Part of this is on charter'
-            : forCrown > 0 ? 'The King is expecting this cargo' : undefined,
+            : forCrown > 0 ? 'The King is expecting this cargo' : grade ? `${grade} quality` : undefined,
           style: forCrown > 0 && held < forCrown ? { color: 'var(--warn)' } : undefined,
         },
           held > 0 || forCrown > 0
             ? onCharter > 0 ? `${held.toFixed(0)} (${onCharter} on charter)`
               : forCrown > 0 ? `${held.toFixed(0)} of ${forCrown} for the King`
-                : held.toFixed(0)
+                : `${held.toFixed(0)} · ${grade.toLowerCase()}`
             : '—'),
         el('div', { class: 'trade-act' },
           el('input', {
@@ -402,39 +451,110 @@ export class PortView {
           button('Buy', () => this.buy(g, l, this.quantities.get(l.goodId) ?? qty), {
             disabled: l.stock <= 0 || g.crown.gold + g.creditFree < l.ask,
           }),
-          button('Sell', () => this.sell(g, l, this.quantities.get(l.goodId) ?? qty), {
+          button(l.casa ? 'To the Casa' : 'Sell', () => this.sell(g, l, this.quantities.get(l.goodId) ?? qty), {
             disabled: held <= 0 || l.appetite <= 0,
           }),
+          l.casa && held > 0
+            ? button('On the quay', () => this.sell(g, l, this.quantities.get(l.goodId) ?? qty, true), {
+              title: 'Sell it privately at the full price, past the King’s scales. If the officers are on the quay, it is seized.',
+            })
+            : null,
         ),
       ));
     }
+    host.append(grid);
+  }
 
-    append(host,
-      el('div', { class: 'card' },
-        el('div', { class: 'purse-row' },
-          el('div', {}, kv('Purse', `${g.crown.gold.toFixed(0)} cruzados`)),
-          el('div', {}, kv('Hold free', `${g.ship.holdFree.toFixed(1)} of ${g.ship.holdCapacity} tons`)),
-          el('div', {}, kv('Your bargaining', `${g.skills.comercio.toFixed(0)}`)),
-          g.creditLimit > 0
-            ? el('div', {}, kv('Credit',
-                `${g.creditFree.toFixed(0)} to draw` + (g.crown.debt > 0 ? ` · ${g.crown.debt.toFixed(0)} owed` : '')))
-            : null,
-        ),
-      ),
-      grid,
-      this.factorsEye(g),
-      el('p', { class: 'quote', style: { marginTop: '16px' } },
-        'The Lisbon column is what a quintal fetches on the Tagus. The whole enterprise rests on the difference between that number and what they are asking here — pepper bought at Calicut for two cruzados sold at home for thirty, and one cargo paid for the voyage several times over.'),
+  /** Goods across a cloth: yours on one side, his on the other, until he nods. */
+  private renderBarter(host: HTMLElement, g: Game, listings: TradeListing[]): void {
+    const pat = g.barterPatience;
+    if (pat.closed) {
+      host.append(el('div', { class: 'notice grave' }, 'The merchants will not sit down with you again for a few days.'));
+      return;
+    }
+    const give = [...this.barterGive.entries()].map(([goodId, qty]) => ({ goodId, qty }));
+    const take = [...this.barterTake.entries()].map(([goodId, qty]) => ({ goodId, qty }));
+    const v = g.barterValue(give, this.barterCoin, take);
+    const fuzz = g.barterFuzz;
+    // What you can read in his face: the true ratio against what he will settle
+    // for, blurred by how well you know the trade and the tongue.
+    const r = v.theirs > 0 ? v.yours / (v.theirs * g.barterReservation()) : 0;
+    const seen = r * (1 + this.faceNoise * fuzz);
+    const lean = v.theirs <= 0 ? 'Lay out what you want from him.'
+      : seen > 1 + fuzz ? 'He is trying not to look pleased.'
+        : seen > 1 - fuzz ? 'He is thinking about it.'
+          : seen > 0.8 ? 'He is not there yet.'
+            : 'He looks at your side of the cloth as if it were an insult.';
+    const pay = paymentAt(g.dockedAt!);
+    const qtyInput = (map: Map<string, number>, id: string, max: number, label: string) => el('input', {
+      type: 'number', min: '0', max: String(Math.floor(max)), inputmode: 'numeric', value: String(map.get(id) ?? 0),
+      'aria-label': label,
+      onchange: (e: Event) => {
+        const n = clamp(Math.floor(Number((e.target as HTMLInputElement).value) || 0), 0, Math.floor(max));
+        if (n > 0) map.set(id, n); else map.delete(id);
+        // Deferred: a change fires on blur, and blur fires while render is
+        // tearing the old input out of the page.
+        setTimeout(() => this.render(), 0);
+      },
+    });
+
+    const mine = listings.filter((l) => g.ship.quantityOf(l.goodId) >= 1 && l.appetite > 0)
+      .sort((a, b) => b.barter - a.barter);
+    const his = listings.filter((l) => l.stock > 0);
+    const yourSide = card('Your side of the cloth',
+      ...mine.map((l) => {
+        const lot = g.ship.cargo.find((c) => c.goodId === l.goodId)!;
+        return el('div', { class: 'barter-row' },
+          el('div', {},
+            el('div', {}, good(l.goodId).english,
+              l.barter > 1 ? el('span', { class: 'tag good' }, `prized +${Math.round((l.barter - 1) * 100)}%`) : null),
+            el('div', { class: 'gift-sub' }, `${lot.quantity.toFixed(0)} aboard · ${gradeWord(lot.q ?? 0.5).toLowerCase()}`)),
+          qtyInput(this.barterGive, l.goodId, Math.min(lot.quantity, l.appetite), `Offer ${good(l.goodId).english}`));
+      }),
+      mine.length === 0 ? el('p', {}, 'Nothing in the hold they will take.') : null,
+      el('div', { class: 'barter-row' },
+        el('div', {}, el('div', {}, 'Coin'), el('div', { class: 'gift-sub' }, pay.coin > 1.02 ? `worth about ${Math.round(100 / pay.coin)}% of its face here` : 'taken at its face')),
+        el('input', {
+          type: 'number', min: '0', max: String(Math.floor(g.crown.gold)), inputmode: 'numeric', value: String(this.barterCoin),
+          'aria-label': 'Coin',
+          onchange: (e: Event) => { this.barterCoin = clamp(Math.floor(Number((e.target as HTMLInputElement).value) || 0), 0, Math.floor(g.crown.gold)); setTimeout(() => this.render(), 0); },
+        })),
     );
+    const hisSide = card('His side',
+      ...his.map((l) => el('div', { class: 'barter-row' },
+        el('div', {},
+          el('div', {}, good(l.goodId).english),
+          el('div', { class: 'gift-sub' }, `${l.stock.toFixed(0)} to be had · about ${l.rawAsk.toFixed(1)} each in trade goods`)),
+        qtyInput(this.barterTake, l.goodId, Math.min(l.stock, g.ship.holdFree / good(l.goodId).bulk + (this.barterTake.get(l.goodId) ?? 0)), `Take ${good(l.goodId).english}`))),
+      his.length === 0 ? el('p', {}, 'He has nothing to trade today.') : null,
+    );
+    host.append(el('div', { class: 'cols two' }, yourSide, hisSide));
+    host.append(el('div', { class: `audience-reading ${v.theirs <= 0 ? '' : seen > 1 ? 'good' : seen > 0.85 ? 'warn' : 'bad'}` },
+      el('b', {}, 'Across the cloth'),
+      el('span', {}, lean),
+      el('span', { class: 'gift-sub' }, `His patience: ${'●'.repeat(Math.max(0, pat.patience))}${'○'.repeat(Math.max(0, 4 - pat.patience))}`)));
+    host.append(el('div', { class: 'row' },
+      button('Put it to him', () => {
+        const res = g.barter(give, this.barterCoin, take);
+        this.notice = { text: res.text, grave: !res.accepted };
+        if (res.accepted) { this.barterGive.clear(); this.barterTake.clear(); this.barterCoin = 0; }
+        this.faceNoise = g.rng.range(-1, 1);
+        this.render();
+      }, { primary: true, disabled: v.theirs <= 0 }),
+      button('Get up and walk away', () => {
+        this.notice = { text: g.walkAway() };
+        this.render();
+      }, { disabled: pat.walked }),
+      button('Clear the cloth', () => { this.barterGive.clear(); this.barterTake.clear(); this.barterCoin = 0; this.render(); }),
+    ));
   }
 
   /**
    * What the same goods fetch at the other ports you know.
    *
-   * The whole of the trade game was previously played against one number — the
-   * Lisbon column — so every cargo decision was the same decision. A captain
-   * who has taken the factor's eye is buying for a market he can name, which is
-   * what actually made these voyages pay.
+   * Out of your own book, not an oracle: the prices you saw with your own eyes,
+   * the letters your factors wrote, and whatever a broker sold you. All of them
+   * as old as they are.
    */
   private factorsEye(g: Game): HTMLElement | null {
     const here = g.portHere!.id;
@@ -446,57 +566,67 @@ export class PortView {
         el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px' } },
           el('span', {}, good(lot.goodId).english),
           el('span', { style: { color: 'var(--ink-soft)', fontSize: '12.5px' } },
-            quotes.map((q) => `${q.port} ${q.bid.toFixed(1)}`).join('  ·  ')),
+            quotes.map((q) => `${q.port} ${q.bid.toFixed(1)} (${Math.round(q.days)}d)`).join('  ·  ')),
         ),
       ));
     }
     if (rows.length === 0) return null;
     return card('What they pay elsewhere',
       el('p', { style: { fontStyle: 'italic', color: 'var(--ink-soft)' } },
-        'From your correspondence, and as stale as the last ship to come this way.'),
+        'From your own book: what you saw, and what was written to you. The days are how old each price is.'),
       el('ul', { class: 'list' }, ...rows),
     );
   }
 
-  private buy(g: Game, l: Listing, qty: number): void {
-    const gd = good(l.goodId);
-    const affordable = Math.floor((g.crown.gold + g.creditFree) / l.ask);
-    const roomFor = Math.floor(g.ship.holdFree / gd.bulk);
-    const take = Math.min(qty, l.stock, affordable, roomFor);
-    if (take <= 0) {
-      this.notice = {
-        text: roomFor <= 0 ? 'No room in the hold.' : affordable <= 0 ? 'Not enough in the purse.' : 'None to be had.',
-        grave: true,
-      };
-      this.render();
-      return;
-    }
-    // A quote is for a reasonable parcel. Sweeping the town moves the price
-    // against you while you are doing it.
-    const paid = l.ask * Markets.slippage(take, l.stock);
-    const cost = take * paid;
-    // A captain with credit draws on it without being asked; the debt is
-    // reported in the log and stands over him until the voyage is settled.
-    if (cost > g.crown.gold) g.drawCredit(cost);
-    if (cost > g.crown.gold) {
-      const canAfford = Math.floor(g.crown.gold / paid);
-      if (canAfford <= 0) {
-        this.notice = { text: 'Not enough in the purse, once they see how much you want.', grave: true };
+  private lettersCard(g: Game): HTMLElement | null {
+    const offers = g.reportOffers();
+    if (offers.length === 0) return null;
+    return card('Brokers’ letters',
+      el('p', { class: 'flavour' }, 'A broker here will sell you what his correspondents write about the prices on another coast. Most of them are honest. Not all.'),
+      el('div', { class: 'row wrap' }, ...offers.map((o) => button(`${REGION_NAME[o.region]} — ${o.price}`, () => {
+        this.notice = { text: g.buyReport(o.region) };
         this.render();
-        return;
-      }
-      return this.buy(g, l, canAfford);
-    }
-    g.ship.addCargo(l.goodId, take, paid);
-    g.crown.gold -= cost;
-    g.markets.buy(g.portHere!.id, l.goodId, take);
-    g.crown.syncCargoObjectives((id) => g.ship.quantityOf(id));
-    g.logEvent('trade', `Bought ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} at ${paid.toFixed(1)} the ${gd.unit}, ${cost.toFixed(0)} cruzados in all.`);
-    this.notice = { text: `Took aboard ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} for ${cost.toFixed(0)} cruzados.` };
+      }, { disabled: g.crown.gold < o.price, title: `${o.ports} ports you have charted` }))),
+    );
+  }
+
+  private kingsGoodsCard(g: Game): HTMLElement {
+    return card('The King’s goods',
+      el('p', { class: 'flavour' }, `Pepper, gold, malagueta and ivory are the King's. Landed here, the Casa takes them at ${Math.round(CASA_SHARE * 100)}% of what the market would pay — unless you hold his licence to trade them on your own account.`),
+      ...MONOPOLY.map((id) => {
+        const until = g.trade.licences[id] ?? 0;
+        const held = until > g.clock.t;
+        return el('div', { class: 'court-agreement' },
+          el('span', {}, good(id).english),
+          held
+            ? el('span', { class: 'due' }, `licensed until ${formatDateAt(until)}`)
+            : button(`Licence — ${licenceCost(id)}`, () => { this.notice = { text: g.buyLicence(id) }; this.render(); },
+              { disabled: g.crown.gold < licenceCost(id) }));
+      }),
+    );
+  }
+
+  private antwerpCard(g: Game): HTMLElement | null {
+    if (!g.antwerpOpen) return null;
+    const rows = g.ship.cargo.filter((c) => ANTWERP[c.goodId] && (!MONOPOLY.includes(c.goodId) || g.hasLicence(c.goodId)));
+    const owed = g.trade.antwerp.reduce((s, a) => s + a.amount, 0);
+    return card('The Casa’s factor at Antwerp',
+      el('p', { class: 'flavour' }, `Antwerp is where Europe buys its spice. The Casa will ship yours there and sell it, less a tenth for the freight, and the money comes back in about ${ANTWERP_DAYS} days. Lisbon's price falls with every cargo landed on it; Antwerp's falls more slowly.`),
+      ...rows.map((c) => el('div', { class: 'court-agreement' },
+        el('span', {}, `${good(c.goodId).english} — ${antwerpBid(g.trade, c.goodId).toFixed(1)} each`),
+        button(`Send ${c.quantity.toFixed(0)}`, () => { this.notice = { text: g.sellAntwerp(c.goodId, c.quantity) }; this.render(); }))),
+      rows.length === 0 ? el('p', {}, 'Nothing in the hold Antwerp wants.') : null,
+      owed > 0 ? kv('Owed from Antwerp', `${owed.toFixed(0)} cruzados`) : null,
+    );
+  }
+
+  private buy(g: Game, l: TradeListing, qty: number): void {
+    const r = g.tradeBuy(l.goodId, qty);
+    this.notice = { text: r.text, grave: !r.ok };
     this.render();
   }
 
-  private sell(g: Game, l: Listing, qty: number): void {
+  private sell(g: Game, l: TradeListing, qty: number, quay = false): void {
     const gd = good(l.goodId);
     const held = g.ship.quantityOf(l.goodId);
     const take = Math.min(qty, held, l.appetite);
@@ -522,18 +652,9 @@ export class PortView {
       }
     }
 
-    // And cargo the King is expecting, which is worse.
-    //
-    // A cargo objective is checked against what is actually in the hold when
-    // you walk into court, so selling it puts the commission back to nought —
-    // and the most obvious thing in the world to do with a hold full of Madeira
-    // sugar is to sell it in the Lisbon market, which is the room you are
-    // standing in. The charter had a warning and this had none, so a player
-    // could lose a commission, its reward, its renown and its skill point by
-    // doing the single most natural thing available to him, and nothing on the
-    // screen would connect the two. Selling it anyway is still allowed: there
-    // are voyages where the coin now is worth more than the King's good
-    // opinion, and that is the captain's call to make knowingly.
+    // And cargo the King is expecting, which is worse: a cargo objective is
+    // checked against the hold at court, and selling it on the Tagus quay is
+    // the single most natural thing to do with it.
     const owed = commissionNeed(g, l.goodId);
     if (owed > 0 && held - take < owed - 0.01) {
       const short = Math.ceil(owed - (held - take));
@@ -551,40 +672,12 @@ export class PortView {
     }
     this.confirmSale = null;
 
-    const lot = g.ship.cargo.find((c) => c.goodId === l.goodId);
-    const paid = lot ? lot.cost : 0;
-    // Landing a great parcel at once gluts the quay and the price falls under
-    // you as you sell.
-    // A captain with the page open knows what the stuff cost where it grew,
-    // and a merchant who can see he knows does not try it on. Small on purpose:
-    // an edge, not a cheat.
-    const edge = g.tradeEdge(l.goodId);
-    const got = (l.bid / Markets.slippage(take, l.appetite)) * (1 + edge);
-    const revenue = take * got;
-    g.ship.removeCargo(l.goodId, take);
-    g.crown.gold += revenue;
-    // The sharers' man is standing at the scale. Taken here rather than at a
-    // reckoning in Lisbon because that is where it was taken, and because
-    // watching it come off the top of the best cargo of your life is the whole
-    // cost of having sold sixteenths.
-    const shared = g.takeShares(revenue);
-    g.markets.sell(g.portHere!.id, l.goodId, take);
-    g.crown.syncCargoObjectives((id) => g.ship.quantityOf(id));
-
-    const profit = revenue - paid * take;
-    g.logEvent('trade',
-      `Sold ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} at ${got.toFixed(1)}, ${revenue.toFixed(0)} cruzados` +
-      (paid > 0 ? `, against ${(paid * take).toFixed(0)} paid — ${profit >= 0 ? 'a gain' : 'a loss'} of ${Math.abs(profit).toFixed(0)}.` : '.'));
-    if (shared > 0.5) {
-      g.logEvent('trade',
-        `${shared.toFixed(0)} cruzados of that went straight off the scale to the men who hold `
-        + 'sixteenths of this voyage. Nobody had to ask you for it.');
-    }
+    const r = g.tradeSell(l.goodId, take, quay);
     this.notice = {
-      text: `Sold for ${revenue.toFixed(0)} cruzados`
-        + (paid > 0 ? ` — ${profit >= 0 ? 'profit' : 'loss'} ${Math.abs(profit).toFixed(0)}.` : '.')
-        + (edge > 0.01 ? ` Your book was worth ${(edge * 100).toFixed(0)}% of it.` : '')
-        + (shared > 0.5 ? ` The sharers took ${shared.toFixed(0)} off the top.` : ''),
+      text: r.text
+        + (r.edge > 0.01 ? ` Your book was worth ${(r.edge * 100).toFixed(0)}% of it.` : '')
+        + (r.shared > 0.5 ? ` The sharers took ${r.shared.toFixed(0)} off the top.` : ''),
+      grave: !r.ok,
     };
     this.render();
   }
@@ -630,6 +723,25 @@ export class PortView {
           ),
         ));
       }
+    }
+
+    // Forward contracts: the Lisbon houses buying a cargo before it exists.
+    for (const c of g.contractOffers()) {
+      const gd = good(c.goodId);
+      left.append(card(`${c.houseName} \u2014 a contract`,
+        el('p', { class: 'flavour' }, `${c.qty} ${unitOf(gd, c.qty)} of ${gd.english.toLowerCase()}, delivered on the Tagus by ${formatDateAt(c.due)}, at ${c.price} the ${gd.unit} whatever the market is paying that day.`),
+        kv('Worth on delivery', `${Math.round(c.qty * c.price)} cruzados`),
+        kv('Advance now', `${c.advance} cruzados`),
+        kv('If you fail', `the advance and half as much again, and their good opinion`),
+        el('div', { class: 'row' }, button('Sign', () => { this.notice = { text: g.signContract(c.id) }; this.render(); }, { primary: true })),
+      ));
+    }
+    const open = g.trade.contracts.filter((c) => c.status === 'open');
+    if (open.length > 0) {
+      right.append(card('Contracts to deliver',
+        ...open.map((c) => el('div', { class: 'court-agreement' },
+          el('span', {}, `${c.qty} ${good(c.goodId).english.toLowerCase()} for ${c.houseName} (${g.ship.quantityOf(c.goodId).toFixed(0)} aboard)`),
+          el('span', { class: 'due' }, `${Math.round((c.due - g.clock.t) / 86400)} days`)))));
     }
 
     const active = g.activeVentures;
@@ -1355,6 +1467,17 @@ export class PortView {
               this.render();
             }, { primary: true, disabled: g.crown.gold < cost }))
         : el('p', {}, 'She is fully manned.'),
+    ));
+
+    // The officers' chests: a share of the hold for their own trade.
+    const officers = g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length;
+    left.append(card('The officers\u2019 chests',
+      el('p', { class: 'flavour' }, 'Every officer of a Portuguese ship expected room in the hold for a chest of his own, to trade on his own account. It was most of what the voyage paid him, and he took it as his right. Refuse it and you have the room, and every officer remembers it at every port.'),
+      kv('Room it takes', `${(officers * CHEST_TONS).toFixed(1)} tons, for ${officers} officers`),
+      el('div', { class: 'row' },
+        g.trade.quintaladas
+          ? button('Take the room back', () => { g.setQuintaladas(false); this.notice = { text: 'The chests are struck below. The wardroom says nothing, which is worse.' }; this.render(); })
+          : button('Grant them their chests', () => { g.setQuintaladas(true); this.notice = { text: 'The officers\u2019 chests are stowed again, as they should have been.' }; this.render(); }, { primary: true })),
     ));
 
     // The men forward the captain actually knows. Not the whole company — a

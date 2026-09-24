@@ -38,7 +38,7 @@ export const PORTS: PortDef[] = [
     id: 'lisboa', name: 'Lisboa', modern: 'Lisbon', lat: 38.69, lon: -9.24,
     people: 'portuguese', size: 'city', wealth: 0.8, known: true, discovery: 0,
     anchorage: 0.95, refit: 1, feitoria: true,
-    produces: { la: 1, linho: 0.9, manilhas: 1, bacias: 1, ferramenta: 1, contas: 1, espelhos: 0.8, vinho: 1, azeite: 1, trigo: 1, sal: 1, coral: 0.5, cavalos: 0.4 },
+    produces: { la: 1, linho: 0.9, manilhas: 1, bacias: 1, ferramenta: 1, contas: 1, espelhos: 0.8, vinho: 1, azeite: 1, trigo: 1, sal: 1, coral: 0.5, cavalos: 0.4, prata: 0.7, cobre: 0.8 },
     wants: { pimenta: 1, canela: 1, cravo: 1, noz: 1, maca: 1, gengibre: 1, ouro: 1, marfim: 0.9, pedras: 1, perolas: 0.9, seda: 0.8, porcelana: 0.8, malagueta: 0.7, acucar: 0.6, ambar: 0.9 },
     blurb: 'The Tagus, the Casa da Mina, and a king who wants the Indies.',
   },
@@ -197,7 +197,7 @@ export const PORTS: PortDef[] = [
     people: 'edo', size: 'town', wealth: 0.55, known: false, discovery: 20,
     anchorage: 0.5, refit: 0.5,
     produces: { malagueta: 1, marfim: 0.9, panos: 0.8, cola: 0.6 },
-    wants: { coral: 1, manilhas: 0.9, bacias: 0.9, ferramenta: 0.7 },
+    wants: { coral: 1, manilhas: 0.9, bacias: 0.9, ferramenta: 0.7, cobre: 0.5 },
     blurb: 'Up a creek from a city of earth walls longer than any in Europe. The Oba sells pepper and buys coral, and grants audience through a curtain.',
   },
   {
@@ -297,7 +297,7 @@ export const PORTS: PortDef[] = [
     people: 'swahili', size: 'city', wealth: 0.8, known: false, discovery: 65,
     anchorage: 0.85, refit: 0.75,
     produces: { ouro: 0.9, marfim: 0.9, ambar: 0.5, porcelana: 0.5, panos: 0.7 },
-    wants: { calico: 0.9, coral: 0.8, la: 0.5, cavalos: 0.7 },
+    wants: { calico: 0.9, coral: 0.8, la: 0.5, cavalos: 0.7, cobre: 0.5 },
     blurb: 'Stone palaces, a great mosque, and coins minted here for three centuries. The richest city on this coast, and it controls Sofala.',
   },
   {
@@ -339,7 +339,7 @@ export const PORTS: PortDef[] = [
     people: 'arab', size: 'emporium', wealth: 0.85, known: false, discovery: 72,
     anchorage: 0.8, refit: 0.75,
     produces: { incenso: 1, tamaras: 0.8, cavalos: 0.7, seda: 0.5, calico: 0.6 },
-    wants: { pimenta: 0.7, canela: 0.7, ouro: 0.9, cavalos: 0.4 },
+    wants: { pimenta: 0.7, canela: 0.7, ouro: 0.9, cavalos: 0.4, prata: 0.7 },
     blurb: 'The gate of the Red Sea. Every grain of pepper that reaches Venice passes through here, and the men who own it will not thank you for arriving.',
   },
   {
@@ -363,7 +363,7 @@ export const PORTS: PortDef[] = [
     people: 'arab', size: 'emporium', wealth: 0.95, known: false, discovery: 80,
     anchorage: 0.7, refit: 0.65,
     produces: { perolas: 1, cavalos: 1, seda: 0.8, pedras: 0.7, tamaras: 0.7 },
-    wants: { pimenta: 0.9, canela: 0.8, ouro: 0.9, calico: 0.6, arroz: 0.9 },
+    wants: { pimenta: 0.9, canela: 0.8, ouro: 0.9, calico: 0.6, arroz: 0.9, prata: 0.9 },
     blurb: 'A barren salt island that is nonetheless the richest market in the world. If the world were a ring, Hormuz would be the jewel in it.',
   },
 
@@ -373,7 +373,7 @@ export const PORTS: PortDef[] = [
     people: 'gujarati', size: 'city', wealth: 0.8, known: false, discovery: 66,
     anchorage: 0.8, refit: 0.75,
     produces: { calico: 1, anil: 0.9, seda: 0.6, pedras: 0.5 },
-    wants: { cavalos: 1, ouro: 0.9, coral: 0.8, incenso: 0.6, pimenta: 0.5 },
+    wants: { cavalos: 1, ouro: 0.9, coral: 0.8, incenso: 0.6, pimenta: 0.5, prata: 0.6 },
     blurb: 'Gujarat\'s window on the sea, and its fleet is not a merchant fleet.',
   },
   {
@@ -381,7 +381,7 @@ export const PORTS: PortDef[] = [
     people: 'gujarati', size: 'emporium', wealth: 0.88, known: false, discovery: 68,
     anchorage: 0.3, refit: 0.7,
     produces: { calico: 1, anil: 1, seda: 0.7, pedras: 0.6, acucar: 0.6 },
-    wants: { cavalos: 1, ouro: 1, coral: 0.9, marfim: 0.7, incenso: 0.6 },
+    wants: { cavalos: 1, ouro: 1, coral: 0.9, marfim: 0.7, incenso: 0.6, prata: 0.8, cobre: 0.7 },
     blurb: 'Cloth for the whole ocean, at the head of a gulf where the tide comes in faster than a horse can run.',
   },
   {
@@ -397,7 +397,7 @@ export const PORTS: PortDef[] = [
     people: 'gujarati', size: 'city', wealth: 0.78, known: false, discovery: 64,
     anchorage: 0.85, refit: 0.8,
     produces: { cavalos: 1, calico: 0.7, pimenta: 0.6, anil: 0.6 },
-    wants: { ouro: 1, coral: 0.8, pedras: 0.6, cavalos: 0.3 },
+    wants: { ouro: 1, coral: 0.8, pedras: 0.6, cavalos: 0.3, prata: 0.8, cobre: 0.6 },
     blurb: 'Deep water, an island that can be held, and the horse market that supplies the Deccan. Remember it.',
   },
   {
@@ -413,7 +413,7 @@ export const PORTS: PortDef[] = [
     people: 'malabar', size: 'city', wealth: 0.7, known: false, discovery: 74,
     anchorage: 0.6, refit: 0.7,
     produces: { pimenta: 0.95, gengibre: 0.8, canela: 0.5, cardamomo: 0.7 },
-    wants: { ouro: 1, coral: 0.9, cavalos: 0.9, bacias: 0.5 },
+    wants: { ouro: 1, coral: 0.9, cavalos: 0.9, bacias: 0.5, prata: 0.7, cobre: 0.7 },
     blurb: 'The Kolathiri raja is a rival of the Zamorin, which makes him worth cultivating.',
   },
   {
@@ -421,7 +421,7 @@ export const PORTS: PortDef[] = [
     people: 'malabar', size: 'emporium', wealth: 0.95, known: false, discovery: 120,
     anchorage: 0.35, refit: 0.7,
     produces: { pimenta: 1, gengibre: 0.9, canela: 0.7, cravo: 0.6, noz: 0.55, maca: 0.5, pedras: 0.7, calico: 0.7 },
-    wants: { ouro: 1, coral: 0.9, cavalos: 0.9, seda: 0.5, pedras: 0.4 },
+    wants: { ouro: 1, coral: 0.9, cavalos: 0.9, seda: 0.5, pedras: 0.4, prata: 0.9, cobre: 0.8 },
     blurb: 'The end of the road. Pepper by the mountain, ships from China to Cairo in the roads, and a Zamorin who has been offered better than anything in your hold.',
   },
   {
@@ -429,7 +429,7 @@ export const PORTS: PortDef[] = [
     people: 'malabar', size: 'city', wealth: 0.72, known: false, discovery: 78,
     anchorage: 0.9, refit: 0.8,
     produces: { pimenta: 1, gengibre: 0.9, canela: 0.6, cardamomo: 0.8, arroz: 0.6 },
-    wants: { ouro: 1, coral: 0.85, cavalos: 0.8, la: 0.4 },
+    wants: { ouro: 1, coral: 0.85, cavalos: 0.8, la: 0.4, prata: 0.7, cobre: 0.7 },
     blurb: 'A sheltered lagoon and a raja weak enough to need you. The best harbour on the coast, and the one that will make your fortune if Calicut turns on you.',
   },
   {
@@ -445,7 +445,7 @@ export const PORTS: PortDef[] = [
     people: 'sinhalese', size: 'town', wealth: 0.65, known: false, discovery: 82,
     anchorage: 0.45, refit: 0.6,
     produces: { canela: 1, pedras: 0.9, perolas: 0.6, marfim: 0.5 },
-    wants: { ouro: 1, calico: 0.7, cavalos: 0.7, coral: 0.6 },
+    wants: { ouro: 1, calico: 0.7, cavalos: 0.7, coral: 0.6, prata: 0.6 },
     blurb: 'All the cinnamon in the world grows within twenty leagues of this beach.',
   },
   {
@@ -461,7 +461,7 @@ export const PORTS: PortDef[] = [
     people: 'malay', size: 'emporium', wealth: 0.92, known: false, discovery: 140,
     anchorage: 0.7, refit: 0.7,
     produces: { cravo: 1, noz: 1, maca: 0.9, canfora: 0.8, porcelana: 0.9, seda: 0.8, pedras: 0.6 },
-    wants: { calico: 1, pimenta: 0.5, ouro: 0.9, la: 0.4 },
+    wants: { calico: 1, pimenta: 0.5, ouro: 0.9, la: 0.4, prata: 0.7, cobre: 0.6 },
     blurb: 'The strait through which the clove islands send everything they grow. Whoever holds Malacca has his hand on the throat of Venice.',
   },
 ];

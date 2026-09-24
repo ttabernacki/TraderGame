@@ -1,4 +1,4 @@
-import { Clock } from '../core/clock';
+import { Clock, dateFromDays, formatDateAt } from '../core/clock';
 import { counselFor, type Counsel } from './counsel';
 import { characterOf } from '../world/portCharacter';
 import {
@@ -39,14 +39,31 @@ import { Chart, sightingRangeNm, type SurveyResult } from '../navigation/charts'
 import { sightOpportunities, type SightBody } from '../navigation/navigator';
 import { magneticVariation } from '../navigation/celestial';
 import {
-  ableHands, crewFactor, enduranceDays, makeOfficer, newCrew, officerBonus, updateCrew,
+  ableHands, crewFactor, enduranceDays, hasInterpreterFor, makeOfficer, newCrew, officerBonus, updateCrew,
   type CrewState, type Officer,
 } from '../crew/crew';
 import {
   NODE_BY_ID, buyNode, levelsOf, newCaptainSkills, perksOf, skill,
   type CaptainSkills, type PerkId, type SkillSet,
 } from '../crew/skills';
-import { Markets } from '../economy/market';
+import { Markets, type Listing } from '../economy/market';
+import {
+  ANTWERP_DAYS, CASA_SHARE, CHEST_TONS, COMPETITION, LICENCE_YEARS, MONOPOLY, REGION_NAME, antwerpBid, antwerpWeight,
+  currentBook, decayAntwerp, gradeWord, licenceCost, newTrade, newsDelayDays, paymentAt, portsInRegion,
+  qualityAtSource, qualityFactor, regionOf, rollShocks, shockDef, worldMod,
+  type Contract, type EntryKind, type PriceSheet, type Quote, type Region, type Shock, type ShockDef, type TradeState,
+} from '../economy/trade';
+
+/** A price at this port, as this ship will pay or be paid it. */
+export interface TradeListing extends Listing {
+  /** Before the coin discount and the Casa: what his goods are worth in barter. */
+  rawAsk: number;
+  rawBid: number;
+  /** Sold in Lisbon to the Casa, at the King's price. */
+  casa: boolean;
+  /** The premium it carries when laid on the barter table here. */
+  barter: number;
+}
 import { Crown, commissionPoints, portName, type Patent } from '../progression/crown';
 import { ARCS, ARC_BY_ID, BONDS, dueBeat, type BondId } from '../progression/arcs';
 import { newRelations, type Relations } from '../diplomacy/contact';
@@ -686,6 +703,8 @@ export class Game {
     this.chart = new Chart();
     this.crown = new Crown(seed);
     this.markets = new Markets(seed);
+    this.markets.adjust = (p, gid, t) => this.worldAdjust(p, gid, t);
+    this.trade = newTrade(this.clock.t);
     this.rival = newRival(this.rng);
     this.rival.lastNews = this.clock.t;
     // She begins at a quay, which is as much in sight of land as it gets.
@@ -693,6 +712,7 @@ export class Game {
     this.hands = musterHands(this.rng);
     this.shipTheCompany();
     assignTraits(this.crew, this.rng);
+    this.setQuintaladas(this.trade.quintaladas);
 
     for (const p of PORTS) {
       const pe = people(p.people);
@@ -1164,21 +1184,13 @@ export class Game {
    * covers — this is not an oracle, it is the correspondence a merchant of the
    * period really had, and it is stale by however long the passage takes.
    */
-  distantQuotes(goodId: string, exclude: string): { port: string; bid: number }[] {
-    if (!this.can('factorsEye') && !this.can('ownAccount')) return [];
-    const out: { port: string; bid: number }[] = [];
-    for (const id of this.visitedPorts) {
-      if (id === exclude) continue;
-      const def = PORTS.find((p) => p.id === id);
-      if (!def) continue;
-      const rel = this.relations.get(id);
-      if (!rel?.mayTrade) continue;
-      const l = this.markets.listings(id, this.clock.t, rel.regard, 0.6)
-        .find((x) => x.goodId === goodId);
-      if (l && l.bid > 0) out.push({ port: def.name, bid: l.bid });
-    }
-    return out.sort((a, b) => b.bid - a.bid).slice(0, 4);
+  distantQuotes(goodId: string, exclude: string): { port: string; bid: number; days: number }[] {
+    return this.knownQuotes(goodId, exclude)
+      .filter((q) => q.bid > 0 && q.wanted)
+      .map((q) => ({ port: q.port, bid: q.bid, days: q.days }))
+      .sort((a, b) => b.bid - a.bid).slice(0, 4);
   }
+
 
   /**
    * A bond struck with one of the written officers.
@@ -1814,6 +1826,529 @@ export class Game {
     return POLITIES.filter((p) => this.diplomacy.polities[p.id]?.met);
   }
 
+
+
+  // -------------------------------------------------------------------------
+  // Trade beyond the counter. See economy/trade.
+  // -------------------------------------------------------------------------
+
+  trade: TradeState = newTrade(0);
+  /** The bargaining at this visit's table: his patience, and whether you have walked out once. */
+  private haggle: { key: string; patience: number; walked: boolean; closedUntil: number; bias: number } | null = null;
+
+  /** What news, the season and the other buyers are doing to a price. */
+  private worldAdjust(portId: string, goodId: string, t: number): { ask: number; bid: number; stock: number } {
+    const month = dateFromDays(Math.floor(t / 86400)).month;
+    const w = worldMod(this.trade, portId, goodId, t, month);
+    const comp = this.competitionAt(portId);
+    return {
+      ask: w.ask * (1 + comp * 0.18),
+      bid: w.bid * (1 - comp * 0.08),
+      stock: 1 - comp * 0.35,
+    };
+  }
+
+  /** How hard other buyers are pressing here, 0-1. An exclusive treaty sends them away. */
+  competitionAt(portId: string): number {
+    const c = COMPETITION[portId];
+    if (!c) return 0;
+    const rel = this.relations.get(portId);
+    return c.level * (rel?.exclusive ? 0.2 : 1);
+  }
+
+  /** The merchants' faction at this port's court, -1 to 1: how the men you trade with feel about you. */
+  merchantsHere(portId: string): number {
+    const pol = polityOfPort(portId);
+    if (!pol) return 0;
+    const st = this.diplomacy.polities[pol.id];
+    if (!st?.met) return 0;
+    const fs = pol.factions.filter((f) => f.cares === 'trade');
+    if (fs.length === 0) return 0;
+    return fs.reduce((s, f) => s + (st.factions[f.id] ?? 0), 0) / fs.length;
+  }
+
+  /** The prices at this port as the ship sees them: in coin, for this captain. */
+  marketHere(portId = this.dockedAt ?? ''): TradeListing[] {
+    if (!portId) return [];
+    const def = portDef(portId);
+    const rel = this.relationsFor(portId);
+    const relation = rel.regard + this.diplomaticEdge(def.people) + this.merchantsHere(portId) * 0.3;
+    const pay = paymentAt(portId);
+    const lisbon = portId === 'lisboa';
+    return this.markets.listings(portId, this.clock.t, relation, skill(this.effectiveSkill, 'comercio'),
+      this.ship.cargo.map((c) => c.goodId))
+      .map((l) => {
+        const casa = lisbon && MONOPOLY.includes(l.goodId) && !this.hasLicence(l.goodId);
+        return {
+          ...l,
+          rawAsk: l.ask, rawBid: l.bid,
+          ask: l.ask * pay.coin,
+          // A town short of coin pays you in what coin it has, and not much of it.
+          bid: l.bid / Math.sqrt(pay.coin) * (casa ? CASA_SHARE : 1),
+          casa,
+          barter: pay.takes[l.goodId] ?? 1,
+        };
+      });
+  }
+
+  hasLicence(goodId: string): boolean {
+    return (this.trade.licences[goodId] ?? 0) > this.clock.t;
+  }
+
+  /** Write the book. */
+  private enter(kind: EntryKind, text: string, amount: number): void {
+    currentBook(this.trade).entries.push({ t: this.clock.t, kind, text, amount });
+  }
+
+  /** Take down the prices here, as they are today. */
+  private noteSheet(portId: string, source: PriceSheet['source'], noise = 0, falseGood?: string): void {
+    const quotes: Record<string, Quote> = {};
+    for (const l of this.marketHere(portId)) {
+      const n = noise > 0 ? 1 + this.rng.range(-noise, noise) : 1;
+      const lie = falseGood === l.goodId ? 1.7 : 1;
+      quotes[l.goodId] = { ask: l.ask * n, bid: l.bid * n * lie, stock: l.stock, wanted: l.wanted, local: l.local };
+    }
+    const prev = this.trade.sheets[portId];
+    // A letter never overwrites what you saw with your own eyes more recently.
+    if (source !== 'seen' && prev && prev.t >= this.clock.t - 20 * 86400) return;
+    this.trade.sheets[portId] = { t: source === 'seen' ? this.clock.t : this.clock.t - this.rng.range(15, 45) * 86400, source, quotes, falseGood };
+  }
+
+  /** What the sheets in your book say a good fetches elsewhere. */
+  knownQuotes(goodId: string, exclude = ''): { port: string; portId: string; ask: number; bid: number; days: number; source: PriceSheet['source']; wanted: boolean; local: boolean }[] {
+    const out = [];
+    for (const [id, sh] of Object.entries(this.trade.sheets)) {
+      if (id === exclude) continue;
+      const q = sh.quotes[goodId];
+      if (!q) continue;
+      out.push({ port: portDef(id).name, portId: id, ask: q.ask, bid: q.bid, days: (this.clock.t - sh.t) / 86400, source: sh.source, wanted: q.wanted, local: q.local });
+    }
+    return out;
+  }
+
+  /** Arrival: the news, the letters, what is owed and what is due. */
+  private visitMarket(def: PortDef): void {
+    const now = this.clock.t;
+    const d = this.clock.date;
+    rollShocks(this.trade, now, d.year, this.rng);
+    decayAntwerp(this.trade, now);
+    const here = regionOf(def.id);
+    // News that has reached this coast.
+    for (const x of this.trade.shocks) {
+      if (this.trade.heard[x.id] !== undefined) continue;
+      if ((x.arrive[here] ?? Infinity) > now) continue;
+      this.trade.heard[x.id] = now;
+      if (x.end < now) continue;
+      const sd = shockDef(x.key);
+      this.logEvent('trade', `News at ${def.name}: ${sd.title}. ${sd.text}`, true);
+      this.pushAlert(`News: ${sd.title}.`, 'note');
+    }
+    // A broker's letter that lied.
+    const prev = this.trade.sheets[def.id];
+    if (prev?.falseGood) {
+      this.logEvent('trade', `The broker's letter about ${def.name} was a lie: ${good(prev.falseGood).english.toLowerCase()} fetches nothing like what he wrote. Somebody wanted you here.`, true);
+      this.pushAlert(`The broker lied about ${good(prev.falseGood).english.toLowerCase()} at ${def.name}.`, 'warning');
+    }
+    this.noteSheet(def.id, 'seen');
+    // A merchant keeps up a correspondence: every factory you have traded at on
+    // this coast has written.
+    if (this.can('factorsEye') || this.can('ownAccount')) {
+      for (const id of this.visitedPorts) {
+        if (id === def.id || regionOf(id) !== here || !this.relationsFor(id).mayTrade) continue;
+        this.noteSheet(id, 'letter', 0.06);
+      }
+    }
+    // The officers' chests.
+    const aboard = this.crew.officers.filter((o) => o.alive && !o.ashoreAt);
+    this.ship.reservedTons = this.trade.quintaladas ? aboard.length * CHEST_TONS : 0;
+    if (def.id !== 'lisboa' || this.trade.books.length > 1 || currentBook(this.trade).entries.length > 0) {
+      // Expected, so granting it earns nothing; refusing it is remembered.
+      if (!this.trade.quintaladas) for (const o of aboard) o.loyalty = clamp(o.loyalty - 0.012, 0, 1);
+    }
+    // Contracts.
+    for (const c of this.trade.contracts) {
+      if (c.status !== 'open') continue;
+      if (c.port === def.id && this.ship.quantityOf(c.goodId) >= c.qty) {
+        this.ship.removeCargo(c.goodId, c.qty);
+        const due = c.qty * c.price - c.advance;
+        this.crown.gold += due;
+        c.status = 'kept';
+        this.finance.credit[c.house as HouseId] = clamp((this.finance.credit[c.house as HouseId] ?? 0) + 8, 0, 100);
+        this.enter('contract', `Delivered ${c.qty} ${unitOf(good(c.goodId), c.qty)} of ${good(c.goodId).english.toLowerCase()} to ${c.houseName}`, due);
+        this.logEvent('trade', `Delivered ${c.qty} ${good(c.goodId).english.toLowerCase()} to ${c.houseName} under contract: ${due.toFixed(0)} cruzados, the advance already had.`, true);
+        this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
+      } else if (now > c.due) {
+        c.status = 'broken';
+        const penalty = Math.round(c.advance * 1.5);
+        this.crown.gold = Math.max(0, this.crown.gold - penalty);
+        this.finance.credit[c.house as HouseId] = clamp((this.finance.credit[c.house as HouseId] ?? 0) - 20, 0, 100);
+        this.enter('contract', `Contract with ${c.houseName} broken`, -penalty);
+        this.logEvent('trade', `The contract with ${c.houseName} has run out undelivered. They have taken back the advance and half as much again, ${penalty} cruzados, and they will remember.`, true);
+        this.pushAlert(`Contract broken: ${c.houseName} (${penalty} cruzados).`, 'grave');
+      }
+    }
+    this.trade.contracts = this.trade.contracts.filter((c) => c.status !== 'offered');
+    // Antwerp.
+    if (def.id === 'lisboa') {
+      const paid = this.trade.antwerp.filter((a) => a.due <= now);
+      for (const a of paid) {
+        this.crown.gold += a.amount;
+        this.enter('antwerp', `Antwerp paid for ${a.qty.toFixed(0)} ${good(a.goodId).english.toLowerCase()}`, a.amount);
+        this.logEvent('trade', `The Casa's factor at Antwerp has remitted ${a.amount.toFixed(0)} cruzados for ${good(a.goodId).english.toLowerCase()}.`, true);
+      }
+      this.trade.antwerp = this.trade.antwerp.filter((a) => a.due > now);
+    }
+    this.haggle = null;
+  }
+
+  /** Contracts the Lisbon houses would sign today. */
+  contractOffers(): Contract[] {
+    if (this.dockedAt !== 'lisboa') return [];
+    const now = this.clock.t;
+    if (now - this.trade.offersT > 120 * 86400) {
+      this.trade.offersT = now;
+      this.trade.contracts = this.trade.contracts.filter((c) => c.status !== 'offered');
+      const act = this.chronicle.act;
+      const pool = (act <= 2 ? ['acucar', 'malagueta', 'marfim', 'ouro', 'panos'] : act === 3 ? ['acucar', 'marfim', 'ouro', 'malagueta', 'perolas'] : ['canela', 'cravo', 'gengibre', 'noz', 'seda', 'perolas', 'calico', 'anil'])
+        .filter((id) => !MONOPOLY.includes(id) || this.hasLicence(id));
+      const houses = HOUSES.filter((h) => (this.finance.credit[h.id] ?? 0) >= h.floor);
+      for (let i = 0; i < 2 && pool.length > 0 && houses.length > 0; i++) {
+        const goodId = pool[Math.floor(this.rng.next() * pool.length)];
+        const h = houses[Math.floor(this.rng.next() * houses.length)];
+        const gd = good(goodId);
+        const value = this.rng.range(1200, 3200) * (act <= 2 ? 0.6 : 1);
+        const price = Math.round(gd.lisbon * this.rng.range(1.65, 1.9) * 10) / 10;
+        const qty = Math.max(1, Math.round(value / price));
+        this.trade.contracts.push({
+          id: this.trade.nextId++, house: h.id, houseName: h.name, goodId, qty, price,
+          advance: Math.round(qty * price * 0.15), made: now,
+          due: now + (act >= 4 ? 720 : 480) * 86400, port: 'lisboa', status: 'offered',
+        });
+      }
+    }
+    return this.trade.contracts.filter((c) => c.status === 'offered');
+  }
+
+  signContract(id: number): string {
+    const c = this.trade.contracts.find((x) => x.id === id && x.status === 'offered');
+    if (!c) return 'That offer has gone.';
+    c.status = 'open';
+    c.made = this.clock.t;
+    this.crown.gold += c.advance;
+    this.enter('contract', `Advance from ${c.houseName}`, c.advance);
+    this.logEvent('trade', `Signed with ${c.houseName}: ${c.qty} ${unitOf(good(c.goodId), c.qty)} of ${good(c.goodId).english.toLowerCase()} at ${c.price} the ${good(c.goodId).unit}, by ${formatDateAt(c.due)}. ${c.advance} cruzados advanced.`, true);
+    return `Signed. ${c.advance} cruzados advanced; the rest when the ${good(c.goodId).english.toLowerCase()} is on the quay.`;
+  }
+
+  /** Buy for coin at the scales. */
+  tradeBuy(goodId: string, qty: number): { ok: boolean; text: string } {
+    const port = this.dockedAt;
+    const l = this.marketHere().find((x) => x.goodId === goodId);
+    if (!port || !l) return { ok: false, text: 'Nothing of that here.' };
+    const gd = good(goodId);
+    const affordable = Math.floor((this.crown.gold + this.creditFree) / l.ask);
+    const roomFor = Math.floor(this.ship.holdFree / gd.bulk);
+    let take = Math.min(qty, l.stock, affordable, roomFor);
+    if (take <= 0) return { ok: false, text: roomFor <= 0 ? 'No room in the hold.' : affordable <= 0 ? 'Not enough in the purse.' : 'None to be had.' };
+    let paid = l.ask * Markets.slippage(take, l.stock);
+    if (take * paid > this.crown.gold) this.drawCredit(take * paid);
+    if (take * paid > this.crown.gold) {
+      take = Math.floor(this.crown.gold / paid);
+      if (take <= 0) return { ok: false, text: 'Not enough in the purse, once they see how much you want.' };
+      paid = l.ask * Markets.slippage(take, l.stock);
+    }
+    const cost = take * paid;
+    const q = qualityAtSource(port, goodId, this.clock.date.month, this.rng.range(-0.1, 0.1));
+    this.ship.addCargo(goodId, take, paid, q);
+    this.crown.gold -= cost;
+    this.markets.buy(port, goodId, take);
+    this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
+    this.enter('buy', `${take.toFixed(0)} ${unitOf(gd, take)} of ${gd.english.toLowerCase()} at ${portDef(port).name}`, -cost);
+    this.logEvent('trade', `Bought ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} at ${paid.toFixed(1)} the ${gd.unit}, ${cost.toFixed(0)} cruzados in all. ${gradeWord(q)}.`);
+    this.noteSheet(port, 'seen');
+    return { ok: true, text: `Took aboard ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} (${gradeWord(q).toLowerCase()}) for ${cost.toFixed(0)} cruzados.` };
+  }
+
+  /**
+   * Sell for coin. `quay` sells a monopoly good privately in Lisbon, past the
+   * Casa's scales, and takes the chance of the King's officers.
+   */
+  tradeSell(goodId: string, qty: number, quay = false): { ok: boolean; text: string; revenue: number; profit: number; shared: number; edge: number } {
+    const port = this.dockedAt;
+    const l = this.marketHere().find((x) => x.goodId === goodId);
+    const none = { revenue: 0, profit: 0, shared: 0, edge: 0 };
+    if (!port || !l) return { ok: false, text: 'Nobody here will buy that.', ...none };
+    const gd = good(goodId);
+    const lot = this.ship.cargo.find((c) => c.goodId === goodId);
+    const take = Math.min(qty, lot?.quantity ?? 0, l.appetite);
+    if (take <= 0 || !lot) return { ok: false, text: 'They will not take any more of that.', ...none };
+    const edge = this.tradeEdge(goodId);
+    const base = quay ? l.rawBid / Math.sqrt(paymentAt(port).coin) : l.bid;
+    const got = (base / Markets.slippage(take, l.appetite)) * (1 + edge) * qualityFactor(lot.q);
+    const revenue = take * got;
+    const costBasis = lot.cost * take;
+    this.ship.removeCargo(goodId, take);
+    this.markets.sell(port, goodId, take);
+    this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
+    if (quay) {
+      const caught = this.rng.chance(clamp(0.2 - skill(this.effectiveSkill, 'comercio') * 0.08, 0.06, 0.25));
+      if (caught) {
+        const fine = Math.round(revenue * 0.25);
+        this.crown.gold = Math.max(0, this.crown.gold - fine);
+        this.crown.standing = Math.max(0, this.crown.standing - 15);
+        this.casa.regard = clamp(this.casa.regard - 0.15, -1, 1);
+        this.enter('fine', `${gd.english} seized on the quay, and a fine`, -fine);
+        this.logEvent('trade', `The King's officers were on the quay. ${take.toFixed(0)} ${unitOf(gd, take)} of ${gd.english.toLowerCase()} seized for the Crown, and a fine of ${fine} cruzados.`, true);
+        return { ok: true, text: `Caught. The ${gd.english.toLowerCase()} is the King's now, and the fine is ${fine} cruzados.`, revenue: 0, profit: -costBasis - fine, shared: 0, edge: 0 };
+      }
+    }
+    this.crown.gold += revenue;
+    const shared = this.takeShares(revenue);
+    const profit = revenue - costBasis;
+    this.enter('sell', `${take.toFixed(0)} ${unitOf(gd, take)} of ${gd.english.toLowerCase()} at ${portDef(port).name}${l.casa && !quay ? ', to the Casa' : quay ? ', on the quay' : ''}`, revenue);
+    if (shared > 0.5) this.enter('shares', 'The sharers’ cut', -shared);
+    if (l.casa && !quay) {
+      this.enter('casa', `The King's share of the ${gd.english.toLowerCase()} (kept at the scales)`, 0);
+    }
+    this.logEvent('trade',
+      `Sold ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} at ${got.toFixed(1)}, ${revenue.toFixed(0)} cruzados`
+      + (lot.cost > 0 ? `, against ${costBasis.toFixed(0)} paid — ${profit >= 0 ? 'a gain' : 'a loss'} of ${Math.abs(profit).toFixed(0)}.` : '.'));
+    this.noteSheet(port, 'seen');
+    return {
+      ok: true,
+      text: `Sold for ${revenue.toFixed(0)} cruzados`
+        + (lot.cost > 0 ? ` — ${profit >= 0 ? 'profit' : 'loss'} ${Math.abs(profit).toFixed(0)}.` : '.')
+        + (l.casa && !quay ? ' The Casa took it at the King’s price.' : '')
+        + (quay ? ' Nobody asked where it came from.' : ''),
+      revenue, profit, shared, edge,
+    };
+  }
+
+  // --- The barter table ---------------------------------------------------
+
+  /** What each side of a bargain is worth to the man across the table. */
+  barterValue(give: { goodId: string; qty: number }[], coin: number, take: { goodId: string; qty: number }[]): { yours: number; theirs: number } {
+    const port = this.dockedAt;
+    if (!port) return { yours: 0, theirs: 0 };
+    const ls = new Map(this.marketHere().map((l) => [l.goodId, l]));
+    const pay = paymentAt(port);
+    let yours = coin / pay.coin, theirs = 0;
+    for (const g of give) {
+      const l = ls.get(g.goodId);
+      const lot = this.ship.cargo.find((c) => c.goodId === g.goodId);
+      if (!l || !lot || g.qty <= 0) continue;
+      const q = Math.min(g.qty, lot.quantity, l.appetite);
+      yours += q * (l.rawBid / Markets.slippage(q, l.appetite)) * l.barter * qualityFactor(lot.q);
+    }
+    for (const t of take) {
+      const l = ls.get(t.goodId);
+      if (!l || t.qty <= 0) continue;
+      const q = Math.min(t.qty, l.stock);
+      theirs += q * l.rawAsk * Markets.slippage(q, l.stock);
+    }
+    return { yours, theirs };
+  }
+
+  private haggleState(): NonNullable<Game['haggle']> {
+    const key = `${this.dockedAt}:${this.dockedSinceT}`;
+    if (!this.haggle || this.haggle.key !== key) {
+      const regard = this.relationsFor(this.dockedAt!).regard;
+      this.haggle = { key, patience: 3 + (regard > 0.4 ? 1 : 0), walked: false, closedUntil: 0, bias: this.rng.range(-0.06, 0.06) };
+    }
+    return this.haggle;
+  }
+
+  /** What he will settle for, as a fraction of his side: hidden from the player. */
+  barterReservation(): number {
+    const port = this.dockedAt!;
+    const h = this.haggleState();
+    const r = 0.97 - skill(this.effectiveSkill, 'comercio') * 0.12
+      - clamp(this.relationsFor(port).regard, -1, 1) * 0.05
+      - this.merchantsHere(port) * 0.05 + this.competitionAt(port) * 0.08 + h.bias;
+    return clamp(r, 0.78, 1.12);
+  }
+
+  /** How well you can read him: the width of the band either side of the truth. */
+  get barterFuzz(): number {
+    const def = this.portHere;
+    const interp = def ? hasInterpreterFor(this.crew, people(def.people).language) : null;
+    return clamp(0.15 - skill(this.effectiveSkill, 'comercio') * 0.08 - (interp ? 0.05 : 0), 0.02, 0.16);
+  }
+
+  get barterPatience(): { patience: number; walked: boolean; closed: boolean } {
+    const h = this.haggleState();
+    return { patience: h.patience, walked: h.walked, closed: h.closedUntil > this.clock.t };
+  }
+
+  /** Put a bargain to him. */
+  barter(give: { goodId: string; qty: number }[], coin: number, take: { goodId: string; qty: number }[]): { accepted: boolean; text: string } {
+    const port = this.dockedAt;
+    if (!port) return { accepted: false, text: '' };
+    const h = this.haggleState();
+    if (h.closedUntil > this.clock.t) return { accepted: false, text: 'He will not deal with you again today.' };
+    coin = clamp(coin, 0, this.crown.gold);
+    const v = this.barterValue(give, coin, take);
+    if (v.theirs <= 0) return { accepted: false, text: 'You have asked for nothing.' };
+    const r = this.barterReservation();
+    if (v.yours < v.theirs * r) {
+      h.patience -= 1;
+      const short = (v.theirs * r - v.yours) * (1 + this.rng.range(-this.barterFuzz, this.barterFuzz));
+      if (h.patience <= 0) {
+        h.closedUntil = this.clock.t + 3 * 86400;
+        return { accepted: false, text: 'He has had enough of you, and rolls up his cloth. Come back in a few days.' };
+      }
+      return { accepted: false, text: `He shakes his head. You would need to find something like ${Math.max(1, Math.round(short))} cruzados more of what he will take.` };
+    }
+    // Done. Your goods go ashore, his come aboard at what you gave for them.
+    const ls = new Map(this.marketHere().map((l) => [l.goodId, l]));
+    let givenCost = coin;
+    const gave: string[] = [];
+    for (const g of give) {
+      const lot = this.ship.cargo.find((c) => c.goodId === g.goodId);
+      const l = ls.get(g.goodId);
+      if (!lot || !l || g.qty <= 0) continue;
+      const q = Math.min(g.qty, lot.quantity, l.appetite);
+      givenCost += lot.cost * q;
+      this.ship.removeCargo(g.goodId, q);
+      this.markets.sell(port, g.goodId, q);
+      gave.push(`${q.toFixed(0)} ${good(g.goodId).english.toLowerCase()}`);
+    }
+    this.crown.gold -= coin;
+    if (coin > 0) gave.push(`${coin.toFixed(0)} cruzados`);
+    const got: string[] = [];
+    for (const t of take) {
+      const l = ls.get(t.goodId);
+      if (!l || t.qty <= 0) continue;
+      const q = Math.min(t.qty, l.stock, Math.floor(this.ship.holdFree / good(t.goodId).bulk));
+      if (q <= 0) continue;
+      const share = (q * l.rawAsk) / v.theirs;
+      const quality = qualityAtSource(port, t.goodId, this.clock.date.month, this.rng.range(-0.1, 0.1));
+      this.ship.addCargo(t.goodId, q, (givenCost * share) / q, quality);
+      this.markets.buy(port, t.goodId, q);
+      got.push(`${q.toFixed(0)} ${unitOf(good(t.goodId), q)} of ${good(t.goodId).english.toLowerCase()} (${gradeWord(quality).toLowerCase()})`);
+    }
+    this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
+    const text = `Gave ${gave.join(', ')} for ${got.join(', ')}.`;
+    this.enter('barter', `${text.replace(/\.$/, '')} at ${portDef(port).name}`, -coin);
+    this.logEvent('trade', `Bartered at ${portDef(port).name}. ${text}`);
+    this.noteSheet(port, 'seen');
+    return { accepted: true, text: `Done. ${text}` };
+  }
+
+  /** Get up from the table. Sometimes he calls you back. */
+  walkAway(): string {
+    const h = this.haggleState();
+    if (h.walked) return 'You have tried that once already. He watches you go.';
+    h.walked = true;
+    const port = this.dockedAt!;
+    const chance = clamp(0.55 + skill(this.effectiveSkill, 'comercio') * 0.2 - this.competitionAt(port) * 0.5, 0.15, 0.85);
+    if (this.rng.chance(chance)) {
+      h.bias -= 0.06;
+      h.patience += 1;
+      return 'You are halfway to the boat when a boy runs after you. He will talk again, and he will be more reasonable.';
+    }
+    h.closedUntil = this.clock.t + 3 * 86400;
+    return COMPETITION[port]
+      ? `He lets you go. ${COMPETITION[port].who} are waiting to take your place at the table.`
+      : 'He lets you go, and does not look up.';
+  }
+
+  // --- Letters, licences, Antwerp ------------------------------------------
+
+  /** Regions a broker here can write you a price letter for, and what it costs. */
+  reportOffers(): { region: Region; price: number; ports: number }[] {
+    const def = this.portHere;
+    if (!def) return [];
+    if (!(def.size === 'city' || def.size === 'emporium' || def.feitoria || this.relationsFor(def.id).factory)) return [];
+    const out: { region: Region; price: number; ports: number }[] = [];
+    for (const r of Object.keys(REGION_NAME) as Region[]) {
+      const ports = portsInRegion(r).filter((id) => this.chart.ports.has(id) && id !== def.id);
+      if (ports.length === 0) continue;
+      const far = newsDelayDays(regionOf(def.id), r);
+      out.push({ region: r, ports: ports.length, price: Math.round(15 + ports.length * 6 + far * 0.15) });
+    }
+    return out;
+  }
+
+  buyReport(r: Region): string {
+    const offer = this.reportOffers().find((o) => o.region === r);
+    if (!offer) return 'Nobody here writes about that coast.';
+    if (this.crown.gold < offer.price) return 'Not enough in the purse.';
+    this.crown.gold -= offer.price;
+    this.enter('report', `A broker's letter on ${REGION_NAME[r]}`, -offer.price);
+    const here = this.dockedAt!;
+    const hostile = this.merchantsHere(here) < -0.15 || (this.rival.met && (this.rival.regard ?? 0) < -0.3);
+    let lied = false;
+    for (const id of portsInRegion(r)) {
+      if (!this.chart.ports.has(id) || id === here) continue;
+      let falseGood: string | undefined;
+      if (!lied && this.rng.chance(hostile ? 0.35 : 0.1)) {
+        const wanted = Object.keys(portDef(id).wants);
+        if (wanted.length) { falseGood = wanted[Math.floor(this.rng.next() * wanted.length)]; lied = true; }
+      }
+      this.noteSheet(id, 'broker', 0.12, falseGood);
+    }
+    return `The letter covers ${offer.ports} ${offer.ports === 1 ? 'port' : 'ports'} on ${REGION_NAME[r].replace(/^The /, 'the ')}. The prices are in your book.`;
+  }
+
+  buyLicence(goodId: string): string {
+    if (this.dockedAt !== 'lisboa') return 'Licences are granted at the Casa, in Lisbon.';
+    const cost = licenceCost(goodId);
+    if (this.crown.gold < cost) return 'Not enough in the purse.';
+    this.crown.gold -= cost;
+    this.trade.licences[goodId] = Math.max(this.trade.licences[goodId] ?? 0, this.clock.t) + LICENCE_YEARS * 365 * 86400;
+    this.enter('licence', `The King's licence for ${good(goodId).english.toLowerCase()}`, -cost);
+    this.logEvent('trade', `Bought the King's licence to trade ${good(goodId).english.toLowerCase()} on your own account for ${LICENCE_YEARS} years, ${cost} cruzados.`, true);
+    return `Licensed for ${LICENCE_YEARS} years. The Casa will not stand at your scales for ${good(goodId).english.toLowerCase()}.`;
+  }
+
+  /** The Casa's factor in Antwerp: from the third act. */
+  get antwerpOpen(): boolean {
+    return this.dockedAt === 'lisboa' && this.chronicle.act >= 3;
+  }
+
+  sellAntwerp(goodId: string, qty: number): string {
+    if (!this.antwerpOpen) return 'The Casa has no factor in Antwerp for you yet.';
+    if (MONOPOLY.includes(goodId) && !this.hasLicence(goodId)) return 'That is the King’s, and the King sells it himself.';
+    const lot = this.ship.cargo.find((c) => c.goodId === goodId);
+    if (!lot || qty <= 0) return 'Nothing to send.';
+    const take = Math.min(qty, lot.quantity);
+    const w = antwerpWeight(goodId) * take;
+    const g0 = this.trade.antwerpGlut[goodId] ?? 0;
+    const per = antwerpBid(this.trade, goodId) * (1 + g0 * 1.2) / (1 + (g0 + w / 2) * 1.2);
+    const amount = take * per * qualityFactor(lot.q);
+    this.trade.antwerpGlut[goodId] = g0 + w;
+    this.ship.removeCargo(goodId, take);
+    const shared = this.takeShares(amount);
+    this.trade.antwerp.push({ goodId, qty: take, amount: amount - shared, due: this.clock.t + ANTWERP_DAYS * 86400 });
+    if (shared > 0.5) this.enter('shares', 'The sharers’ cut, on the Antwerp sale', 0);
+    this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
+    this.logEvent('trade', `Consigned ${take.toFixed(0)} ${good(goodId).english.toLowerCase()} to the Casa's factor at Antwerp. He expects ${amount.toFixed(0)} cruzados, less freight, in about ${ANTWERP_DAYS} days.`);
+    return `Shipped to Antwerp. About ${(amount - shared).toFixed(0)} cruzados to come, in ${ANTWERP_DAYS} days.`;
+  }
+
+  setQuintaladas(on: boolean): void {
+    this.trade.quintaladas = on;
+    const aboard = this.crew.officers.filter((o) => o.alive && !o.ashoreAt).length;
+    this.ship.reservedTons = on ? aboard * CHEST_TONS : 0;
+  }
+
+  /** News you have heard that is still true, as far as you know. */
+  get newsHeard(): { shock: Shock; def: ShockDef; heard: number }[] {
+    return this.trade.shocks
+      .filter((x) => this.trade.heard[x.id] !== undefined && this.clock.t - x.end < 60 * 86400)
+      .map((x) => ({ shock: x, def: shockDef(x.key), heard: this.trade.heard[x.id] }))
+      .sort((a, b) => b.heard - a.heard);
+  }
+
+  /** Close the book on one voyage and open the next. */
+  private closeVoyageBook(): void {
+    const b = currentBook(this.trade);
+    if (b.entries.length === 0) return;
+    b.end = this.clock.t;
+    this.trade.books.push({ n: b.n + 1, start: this.clock.t, entries: [] });
+    if (this.trade.books.length > 12) this.trade.books.splice(0, this.trade.books.length - 12);
+  }
 
   /**
    * Ship replacements at a port.
@@ -3106,6 +3641,14 @@ export class Game {
     }
     for (const s of wear.spoiled) {
       this.logEvent('note', `The ${s.toLowerCase()} in the hold is spoiled past saving and has been thrown over the side.`);
+    }
+    // What the damp took, at what it cost: one line a good in the voyage's books.
+    for (const l of wear.lost) {
+      const book = currentBook(this.trade);
+      const text = `${good(l.goodId).english} spoiled in the hold`;
+      const e = book.entries.find((x) => x.kind === 'spoiled' && x.text === text);
+      if (e) e.amount -= l.qty * l.cost;
+      else book.entries.push({ t: this.clock.t, kind: 'spoiled', text, amount: -l.qty * l.cost });
     }
 
     if (this.ship.condition.bilge > this.ship.holdCapacity * 0.28) {
@@ -6323,6 +6866,8 @@ export class Game {
   weighAnchor(): string {
     const refused = this.cannotWeigh();
     if (refused) return refused;
+    // Out of the Tagus is a new voyage, and a new page in the books.
+    if (this.dockedAt === 'lisboa') this.closeVoyageBook();
     // Give the charters back the days she lay alongside. Done here, once, on
     // the elapsed time rather than accumulated per tick: rollIncidents can skip
     // a tick on its cooldown, and a deadline that drifts by however many ticks
@@ -6811,6 +7356,7 @@ export class Game {
     this.checkInland(def);
     this.visitPolity(def);
     this.markets.refresh(def.id, this.clock.t);
+    this.visitMarket(def);
     this.refreshPortBusiness(def);
     this.deliverVentures(def);
     this.reclaimBrokenCharters();
@@ -7828,6 +8374,7 @@ export class Game {
       galeRecord: this.galeRecord,
       route: this.route,
       diplomacy: this.diplomacy,
+      trade: this.trade,
       chronicle: this.chronicle,
       quests: this.quests,
       soundedGround: this.soundedGround,
@@ -7940,6 +8487,9 @@ export class Game {
     g.soundedGround = d.soundedGround ?? [];
     g.quests = d.quests ?? [];
     g.diplomacy = d.diplomacy ?? newDiplomacy();
+    g.trade = { ...newTrade(g.clock.t), ...(d.trade ?? {}) };
+    g.ship.reservedTons = g.trade.quintaladas
+      ? g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length * CHEST_TONS : 0;
     // A career from before the courts: states you have dealt with are met, and
     // start where your regard with their ports stood.
     if (!d.diplomacy) {

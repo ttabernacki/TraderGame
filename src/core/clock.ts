@@ -159,3 +159,9 @@ function daysInMonth(y: number, m: number): number {
 export function monthName(m: number): string {
   return MONTHS[m - 1];
 }
+
+/** A simulated time as a date, the way the log writes one. */
+export function formatDateAt(t: number): string {
+  const d = dateFromDays(Math.floor(t / 86400));
+  return `${d.day} ${MONTHS[d.month - 1]} ${d.year}`;
+}
