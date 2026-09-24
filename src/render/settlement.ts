@@ -215,8 +215,26 @@ const SMOKES: Record<string, number> = {
  * lie.
  */
 const SMOKE_HEIGHT: Record<string, number> = {
-  anchorage: 420, village: 700, town: 1250, city: 1900, emporium: 2400,
+  anchorage: 700, village: 1100, town: 1800, city: 2600, emporium: 3200,
 };
+
+/**
+ * The highest ground around a town, in metres. On a rocky island the peaks
+ * stand between the sea and the town, and a smoke that does not clear them is
+ * not a sign of anything, so the column is lifted by what surrounds it.
+ */
+function reliefAround(lat: number, lon: number): number {
+  let top = 0;
+  for (const km of [2, 5, 10, 18]) {
+    const dLat = km / 111;
+    const dLon = km / (111 * Math.max(cosd(lat), 0.2));
+    for (let b = 0; b < 8; b++) {
+      const a = (b / 8) * Math.PI * 2;
+      top = Math.max(top, elevationAt({ lat: lat + dLat * Math.cos(a), lon: lon + dLon * Math.sin(a) }));
+    }
+  }
+  return top;
+}
 
 export class Settlements {
   group = new THREE.Group();
@@ -468,6 +486,7 @@ export class Settlements {
     const { alongX, alongZ, backX, backZ } = frameOf(town.brg);
     // A town on a hill smokes from the hill, not from sea level.
     const ground = clamp(elevationAt({ lat: town.lat, lon: town.lon }), 0, TOWN_CEILING);
+    const relief = Math.max(0, reliefAround(town.lat, town.lon) - ground);
 
     for (let f = 0; f < fires; f++) {
       const alongM = rng.range(-0.7, 0.7) * plan.radius;
@@ -475,8 +494,9 @@ export class Settlements {
       const x = town.x + alongX * alongM + backX * backM;
       const z = town.z + alongZ * alongM + backZ * backM;
       const drop = curvatureDrop(Math.hypot(x, z), this.eyeM);
-      const tall = SMOKE_HEIGHT[town.def.size] ?? 700;
-      const puffs = 9;
+      const tall = (SMOKE_HEIGHT[town.def.size] ?? 1100) + relief * 1.3;
+      // More puffs for a taller column, so it stays a column and not beads.
+      const puffs = Math.round(clamp(tall / 200, 9, 18));
       for (let i = 0; i < puffs; i++) {
         const t = (i + 0.5) / puffs;
         // Its own material, so each puff can be darkened at the fire, thinned
@@ -506,7 +526,9 @@ export class Settlements {
           color: new THREE.Color(0.010 + t * 0.030, 0.0095 + t * 0.029, 0.009 + t * 0.027),
         });
         const sprite = new THREE.Sprite(material);
-        const width = tall * (0.22 + t * 0.52);
+        // Width follows the size of the place, not the height of the hills:
+        // lifting a village's smoke over a peak should not make it a city's.
+        const width = Math.min(tall, (SMOKE_HEIGHT[town.def.size] ?? 1100) * 1.15) * (0.2 + t * 0.45);
         sprite.scale.set(width, width, 1);
         this.plumes.push({
           sprite, material, x, z,
