@@ -2456,3 +2456,6 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
 .port-character p { margin: 0 0 7px; font-size: 14px; line-height: 1.6; }
 .port-character-danger { color: #8a3a2a; font-style: italic; }
 .port-character-quest { margin-top: 9px; padding-top: 9px; border-top: 1px dashed rgba(90, 74, 55, .35); }
+.backer { padding: 6px 0 8px; border-bottom: 1px solid rgba(90, 74, 55, .14); }
+.backer:last-of-type { border-bottom: none; }
+.backer-terms { font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; }

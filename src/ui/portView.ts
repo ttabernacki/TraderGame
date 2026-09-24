@@ -105,7 +105,7 @@ export class PortView {
       ['town', 'Town'],
       ['market', 'Market'],
       ['freight', g.ventureOffers.length > 0 ? `Freight (${g.ventureOffers.length})` : 'Freight'],
-      ['money', g.finance.owedTo() > 0 ? `Counting house (${g.finance.owedTo().toFixed(0)})` : 'Counting house'],
+      ['money', g.finance.owedTo() > 0 ? `Backers (${g.finance.owedTo().toFixed(0)} owed)` : 'Backers'],
       // Stores, the yard and the hiring were three tabs for one errand: getting
       // her ready for sea. They are one page now, in the order it is done.
       ['fit', 'Fitting out'],
@@ -639,6 +639,37 @@ export class PortView {
     const live = g.finance.live;
     const loans = live.filter((d) => d.kind !== 'quinhao');
     const shares = live.filter((d) => d.kind === 'quinhao');
+
+    // Everybody with money in this voyage, and what each of them is doing to
+    // it, on one card. The Casa's arrangement used to be a multiplier nobody
+    // could see; it is written down here in figures, because it is in figures.
+    const c = g.casa;
+    const bias = g.settlementBias;
+    const pct = (k: number) => (k === 1 ? 'as reported' : `${k > 1 ? '+' : ''}${Math.round((k - 1) * 100)}%`);
+    left.append(card('Your backers',
+      el('div', { class: 'backer' },
+        kv('The Casa da Mina \u2014 Aires Tinoco', regardWord(c.regard)),
+        el('div', { class: 'backer-terms' },
+          c.pact ? `His arrangement: your private returns entered generously, for ${c.pactFee ?? 0} cruzados at every settlement. There is a paper.`
+            : c.patron ? 'He has decided you are worth protecting, and works your account himself.'
+              : c.broke ? 'You went to the King about him. A new clerk keeps your books, and trusts nothing.'
+                : c.regard < -0.3 ? 'Every figure exact, and none of them generous.'
+                  : 'Your account is kept like any other captain\u2019s.'),
+        el('div', { class: 'backer-terms' },
+          `At settlement: coin ${pct(bias.gold)}, renown ${pct(bias.standing)}.`),
+      ),
+      ...g.finance.byRegard().map((h) => el('div', { class: 'backer' },
+        kv(h.name, `${Math.round(g.finance.credit[h.id])} credit`),
+        el('div', { class: 'backer-terms' },
+          g.finance.owedTo(h.id) > 0
+            ? `${Math.round(g.finance.owedTo(h.id))} cruzados owed.`
+            : 'Nothing owed.'),
+      )),
+      g.finance.shareOut > 0
+        ? el('p', { style: { fontSize: '13px' } },
+          `${Math.round(g.finance.shareOut * 100)}% of everything this voyage lands belongs to the sharers.`)
+        : null,
+    ));
 
     // What is owed, first, because a man walking into a counting house knows
     // what he owes before he knows what he wants.

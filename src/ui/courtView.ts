@@ -128,6 +128,13 @@ export class CourtView {
                     + 'anything you could complain about.'
                   : null;
           if (casaNote) s.lines.push(casaNote);
+          // He said "a year", and he meant every time you come home.
+          if (g.casa.pact && (g.casa.pactFee ?? 0) > 0) {
+            const fee = Math.min(g.casa.pactFee ?? 0, g.crown.gold);
+            g.crown.gold -= fee;
+            s.gold -= fee;
+            s.lines.push(`${fee} cruzados to Aires Tinoco, by the side door, as arranged.`);
+          }
           const sold = g.sellCharts();
           if (sold > 0) {
             g.crown.gold += sold;

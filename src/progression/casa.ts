@@ -36,6 +36,8 @@ export interface CasaState {
   seen: string[];
   /** You took his arrangement. There is a paper. */
   pact?: boolean;
+  /** What the arrangement costs, taken at every settlement. */
+  pactFee?: number;
   /** You went to the King about him, and it stuck. */
   broke?: boolean;
   /** He has decided you are worth protecting. */
@@ -240,6 +242,7 @@ export const CASA_SCENES: CasaScene[] = [
             resolve: (gg) => {
               gg.crown.gold -= cut;
               gg.casa.pact = true;
+              gg.casa.pactFee = cut;
               move(gg, 0.3);
               return 'It is done in about ninety seconds and there is no ceremony to it. Your '
                 + 'returns are entered generously from this voyage on, and somewhere in that room '
