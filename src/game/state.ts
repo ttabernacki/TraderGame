@@ -1232,7 +1232,11 @@ export class Game {
 
   /** True where no Portuguese ship has been, which the crew feel keenly. */
   get beyondTheKnown(): boolean {
-    const p = this.ship.state.pos;
+    return this.beyondTheKnownAt(this.ship.state.pos);
+  }
+
+  /** Whether a place is past anything the Casa's own pilots have sailed. */
+  beyondTheKnownAt(p: LatLon): boolean {
     if (p.lat < 3 && p.lon > -20) return true;
     if (p.lat < -8) return true;
     if (p.lon > 20 && p.lat < 20) return true;
@@ -1280,7 +1284,10 @@ export class Game {
       bearing: this.sounding.shoreBearing,
       near: d < 6,
       close: d < 1.5 || this.sounding.aground,
-      sounding: this.sounding.depth < 90
+      // The hand lead, going in the chains as she closes the land. It reaches
+      // about twenty fathoms; deeper than that is the deep-sea lead, which
+      // means heaving her to and is a decision, not a readout.
+      sounding: this.sounding.depth < 20 * 1.8288
         ? `${(this.sounding.depth / 1.8288).toFixed(0)} fathoms`
         : null,
     };
@@ -1313,6 +1320,66 @@ export class Game {
     const cast = castLead(this);
     if (cast.ok) { this.lastCastRaw = cast; this.lastCastT = this.clock.t; }
     return cast;
+  }
+
+  /**
+   * Stretches of bottom whose soundings were bought or copied from somebody
+   * who had run them. See knowsGroundAt.
+   */
+  soundedGround: { lat: number; lon: number; nm: number; source: string }[] = [];
+
+  /**
+   * Whether the pilot knows how the bottom shoals toward the land here — which
+   * is what turns a depth into a distance off.
+   *
+   * A depth on its own is a fact about the water under her. Reading it as "so
+   * many leagues off the land" needs somebody to have sounded this coast with
+   * the land in sight and written down how it shoals, which on a new coast
+   * nobody has. So it is known where the Casa's pilots have worked for thirty
+   * years, where you have sounded it yourself on an earlier voyage, and where
+   * you have bought or copied another pilot's soundings — and nowhere else.
+   */
+  knowsGroundAt(at: LatLon): string | null {
+    if (!this.beyondTheKnownAt(at)) return 'the Casa\u2019s roteiros';
+    for (const g of this.soundedGround) {
+      if (haversine(at, g) / NM <= g.nm) return g.source;
+    }
+    const old = this.clock.t - 10 * 86400;
+    for (const e of this.rutter.entries) {
+      for (const n of e.notes) {
+        if (n.fact?.tag !== 'sounding' || n.t > old) continue;
+        if (n.fact.lat === undefined || n.fact.lon === undefined) continue;
+        if (haversine(at, { lat: n.fact.lat, lon: n.fact.lon }) / NM <= 45) return 'your own book';
+      }
+    }
+    return null;
+  }
+
+  /** What the local pilots ask for their soundings of this coast. */
+  localSoundingsPrice(): number | null {
+    const def = this.portHere;
+    if (!def || def.people === 'portuguese') return null;
+    const rel = this.relationsFor(def.id);
+    if (!rel.met) return null;
+    const at = anchorageOf(def);
+    if (this.soundedGround.some((g) => haversine(at, g) / NM < g.nm * 0.5)) return null;
+    return Math.round(30 + def.wealth * 50 - rel.regard * 15);
+  }
+
+  /** Pay a local pilot for how the bottom lies along a hundred and fifty miles of coast. */
+  buyLocalSoundings(): string {
+    const def = this.portHere;
+    const price = this.localSoundingsPrice();
+    if (!def || price === null) return 'Nobody here has anything to sell you about the bottom.';
+    if (this.crown.gold < price) return 'Not enough in the purse.';
+    this.crown.gold -= price;
+    const at = anchorageOf(def);
+    this.soundedGround.push({ lat: at.lat, lon: at.lon, nm: 150, source: `the pilots of ${def.name}` });
+    this.logEvent('navigation',
+      `Paid ${price} cruzados to a pilot of ${def.name} for the soundings of this coast — how the `
+      + 'bottom shoals, sand here and mud there, and where the ground turns to rock. The '
+      + 'escrivão wrote it all down in a hand that got smaller as the afternoon went on.', true);
+    return `The soundings of ${def.name}'s coast are in the book, a hundred and fifty miles each way.`;
   }
 
   /** Whether there is any point putting the line over the side from here. */
@@ -3062,6 +3129,16 @@ export class Game {
         : `${sign}, ${word}, ${distNm.toFixed(0)} miles. Somebody lives here.`,
       'note');
 
+    if (!known && !last) {
+      // The first sight of a town nobody has put on a chart. Everything
+      // stops for it, the glass swings round to it, and the whole ship is at
+      // the rail.
+      this.easeTheClock(1);
+      this.lookCue = { bearing, id: ++this.lookCueId };
+      this.announceDiscovery('sighted', 'Raised from the masthead',
+        'A town no chart has shown', townLooks(def),
+        `${word}, ${distNm.toFixed(0)} miles \u00b7 ${this.clock.formatDate()}`);
+    }
     if (!known) {
       this.logEvent('landfall',
         `${sign} ${word}, ${distNm.toFixed(0)} miles off, and no chart aboard shows a soul on `
@@ -6393,6 +6470,12 @@ export class Game {
       if (first && ch.custom) this.pushAlert(`${def.name}: ${ch.signature}.`, 'note');
     }
 
+    if (first && def.discovery > 0) {
+      const pe = people(def.people);
+      this.announceDiscovery('named', 'First entered on a Portuguese chart',
+        def.name, `${pe.name}${def.modern ? ` \u00b7 ${def.modern}` : ''}`,
+        `By the ${this.ship.name}, ${this.clock.formatDate()} \u00b7 ${def.discovery} renown at court`);
+    }
     if (first) {
       const value = def.discovery;
       if (value > 0) {
@@ -6518,6 +6601,20 @@ export class Game {
 
   /** Set when the camera should turn to look at something; see main. */
   lookCue: { bearing: number; id: number } | null = null;
+  /**
+   * The moment a discovery is announced on screen: a town raised on a coast
+   * nobody has charted, and the day it is entered under its own name. Read by
+   * the interface, which puts it up across the sea and rings for it.
+   */
+  discoveryCue: {
+    id: number; kind: 'sighted' | 'named';
+    eyebrow: string; title: string; sub: string; line: string;
+  } | null = null;
+  private discoveryCueId = 0;
+
+  private announceDiscovery(kind: 'sighted' | 'named', eyebrow: string, title: string, sub: string, line: string): void {
+    this.discoveryCue = { id: ++this.discoveryCueId, kind, eyebrow, title, sub, line };
+  }
   private lookCueId = 0;
   /** When coast nobody had drawn last came up over the horizon. */
   private lastNewCoastT = -1e9;
@@ -7329,6 +7426,7 @@ export class Game {
       gale: this.gale,
       galeRecord: this.galeRecord,
       route: this.route,
+      soundedGround: this.soundedGround,
       portQuestsDone: [...this.portQuestsDone],
       passageRecord: this.passageRecord,
       daysSincePort: this.daysSincePort,
@@ -7435,6 +7533,7 @@ export class Game {
     // destination; it becomes a route of one.
     g.route = d.route ?? (d.destination ? [d.destination] : []);
     g.portQuestsDone = new Set<string>(d.portQuestsDone ?? []);
+    g.soundedGround = d.soundedGround ?? [];
     g.passageRecord = { ...newPassageRecord(), ...(d.passageRecord ?? {}) };
     g.daysSincePort = d.daysSincePort ?? 0;
     g.distanceRun = d.distanceRun ?? 0;
@@ -7527,4 +7626,22 @@ function round(n: number, d: number): number {
   if (!Number.isFinite(n)) return 0;
   const m = 10 ** d;
   return Math.round(n * m) / m;
+}
+
+/** What the masthead can make out of a town before anybody knows whose it is. */
+function townLooks(def: PortDef): string {
+  const p = people(def.people);
+  const big = def.size === 'city' || def.size === 'emporium';
+  if (p.faith === 'muslim') {
+    return big ? 'White stone houses, flat roofs, and a minaret over them'
+      : 'Whitewashed houses along the shore, and a mosque';
+  }
+  if (p.faith === 'hindu') {
+    return big ? 'Palm-thatched roofs for miles, and a temple tower'
+      : 'Thatch under the palms, and boats drawn up on the beach';
+  }
+  if (p.faith === 'buddhist') return 'Roofs among the trees, and a white dome';
+  if (p.faith === 'catholic') return 'A church tower, and roofs of tile';
+  return big ? 'A great many round houses, and smoke going up all along the shore'
+    : 'Round houses under thatch, and canoes on the beach';
 }

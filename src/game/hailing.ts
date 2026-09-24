@@ -111,6 +111,10 @@ function askThePosition(g: Game, quality: number): string {
 
 function copyHisCoast(g: Game, s: Stranger, accuracyNm: number, rangeNm: number): string {
   const gained = g.chart.copyFrom(g.ship.state.pos, rangeNm, accuracyNm, g.clock.t);
+  // His soundings come with his coast.
+  g.soundedGround.push({
+    lat: g.ship.state.pos.lat, lon: g.ship.state.pos.lon, nm: rangeNm, source: `${s.master}\u2019s roteiro`,
+  });
   if (gained === 0) {
     return 'His sheet is worse than ours and he is embarrassed about it. We gave him ours to '
       + 'copy instead, which the Casa would have something to say about.';

@@ -240,6 +240,21 @@ export class PortView {
       kv('Wealth', qualityWord(def.wealth)),
     ));
 
+    // Soundings, which are what make the lead line worth heaving on a coast
+    // nobody from Lisbon has sounded. See Game.knowsGroundAt.
+    const soundPrice = g.localSoundingsPrice();
+    if (soundPrice !== null) {
+      right.append(card('The local pilots',
+        el('p', {}, 'A pilot here knows how the bottom lies for a hundred and fifty miles each way: '
+          + 'where it shoals, where the sand turns to mud, where the rocks are. With it in the '
+          + 'book, the lead tells you how far off the land you are, not just how deep the water is.'),
+        button(`Buy his soundings \u2014 ${soundPrice} cruzados`, () => {
+          this.notice = { text: g.buyLocalSoundings() };
+          this.render();
+        }, { disabled: g.crown.gold < soundPrice }),
+      ));
+    }
+
     const monsoon = g.monsoonNow();
     right.append(card('Pass the time',
       el('p', {}, 'Lying at anchor rests the crew, mends their spirits, and lets fresh food do its work — and it also lets the weather change, and the season turn.'),

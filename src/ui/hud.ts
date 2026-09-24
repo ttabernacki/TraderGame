@@ -533,14 +533,20 @@ export class Hud {
             },
               cast.recognised
                 ? `Known ground — ${cast.recognised}`
-                : `Puts her ${(cast.offingNm ?? 0).toFixed(0)} miles off the land`)),
+                : cast.offingNm !== undefined
+                  ? `Puts her ${cast.offingNm.toFixed(0)} miles off the land`
+                  : 'Unsounded coast — depth only')),
         );
-      } else if (g.inSoundings) {
+      } else if (land) {
+        // Nobody aboard knows she is on the shelf until the lead has been over
+        // the side. With the land up it is worth finding out.
         append(this.course,
           el('div', { class: 'hud-row' },
             el('span', { class: 'k' }, 'Soundings'),
             el('span', { class: 'v', style: { fontSize: '12px', opacity: '0.7' } },
-              'She is on the shelf. G to heave the lead.')),
+              g.knowsGroundAt(g.nav.estimated)
+                ? 'Sounded ground. G to heave the lead.'
+                : 'Unsounded coast. G to heave the lead.')),
         );
       }
 

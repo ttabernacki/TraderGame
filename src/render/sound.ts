@@ -196,12 +196,43 @@ export class Sound {
     }
   }
 
-  private ding(at: number): void {
+  /**
+   * A discovery: a slow rising figure on a low bell and a held drone under it,
+   * so the moment has its own sound and is not confused with the watch bell.
+   */
+  discovery(kind: 'sighted' | 'named'): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || this.muted) return;
+    const t0 = ctx.currentTime + 0.05;
+    const base = kind === 'named' ? 196 : 220;
+    const steps = kind === 'named' ? [1, 1.26, 1.5, 2] : [1, 1.5, 1.34];
+    steps.forEach((m, i) => this.ding(t0 + i * 0.42, base * m * 2, 0.11));
+    // The drone: two detuned saws through a low filter, swelling and dying.
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.05, t0 + 1.2);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 5.5);
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 520;
+    f.connect(g).connect(this.master);
+    for (const d of [-4, 4]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.value = base / 2;
+      o.detune.value = d;
+      o.connect(f);
+      o.start(t0);
+      o.stop(t0 + 5.6);
+    }
+  }
+
+  private ding(at: number, pitch = 780, level0 = 0.16): void {
     const ctx = this.ctx;
     if (!ctx || !this.master) return;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, at);
-    g.gain.exponentialRampToValueAtTime(0.16, at + 0.006);
+    g.gain.exponentialRampToValueAtTime(level0, at + 0.006);
     g.gain.exponentialRampToValueAtTime(0.0001, at + 1.5);
     g.connect(this.master);
     // A struck bell is a handful of inharmonic partials, which is what makes it
@@ -209,7 +240,7 @@ export class Sound {
     for (const [mult, level] of [[1, 1], [2.02, 0.5], [3.01, 0.28], [4.17, 0.14]] as const) {
       const o = ctx.createOscillator();
       o.type = 'sine';
-      o.frequency.value = 780 * mult;
+      o.frequency.value = pitch * mult;
       const og = ctx.createGain();
       og.gain.value = level;
       o.connect(og).connect(g);

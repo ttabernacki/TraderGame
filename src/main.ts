@@ -1,3 +1,4 @@
+import { DiscoveryBanner } from './ui/discoveryBanner';
 import './style.css';
 
 import { DEG, clamp, wrap180 } from './core/math';
@@ -51,6 +52,10 @@ let demo: Game | null = null;
 let renderer: Renderer | null = null;
 /** The last look the game asked the camera to take, so each is taken once. */
 let lastLookCue = -1;
+let lastDiscovery = -1;
+/** Discoveries, lettered across the sea. Outside the UI host so it survives screen changes. */
+const discoveryBanner = new DiscoveryBanner();
+document.getElementById('app')?.append(discoveryBanner.root);
 let renderedHullId = '';
 /** Seconds the title scene has been running, for the camera's slow sweep. */
 let titleT = 0;
@@ -337,6 +342,11 @@ function frame(now: number): void {
     if (game?.lookCue && game.lookCue.id !== lastLookCue) {
       lastLookCue = game.lookCue.id;
       renderer.glance(game.lookCue.bearing - game.displayHeading);
+    }
+    if (game?.discoveryCue && game.discoveryCue.id !== lastDiscovery) {
+      lastDiscovery = game.discoveryCue.id;
+      discoveryBanner.show(game.discoveryCue);
+      sound.discovery(game.discoveryCue.kind);
     }
     sound.update({
       windKnots: frame.windKnots,

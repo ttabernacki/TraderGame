@@ -109,13 +109,19 @@ export function castLead(g: Game): LeadCast {
   const believedOff = believed.land >= 0 ? believed.signed / NM : Infinity;
   const shoreBearing = wrap360(believed.bearing + (inland ? 180 : 0));
 
+  // Whether anybody knows how this bottom shoals toward the land. Without that,
+  // a depth is a fact about the water and not a distance off. It is judged at
+  // the reckoned position — the pilot looks for his soundings where he thinks
+  // he is — so a board that is badly out can look in the wrong page.
+  const profile = g.knowsGroundAt(nav.estimated);
+
   const depth = g.sounding.depth;
   if (depth > LEAD_REACH_M) {
     // No bottom is not nothing. It says she is outside the hundred-fathom line,
     // and a reckoning that had her inside it was wrong.
     const edge = offingFromDepth(LEAD_REACH_M);
     let moved = 0;
-    if (Number.isFinite(believedOff) && believedOff < edge) {
+    if (profile && Number.isFinite(believedOff) && believedOff < edge) {
       moved = nav.applySounding(shoreBearing, edge, believedOff, 9, g.clock.t, 'no bottom').movedNm;
     }
     g.logEvent('navigation',
@@ -159,7 +165,7 @@ export function castLead(g: Game): LeadCast {
   const sigmaOff = Math.hypot(Math.abs(slopeNm), 0.45 + offing * 0.055);
 
   let moved = 0;
-  if (Number.isFinite(believedOff)) {
+  if (profile && Number.isFinite(believedOff)) {
     moved = nav.applySounding(
       shoreBearing, offing, believedOff, sigmaOff, g.clock.t, `${fathoms.toFixed(0)} fathoms`,
     ).movedNm;
@@ -196,8 +202,12 @@ export function castLead(g: Game): LeadCast {
           ? ` The page is surer than the board and the board comes across to it — `
             + `${recalledMove.toFixed(0)} miles.`
           : ' It agrees with where he already had her.')
+      : !profile
+        ? ' Nobody has sounded this coast before, so how the bottom shoals toward the land is '
+          + 'anybody\u2019s guess: it tells you the water under her, not how far off the land '
+          + 'she is. It goes in the book, and the next ship down this coast will know.'
       : Number.isFinite(believedOff)
-        ? ` It puts her ${offing.toFixed(0)} miles off the land, against `
+        ? ` It puts her ${offing.toFixed(0)} miles off the land by ${profile}, against `
           + (believedOff < 0
             ? `a board that has her ${Math.abs(believedOff).toFixed(0)} miles inland, which she is not.`
             : `${believedOff.toFixed(0)} by the reckoning.`)
@@ -210,7 +220,7 @@ export function castLead(g: Game): LeadCast {
     message: call,
     fathoms,
     ground,
-    offingNm: offing,
+    offingNm: profile ? offing : undefined,
     movedNm: moved,
     recognised,
   };

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { NM, clamp, cosd, lerp, wrap180, type LatLon } from '../core/math';
 import { LANDMASSES, elevationAt, isLand } from '../world/landmass';
+import { CoastScenery, hash3, regionAt } from './coastScenery';
 
 /**
  * Depth of each rendered coastal band inland, in metres. Beyond the last of
@@ -150,7 +151,24 @@ interface Segment {
   prevLat: number; prevLon: number;
   nextLat: number; nextLon: number;
   cornerA: boolean; cornerB: boolean;
+  /**
+   * Which ring segment this piece was cut from, and where along it, so things
+   * standing on the coast can be placed at fixed points on the earth rather
+   * than at fixed points on whatever piece the sighting circle happened to cut.
+   */
+  ringIdx: number;
+  u0: number; u1: number;
+  fullALat: number; fullALon: number;
+  fullBLat: number; fullBLon: number;
 }
+
+/** How far off the trees and cliffs are drawn at all, metres. */
+const SCENERY_RANGE = 21000;
+/**
+ * How much bigger than life the things on the coast are drawn. The same
+ * argument as LAND_LIFT: a real palm at five miles is a pixel.
+ */
+const PROP_LIFT = 2.2;
 
 /**
  * Coastline terrain.
@@ -173,6 +191,8 @@ export class Land {
   private lastRangeNm = 0;
   /** Height of the eye above the water, which decides where the horizon is. */
   private eyeM = 20;
+  /** Palms, forest, dunes and cliffs. See render/coastScenery. */
+  private scenery = new CoastScenery();
 
   constructor() {
     this.material = new THREE.MeshLambertMaterial({
@@ -183,6 +203,7 @@ export class Land {
       transparent: true,
       depthWrite: true,
     });
+    this.group.add(this.scenery.group);
     this.surfMaterial = new THREE.MeshBasicMaterial({
       color: 0xdfeef2, transparent: true, opacity: 0.55, depthWrite: false,
     });
@@ -232,6 +253,15 @@ export class Land {
 
     const segments = this.segmentsNear(origin, rangeNm);
     this.clear();
+    this.scenery.begin();
+    try {
+      this.build(origin, rangeNm, eyeM, segments);
+    } finally {
+      this.scenery.end();
+    }
+  }
+
+  private build(origin: LatLon, rangeNm: number, eyeM: number, segments: Segment[]): void {
     if (segments.length === 0) return;
 
     const positions: number[] = [];
@@ -396,6 +426,8 @@ export class Land {
         }
       }
 
+      this.dress(seg, strip, bandScale, ax, az, bx, bz, naX, naZ, nbX, nbZ, origin, rangeNm, eyeM);
+
       for (let b = 0; b < BANDS.length - 1; b++) {
         const i0 = base + b * 2;
         const i1 = i0 + 1;
@@ -442,6 +474,79 @@ export class Land {
     this.surf = new THREE.Mesh(surfGeo, this.surfMaterial);
     this.surf.renderOrder = 3;
     this.group.add(this.surf);
+  }
+
+  /**
+   * Put the region's trees, dunes and cliffs on this piece of coast.
+   *
+   * Slots are counted from the start of the whole ring segment, so a palm is
+   * always the same palm however the segment was cut; heights are read off the
+   * same band strip the mesh was built from, so nothing floats or sinks.
+   */
+  private dress(
+    seg: Segment, strip: { x: number; z: number; h: number }[], bandScale: number,
+    ax: number, az: number, bx: number, bz: number,
+    naX: number, naZ: number, nbX: number, nbZ: number,
+    origin: LatLon, rangeNm: number, eyeM: number,
+  ): void {
+    if (Math.min(Math.hypot(ax, az), Math.hypot(bx, bz)) > SCENERY_RANGE) return;
+    const mPerDegLat = NM * 60;
+    const cosLat = Math.max(cosd(origin.lat), 1e-6);
+    const fullLen = Math.hypot(
+      wrap180(seg.fullBLon - seg.fullALon) * mPerDegLat * cosLat,
+      (seg.fullBLat - seg.fullALat) * mPerDegLat,
+    );
+    if (fullLen < 1 || seg.u1 <= seg.u0) return;
+    const region = regionAt((seg.aLat + seg.bLat) / 2, (seg.aLon + seg.bLon) / 2);
+    const ringKey = seg.land * 100003 + seg.ringIdx;
+    const dx = bx - ax, dz = bz - az;
+    const along = Math.hypot(dx, dz) || 1;
+    const ux = dx / along, uz = dz / along;
+    const shoreYaw = Math.atan2(-uz, ux);
+    const maxIn = BANDS[BANDS.length - 1] * bandScale;
+
+    region.layers.forEach((layer, li) => {
+      const from = Math.ceil((seg.u0 * fullLen) / layer.spacing);
+      const to = Math.ceil((seg.u1 * fullLen) / layer.spacing);
+      for (let k = from; k < to; k++) {
+        const roll = hash3(ringKey, k, li * 7 + 1);
+        if (roll > layer.chance) continue;
+        const r1 = hash3(ringKey, k, li * 7 + 2);
+        const r2 = hash3(ringKey, k, li * 7 + 3);
+        const r3 = hash3(ringKey, k, li * 7 + 4);
+        const u = (k * layer.spacing) / fullLen;
+        const w = clamp((u - seg.u0) / (seg.u1 - seg.u0), 0, 1);
+        const inland = lerp(layer.inland[0], layer.inland[1], r1 * r1);
+        if (inland > maxIn * 0.97) continue;
+        // Which band it stands in, and how far across.
+        let b = 0;
+        while (b < BANDS.length - 2 && BANDS[b + 1] * bandScale < inland) b++;
+        const b0 = BANDS[b] * bandScale;
+        const b1 = Math.max(BANDS[b + 1] * bandScale, b0 + 1e-3);
+        const f = clamp((inland - b0) / (b1 - b0), 0, 1);
+        const h00 = strip[b * 2].h, h01 = strip[b * 2 + 1].h;
+        const h10 = strip[(b + 1) * 2].h, h11 = strip[(b + 1) * 2 + 1].h;
+        const ground = lerp(lerp(h00, h01, w), lerp(h10, h11, w), f);
+        const nX = lerp(naX, nbX, w), nZ = lerp(naZ, nbZ, w);
+        const x = ax + dx * w + nX * inland;
+        const z = az + dz * w + nZ * inland;
+        const dist = Math.hypot(x, z);
+        if (dist > SCENERY_RANGE) continue;
+        const height = lerp(layer.height[0], layer.height[1], r2) * PROP_LIFT;
+        const width = height * lerp(layer.aspect[0], layer.aspect[1], r3);
+        const long = layer.kind === 'cliff' || layer.kind === 'dune';
+        const yaw = long ? shoreYaw + (r2 - 0.5) * 0.3 : r3 * Math.PI * 2;
+        const shade = 1 + (r1 - 0.5) * 2 * (layer.vary ?? 0.1);
+        // Fading out well before the edge of what is dressed, so trees are
+        // never seen to arrive.
+        const fade = hazeAt(dist, rangeNm) * clamp((SCENERY_RANGE - dist) / 5000, 0, 1);
+        this.scenery.place(
+          layer.kind, x, ground - curvatureDrop(dist, eyeM) - 1.5, z, yaw,
+          width, height, long ? width : width,
+          layer.colour, shade, fade,
+        );
+      }
+    });
   }
 
   /**
@@ -519,6 +624,8 @@ export class Land {
             // mitred, or every one of them kinks the band.
             cornerA: q === 0 && u0 <= 1e-9,
             cornerB: q === pieces - 1 && u1 >= 1 - 1e-9,
+            ringIdx: i, u0, u1,
+            fullALat: aLat, fullALon: aLon, fullBLat: bLat, fullBLon: bLon,
           });
         }
       }
@@ -594,6 +701,7 @@ export class Land {
   }
 
   setFog(color: THREE.Color, intensity: number): void {
+    this.scenery.setFog(color, intensity);
     this.material.color.setRGB(1, 1, 1).lerp(color, clamp(intensity, 0, 0.7));
     this.surfMaterial.opacity = 0.55 * (1 - clamp(intensity, 0, 0.8));
   }
