@@ -523,6 +523,67 @@ export class Game {
     return haversine(this.ship.state.pos, at) / NM <= range ? at : null;
   }
 
+  /**
+   * The set the pilot allows for, here and now.
+   *
+   * A current he knows about is laid off on the board like leeway: the Casa's
+   * roteiros have the great currents of the coast it has sailed for sixty years
+   * (the Guinea current, the Canaries current), and his own book has whatever
+   * he has measured himself, square by square and month by month. Where he
+   * knows nothing, he allows nothing, and the water carries the board's error.
+   * Without this a ship beating west out of Mina against a current running
+   * east faster than she sailed reckoned herself fifty miles a day to the
+   * westward while she was being set backwards along the coast.
+   */
+  private allowedSet(pos: LatLon): { toward: number; knots: number } | null {
+    const month = this.clock.date.month;
+    const skillK = 0.75 + skill(this.effectiveSkill, 'navegacao') * 0.25;
+    let best: { toward: number; knots: number } | null = null;
+    let weight = 0;
+    const book = this.rutter.seaFor(this.nav.estimated, month);
+    if (book && book.currentKnots > 0.1) {
+      weight = clamp(book.hours / 30, 0, 1) * 0.85;
+      best = { toward: book.currentToward, knots: book.currentKnots };
+    }
+    // The Casa's pilots had worked the whole Gulf of Guinea to São Tomé and the
+    // line by 1482, and its set was the first thing their roteiros said.
+    const casa = !this.beyondTheKnownAt(pos) || (pos.lat > -2 && pos.lon > -25 && pos.lon < 12);
+    if (casa && weight < 0.8) {
+      const c = currentAt(pos, this.clock.dayOfYear);
+      if (c.knots > 0.1) { weight = 0.8; best = c; }
+    }
+    if (!best || weight <= 0) return null;
+    return { toward: best.toward, knots: best.knots * weight * skillK };
+  }
+
+  private lastBearingsT = 0;
+
+  /**
+   * Coasting: with charted land in sight the pilot takes bearings of the
+   * headlands every watch and puts the ship where his chart says those
+   * bearings cross. It is as good as the chart and no better — a fix onto the
+   * paper, not onto the world — and it is how a ship running along a known
+   * coast keeps her board honest without a sight.
+   */
+  private takeBearings(pos: LatLon): void {
+    if (this.clock.t - this.lastBearingsT < 4 * 3600) return;
+    const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility);
+    const off = this.sounding.shoreDistNm;
+    if (off > range * 0.85 || off < 0.3) return;
+    // Something on the paper to take bearings of: coast charted before today.
+    if (!this.chart.knewCoastNear(pos, Math.min(range, 30), this.clock.t - 3600)) return;
+    const shift = this.chart.localOffset(pos, 90);
+    if (!shift) return;
+    this.lastBearingsT = this.clock.t;
+    const at = { lat: pos.lat + shift.dLat, lon: wrap180(pos.lon + shift.dLon) };
+    const sigma = 1.5 + off * 0.08 + (1.3 - skill(this.effectiveSkill, 'navegacao')) * 1.5;
+    const moved = this.nav.applyBearings(at, sigma, this.clock.t);
+    if (moved > 15) {
+      this.logEvent('navigation',
+        `Bearings on the land put her ${moved.toFixed(0)} miles from where the board had her. The pilot moves the board, and says something about the set of the water.`, true);
+    }
+  }
+
   /** The mark she is steering for now, which is the first one left on the list. */
   get destination(): { name: string; lat: number; lon: number } | null {
     return this.route[0] ?? null;
@@ -3295,8 +3356,9 @@ export class Game {
     this.nav.integrate(
       simDt, pos, this.ship.state.heading, this.physics.speedKnots,
       this.physics.leeway, this.weatherNow.wind.from, this.weatherNow.wind.speed,
-      navSkill, this.clock.t,
+      navSkill, this.clock.t, this.allowedSet(pos),
     );
+    this.takeBearings(pos);
 
     this.chart.logTrack(this.nav.estimated, this.clock.t);
     this.keepTheBook(simDt);

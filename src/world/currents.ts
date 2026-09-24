@@ -31,7 +31,9 @@ const BANDS: Band[] = [
   // North Atlantic gyre, clockwise.
   { name: 'Canary Current', latMin: 12, latMax: 33, lonMin: -22, lonMax: -8, toward: 200, knots: 0.8, feather: 3 },
   { name: 'North Equatorial Current', latMin: 6, latMax: 19, lonMin: -60, lonMax: -18, toward: 278, knots: 0.7, feather: 3 },
-  { name: 'Equatorial Counter-Current', latMin: 3, latMax: 8, lonMin: -30, lonMax: 5, toward: 92, knots: 0.9, feather: 1.5 },
+  // The counter-current hands over to the Guinea current off Cape Palmas;
+  // summed along the Mina coast the two came to two and a half knots.
+  { name: 'Equatorial Counter-Current', latMin: 3, latMax: 8, lonMin: -30, lonMax: -8, toward: 92, knots: 0.9, feather: 1.5 },
   { name: 'Guinea Current', latMin: 1, latMax: 7, lonMin: -12, lonMax: 9, toward: 95, knots: 1.5, feather: 1.5 },
   { name: 'Gulf Stream', latMin: 26, latMax: 42, lonMin: -80, lonMax: -55, toward: 50, knots: 2.6, feather: 3 },
   { name: 'North Atlantic Drift', latMin: 40, latMax: 56, lonMin: -50, lonMax: -12, toward: 70, knots: 0.7, feather: 4 },

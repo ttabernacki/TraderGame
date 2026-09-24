@@ -141,6 +141,11 @@ export class Navigator {
     windKnots: number,
     skill: number,
     t: number,
+    /**
+     * The set the pilot allows for, from the book or the Casa's roteiros:
+     * where he believes the water is carrying her, not where it is.
+     */
+    allowedSet: { toward: number; knots: number } | null = null,
   ): void {
     if (dt <= 0) return;
 
@@ -170,6 +175,9 @@ export class Navigator {
 
     const distM = believedSpeed * NM * (dt / 3600);
     if (distM > 0) this.estimated = rhumbStep(this.estimated, reckonedCourse, distM);
+    if (allowedSet && allowedSet.knots > 0.01) {
+      this.estimated = rhumbStep(this.estimated, allowedSet.toward, allowedSet.knots * NM * (dt / 3600));
+    }
 
     // Uncertainty grows with distance run. Longitude grows faster because it is
     // never corrected, and because an unknown current is mostly an east-west
@@ -241,6 +249,29 @@ export class Navigator {
     this.lastFixT = t;
     this.milesSinceFix = 0;
     this.corrected(from);
+  }
+
+  /**
+   * A fix by cross-bearings on charted land in sight: the position the chart
+   * gives for those bearings, good to `sigmaNm` — and no better than the chart.
+   * Blended with the board on the two doubts, like any other fix.
+   */
+  applyBearings(at: LatLon, sigmaNm: number, t: number): number {
+    const from = { ...this.estimated };
+    const wObs = 1 / (sigmaNm * sigmaNm + 1e-6);
+    const wLat = 1 / (this.sigmaLat * this.sigmaLat + 1e-6);
+    const wLon = 1 / (this.sigmaLon * this.sigmaLon + 1e-6);
+    this.estimated.lat = (at.lat * wObs + this.estimated.lat * wLat) / (wObs + wLat);
+    this.estimated.lon = wrap180(this.estimated.lon + (wrap180(at.lon - this.estimated.lon) * wObs) / (wObs + wLon));
+    this.sigmaLat = Math.sqrt(1 / (wObs + wLat));
+    this.sigmaLon = Math.sqrt(1 / (wObs + wLon));
+    this.lastFixT = t;
+    this.milesSinceFix = 0;
+    this.milesSinceLongitude = 0;
+    this.fixes.push({ t, latitude: this.estimated.lat, method: 'Cross-bearings', sigma: sigmaNm / 60, body: 'the land' });
+    if (this.fixes.length > 200) this.fixes.shift();
+    this.corrected(from);
+    return Math.hypot((this.estimated.lat - from.lat) * 60, wrap180(this.estimated.lon - from.lon) * 60 * cosd(from.lat));
   }
 
   /** Apply a latitude observation, which corrects latitude and nothing else. */
