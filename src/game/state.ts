@@ -415,7 +415,7 @@ export class Game {
    * gently rather than turning square onto it, because turning square would
    * throw away all the easting or westing she is making at the same time.
    */
-  latitudeOrder: { lat: number; eastward: boolean } | null = null;
+  latitudeOrder: { lat: number; eastward: boolean; startLon?: number } | null = null;
 
   /**
    * The strange sail, if there is one in sight. See game/encounter.
@@ -3380,7 +3380,40 @@ export class Game {
     const d = this.route[0];
     if (!d) return;
     const trueDist = haversine(this.ship.state.pos, { lat: d.lat, lon: d.lon }) / NM;
-    if (trueDist > 6) return;
+    const estDist = haversine(this.nav.estimated, { lat: d.lat, lon: d.lon }) / NM;
+    // A mark in open water is a position and nothing else, so she is up with
+    // it when the reckoning says she is: there is nothing to see that would
+    // tell anybody otherwise. Judged on the truth, a mark laid by a passage
+    // question had her circling a patch of sea she could never find.
+    const openSea = !d.portId;
+    // Run far enough along the parallel and there is no point running further:
+    // either the latitude is wrong or the place is the other way.
+    const lo = this.latitudeOrder;
+    if (!openSea && lo && lo.startLon !== undefined && trueDist > 6 && !this.pendingEvent) {
+      const ran = Math.abs(wrap180(this.nav.estimated.lon - lo.startLon)) * 60
+        * Math.cos((this.nav.estimated.lat * Math.PI) / 180);
+      if (ran > 240) {
+        this.latitudeOrder = null;
+        this.standingCourse = wrap360(this.ship.state.heading);
+        this.searchAskedT = this.clock.t;
+        this.easeTheClock(2);
+        this.pendingScenes.push(this.nothingInSight(d, ran));
+        return;
+      }
+    }
+    if (openSea ? estDist > 4 : trueDist > 6) {
+      // Up with a town by the reckoning, and the town is not there. She used
+      // to circle the reckoned spot for weeks while the current carried her
+      // off; this is the moment the whole art of the pilot is for.
+      if (!openSea && estDist < 3 && !this.pendingEvent
+          && this.clock.t - this.searchAskedT > 2 * 86400) {
+        this.searchAskedT = this.clock.t;
+        this.standingCourse = wrap360(this.ship.state.heading);
+        this.easeTheClock(2);
+        this.pendingScenes.push(this.nothingInSight(d));
+      }
+      return;
+    }
     this.route.shift();
     const next = this.route[0];
     if (next) {
@@ -3434,6 +3467,61 @@ export class Game {
       `Made the position the chart gives for ${d.name}. There is no town in sight and nobody `
       + 'aboard can say which way it lies. The chart is wrong, the reckoning may be wrong as '
       + 'well, and the only honest answers are the parallel and the lead.', true);
+  }
+
+  /** When the last "nothing in sight" was put, so it is not put every watch. */
+  private searchAskedT = -1e12;
+
+  /** By the reckoning she is there, and there is nothing there. */
+  private nothingInSight(d: { name: string; lat: number; lon: number; portId?: string }, ranNm = 0): SeaEvent {
+    const def = d.portId ? portDef(d.portId) : null;
+    const truth = def ? anchorageOf(def) : d;
+    const west = wrap180(truth.lon - this.ship.state.pos.lon) < 0;
+    const latOffNm = Math.abs(this.ship.state.pos.lat - truth.lat) * 60;
+    return {
+      id: 'landfall:search',
+      council: true,
+      title: 'Nothing in sight',
+      severity: 'warning',
+      text: (ranNm > 0
+        ? `${Math.round(ranNm)} miles along the latitude of ${d.name}, and still nothing. `
+        : `By the reckoning she is up with ${d.name}. The masthead has been manned since dawn `
+          + 'and there is nothing — no land, no smoke, no birds going home at dusk. ')
+        + (this.nav.sigmaLat > 15
+          ? `The pilot will not swear to the latitude within ${Math.round(this.nav.sigmaLat)} miles, `
+            + 'and a parallel run on the wrong parallel finds nothing at all: a sight first, if '
+            + 'the sky gives one.\n\n'
+          : '\n\n')
+        + 'Either the reckoning is out or the chart is, and probably both. The way it has always '
+        + 'been done is to get on the latitude of the place and run along it until it comes up. '
+        + 'Which way to run is the question.',
+      facts: { west: west ? 1 : 0, latOff: latOffNm },
+      choices: [
+        {
+          label: 'Run down the parallel to the westward',
+          detail: `Hold ${d.name}\u2019s latitude and stand west until it lifts.`,
+          resolve: (g) => {
+            g.latitudeOrder = { lat: d.lat, eastward: false, startLon: g.nav.estimated.lon };
+            g.helmOrder = null; g.standingCourse = null;
+            return `Ran down the latitude of ${d.name} to the westward, with a man at each masthead.`;
+          },
+        },
+        {
+          label: 'Run down the parallel to the eastward',
+          detail: `Hold ${d.name}\u2019s latitude and stand east until it lifts.`,
+          resolve: (g) => {
+            g.latitudeOrder = { lat: d.lat, eastward: true, startLon: g.nav.estimated.lon };
+            g.helmOrder = null; g.standingCourse = null;
+            return `Ran down the latitude of ${d.name} to the eastward, with a man at each masthead.`;
+          },
+        },
+        {
+          label: 'Stand on as she heads',
+          detail: 'Hold the course she has and trust the land to show itself.',
+          resolve: () => 'Stood on as she was heading. The pilot said nothing, loudly.',
+        },
+      ],
+    };
   }
 
   /**

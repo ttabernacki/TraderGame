@@ -95,6 +95,9 @@ const CLOSE = /^Round close/;
 const DIVERT = /^Bear away for/;
 const SHORT = /^Put the company on short water/;
 const RAIN = /^Stand on and trust to the rain/;
+const PAR_W = /^Run down the parallel to the westward/;
+const PAR_E = /^Run down the parallel to the eastward/;
+const AS_SHE = /^Stand on as she heads/;
 
 const RULES: Record<string, Rule> = {
   'gale:making': {
@@ -464,6 +467,34 @@ const RULES: Record<string, Rule> = {
         cirurgiao: 'Let them drink, sir. A thirsty crew is a sick crew and a sick crew cannot work.',
         piloto: 'Stand on. The squalls come through every afternoon at this latitude and each one is '
           + 'a cask if the sails are spread for it.',
+      }],
+    ],
+  },
+
+  'landfall:search': {
+    voices: ['piloto', 'mestre', 'escrivao'],
+    // The place lies where it lies. A good pilot has felt the set all passage
+    // and knows which way she has been carried; a poor one guesses.
+    right: (_g, e) => (e.facts?.west ? PAR_W : PAR_E),
+    bias: { piloto: PAR_W, mestre: PAR_E, escrivao: AS_SHE },
+    args: [
+      [PAR_W, {
+        piloto: 'West, sir. The current has been setting us to the southward and west since the '
+          + 'Berlengas, and I have not allowed enough for it. The land is behind us.',
+        mestre: 'Run west. If we have overrun it we have overrun it that way.',
+        escrivao: 'The pilot says west, sir, and it is his reckoning.',
+      }],
+      [PAR_E, {
+        piloto: 'East. We have been slower than the log says — she is foul — and the land is '
+          + 'still ahead of us.',
+        mestre: 'East, sir. Land is always to the eastward on this coast; run for it and the '
+          + 'worst that happens is we see Africa.',
+        escrivao: 'East, toward the coast. At least there are people there who can tell us where we are.',
+      }],
+      [AS_SHE, {
+        piloto: 'Stand on. I would not turn her either way on a guess.',
+        mestre: 'Hold on as she goes for a day. It will come up or something else will.',
+        escrivao: 'Hold the course, sir. We have been right so far.',
       }],
     ],
   },
