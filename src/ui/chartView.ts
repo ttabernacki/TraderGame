@@ -191,6 +191,15 @@ export class ChartView {
       // one button that is always here and always first.
       // The road home from the south, where it applies: second only to laying
       // a course, and ahead of the chips so it is never scrolled off a phone.
+      g && g.can('homeward') && g.homewardPassage() && !g.dockedAt
+        ? button('Sail her home', () => {
+          const road = g.homewardPassage();
+          if (!road || !confirm(`Sail home to Lisbon by the road? About ${road.miles} miles and ${road.days} days.`)) return;
+          g.pushAlert(g.sailHome(), 'note');
+          this.buildTools(); this.buildVoyage(); this.draw();
+          this.onClose();
+        }, { primary: true, title: 'The road home: skip the passage and come into Lisbon in the days it takes' })
+        : null,
       g && g.voltaTarget() && !g.route.some((r) => r.name === 'The turn of the sea')
         ? button(`Lay the volta for ${g.voltaTarget()!.name}`, () => {
           g.layVolta(); this.buildTools(); this.buildVoyage(); this.draw();

@@ -15,7 +15,7 @@ export type PerkId =
   // Seamanship
   | 'windward' | 'press' | 'crowd' | 'driveAcross' | 'spare' | 'coasting' | 'lieTo' | 'neverLose'
   // Navigation
-  | 'guards' | 'celestial' | 'lunars' | 'deadReckoning' | 'leadsman' | 'setAndDrift' | 'pilotsInstinct'
+  | 'guards' | 'celestial' | 'lunars' | 'deadReckoning' | 'leadsman' | 'setAndDrift' | 'pilotsInstinct' | 'homeward'
   // Cartography
   | 'traverse' | 'crownsMan' | 'farSight' | 'cosmographer' | 'sheetTrade' | 'copyist' | 'casaClerks' | 'secretChart'
   // Leadership
@@ -64,7 +64,8 @@ export interface SkillNode {
   tree: SkillId;
   /**
    * 1 and 2 are the trunk. 3, 4 and 5 are a school — `school` says which of
-   * the two — and 6 is that school's capstone.
+   * the two — and 6 is that school's capstone. 7 is the crown of the whole
+   * tree, open to a master of either school.
    */
   tier: number;
   school?: 'a' | 'b';
@@ -89,8 +90,8 @@ export const SCHOOLS: Record<SkillId, { a: string; b: string }> = {
 };
 
 type N = Omit<SkillNode, 'cost' | 'level'>;
-const COST: Record<number, number> = { 1: 1, 2: 2, 3: 2, 4: 3, 5: 3, 6: 4 };
-const LEVEL: Record<number, number> = { 1: 10, 2: 10, 3: 15, 4: 15, 5: 20, 6: 30 };
+const COST: Record<number, number> = { 1: 1, 2: 2, 3: 2, 4: 3, 5: 3, 6: 4, 7: 5 };
+const LEVEL: Record<number, number> = { 1: 10, 2: 10, 3: 15, 4: 15, 5: 20, 6: 30, 7: 0 };
 const node = (n: N): SkillNode => ({ ...n, cost: COST[n.tier], level: LEVEL[n.tier] });
 
 /**
@@ -148,6 +149,8 @@ export const NODES: SkillNode[] = [
     effect: 'You feel the current under her and allow for it: the board lays off far more of the set.' }),
   node({ id: 'nav-instinct', tree: 'navegacao', tier: 6, school: 'b', name: 'The pilot’s instinct', perk: 'pilotsInstinct',
     effect: 'With any charted land in sight you know exactly where you are: bearings twice as often and twice as true.' }),
+  node({ id: 'nav-homeward', tree: 'navegacao', tier: 7, name: 'The road home', perk: 'homeward',
+    effect: 'You have sailed it so often it sails itself. From any port, give the word and she is brought home to Lisbon by the proper road, safe, in the time the road takes.' }),
 
   // --- Cartography --------------------------------------------------------
   node({ id: 'cart-hand', tree: 'cartografia', tier: 1, name: 'A neat hand',
@@ -388,6 +391,13 @@ export function blockedReason(c: CaptainSkills, n: SkillNode): string | null {
   const tree = nodesOf(n.tree);
   const has = (tier: number, school?: 'a' | 'b') => tree.some((m) => m.tier === tier
     && (school === undefined || m.school === school) && c.taken.includes(m.id));
+  if (n.tier === 7) {
+    const caps = tree.filter((m) => m.tier === 6);
+    if (!caps.some((m) => c.taken.includes(m.id))) {
+      return `The capstone of either school comes first: ${caps.map((m) => m.name).join(' or ')}.`;
+    }
+    return c.points < n.cost ? `${n.cost} points; you have ${c.points}.` : null;
+  }
   if (n.tier === 2 && !has(1)) return `${tree.find((m) => m.tier === 1)!.name} comes first.`;
   if (n.tier >= 3 && !has(2)) return `${tree.find((m) => m.tier === 2)!.name} comes first.`;
   const mine = schoolOf(c, n.tree);

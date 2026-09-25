@@ -8589,6 +8589,86 @@ export class Game {
     return text;
   }
 
+  /**
+   * The road home as the pilot would sail it, in miles and days, from where
+   * she is: round the Cape from the Indian Ocean, out by the Azores from
+   * anywhere in the trades, and straight in from Portuguese waters.
+   */
+  homewardPassage(): { miles: number; days: number } | null {
+    if (this.dockedAt === 'lisboa') return null;
+    const p = this.ship.state.pos;
+    const lisboa = portDef('lisboa');
+    const hi = azoresHigh(this.clock.dayOfYear);
+    const legs: { lat: number; lon: number }[] = [{ ...p }];
+    // The Indian Ocean, and anything east of the Cape: round it first.
+    if (p.lon > 22 || (p.lat < -30 && p.lon > 15)) legs.push({ lat: -35.5, lon: 20 }, { lat: -20, lon: -5 });
+    const last = () => legs[legs.length - 1];
+    // Down in the trades: the volta. North of them — Madeira, the Canaries'
+    // latitude, the Barbary coast — she beats or reaches home direct, which
+    // is half again the straight line in tacks.
+    const volta = last().lat < 28;
+    if (last().lat < 12) legs.push({ lat: 10, lon: -27 });
+    if (volta) legs.push({ lat: hi.lat - 6, lon: hi.lon - 2 }, { lat: Math.max(39.7, hi.lat + 3), lon: hi.lon + 6 });
+    legs.push({ lat: lisboa.lat, lon: lisboa.lon });
+    let miles = 0;
+    for (let i = 1; i < legs.length; i++) miles += haversine(legs[i - 1], legs[i]) / NM;
+    if (!volta) miles *= 1.45;
+    // About a hundred and ten miles a day made good over a whole passage,
+    // calms and all, and the few days' landfall and working in.
+    const days = Math.round(miles / 110 + 4);
+    return { miles: Math.round(miles), days };
+  }
+
+  /**
+   * The road home, sailed without the captain having to watch every mile of
+   * it: the master of the navigation tree gives the word and she comes into the
+   * Tagus in the time the passage takes. The days are real — the stores are
+   * eaten, the men sicken or do not, the season turns, the charters run on —
+   * but she is sailed by the proper road and the pilot does not lose her.
+   */
+  sailHome(): string {
+    if (!this.can('homeward')) return 'Nobody aboard can take her home without you on deck.';
+    const road = this.homewardPassage();
+    if (!road) return 'She is home.';
+    const why = this.dockedAt ? this.cannotWeigh() : null;
+    if (why) return why;
+    const keeps = enduranceDays(this.crew, this.ration);
+    if (keeps < road.days + 5) {
+      return `The road home is ${road.miles} miles and about ${road.days} days. She has `
+        + `${Math.floor(keeps)} days of stores in her. Victual her for the passage first.`;
+    }
+    const from = this.portHere?.name ?? 'sea';
+    this.dockedAt = null;
+    this.anchored = false;
+    this.route = [];
+    this.helmOrder = null;
+    this.latitudeOrder = null;
+    this.coastOrder = null;
+    const step = 0.25;
+    for (let d = 0; d < road.days; d += step) {
+      this.clock.t += step * 86400;
+      this.accumDays += step;
+      this.refreshEnvironment();
+      this.updateCrewAndShip(step * 86400);
+      // Sailed by the proper road with a good pilot: she makes it whole.
+      this.ship.condition.bilge = 0;
+      if ((this.mode as string) === 'gameover') return 'She did not come home.';
+    }
+    const lisboa = portDef('lisboa');
+    const at = anchorageOf(lisboa);
+    this.ship.state.pos = { ...at };
+    this.nav.estimated = { ...at };
+    this.nav.sigmaLat = 1;
+    this.nav.sigmaLon = 1;
+    this.distanceRun += road.miles;
+    const text = `Home from ${from} by the road the pilots know: ${road.miles} miles in ${road.days} days, `
+      + 'out to the westward with the trades on the beam, round by the islands and in with the westerlies. '
+      + 'The Rock of Sintra came up on the bow on the morning it was expected, and she worked up the Tagus on the flood.';
+    this.logEvent('navigation', text, true);
+    this.enterPort(lisboa);
+    return text;
+  }
+
   /** The errand this town has for you, if there is one still to do. */
   questHere(): NonNullable<ReturnType<typeof characterOf>>['quest'] | null {
     const def = this.portHere;

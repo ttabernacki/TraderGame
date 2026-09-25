@@ -352,7 +352,8 @@ export class CrewView {
     const earned = c.earned?.[s.id] ?? 0;
     const prog = c.practice?.[s.id] ?? 0;
     const nodes = nodesOf(s.id);
-    const trunk = nodes.filter((n) => !n.school);
+    const trunk = nodes.filter((n) => !n.school && n.tier <= 2);
+    const crown = nodes.filter((n) => n.tier === 7);
     const mine = schoolOf(c, s.id);
     const school = (k: 'a' | 'b') => el('div', { class: `skill-school${mine === k ? ' mine' : mine ? ' other' : ''}` },
       el('div', { class: 'skill-school-head' }, SCHOOLS[s.id][k], mine === k ? el('em', {}, ' your school') : null),
@@ -368,6 +369,7 @@ export class CrewView {
         : `${Math.floor(prog)} of ${rule.per} ${rule.unit} toward a point (${earned} of ${rule.cap})`),
       el('ul', { class: 'list', style: { marginTop: '9px' } }, ...trunk.map((n) => this.nodeRow(g, c, n))),
       el('div', { class: 'skill-fork' }, school('a'), school('b')),
+      crown.length ? el('ul', { class: 'list', style: { marginTop: '9px' } }, ...crown.map((n) => this.nodeRow(g, c, n))) : null,
     );
   }
 
@@ -379,7 +381,7 @@ export class CrewView {
     const shut = !held && !!why && /not for you|as far as/.test(why);
     const dim = held ? '1' : shut ? '0.35' : why && !poor ? '0.55' : '0.9';
 
-    const row = el('li', { class: `skill-node${held ? ' held' : ''}${n.tier === 6 ? ' cap' : ''}`, style: { opacity: dim } },
+    const row = el('li', { class: `skill-node${held ? ' held' : ''}${n.tier >= 6 ? ' cap' : ''}`, style: { opacity: dim } },
       el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' } },
         el('span', {}, n.name),
         el('span', { class: held ? 'tag good' : 'tag' },

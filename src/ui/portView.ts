@@ -116,6 +116,17 @@ export class PortView {
       // Waiting lives at the foot of the page, beside weighing, on every tab:
       // it was a card half way down the town page, under whatever the town
       // had to say, and on a phone nobody ever scrolled far enough to find it.
+      g.can('homeward') && def.id !== 'lisboa'
+        ? button('Sail her home', () => {
+          const road = g.homewardPassage();
+          if (!road) return;
+          if (!confirm(`Sail home to Lisbon by the road? About ${road.miles} miles and ${road.days} days, and she will be in the Tagus at the end of it.`)) return;
+          const text = g.sailHome();
+          this.notice = { text, grave: false };
+          this.tab = 'town';
+          this.render();
+        }, { title: 'The road home: skip the passage and come into Lisbon in the days it takes' })
+        : null,
       button(this.waitOpen ? 'Close' : 'Wait…', () => { this.waitOpen = !this.waitOpen; this.render(); }),
       button('Weigh anchor  (Space)', () => {
         const why = g.cannotWeigh();
