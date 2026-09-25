@@ -128,6 +128,10 @@ import {
   assessDesign, hullFromDesign, polarTable, registerHull, tonsAllowed, buildDays, type ShipDesign,
 } from '../ship/design';
 import type { HullClass } from '../ship/hull';
+import {
+  HOLDING_BY_ID, ROUTE_BY_ID, monthOfEstate, newEstate, offerOutfits,
+  type EstateState, type HoldingId,
+} from '../progression/estate';
 
 /**
  * Latitude of the deepest Portuguese penetration at the start of play.
@@ -303,6 +307,122 @@ export class Game {
 
   /** The long stories. See progression/quests. */
   quests: QuestState[] = [];
+  // -------------------------------------------------------------------------
+  // The estate: money put to work while she is at sea. See progression/estate.
+  // -------------------------------------------------------------------------
+
+  estate: EstateState = newEstate(0);
+  private estateRenown = 0;
+
+  /** The name a holding goes by in a letter. */
+  estatePlace(id: HoldingId): string {
+    switch (id) {
+      case 'casa': return 'The house on the Rua Nova';
+      case 'quinta': return 'The quinta in the Alentejo';
+      case 'engenho': return 'The engenho on Madeira';
+      default: return this.estate.lordship ? `Your lordship of ${this.estate.lordship}` : 'Your lordship';
+    }
+  }
+
+  /** A month at a time, on the ship's calendar, wherever she is. */
+  private tickEstate(): void {
+    const st = this.estate;
+    if (st.lastMonthT <= 0) { st.lastMonthT = this.clock.t; return; }
+    while (this.clock.t - st.lastMonthT >= 30 * 86400) {
+      st.lastMonthT += 30 * 86400;
+      monthOfEstate(st, this.rng, st.lastMonthT, (id) => this.estatePlace(id));
+      for (const [id, level] of Object.entries(st.holdings) as [HoldingId, number][]) {
+        this.estateRenown += (HOLDING_BY_ID.get(id)?.renown ?? 0) * (level > 0 ? 1 : 0) / 12;
+      }
+      const whole = Math.floor(this.estateRenown);
+      if (whole > 0) {
+        this.estateRenown -= whole;
+        this.crown.standing += whole;
+        this.crown.lifetimeStanding += whole;
+      }
+    }
+  }
+
+  /** In a Portuguese port the letters are read and the money is paid over. */
+  private settleEstate(): void {
+    this.tickEstate();
+    const st = this.estate;
+    for (const n of st.news) this.logEvent('trade', n, true);
+    const had = st.news.length;
+    st.news = [];
+    if (st.accrued > 0) {
+      const paid = Math.round(st.accrued);
+      this.crown.gold += paid;
+      st.accrued = 0;
+      this.pushAlert(`Your affairs at home: ${paid} cruzados paid over${had ? `, and ${had} ${had === 1 ? 'letter' : 'letters'}` : ''}.`, 'note');
+    } else if (had) {
+      this.pushAlert(`${had} ${had === 1 ? 'letter' : 'letters'} about your affairs at home.`, 'note');
+    }
+  }
+
+  /** Why a share in this voyage cannot be taken, or null. */
+  outfitBlocked(offerId: string, share: number): string | null {
+    const o = this.estate.offers.find((x) => x.id === offerId);
+    if (!o) return 'That ship has sailed without you.';
+    if (this.dockedAt !== 'lisboa') return 'Voyages are outfitted in Lisbon.';
+    const stake = Math.round(o.ask * share);
+    if (this.crown.gold < stake) return `Your share is ${stake} cruzados, and the purse will not run to it.`;
+    return null;
+  }
+
+  /** Put money into another man's voyage. */
+  outfitVoyage(offerId: string, share: number): string | null {
+    const why = this.outfitBlocked(offerId, share);
+    if (why) return why;
+    const st = this.estate;
+    const o = st.offers.find((x) => x.id === offerId)!;
+    const r = ROUTE_BY_ID.get(o.route)!;
+    o.stake = Math.round(o.ask * share);
+    o.sailedT = this.clock.t;
+    o.dueT = this.clock.t + r.months * 30 * 86400;
+    this.crown.gold -= o.stake;
+    st.offers = st.offers.filter((x) => x.id !== offerId);
+    st.outfits.push(o);
+    this.logEvent('trade', `Put ${o.stake} cruzados into the ${o.ship}, ${o.captain}, for ${r.name}. `
+      + `She is due home in about ${r.months} months.`, true);
+    return null;
+  }
+
+  /** The next level of a holding, and why it cannot be bought here, if it cannot. */
+  holdingBlocked(id: HoldingId): string | null {
+    const h = HOLDING_BY_ID.get(id)!;
+    const level = this.estate.holdings[id] ?? 0;
+    if (level >= h.cost.length) return 'You have all of it there is.';
+    if (this.dockedAt !== h.where) return h.where === 'lisboa' ? 'This is bought in Lisbon.' : 'This is bought at Funchal, on Madeira.';
+    if (this.chronicle.act < h.act) return 'Nobody is selling, yet.';
+    if (this.crown.lifetimeStanding < h.standing) return `Wants ${h.standing} renown behind the name.`;
+    if (id === 'senhorio' && !this.estate.holdings.quinta) return 'The King grants lordships to men who already hold land.';
+    const cost = h.cost[level];
+    if (this.crown.gold < cost) return `${cost} cruzados, and the purse will not run to it.`;
+    return null;
+  }
+
+  buyHolding(id: HoldingId): string | null {
+    const why = this.holdingBlocked(id);
+    if (why) return why;
+    const h = HOLDING_BY_ID.get(id)!;
+    const level = this.estate.holdings[id] ?? 0;
+    const cost = h.cost[level];
+    this.crown.gold -= cost;
+    this.estate.holdings[id] = level + 1;
+    if (id === 'senhorio') {
+      const towns = ['Alvito', 'Vila Nova de Portimão', 'Sortelha', 'Ferreira de Aves', 'Castelo Rodrigo', 'Tentúgal'];
+      this.estate.lordship = this.rng.pick(towns);
+      this.crown.standing += 80;
+      this.crown.lifetimeStanding += 80;
+      this.logEvent('crown', `By the King's letters you are Senhor de ${this.estate.lordship}, with its rents and its gallows, `
+        + `for ${cost} cruzados and a great deal of kneeling.`, true);
+    } else {
+      this.logEvent('trade', `${level ? 'Enlarged' : 'Bought'} ${h.english.toLowerCase()} for ${cost} cruzados.`, true);
+    }
+    return null;
+  }
+
   /** Talk overheard that opens a secret thread. See quests: "The Biscayan's Ship". */
   secretsHeard: string[] = [];
   private lastQuestCheck = -1e9;
@@ -4307,6 +4427,7 @@ export class Game {
     this.checkLeads();
     this.checkVentures(days);
     this.checkFinance(days);
+    this.tickEstate();
     this.advanceRival(days);
 
     // A beat of somebody's story outranks everything: these are the moments the
@@ -7809,6 +7930,11 @@ export class Game {
 
     this.crown.progressObjective('reach', def.id);
 
+    // Letters and money from home, at any Portuguese port; new voyages wanting
+    // backers at Lisbon.
+    if (def.people === 'portuguese') this.settleEstate();
+    if (def.id === 'lisboa') offerOutfits(this.estate, this.chronicle.act, this.rng, this.clock.t);
+
     // News of land other men have found, and whatever the quay is saying.
     for (const isle of historyCatchesUp(this)) {
       this.logEvent('discovery', `News on the quay: ${isle.by} has found an island and called it `
@@ -7909,6 +8035,14 @@ export class Game {
 
   /** Advance time in port. */
   waitDays(days: number): void {
+    this.waitDaysInner(days);
+    // Time spent in port passes at home too, and in a Portuguese port the
+    // letters are waiting on the quay.
+    this.tickEstate();
+    if (this.dockedAt && portDef(this.dockedAt).people === 'portuguese') this.settleEstate();
+  }
+
+  private waitDaysInner(days: number): void {
     const step = 0.25;
     for (let d = 0; d < days; d += step) {
       this.clock.t += step * 86400;
@@ -8837,6 +8971,7 @@ export class Game {
       foundFeatures: this.foundFeatures,
       isles: this.isles,
       secretsHeard: this.secretsHeard,
+      estate: this.estate,
       designs: this.designs,
       building: this.building,
       flagship: this.flagship,
@@ -8956,6 +9091,7 @@ export class Game {
     g.foundFeatures = d.foundFeatures ?? [];
     g.isles = { ...newIsleState(), ...(d.isles ?? {}) };
     g.secretsHeard = d.secretsHeard ?? [];
+    g.estate = { ...newEstate(g.clock.t), ...(d.estate ?? {}) };
     // An island raised with its scene still unanswered when the game was saved.
     for (const [id, f] of Object.entries(g.isles.found)) if (!f.name) delete g.isles.found[id];
     g.coastOrder = d.coastOrder ?? null;

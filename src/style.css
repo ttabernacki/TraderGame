@@ -2845,3 +2845,10 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
   #touch .touch-dock .touch-actions .touch-btn { height: 46px; }
   .pilot { bottom: calc(176px + var(--safe-b)); }
 }
+
+/* Holdings at home. */
+.estate-row, .estate-offer, .estate-holding { padding: 8px 0; border-bottom: 1px dotted rgba(90, 74, 55, .25); }
+.estate-holding.held { border-left: 3px solid #8a6a2b; padding-left: 9px; }
+.estate-sub { font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; margin-top: 3px; }
+.estate-sub.good { color: #3f6b3a; }
+.estate-sub.bad { color: var(--warn); }
