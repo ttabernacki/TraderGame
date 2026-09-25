@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { NM, clamp, cosd, lerp, wrap180, type LatLon } from '../core/math';
+import { NM, clamp, cosd, lerp, smoothstep, wrap180, type LatLon } from '../core/math';
 import { elevationAt, isLand, nearestShore } from '../world/landmass';
 import { anchorageOf, portsNear, type PortDef } from '../world/ports';
 import { people } from '../world/peoples';
@@ -319,9 +319,9 @@ const SIGNATURES: Record<string, Signature> = {
     count: 150, radius: 1100, ceiling: 380, replaces: true,
     draw(b) {
       // The Sé, new-built for the sugar money, with its tower.
-      b.box(0, 260, 34, 90, 26, WHITEWASH);
-      b.roof(0, 260, 34, 90, 11, TILE, 26);
-      b.tower(22, 215, 20, 56, WHITEWASH, 'pyramid');
+      b.box(0, 260, 44, 110, 30, WHITEWASH);
+      b.roof(0, 260, 44, 110, 13, TILE, 30);
+      b.tower(28, 205, 26, 70, WHITEWASH, 'pyramid');
       // The fort on the waterfront, and a chapel high up the amphitheatre.
       b.wall(-520, 40, -380, 40, 16, STONE);
       b.tower(-520, 40, 22, 30, STONE, 'crenel');
@@ -401,9 +401,10 @@ const SIGNATURES: Record<string, Signature> = {
     draw(b) {
       // The Great Mosque of Kilwa, its roof a field of small domes, and the
       // sultan's palace of Husuni Kubwa out on the headland.
-      b.box(0, 300, 110, 70, 12, WHITEWASH);
-      for (let i = -2; i <= 2; i++) for (let j = -1; j <= 1; j++) b.dome(i * 20, 300 + j * 20, 8, WHITEWASH, 12);
-      b.dome(0, 300, 16, WHITEWASH, 12);
+      b.box(0, 300, 150, 90, 14, WHITEWASH);
+      for (let i = -2; i <= 2; i++) for (let j = -1; j <= 1; j++) b.dome(i * 28, 300 + j * 28, 13, WHITEWASH, 14);
+      b.dome(0, 300, 26, WHITEWASH, 14);
+      b.tower(80, 250, 14, 50, WHITEWASH, 'dome');
       b.box(700, 80, 140, 90, 18, STONE);
       b.tower(630, 40, 18, 30, STONE, 'crenel');
       b.tower(770, 40, 18, 30, STONE, 'crenel');
@@ -650,6 +651,21 @@ export class Settlements {
     const { alongX, alongZ, backX, backZ } = frameOf(town.brg);
 
     /**
+     * How much bigger than life this town is drawn, from where she is now.
+     *
+     * A town is drawn to be read, and what can be read changes with range: at
+     * a cable a house is a house, at five miles it is a speck unless it is
+     * drawn several times its size. So the buildings grow with the distance —
+     * near true size alongside the quay, more than two and a half times it
+     * from offshore, where the castle on its hill and the church tower are
+     * what the lookout names the port by. The layout is not scaled, only the
+     * buildings, so the town never walks out to sea. The town is rebuilt every
+     * quarter mile, and the step between two rebuilds is a few per cent.
+     */
+    const range = Math.hypot(town.x, town.z);
+    const S = 1.25 * (1 + 1.6 * smoothstep(0.5 * 1852, 6 * 1852, range));
+
+    /**
      * The ground a house stands on.
      *
      * Capped, because a harbour is at the water's edge by definition and a few
@@ -684,7 +700,7 @@ export class Settlements {
         box(positions, colours, indices, x, y, z, w, d, h, town.brg, wall);
         if (roof === 'pitched') {
           prism(positions, colours, indices,
-            x, y + h, z, w, d, Math.min(h * 0.45, 3.5), town.brg, roofColour);
+            x, y + h, z, w, d, Math.min(h * 0.45, 3.5 * S), town.brg, roofColour);
         } else {
           // A flat roof still wants a lip, or the town reads as bare walls.
           box(positions, colours, indices,
@@ -699,9 +715,9 @@ export class Settlements {
       const t = i / plan.count;
       const backM = 30 + plan.radius * (0.15 + 0.85 * t * (hill ? 1 : t)) * rng.range(0.6, 1.25);
       const alongM = rng.range(-1, 1) * plan.radius * (0.45 + 0.9 * (1 - t));
-      const w = (style.round ? rng.range(4.5, 7.5) : rng.range(6, 12)) * 1.5;
-      const d = style.round ? w : rng.range(5, 10) * 1.5;
-      const h = (style.round ? rng.range(2.4, 3.2) : rng.range(3.2, 6.5)) * BUILD_LIFT;
+      const w = (style.round ? rng.range(4.5, 7.5) : rng.range(6, 12)) * 1.5 * S;
+      const d = style.round ? w : rng.range(5, 10) * 1.5 * S;
+      const h = (style.round ? rng.range(2.4, 3.2) : rng.range(3.2, 6.5)) * BUILD_LIFT * S;
       place(alongM, backM, w, d, h, style.wall, style.roofColour, style.roof, style.round);
       // A lamp or a hearth showing in about half of them after dark.
       if (rng.next() < 0.5) {
@@ -720,19 +736,22 @@ export class Settlements {
         const z = town.z + alongZ * along + backZ * back;
         return { x, z, y: Math.max(groundAt(x, z), 0.5) - curvatureDrop(Math.hypot(x, z), this.eyeM) };
       };
-      const L = BUILD_LIFT * 0.8;
+      // The landmarks get more than the houses: they are what is named.
+      const K = S * 1.35;
+      const L = BUILD_LIFT * 0.8 * K;
       const P = positions, C = colours, I = indices;
       const builder: Builder = {
         ground: (a, bk) => at(a, bk).y,
         box(a, bk, w, d, h, c, lift = 0) {
           const p = at(a, bk);
-          box(P, C, I, p.x, p.y + lift * L, p.z, w, d, h * L, town.brg, c);
+          box(P, C, I, p.x, p.y + lift * L, p.z, w * K, d * K, h * L, town.brg, c);
         },
         roof(a, bk, w, d, h, c, lift) {
           const p = at(a, bk);
-          prism(P, C, I, p.x, p.y + lift * L, p.z, w, d, h * L, town.brg, c);
+          prism(P, C, I, p.x, p.y + lift * L, p.z, w * K, d * K, h * L, town.brg, c);
         },
-        tower(a, bk, w, h, c, cap = 'crenel', lift = 0) {
+        tower(a, bk, w0, h, c, cap = 'crenel', lift = 0) {
+          const w = w0 * K;
           const p = at(a, bk);
           const y0 = p.y + lift * L, y1 = y0 + h * L;
           box(P, C, I, p.x, y0, p.z, w, w, h * L, town.brg, c);
@@ -752,7 +771,7 @@ export class Settlements {
         },
         dome(a, bk, r, c, lift) {
           const p = at(a, bk);
-          dome(P, C, I, p.x, p.y + lift * L, p.z, r, c);
+          dome(P, C, I, p.x, p.y + lift * L, p.z, r * K, c);
         },
         wall(a0, b0, a1, b1, h, c) {
           const n = Math.max(1, Math.round(Math.hypot(a1 - a0, b1 - b0) / 40));
@@ -763,8 +782,8 @@ export class Settlements {
             const len = Math.hypot(a1 - a0, b1 - b0) / n;
             // Along the town's own axes: the wall's heading within the frame.
             const ang = town.brg + Math.atan2(-(b1 - b0), a1 - a0);
-            box(P, C, I, p.x, p.y, p.z, len * 1.02, 9, h * L, ang, c);
-            box(P, C, I, p.x, p.y + h * L, p.z, len * 0.4, 9, 3.2 * L, ang, c);
+            box(P, C, I, p.x, p.y, p.z, len * 1.02, 9 * K, h * L, ang, c);
+            box(P, C, I, p.x, p.y + h * L, p.z, len * 0.4, 9 * K, 3.2 * L, ang, c);
           }
         },
       };
@@ -775,9 +794,9 @@ export class Settlements {
       // The landmark is the thing a lookout picks up first, so it is lifted
       // hardest: a minaret you can see at ten miles is the whole point of it.
       const tall = (style.landmark === 'minaret' ? 24
-        : style.landmark === 'tower' ? 21 : 12) * BUILD_LIFT * 1.35;
+        : style.landmark === 'tower' ? 21 : 12) * BUILD_LIFT * 1.35 * S * 1.2;
       const wide = (style.landmark === 'minaret' ? 5
-        : style.landmark === 'tower' ? 8 : 16) * 1.9;
+        : style.landmark === 'tower' ? 8 : 16) * 1.9 * S * 1.2;
       const backM = style.landmark === 'keep' ? 60 : plan.radius * 0.35 + 40;
       const x = town.x + backX * backM;
       const z = town.z + backZ * backM;
@@ -787,7 +806,7 @@ export class Settlements {
         style.landmark === 'keep' ? style.wall : WHITEWASH);
       if (style.landmark === 'tower') {
         prism(positions, colours, indices,
-          x, base + tall, z, wide, wide, 4, town.brg, TILE);
+          x, base + tall, z, wide, wide, 4 * S, town.brg, TILE);
       }
     }
 
@@ -798,12 +817,13 @@ export class Settlements {
       const x = town.x + alongX * alongM + backX * 20;
       const z = town.z + alongZ * alongM + backZ * 20;
       const base = Math.max(groundAt(x, z), 0.5) - curvatureDrop(Math.hypot(x, z), this.eyeM);
-      box(positions, colours, indices, x, base, z, 62, 62, 22, town.brg, WHITEWASH);
+      const F = S * 1.2;
+      box(positions, colours, indices, x, base, z, 62 * F, 62 * F, 22 * F, town.brg, WHITEWASH);
       for (const corner of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
-        const cx = x + (alongX * corner[0] + backX * corner[1]) * 27;
-        const cz = z + (alongZ * corner[0] + backZ * corner[1]) * 27;
+        const cx = x + (alongX * corner[0] + backX * corner[1]) * 27 * F;
+        const cz = z + (alongZ * corner[0] + backZ * corner[1]) * 27 * F;
         box(positions, colours, indices,
-          cx, base, cz, 15, 15, 33, town.brg, WHITEWASH);
+          cx, base, cz, 15 * F, 15 * F, 33 * F, town.brg, WHITEWASH);
       }
     }
   }

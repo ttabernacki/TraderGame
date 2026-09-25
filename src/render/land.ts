@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { NM, clamp, cosd, lerp, wrap180, type LatLon } from '../core/math';
+import { NM, clamp, cosd, lerp, smoothstep, wrap180, type LatLon } from '../core/math';
 import { LANDMASSES, elevationAt, isLand } from '../world/landmass';
 import { CoastScenery, hash3, regionAt } from './coastScenery';
 import { anchorageOf, portsNear } from '../world/ports';
@@ -173,7 +173,7 @@ const SCENERY_RANGE = 21000;
  * How much bigger than life the things on the coast are drawn. The same
  * argument as LAND_LIFT: a real palm at five miles is a pixel.
  */
-const PROP_LIFT = 2.2;
+const PROP_LIFT = 2.5;
 
 /**
  * Coastline terrain.
@@ -479,7 +479,7 @@ export class Land {
         }
       }
 
-      this.dress(seg, strip, bandScale, ax, az, bx, bz, naX, naZ, nbX, nbZ, origin, rangeNm, eyeM);
+      this.dress(seg, strip, bandScale, ax, az, bx, bz, naX, naZ, nbX, nbZ, origin, rangeNm, eyeM, settled);
 
       for (let b = 0; b < BANDS.length - 1; b++) {
         const i0 = base + b * 2;
@@ -542,6 +542,7 @@ export class Land {
     ax: number, az: number, bx: number, bz: number,
     naX: number, naZ: number, nbX: number, nbZ: number,
     origin: LatLon, rangeNm: number, eyeM: number,
+    settled: (lat: number, lon: number) => number,
   ): void {
     if (Math.min(Math.hypot(ax, az), Math.hypot(bx, bz)) > SCENERY_RANGE) return;
     const mPerDegLat = NM * 60;
@@ -586,7 +587,14 @@ export class Land {
         const z = az + dz * w + nZ * inland;
         const dist = Math.hypot(x, z);
         if (dist > SCENERY_RANGE) continue;
-        const height = lerp(layer.height[0], layer.height[1], r2) * PROP_LIFT;
+        // A town has cleared its ground, and a forest standing where the town
+        // is drawn hides the very thing the landfall is for.
+        const clear = settled(origin.lat - z / mPerDegLat, origin.lon + x / (mPerDegLat * cosLat));
+        if (clear < 1 && r3 > clear * clear) continue;
+        // Grown with range like the towns: true-ish alongside, several times
+        // life offshore, so a coast of palms reads as palms from the deck.
+        const height = lerp(layer.height[0], layer.height[1], r2) * PROP_LIFT
+          * (1 + 0.6 * smoothstep(0.8 * 1852, 7 * 1852, dist));
         const width = height * lerp(layer.aspect[0], layer.aspect[1], r3);
         const long = layer.kind === 'cliff' || layer.kind === 'dune';
         const yaw = long ? shoreYaw + (r2 - 0.5) * 0.3 : r3 * Math.PI * 2;

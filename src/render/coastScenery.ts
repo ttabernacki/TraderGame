@@ -75,7 +75,7 @@ const R = {
   islands: {
     name: 'islands',
     layers: [
-      { kind: 'cliff', spacing: 500, chance: 0.6, inland: [0, 30], height: [50, 140], aspect: [3, 6], colour: [0.30, 0.27, 0.25], vary: 0.1 },
+      { kind: 'cliff', spacing: 500, chance: 0.6, inland: [0, 30], height: [36, 90], aspect: [3, 6], colour: [0.34, 0.28, 0.24], vary: 0.12 },
       { kind: 'canopy', spacing: 80, chance: 0.4, inland: [400, 5000], height: [18, 30], aspect: [1.4, 2.2], colour: [0.20, 0.36, 0.16] },
       { kind: 'scrub', spacing: 60, chance: 0.5, inland: [100, 3000], height: [6, 10], aspect: [2, 4], colour: SCRUB },
     ],
@@ -332,7 +332,9 @@ function shape(kind: PropKind): THREE.BufferGeometry {
         p.setY(i, (p.getY(i) + 0.5) * Math.max(end, 0.15) - 0.5);
         // Strata that wander, not stripes ruled across it: the bedding dips
         // and swells along the face, and the rock darkens toward the sea.
-        const band = 0.9 + 0.1 * Math.sin((y + 0.5) * 13.0 + Math.sin(x * 7.3) * 1.6 + x * 2.1);
+        const band = 0.94 + 0.05 * Math.sin((y + 0.5) * 9.0 + Math.sin(x * 7.3) * 2.2 + x * 3.1)
+          // Vertical runnels of darker rock, which is what a sea cliff shows.
+          - 0.08 * Math.pow(Math.abs(Math.sin(x * 17.3 + Math.sin(x * 5.1) * 2)), 6);
         const foot = 0.78 + 0.22 * Math.min(1, (y + 0.5) * 1.6);
         col[i * 3] = band * foot; col[i * 3 + 1] = band * foot; col[i * 3 + 2] = band * foot;
       }
