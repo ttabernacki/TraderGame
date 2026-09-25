@@ -171,7 +171,9 @@ function startNew(difficulty: Difficulty = 'watch', origin: OriginId = 'segundo'
 
 async function continueSaved(): Promise<void> {
   const raw = await ui.mostRecent();
-  if (!raw) { startNew(); return; }
+  // Never a new game in place of one that would not read: the Book of Voyages,
+  // where every copy is listed and can be chosen by hand.
+  if (!raw) { ui.showVoyages(); return; }
   resumeFrom(raw);
 }
 
@@ -537,6 +539,16 @@ if (import.meta.env.DEV) {
 Ui.rescueOldSave();
 
 ui.showTitle();
+
+// A page that was reloaded in the middle of a voyage — a new version of the
+// game published under the player, the phone dropping the tab and bringing
+// it back — goes straight back to sea. The page wrote its save as it went
+// (see saveIfPlaying), so a voyage saved in the last few minutes is one the
+// player did not mean to leave.
+void (async () => {
+  const at = await ui.newestSaveAt();
+  if (!game && at && Date.now() - at < 5 * 60 * 1000) void continueSaved();
+})();
 // The title's words come up first and the sea follows a frame later. Building
 // the renderer compiles shaders, which is the one genuinely slow thing at load,
 // and doing it in the same task as the first paint holds the whole screen blank

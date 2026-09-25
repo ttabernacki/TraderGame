@@ -73,11 +73,14 @@ export class TitleView {
   private onNew!: (d: Difficulty, o: OriginId) => void;
 
   /** Called once the shelf has answered. Safe to call more than once. */
-  setHasSave(has: boolean): void {
+  setHasSave(has: boolean, looking = false): void {
     clear(this.actions);
     this.actions.append(button('Sail', () => this.onNew(this.difficulty, this.origin),
       { primary: true }));
     if (has) this.actions.append(button('Continue the voyage', this.onContinue));
+    // Still waiting on the account: say so, rather than let a player who has a
+    // voyage there conclude he has none and start again over the top of it.
+    else if (looking) this.actions.append(button('Looking for your voyage\u2026', () => {}, { disabled: true }));
     this.actions.append(button(has ? 'The Book of Voyages' : 'Bring a voyage in',
       this.onVoyages, { ghost: true }));
   }

@@ -147,7 +147,15 @@ export class Ui {
       this.cb.onNewGame, this.cb.onContinue, false, () => this.showVoyages(),
     );
     this.overlay.append(t.root);
-    void this.hasAnySave().then((has) => t.setHasSave(has));
+    // What this browser has, at once; then again when the account has
+    // answered, however long that takes — a voyage kept only in the account
+    // must never read as "no voyage" because the account was slow.
+    void (async () => {
+      const local = (await this.shelf.list()).length > 0;
+      t.setHasSave(local, !local);
+      await this.shelf.connect();
+      t.setHasSave((await this.shelf.list()).length > 0);
+    })();
   }
 
   /** The Book of Voyages, from the title screen or from the deck. */
@@ -501,10 +509,17 @@ export class Ui {
 
   /** The most recent voyage on the shelf, for Continue. */
   async mostRecent(): Promise<string | null> {
-    // A few seconds for the account, whose copy may be the newer one.
-    await this.shelf.connect(4000);
+    // The account's copy may be the newer one: wait for its answer.
+    await this.shelf.connect(15000);
     const slots = await this.shelf.list();
     return slots.length ? this.shelf.read(slots[0].id) : null;
+  }
+
+  /** When the newest voyage on the shelf was written, 0 for none. */
+  async newestSaveAt(): Promise<number> {
+    await this.shelf.connect(15000);
+    const slots = await this.shelf.list();
+    return slots.length ? slots[0].savedAt : 0;
   }
 
   async hasAnySave(): Promise<boolean> {
