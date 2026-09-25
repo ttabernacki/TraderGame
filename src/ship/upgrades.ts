@@ -67,9 +67,9 @@ export interface Upgrade {
   system?: SystemId;
   /**
    * 0 is the rig plan (the root switch of the rig), 1 is the trunk of the
-   * tree, 2 and 3 are the two branches. A branch node needs the one below it.
+   * tree, 2 to 5 climb the two branches. A branch node needs the one below it.
    */
-  tier: 0 | 1 | 2 | 3;
+  tier: 0 | 1 | 2 | 3 | 4 | 5;
   branch?: 'a' | 'b';
   /** Kept for old code paths that group the list. */
   category: UpgradeCategory;
@@ -111,12 +111,12 @@ export const SYSTEMS: { id: SystemId; name: string; english: string; a: string; 
  * work and no more; a nau will carry anything the Ribeira can build.
  */
 export const TIER_CAP: Record<string, number> = {
-  barcha: 1,
-  'caravela-latina': 2,
-  'caravela-redonda': 2,
-  'nau-pequena': 3,
-  nau: 3,
-  'nau-da-india': 3,
+  barcha: 2,
+  'caravela-latina': 3,
+  'caravela-redonda': 3,
+  'nau-pequena': 4,
+  nau: 5,
+  'nau-da-india': 5,
 };
 
 export function tierCap(hullId: string): number {
@@ -124,7 +124,7 @@ export function tierCap(hullId: string): number {
   // A ship built to your own lines takes what her size will bear.
   const h = HULL_BY_ID.get(hullId);
   if (!h) return 2;
-  return h.tons < 40 ? 1 : h.tons < 120 ? 2 : 3;
+  return h.tons < 40 ? 2 : h.tons < 100 ? 3 : h.tons < 200 ? 4 : 5;
 }
 
 const NAUS = ['nau-pequena', 'nau', 'nau-da-india'];
@@ -188,6 +188,30 @@ export const UPGRADES: Upgrade[] = [
     effects: { strength: 1.2, pumping: 1.1 },
     blurb: 'Wrought-iron knees at every deck beam. She does not work in a seaway, so her seams stay shut when a wooden ship\u2019s open.',
   },
+  {
+    id: 'breu-sebo', name: 'Breu de Veneza', english: 'Venetian pitch and tallow', system: 'hull', tier: 4, branch: 'a',
+    category: 'hull', cost: 700, standing: 90, days: 10, tons: 1,
+    effects: { foulingRate: 0.7, strength: 1.03 },
+    blurb: 'The bottom paid with the dear pitch out of the Adriatic, boiled with tallow and brimstone. The weed finds nothing to take hold of for a season.',
+  },
+  {
+    id: 'costado-liso', name: 'Costado liso', english: 'Faired bottom', system: 'hull', tier: 5, branch: 'a',
+    category: 'hull', cost: 1400, standing: 180, days: 18, tons: 0,
+    effects: { foulingRate: 0.75, handiness: 1.05, keel: 1.05 },
+    blurb: 'Every plank below the wale dubbed fair with the adze until a hand run along her finds no edge. She slips through the water, and stays clean longest of any ship on the river.',
+  },
+  {
+    id: 'cintas', name: 'Cintas dobradas', english: 'Doubled wales', system: 'hull', tier: 4, branch: 'b',
+    category: 'hull', cost: 820, standing: 100, days: 14, tons: 4,
+    effects: { strength: 1.1, pumping: 1.05 },
+    blurb: 'A second heavy wale bolted outside the first the whole length of her. The Cape can hit her broadside on and she only groans.',
+  },
+  {
+    id: 'tabuado-duplo', name: 'Tabuado dobrado', english: 'Double planking', system: 'hull', tier: 5, branch: 'b',
+    category: 'hull', cost: 1600, standing: 200, days: 24, tons: 8,
+    effects: { strength: 1.15, pumping: 1.15, handiness: 0.95 },
+    blurb: 'A whole second skin of oak over the first, the seams crossed. She is heavy and she is slow to turn, and nothing short of a reef will open her.',
+  },
 
   // --- Keel and helm ------------------------------------------------------
   {
@@ -219,6 +243,30 @@ export const UPGRADES: Upgrade[] = [
     category: 'hull', cost: 240, standing: 40, days: 4, tons: 0,
     effects: { handiness: 1.15, keel: 1.05 },
     blurb: 'Relieving tackles on the tiller so two men can hold her in a seaway. She answers every order, and holds her course when she is on it.',
+  },
+  {
+    id: 'quilha-azinho', name: 'Quilha de azinho', english: 'Holm-oak keel shoe', system: 'keel', tier: 4, branch: 'a',
+    category: 'hull', cost: 760, standing: 90, days: 14, tons: 3,
+    effects: { keel: 1.15, pointing: 2 },
+    blurb: 'A deep shoe of holm oak, the hardest wood in Portugal, fayed to the keel. She bites the water on a wind and gives up almost nothing to leeward.',
+  },
+  {
+    id: 'velas-bolina', name: 'Panos de bolina', english: 'Flat-cut windward canvas', system: 'keel', tier: 5, branch: 'a',
+    category: 'rig', cost: 1300, standing: 170, days: 10, tons: 0,
+    effects: { pointing: 3, sailArea: 0.97 },
+    blurb: 'A suit cut flat by the best sailmaker at the Ribeira, for close-hauled work only. A little less canvas, and she lies closer to the wind than any ship of her kind.',
+  },
+  {
+    id: 'popa-afinada', name: 'Popa afinada', english: 'Fined run aft', system: 'keel', tier: 4, branch: 'b',
+    category: 'hull', cost: 700, standing: 80, days: 14, tons: 0,
+    effects: { handiness: 1.15, keel: 1.03 },
+    blurb: 'The deadwood aft cut away and the run faired, so the water comes clean to the rudder. She spins in her own length.',
+  },
+  {
+    id: 'lastro-ajustado', name: 'Lastro ajustado', english: 'Trimmed ballast', system: 'keel', tier: 5, branch: 'b',
+    category: 'hull', cost: 1100, standing: 160, days: 10, tons: 4,
+    effects: { handiness: 1.12, strength: 1.03 },
+    blurb: 'The shingle ballast hauled out and restowed in stone and pig-iron where the master wants it. She sits exactly on her marks and answers like a boat.',
   },
 
   // --- Rig: the plan ------------------------------------------------------
@@ -274,6 +322,30 @@ export const UPGRADES: Upgrade[] = [
     effects: { sailRepair: true },
     blurb: 'A full suit of spare canvas and a sailmaker with his palm and needle. Blown-out sails are mended at sea instead of in the next port.',
   },
+  {
+    id: 'gavea-traquete', name: 'Gávea do traquete', english: 'Fore topsail', system: 'rig', tier: 4, branch: 'a',
+    category: 'rig', cost: 780, standing: 90, days: 10, tons: 1,
+    effects: { sailArea: 1.12, strength: 0.97 },
+    blurb: 'A topmast and a topsail on the foremast as well as the main. Another knot in the trades, and more top-hamper to carry away in a squall.',
+  },
+  {
+    id: 'cutelos', name: 'Cutelos', english: 'Studding sails', system: 'rig', tier: 5, branch: 'a',
+    category: 'rig', cost: 1250, standing: 170, days: 8, tons: 1,
+    effects: { sailArea: 1.1, handiness: 0.95 },
+    blurb: 'Booms run out from the yardarms and narrow sails set outside the courses. Running down the trades she spreads canvas like a fleet, and takes half the watch to get it in.',
+  },
+  {
+    id: 'contramezena', name: 'Contramezena', english: 'Bonaventure mizzen', system: 'rig', tier: 4, branch: 'b',
+    category: 'rig', cost: 720, standing: 90, days: 10, tons: 1,
+    effects: { sailArea: 1.06, pointing: 2, handiness: 1.05 },
+    blurb: 'A fourth, small lateen stepped right aft on the taffrail. It holds her head up to the wind and helps her through stays.',
+  },
+  {
+    id: 'antenas-duplas', name: 'Antenas de duas peças', english: 'Two-piece lateen yards', system: 'rig', tier: 5, branch: 'b',
+    category: 'rig', cost: 1200, standing: 170, days: 10, tons: 1,
+    effects: { pointing: 3, sailArea: 1.05, strength: 0.98 },
+    blurb: 'Lateen yards scarfed from two spars and fished with iron, longer than any single tree could make. The peak stands higher and the luff stays straight on a wind.',
+  },
 
   // --- Hold and stores ----------------------------------------------------
   {
@@ -305,6 +377,30 @@ export const UPGRADES: Upgrade[] = [
     category: 'stores', cost: 90, standing: 20, days: 2, tons: 0,
     effects: { rainCatch: true, water: 15, handiness: 0.97 },
     blurb: 'Old sails rigged as funnels over the casks. Every squall fills them. The deck is cluttered with gear that fouls the braces.',
+  },
+  {
+    id: 'paiois-especiaria', name: 'Paióis de especiaria', english: 'Spice rooms', system: 'hold', tier: 4, branch: 'a',
+    category: 'stores', cost: 760, standing: 90, days: 10, tons: 3,
+    effects: { spoilage: 0.7, hold: 10 },
+    blurb: 'Sealed, lined rooms built into the hold for pepper, cloves and cinnamon, each with its own hatch. The spices come home as they went aboard, and more of them fit.',
+  },
+  {
+    id: 'coberta-carga', name: 'Coberta de carga', english: 'A cargo deck', system: 'hold', tier: 5, branch: 'a',
+    category: 'stores', cost: 1500, standing: 180, days: 22, tons: 4,
+    effects: { hold: 30, handiness: 0.95, strength: 0.97 },
+    blurb: 'A whole orlop deck laid between the hold and the gun deck. Thirty tons more of whatever pays, and a ship that sits deeper and works harder in a sea.',
+  },
+  {
+    id: 'tanques', name: 'Tanques de água', english: 'Water tanks', system: 'hold', tier: 4, branch: 'b',
+    category: 'stores', cost: 640, standing: 80, days: 8, tons: 10,
+    effects: { water: 40 },
+    blurb: 'Great leaded tanks built into the ground tier in place of casks. Forty days more, and water that does not leak away through the staves.',
+  },
+  {
+    id: 'pipas-ferro', name: 'Pipas arqueadas a ferro', english: 'Iron-hooped casks', system: 'hold', tier: 5, branch: 'b',
+    category: 'stores', cost: 1100, standing: 160, days: 6, tons: 4,
+    effects: { water: 30, spoilage: 0.9 },
+    blurb: 'Casks hooped with iron instead of hazel, that do not start in the heat of the line. The water keeps sweet a month longer and there is more of it.',
   },
 
   // --- Company's quarters -------------------------------------------------
@@ -338,6 +434,30 @@ export const UPGRADES: Upgrade[] = [
     effects: { scurvy: 0.75 },
     blurb: 'Barrels, salt and a smoking rack, so a good catch or a turtle beach lasts the passage instead of the week.',
   },
+  {
+    id: 'fisico', name: 'Físico da Casa', english: 'A university physician', system: 'quarters', tier: 4, branch: 'a',
+    category: 'stores', cost: 700, standing: 90, days: 1, tons: 1,
+    effects: { sickness: 0.7 },
+    blurb: 'A physician out of Salamanca with his books and his instruments, paid by the voyage. He is insufferable, and fewer men die of fevers.',
+  },
+  {
+    id: 'hospital', name: 'Hospital de bordo', english: 'Sick bay', system: 'quarters', tier: 5, branch: 'a',
+    category: 'stores', cost: 1300, standing: 170, days: 10, tons: 4,
+    effects: { sickness: 0.75, scurvy: 0.85 },
+    blurb: 'A bulkheaded sick bay under the half-deck with its own scuttles, stove and water. The sick are kept apart, and the sickness does not go round the ship.',
+  },
+  {
+    id: 'hortas', name: 'Hortas de convés', english: 'Deck gardens', system: 'quarters', tier: 4, branch: 'b',
+    category: 'stores', cost: 560, standing: 80, days: 3, tons: 2,
+    effects: { scurvy: 0.75 },
+    blurb: 'Tubs of earth lashed along the waist with cress, purslane and onions growing in them. A handful of green a day to every mess, which is a great deal more than nothing.',
+  },
+  {
+    id: 'citrinos', name: 'Laranjas e limões', english: 'Oranges and lemons in cask', system: 'quarters', tier: 5, branch: 'b',
+    category: 'stores', cost: 1000, standing: 150, days: 2, tons: 3,
+    effects: { scurvy: 0.6 },
+    blurb: 'Casks of Algarve oranges and lemons packed in sand, a ration to every man while they last. Nobody aboard can say why it works. It works.',
+  },
 
   // --- Navigation ---------------------------------------------------------
   {
@@ -370,6 +490,30 @@ export const UPGRADES: Upgrade[] = [
     effects: { leadSigma: 0.65 },
     blurb: 'A marked line checked wet against the fathom-rod, a leadsman who calls what he feels, and a book to write it in. The soundings are true to the fathom.',
   },
+  {
+    id: 'cartas-casa', name: 'Cartas de marear da Casa', english: 'The Casa\u2019s sea charts', system: 'navigation', tier: 4, branch: 'a',
+    category: 'equipment', cost: 820, standing: 100, days: 1, tons: 0,
+    effects: { reckoning: 0.85 },
+    blurb: 'Fair copies of the King\u2019s padrão, rhumbed and graduated, and a pilot allowed to see them. Courses laid off properly, and distances run checked against them.',
+  },
+  {
+    id: 'agulha-variacao', name: 'Agulha de variação', english: 'A variation compass', system: 'navigation', tier: 5, branch: 'a',
+    category: 'equipment', cost: 1300, standing: 180, days: 1, tons: 0,
+    effects: { reckoning: 0.8 },
+    blurb: 'A compass with a shadow-pin, to take the sun\u2019s bearing at rising and setting and find how far the needle lies. The courses steered are the courses written down.',
+  },
+  {
+    id: 'sondareza', name: 'Sondareza de rolo', english: 'Deep-sea line on a reel', system: 'navigation', tier: 4, branch: 'b',
+    category: 'equipment', cost: 620, standing: 80, days: 1, tons: 1,
+    effects: { leadReach: 1.4, leadSigma: 0.9 },
+    blurb: 'Three hundred fathoms of tarred line on a reel on the poop, and a heavier lead to go with it. Bottom is found a long way off soundings.',
+  },
+  {
+    id: 'batel-sonda', name: 'Batel de sonda', english: 'A sounding boat', system: 'navigation', tier: 5, branch: 'b',
+    category: 'equipment', cost: 1100, standing: 160, days: 3, tons: 2,
+    effects: { leadSigma: 0.75, leadReach: 1.1 },
+    blurb: 'A light boat that goes ahead of her into strange water, sounding as it goes and signalling back. The soundings are true, and they are taken before she is on the ground.',
+  },
 
   // --- Arms and boats -----------------------------------------------------
   {
@@ -401,6 +545,30 @@ export const UPGRADES: Upgrade[] = [
     category: 'equipment', cost: 160, standing: 25, days: 2, tons: 2,
     effects: { holding: 0.12, pumping: 1.05 },
     blurb: 'Two kedges and cable enough to lay them out a quarter of a mile. She rides a lee shore on three anchors, and warps herself off a bank.',
+  },
+  {
+    id: 'falcoes', name: 'Falcões', english: 'Falconets', system: 'arms', tier: 4, branch: 'a',
+    category: 'equipment', cost: 820, standing: 90, days: 6, tons: 3,
+    effects: { guns: 3 },
+    blurb: 'Three bronze falcons on the castles, firing a two-pound ball. They sweep an enemy\u2019s deck from above before anyone goes over the rail.',
+  },
+  {
+    id: 'camelos', name: 'Camelos', english: 'Heavy bronze guns', system: 'arms', tier: 5, branch: 'a',
+    category: 'equipment', cost: 1800, standing: 200, days: 14, tons: 10,
+    effects: { guns: 5, handiness: 0.95, strength: 1.02 },
+    blurb: 'Great bronze pieces cast at the royal foundry, on carriages in the waist, with ports cut for them. She is a ship of war now, and every corsair on the coast knows it.',
+  },
+  {
+    id: 'amarras-canhamo', name: 'Amarras de cânhamo', english: 'Hemp cables', system: 'arms', tier: 4, branch: 'b',
+    category: 'equipment', cost: 600, standing: 80, days: 2, tons: 3,
+    effects: { holding: 0.1 },
+    blurb: 'Cables laid up from Baltic hemp instead of esparto grass. They do not chafe through on a rocky bottom in the night.',
+  },
+  {
+    id: 'quatro-ancoras', name: 'Quatro âncoras de ferro', english: 'Four wrought anchors', system: 'arms', tier: 5, branch: 'b',
+    category: 'equipment', cost: 1200, standing: 160, days: 4, tons: 6,
+    effects: { holding: 0.15, strength: 1.02 },
+    blurb: 'Four great anchors of Biscay iron and cables to each. She rides out a gale on a lee shore that would put any other ship on the beach.',
   },
 ];
 
@@ -510,8 +678,10 @@ export function nodeStatus(
   const tier = u.tier === 0 ? 2 : u.tier;
   if (!u.service && tier > tierCap(hullId)) return { state: 'locked', why: 'Too much for this hull', ...none };
   if (u.standing > standing) return { state: 'locked', why: `At ${u.standing} renown`, ...none };
-  const need = u.tier === 0 ? 3 : u.tier;
-  if (yard < Math.min(need, 3) || (u.tier === 0 && yard < 3)) {
+  // The trunk wants any yard, the lower branches a proper one, and the top of
+  // every tree — and the rig plan — the Ribeira at Lisbon.
+  const need = u.tier === 0 ? 3 : u.tier >= 4 ? 3 : u.tier >= 2 ? 2 : 1;
+  if (yard < need) {
     return { state: 'locked', why: need >= 3 ? 'Only the Ribeira at Lisbon' : yard === 0 ? 'No yard here' : 'Wants a proper yard', ...none };
   }
   if (!u.system) return { state: 'open', why: '', ...none };
@@ -523,7 +693,7 @@ export function nodeStatus(
   if (u.tier === 1) return { state: 'open', why: '', ...none };
   const trunk = inSystem.some((x) => x.tier === 1);
   if (!trunk) return { state: 'locked', why: 'Needs the first work in this tree', ...none };
-  if (u.tier === 3 && !inSystem.some((x) => x.tier === 2 && x.branch === u.branch)) {
+  if (u.tier >= 3 && !inSystem.some((x) => x.tier === u.tier - 1 && x.branch === u.branch)) {
     return { state: 'locked', why: 'Needs the one below it', ...none };
   }
   const other = inSystem.filter((x) => x.branch && x.branch !== u.branch);

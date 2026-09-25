@@ -1287,7 +1287,7 @@ export class PortView {
         el('span', {}, `Fittings weigh ${fx.tons} t`),
         fx.guns ? el('span', {}, `${fx.guns} guns`) : null),
       el('p', { style: { fontSize: '13px' } },
-        `A ${hullClass(g.ship.hullId).name} can be taken ${cap === 1 ? 'no further than the first work' : cap === 2 ? 'as far as the fork in each tree' : 'to the top of every tree'}. `
+        `A ${hullClass(g.ship.hullId).name} can be taken ${cap >= 5 ? 'to the top of every tree' : `as far as the ${['', 'first', 'second', 'third', 'fourth'][cap]} work of five in each tree`}. `
         + 'At the fork she is fitted for one purpose or the other; changing branch is work for Lisbon. Everything built into her weighs something, and weight is room and speed.'),
     ));
     for (const sys of SYSTEMS) {
@@ -1424,7 +1424,7 @@ export class PortView {
       if (u.tier === 2 && out.size > 0) {
         for (const x of g.ship.upgrades) {
           const v = UPGRADE_BY_ID.get(x);
-          if (v && v.system === u.system && v.tier === 3 && v.branch !== u.branch) out.add(x);
+          if (v && v.system === u.system && v.tier >= 3 && v.branch !== u.branch) out.add(x);
         }
       }
       g.ship.upgrades = g.ship.upgrades.filter((x) => !out.has(x));
