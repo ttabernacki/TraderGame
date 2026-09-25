@@ -108,11 +108,82 @@ export function monsoonPhase(dayOfYear: number): number {
   return Math.sin((2 * Math.PI * (dayOfYear - 105)) / 365);
 }
 
+/** 0 in late January, 1 in late July: how far into the northern summer it is. */
+export function northernSummer(dayOfYear: number): number {
+  return 0.5 - 0.5 * Math.cos((2 * Math.PI * (dayOfYear - 20)) / 365);
+}
+
+/**
+ * Where the Azores High sits: the anticyclone the whole volta do mar is sailed
+ * around. Low and to the east in winter, high and to the west in summer.
+ */
+export function azoresHigh(dayOfYear: number): { lat: number; lon: number } {
+  const s = northernSummer(dayOfYear);
+  return { lat: lerp(31.5, 36, s), lon: lerp(-27, -37, s) };
+}
+
+/**
+ * The wind round the Azores High.
+ *
+ * The zonal belts cannot describe the North Atlantic, because the thing that
+ * governs it is not a belt but one great anticyclone, and the air goes round
+ * it: westerlies along its northern side, the Portuguese northerly down its
+ * eastern side, the north-east trades along its southern side, and light
+ * variable airs at its heart. Laid out as bands of latitude, the heart of the
+ * high became a calm three hundred miles deep running right across the ocean,
+ * a hundred and fifty miles further north in summer than the real one, and
+ * the trades stopped short of the Canaries every winter — measured at half the
+ * hours flat calm off Tenerife in January, where a pilot chart shows the
+ * north-easter blowing four days in five. Every ship coming home from Guinea
+ * has to cross that latitude, and it was eating weeks.
+ *
+ * So the North Atlantic is drawn from the high itself: flow clockwise round
+ * the centre, spiralling out about twenty degrees as surface air does, light
+ * near the middle and building to a working breeze a few hundred miles out.
+ */
+function azoresCirculation(p: LatLon, dayOfYear: number): { from: number; speed: number; steadiness: number; weight: number } {
+  const hi = azoresHigh(dayOfYear);
+  const s = northernSummer(dayOfYear);
+  // Stretched east and west: the high is an ellipse lying along its parallel.
+  const dLat = p.lat - hi.lat;
+  const dLon = (p.lon - hi.lon) * Math.cos((p.lat * Math.PI) / 180) * 0.62;
+  const distNm = Math.hypot(dLat, dLon) * 60;
+  const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI;
+  // Clockwise, and outward: north of the centre the air goes east-north-east,
+  // so it comes from west-south-west.
+  // (The spiral is about twenty-five degrees over open water.)
+  const from = wrap360(bearing + 243);
+  // The westerlies on its northern flank blow harder than the trades on its
+  // southern, and harder still in winter.
+  const north = clamp(dLat / 10, 0, 1);
+  const peak = lerp(17, 14, s) + north * lerp(5, 3, s);
+  // Never dead at the heart of it: light and shifting, six or seven knots,
+  // which is what the pilot charts give for the middle of the high.
+  const speed = peak * lerp(0.45, 1, smoothstep(30, 380, distNm));
+  const steadiness = lerp(0.22, lerp(0.62, 0.78, clamp(-dLat / 12, 0, 1)), smoothstep(60, 520, distNm));
+  // Only the North Atlantic, fading into the belts at its edges: the trades
+  // south of about fifteen north, the westerlies of the high latitudes, the
+  // Mediterranean and the Americas.
+  const weight = smoothstep(hi.lat - 22, hi.lat - 14, p.lat) * (1 - smoothstep(hi.lat + 13, hi.lat + 20, p.lat))
+    * smoothstep(-78, -66, p.lon) * (1 - smoothstep(-5, -1, p.lon));
+  return { from, speed, steadiness, weight };
+}
+
 /** Persistent coastal wind regimes that override the zonal belts near shore. */
-function coastalBias(p: LatLon): { from: number; speed: number; weight: number } | null {
-  // Portuguese trade winds ("nortada") down the Iberian and Moroccan coast.
+function coastalBias(p: LatLon, dayOfYear: number): { from: number; speed: number; weight: number } | null {
+  // The nortada down the Iberian and Moroccan coast. It is the summer's wind —
+  // the Azores High standing off to the west — and in winter the westerlies and
+  // their fronts come right in to the coast.
   if (p.lat > 26 && p.lat < 44 && p.lon > -14 && p.lon < -5.5) {
-    return { from: 15, speed: 15, weight: 0.55 };
+    const s = northernSummer(dayOfYear);
+    return { from: 12, speed: lerp(12, 17, s), weight: 0.5 * smoothstep(0.35, 0.8, s) };
+  }
+  // The Canaries and the Saharan coast: the trade is drawn round to the
+  // north-north-east by the heat over the desert, all the year round.
+  if (p.lat > 20 && p.lat < 32 && p.lon > -21 && p.lon < -9) {
+    const edge = smoothstep(20, 22.5, p.lat) * (1 - smoothstep(30, 32, p.lat))
+      * smoothstep(-21, -18, p.lon);
+    return { from: 22, speed: 16, weight: 0.5 * edge };
   }
   // Benguela: relentless south-easterly along the desert coast of Namibia.
   if (p.lat > -30 && p.lat < -12 && p.lon > 8 && p.lon < 17) {
@@ -299,8 +370,18 @@ export function prevailingWind(p: LatLon, dayOfYear: number, t: number): WindSam
     steadiness = lerp(steadiness, mSteady, mm);
   }
 
-  const coast = coastalBias(p);
-  if (coast) {
+  const az = azoresCirculation(p, dayOfYear);
+  if (az.weight > 0.005) {
+    // Direction as vectors; strength as strengths. Two airs that disagree at
+    // the seam between regimes make a shift of wind, not a calm.
+    const w = blendWind(from, speed, az.from, az.speed, az.weight);
+    from = w.from;
+    speed = lerp(speed, az.speed, az.weight);
+    steadiness = lerp(steadiness, az.steadiness, az.weight);
+  }
+
+  const coast = coastalBias(p, dayOfYear);
+  if (coast && coast.weight > 0) {
     const w = blendWind(from, speed, coast.from, coast.speed, coast.weight);
     from = w.from;
     speed = lerp(speed, coast.speed, coast.weight * 0.8);

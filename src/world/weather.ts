@@ -1,6 +1,6 @@
 import { clamp, lerp, lerpAngle, smoothstep, wrap360, haversine, bearingTo, NM, type LatLon } from '../core/math';
 import { Rng, fbm1 } from '../core/rng';
-import { prevailingWind, type WindSample, seaState } from './wind';
+import { azoresHigh, prevailingWind, type WindSample, seaState } from './wind';
 import { dateFromDays } from '../core/clock';
 
 export type StormKind = 'gale' | 'cyclone' | 'squall';
@@ -97,10 +97,15 @@ export class Weather {
     let trackDir = this.rng.range(0, 360);
     let trackSpeed = this.rng.range(8, 16);
 
-    if (absLat > 34 && absLat < 62) {
+    // The depressions go round the Azores High, not through it: in summer
+    // their track lies up past forty-five north and the islands see a gale a
+    // month at most; in winter the high sinks south and they come down on it.
+    const hi = azoresHigh(day % 365);
+    const underHigh = lat > 0 && lon > -70 && lon < -2 && lat < hi.lat + 5;
+    if (absLat > 34 && absLat < 62 && !underHigh) {
       // Extratropical depressions marching through the westerlies.
       kind = 'gale';
-      chance = 0.55 + (isWinterAt(lat, month) ? 0.25 : 0);
+      chance = isWinterAt(lat, month) ? 0.8 : 0.35;
       peak = this.rng.range(38, 62);
       radius = this.rng.range(180, 420);
       life = this.rng.range(24, 72) * 3600;

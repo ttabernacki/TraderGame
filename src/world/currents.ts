@@ -29,15 +29,21 @@ interface Band {
 
 const BANDS: Band[] = [
   // North Atlantic gyre, clockwise.
-  { name: 'Canary Current', latMin: 12, latMax: 33, lonMin: -22, lonMax: -8, toward: 200, knots: 0.8, feather: 3 },
-  { name: 'North Equatorial Current', latMin: 6, latMax: 19, lonMin: -60, lonMax: -18, toward: 278, knots: 0.7, feather: 3 },
+  { name: 'Canary Current', latMin: 12, latMax: 33, lonMin: -22, lonMax: -8, toward: 200, knots: 0.45, feather: 3 },
+  { name: 'North Equatorial Current', latMin: 6, latMax: 19, lonMin: -60, lonMax: -18, toward: 278, knots: 0.5, feather: 3 },
   // The counter-current hands over to the Guinea current off Cape Palmas;
   // summed along the Mina coast the two came to two and a half knots.
   { name: 'Equatorial Counter-Current', latMin: 3, latMax: 8, lonMin: -30, lonMax: -8, toward: 92, knots: 0.9, feather: 1.5 },
   { name: 'Guinea Current', latMin: 1, latMax: 7, lonMin: -12, lonMax: 9, toward: 95, knots: 1.5, feather: 1.5 },
   { name: 'Gulf Stream', latMin: 26, latMax: 42, lonMin: -80, lonMax: -55, toward: 50, knots: 2.6, feather: 3 },
   { name: 'North Atlantic Drift', latMin: 40, latMax: 56, lonMin: -50, lonMax: -12, toward: 70, knots: 0.7, feather: 4 },
-  { name: 'Portugal Current', latMin: 33, latMax: 44, lonMin: -18, lonMax: -8, toward: 190, knots: 0.5, feather: 2.5 },
+  // The Azores Current: the gyre's return flow east along 34-36°N, weak but
+  // real, and fair for a ship coming home.
+  { name: 'Azores Current', latMin: 33, latMax: 37, lonMin: -40, lonMax: -14, toward: 95, knots: 0.25, feather: 2 },
+  // Measured by the Casa's pilots at a quarter-knot or so, and not the half
+  // this once had; with the Canary Current laid under it that summed to a knot
+  // setting her south on every approach to Lisbon.
+  { name: 'Portugal Current', latMin: 33, latMax: 44, lonMin: -18, lonMax: -8, toward: 190, knots: 0.2, feather: 2.5 },
 
   // South Atlantic gyre, anticlockwise.
   { name: 'South Equatorial Current', latMin: -18, latMax: -1, lonMin: -35, lonMax: 8, toward: 282, knots: 0.9, feather: 3 },
