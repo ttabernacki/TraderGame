@@ -2855,3 +2855,10 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
 
 /* Photo mode: everything but the scene put away. */
 body.photo #ui > *, body.photo #hud-strip, body.photo .pilot { visibility: hidden !important; }
+
+/* The pilot's note floats over the port screens. It must never swallow the
+   buttons under it: the text lets clicks through, only its own controls take
+   them, and the page leaves room at the bottom so nothing can sit beneath it. */
+.pilot.ashore { pointer-events: none; }
+.pilot.ashore button, .pilot.ashore a { pointer-events: auto; }
+body:has(.pilot.ashore) .screen-body { padding-bottom: 150px; }

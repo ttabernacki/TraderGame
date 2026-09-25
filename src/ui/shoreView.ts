@@ -102,6 +102,20 @@ export class ShoreView {
         : null,
     ));
 
+    // Lying off a coast is lying at anchor as much as it is in a harbour: to
+    // wait out a blow, a season, or a sea too heavy to land through.
+    right.append(card('Pass the time',
+      el('p', {}, 'Ride to her anchor and let the days go by: the sea goes down, the wind '
+        + 'comes round, and the hands rest. The stores go on being eaten.'),
+      el('div', { style: { display: 'flex', gap: '7px', flexWrap: 'wrap' } },
+        ...[1, 3, 7, 14].map((d) => button(`${d} ${d === 1 ? 'day' : 'days'}`, () => {
+          g.waitDays(d);
+          this.notice = g.mode === 'gameover' ? null : `${d} ${d === 1 ? 'day passes' : 'days pass'} at anchor off the coast.`;
+          this.render();
+        })),
+      ),
+    ));
+
     right.append(card('The ship',
       kv('Water', `${g.crew.provisions.water.toFixed(0)} days`),
       kv('Fresh food', `${g.crew.provisions.fresh.toFixed(0)} days`),

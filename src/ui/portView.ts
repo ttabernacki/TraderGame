@@ -374,7 +374,7 @@ export class PortView {
     }
 
     const monsoon = g.monsoonNow();
-    right.append(card('Pass the time',
+    right.prepend(card('Pass the time',
       el('p', {}, 'Lying at anchor rests the crew, mends their spirits, and lets fresh food do its work — and it also lets the weather change, and the season turn.'),
       el('div', { style: { display: 'flex', gap: '7px', flexWrap: 'wrap' } },
         ...[1, 3, 7, 14, 30].map((d) => button(`${d} ${d === 1 ? 'day' : 'days'}`, () => {
