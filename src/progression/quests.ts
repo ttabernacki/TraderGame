@@ -6,6 +6,7 @@ import { prevailingWind } from '../world/wind';
 import { currentAt } from '../world/currents';
 import { anchorageOf, portDef } from '../world/ports';
 import { setQuestPriceMods } from '../world/portCharacter';
+import { skill } from '../crew/skills';
 
 /**
  * The long stories.
@@ -24,7 +25,7 @@ import { setQuestPriceMods } from '../world/portCharacter';
  * plays when he gets there. The scene's choices move the quest on.
  */
 
-export type QuestId = 'caravel' | 'leak' | 'kongo' | 'prester' | 'zamorin';
+export type QuestId = 'caravel' | 'leak' | 'kongo' | 'prester' | 'zamorin' | 'galeao';
 
 export interface QuestState {
   id: QuestId;
@@ -1180,7 +1181,318 @@ const zamorin: QuestDef = {
   },
 };
 
-export const QUESTS: Record<QuestId, QuestDef> = { caravel, leak, kongo, prester, zamorin };
+
+// ---------------------------------------------------------------------------
+// 6. The Biscayan's Ship — a secret thread
+//
+// Never on any quay's list until the captain has heard the talk in Lisbon (see
+// Game.enterPort, `secretsHeard`), and even then only at Las Palmas. It is a
+// tree rather than a line: the same prize — a Biscayan shipwright's
+// experimental galleon, forty years ahead of its time — is reached by buying
+// his drawings, by bringing the man himself over to Portugal, or by cutting
+// the ship out from under Castile's nose. Each costs something different.
+
+/** Where the Castilian galleon works up on her trials, south-west of Gran Canaria. */
+const TRIALS: LatLon = { lat: 27.55, lon: -15.95 };
+/** The beach on La Gomera where Arana will be waiting. */
+const GOMERA_BEACH: LatLon = { lat: 28.03, lon: -17.12 };
+
+function layDownGaleao(g: Game, cost: number, dayScale: number, who: string): string | null {
+  if (g.building) return 'There is already a ship of yours on the stocks at the Ribeira. When she is launched there will be room.';
+  if (g.crown.gold + g.creditFree < cost) return `The Ribeira wants ${cost} cruzados to lay her down, and the purse will not stretch to it.`;
+  if (g.crown.gold < cost) g.drawCredit(cost);
+  g.crown.gold -= cost;
+  const days = Math.round(200 * dayScale);
+  g.building = { hullId: 'galeao', readyT: g.clock.t + days * DAY, startT: g.clock.t };
+  g.logEvent('crown', `${who} lays down the galleon at the Ribeira das Naus: ${cost} cruzados, and about ${Math.round(days / 30)} months on the stocks.`, true);
+  return null;
+}
+
+const galeao: QuestDef = {
+  id: 'galeao',
+  title: 'The Biscayan’s Ship',
+  blurb: 'A shipwright from Biscay is building Castile a new kind of ship in the Canaries. Get her, or get her lines.',
+  offeredAt: ['las-palmas'],
+  available: (g) => g.chronicle.act >= 3 && g.crown.lifetimeStanding >= 150 && g.secretsHeard.includes('galeao'),
+  offer: () => ({
+    who: 'A Biscayan in a harbour tavern',
+    text: 'The man at the next table is a ship’s carpenter from Guarnizo, drunk, and aggrieved. His '
+      + 'master, Martín de Arana, has been building "a thing that is not a nau and not a caravel" for '
+      + 'the Catholic Monarchs, here, out of the way of Seville’s eyes, and has not been paid for '
+      + 'a year. "Long, low, four masts, a beak like a galley’s. She will run down a carrack and '
+      + 'point with a caravel. And the fools want to send her to fish for Columbus."',
+    accept: 'Buy him another jug, and listen',
+  }),
+  first: 'tavern',
+  steps: {
+    tavern: {
+      goal: () => 'Decide how to go about the Biscayan’s ship, at Las Palmas.',
+      marker: () => portMark('las-palmas', 'The Biscayan’s ship'),
+      when: (_g, _q, port) => port === 'las-palmas',
+      scene: (_g, q) => scene(q, 'tavern', 'A ship forty years early',
+        'By the second jug the carpenter has drawn her on the table in wine: a hull longer than a '
+        + 'nau’s and lower, the forecastle cut down to nothing and a beak thrust out ahead, '
+        + 'square courses forward and two lateens aft. She is lying in the careenage under guard. '
+        + 'She goes out on trials to the south-west of the island when the wind serves. And her '
+        + 'builder has not been paid.',
+        [
+          {
+            label: 'Find Martín de Arana',
+            detail: 'A shipwright who has not been paid is a shipwright who will talk.',
+            resolve: (gg) => go(gg, q, 'arana',
+              'Went to find Martín de Arana, the Biscayan who drew her, in his lodging above the careenage.'),
+          },
+          {
+            label: 'Watch her trials from the offing',
+            detail: 'South-west of Gran Canaria, at sea. Look at her; perhaps more than look.',
+            resolve: (gg) => go(gg, q, 'trials',
+              'Resolved to see the galleon on her trials, south-west of Gran Canaria.'),
+          },
+          {
+            label: 'Carry word to Lisbon first',
+            detail: 'The King may want a say in how this is done, and may pay for it.',
+            resolve: (gg) => go(gg, q, 'casa',
+              'Kept it quiet here and made for Lisbon, to put the Biscayan’s ship before the Casa.'),
+          },
+        ]),
+    },
+    casa: {
+      goal: () => 'Put the Biscayan’s ship before the Vedor da Fazenda, in Lisbon.',
+      marker: () => portMark('lisboa', 'The Vedor da Fazenda'),
+      when: (_g, _q, port) => port === 'lisboa',
+      scene: (_g, q) => scene(q, 'casa', 'A private word at the Casa',
+        'The Vedor hears it out in a small room with the door shut. He has heard of Arana: the '
+        + 'Biscayans are the best shipwrights in Spain and do not love Seville. "The King cannot '
+        + 'know of this," he says, and puts a purse on the table. "Which is to say he will be very '
+        + 'pleased if it is done well."',
+        [
+          {
+            label: 'Take the purse to buy the man',
+            detail: '500 cruzados from the Vedor. Arana, not his ship, is what is wanted.',
+            resolve: (gg) => {
+              gg.crown.gold += 500;
+              q.flags.casa = true;
+              return go(gg, q, 'arana', 'The Vedor gave 500 cruzados to bring Arana over, or his drawings. Back to Las Palmas.');
+            },
+          },
+          {
+            label: 'Ask for a letter to take the ship',
+            detail: 'A sealed letter that makes it a prize and not piracy — in Lisbon, anyway.',
+            resolve: (gg) => {
+              q.flags.letter = true;
+              return go(gg, q, 'trials', 'Carry a sealed letter from the Vedor. If the galleon is taken at sea, she is the King’s prize. South-west of Gran Canaria.');
+            },
+          },
+        ]),
+    },
+    arana: {
+      goal: () => 'Find Martín de Arana at Las Palmas.',
+      marker: () => portMark('las-palmas', 'Martín de Arana'),
+      when: (_g, _q, port) => port === 'las-palmas',
+      scene: (_g, q) => scene(q, 'arana', 'Martín de Arana',
+        'A square grey Biscayan with ink to the elbow and a roll of drawings he will not let out of '
+        + 'his hand. He has built for the Catholic Monarchs for two years and been paid for one. He '
+        + 'knows exactly who you are. "Portugal," he says. "Portugal pays."',
+        [
+          {
+            label: 'Buy the drawings',
+            detail: `${q.flags.casa ? 'The Vedor’s purse and more: ' : ''}900 cruzados for the lines and the tables. The Ribeira can build from them.`,
+            resolve: (gg) => {
+              if (gg.crown.gold < 900) return later(q, 'He will not take a promise. Come back with nine hundred cruzados.');
+              gg.crown.gold -= 900;
+              return go(gg, q, 'drawings', 'Bought Arana’s drawings of the galleon for 900 cruzados. The Ribeira das Naus can build her.');
+            },
+          },
+          {
+            label: 'Offer him Portugal',
+            detail: 'Bring the man himself over. Castile will not let him walk aboard in the harbour.',
+            resolve: (gg) => go(gg, q, 'gomera',
+              'Arana will come, drawings and all, but not from Las Palmas under the alcaide’s eyes. He will be on the beach on the south-east side of La Gomera. Stand in close.'),
+          },
+          {
+            label: 'Leave it for now',
+            detail: 'He will still be here, and still unpaid.',
+            resolve: () => later(q, 'Left Arana to his drawings. He will be here.'),
+          },
+        ]),
+    },
+    gomera: {
+      goal: () => 'Take Arana off the beach on the south-east side of La Gomera. Stand in close.',
+      marker: () => ({ ...GOMERA_BEACH, nm: 12, label: 'Arana’s beach' }),
+      when: (g) => !g.dockedAt && near(g, GOMERA_BEACH, 12) && g.sounding.shoreDistNm < 6,
+      scene: (g, q) => {
+        const odds = clamp(0.55 + (g.ship.effects.boat ? 0.2 : 0) + g.crew.count / 400, 0.5, 0.95);
+        return scene(q, 'gomera', 'A light on the beach',
+          'Three lanterns in a row above the tide line, as agreed — and a fourth, further along, '
+          + 'where nothing was agreed. The Count of La Gomera keeps men on this coast.',
+          [
+            {
+              label: 'Send the boat in for him',
+              detail: `About ${Math.round(odds * 10)} chances in ten of a clean pull${g.ship.effects.boat ? ' with the longboat' : ''}.`,
+              resolve: (gg) => {
+                if (gg.rng.chance(odds)) {
+                  q.flags.arana = true;
+                  return go(gg, q, 'aranaHome', 'Arana came off the beach with his drawings and his two apprentices. Castile will know by morning. Lisbon.');
+                }
+                gg.killHands(1, 'Shot in the boat off La Gomera.');
+                gg.shiftPeopleRegard('castilian', -0.1);
+                return later(q, 'The fourth lantern was soldiers. The boat came off with a man dead and without Arana. He will try again another night, he sent word: stand in again.');
+              },
+            },
+            {
+              label: 'Stand off till another night',
+              detail: 'No boat goes in to a fourth lantern.',
+              resolve: () => later(q, 'Stood off. Arana will try another night.'),
+            },
+          ], 'warning');
+      },
+    },
+    trials: {
+      goal: (_g, q) => `Find the galleon on her trials, south-west of Gran Canaria.${q.flags.letter ? ' The Vedor’s letter makes her a prize.' : ''}`,
+      marker: () => ({ ...TRIALS, nm: 30, label: 'The galleon’s trials' }),
+      when: (g) => !g.dockedAt && near(g, TRIALS, 30),
+      scene: (g, q) => {
+        const odds = clamp(0.2 + g.crew.count / 160 + g.ship.effects.guns * 0.012, 0.2, 0.85);
+        const eye = skill(g.effectiveSkill, 'cartografia') * 100;
+        return scene(q, 'trials', 'The galleon',
+          'She comes out from under the land with a fresh trade wind abeam and she is everything the '
+          + 'carpenter drew: long and low and fast, working up to windward of a caravel that is '
+          + 'trying to keep company with her and cannot. There is a skeleton crew aboard, and no '
+          + 'guns run out. She anchors for the night under the lee of the island.',
+          [
+            {
+              label: 'Cut her out tonight',
+              detail: `Boats in under the dark. About ${Math.round(odds * 10)} chances in ten. Castile will not forget it.`,
+              resolve: (gg) => {
+                if (gg.rng.chance(odds)) {
+                  gg.shiftPeopleRegard('castilian', q.flags.letter ? -0.3 : -0.5);
+                  gg.crew.morale = clamp(gg.crew.morale + 0.1, 0, 1);
+                  q.flags.prize = true;
+                  return go(gg, q, 'prizeHome', 'Cut the galleon out from under Gran Canaria in the middle watch with a prize crew aboard her before the guard boat was awake. She sails in company. Lisbon, and fast.');
+                }
+                gg.killHands(gg.rng.int(2, 5), 'Killed cutting out the Castilian galleon.');
+                gg.ship.damage(0.08);
+                gg.shiftPeopleRegard('castilian', -0.2);
+                return later(q, 'The guard boat was awake. Beaten off with men lost. She will be on her trials again when the wind serves.');
+              },
+            },
+            {
+              label: 'Take her lines from the offing',
+              detail: eye >= 40 ? 'Your eye for a coast is good enough for a hull. Rougher than the real drawings.' : 'Rough work at a distance. The Ribeira will have to guess at much of it.',
+              resolve: (gg) => {
+                q.flags.rough = eye >= 40 ? 'fair' : 'rough';
+                return go(gg, q, 'drawings', 'Spent a day shadowing her with the dividers out, and have her lines, after a fashion. The Ribeira can try to build from them.');
+              },
+            },
+            {
+              label: 'Let her be',
+              detail: 'She will be on her trials again.',
+              resolve: () => later(q, 'Left the galleon to her trials.'),
+            },
+          ], 'warning');
+      },
+    },
+    drawings: {
+      goal: () => 'Take the galleon’s lines to the Ribeira das Naus, in Lisbon.',
+      marker: () => portMark('lisboa', 'The Ribeira das Naus'),
+      when: (_g, _q, port) => port === 'lisboa',
+      scene: (g, q) => {
+        const rough = q.flags.rough === 'rough' ? 1.35 : q.flags.rough === 'fair' ? 1.15 : 1;
+        const cost = Math.round(7000 * rough);
+        return scene(q, 'drawings', 'The Ribeira das Naus',
+          'The master shipwright spreads the drawings on a bench and does not speak for a long time. '
+          + (rough > 1 ? '"Half of this is guesswork. The other half is extraordinary." ' : '"Who drew this?" ')
+          + `He can build her: ${cost} cruzados and the better part of a year${g.building ? ', once the stocks are clear' : ''}.`,
+          [
+            {
+              label: `Lay her down — ${cost} cruzados`,
+              detail: 'Paid now. She takes months on the stocks; launch her from the shipwrights when she is ready.',
+              resolve: (gg) => {
+                const err = layDownGaleao(gg, cost, rough, 'The Ribeira');
+                if (err) return later(q, err);
+                renown(gg, 30);
+                return end(gg, q, 'built', 'The galleon is on the stocks at the Ribeira das Naus, built from the Biscayan’s lines. Nobody else in Christendom has one.');
+              },
+            },
+            {
+              label: 'Give the lines to the Crown',
+              detail: 'The King’s shipwrights will use them; you will not get the ship.',
+              resolve: (gg) => {
+                renown(gg, 90);
+                gg.crown.gold += 1200;
+                return end(gg, q, 'given', 'Gave the galleon’s lines to the King. 1,200 cruzados and his thanks, which is worth more.');
+              },
+            },
+          ]);
+      },
+    },
+    aranaHome: {
+      goal: () => 'Bring Martín de Arana to the Ribeira das Naus, in Lisbon.',
+      marker: () => portMark('lisboa', 'The Ribeira das Naus'),
+      when: (_g, _q, port) => port === 'lisboa',
+      scene: (g, q) => scene(q, 'aranaHome', 'A Biscayan at the Ribeira',
+        'Arana walks the Ribeira das Naus like a man choosing a house. He wants oak from the Alentejo, '
+        + 'Biscay iron, and his own men, and he wants to be paid on the nail. Built under his own eye, '
+        + 'she will cost half again less than any copy, and be finished sooner.'
+        + (g.building ? ' The stocks are taken by a ship of yours already.' : ''),
+        [
+          {
+            label: 'Let him build her — 4,500 cruzados',
+            detail: 'Under his own hand, and quicker than the Ribeira could.',
+            resolve: (gg) => {
+              const err = layDownGaleao(gg, 4500, 0.7, 'Martín de Arana');
+              if (err) return later(q, err);
+              renown(gg, 50);
+              return end(gg, q, 'arana', 'Martín de Arana is building his galleon again — at the Ribeira das Naus, for Portugal, and for you.');
+            },
+          },
+          {
+            label: 'Present him to the King',
+            detail: 'A great Biscayan shipwright in the King’s service is a coup. You will not get the ship.',
+            resolve: (gg) => {
+              renown(gg, 140);
+              gg.crown.gold += 800;
+              return end(gg, q, 'presented', 'Presented Martín de Arana to the King, who took him into his service on the spot and will not forget who brought him.');
+            },
+          },
+        ]),
+    },
+    prizeHome: {
+      goal: () => 'Bring the captured galleon home to Lisbon.',
+      marker: () => portMark('lisboa', 'Lisbon, with the prize'),
+      when: (_g, _q, port) => port === 'lisboa',
+      scene: (_g, q) => scene(q, 'prizeHome', 'The prize in the Tagus',
+        'Half of Lisbon is on the waterfront to see her come up the river. '
+        + (q.flags.letter
+          ? 'The Vedor’s letter is read, and she is the King’s lawful prize; the King makes a gift of her to the captain who took her.'
+          : 'The Castilian ambassador is at the palace within the hour. The King, who has seen her, decides that she was found drifting.'),
+        [
+          {
+            label: 'Shift your flag into her',
+            detail: 'The old ship is sold to the yard; her fittings come across where they can.',
+            resolve: (gg) => {
+              const err = gg.shiftFlag('galeao', true);
+              if (err) return later(q, err);
+              gg.flagship = { hullId: 'galeao', launchedT: gg.clock.t };
+              renown(gg, q.flags.letter ? 60 : 25);
+              return end(gg, q, 'prize', 'Your flag flies in the Biscayan’s galleon. There is not another ship like her on the sea.');
+            },
+          },
+          {
+            label: 'Give her to the King',
+            detail: 'The Crown’s shipwrights will take her apart to learn her.',
+            resolve: (gg) => {
+              renown(gg, 150);
+              gg.crown.gold += 2500;
+              return end(gg, q, 'crown', 'Gave the galleon to the King. 2,500 cruzados, and the ear of the court.');
+            },
+          },
+        ]),
+    },
+  },
+};
+
+export const QUESTS: Record<QuestId, QuestDef> = { caravel, leak, kongo, prester, zamorin, galeao };
 
 /** Leave to trade across a whole state, as an audience would give it, and the court's opinion with it. */
 function leaveToTrade(g: Game, polity: string, d: { trust?: number; respect?: number; interest?: number }, why: string): void {

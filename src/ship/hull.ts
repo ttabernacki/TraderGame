@@ -131,6 +131,24 @@ export const HULL_CLASSES: HullClass[] = [
     cost: 15000, standing: 480,
     blurb: 'A floating warehouse with a castle at each end. Half of them never come back, and the half that do make more money than a province.',
   },
+  {
+    // Never on sale: won, bought or built by way of the secret thread in
+    // progression/quests ("The Biscayan's Ship").
+    id: 'galeao',
+    name: 'Galeão', english: 'Experimental galleon',
+    tons: 300, lwl: 30, beam: 9, draft: 3.7, displacement: 525000,
+    masts: [
+      square('Foremast', 200, 15.2, 0.62),
+      square('Mainmast', 380, 19.6, 0.1),
+      square('Gávea do grande', 110, 26.5, 0.1),
+      lateen('Mizzen', 180, 14.3, -0.42),
+      lateen('Contramezena', 100, 11.5, -0.72),
+    ],
+    hold: 190, crewMin: 40, crewFull: 80, strength: 0.92, handiness: 0.62,
+    cost: 9000, standing: 1e9,
+    blurb: 'A Biscayan shipwright\u2019s answer to the carrack: longer and lower, the forecastle cut down and a beak thrust out ahead of the stem, four masts with two lateens aft. She carries a nau\u2019s cargo, sails like a ship half her size, and there is nothing else like her on the sea.',
+    castles: 0.45, gmScale: 1.05, paint: 'ochre', device: 'plain',
+  },
 ];
 
 export const HULL_BY_ID = new Map(HULL_CLASSES.map((h) => [h.id, h]));

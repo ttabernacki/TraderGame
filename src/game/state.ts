@@ -303,6 +303,8 @@ export class Game {
 
   /** The long stories. See progression/quests. */
   quests: QuestState[] = [];
+  /** Talk overheard that opens a secret thread. See quests: "The Biscayan's Ship". */
+  secretsHeard: string[] = [];
   private lastQuestCheck = -1e9;
 
   /** Threads somebody here would put to the captain. */
@@ -5441,7 +5443,9 @@ export class Game {
     if (!this.launchReady) return `She is not finished: ${Math.ceil((this.building.readyT - this.clock.t) / 86400)} days yet.`;
     const id = this.building.hullId;
     const h = hullClass(id);
-    const err = this.shiftFlag(id, true, h.name);
+    // Your own design goes into the water under the name you drew her with;
+    // anything else carries your ship's name across.
+    const err = this.shiftFlag(id, true, h.custom ? h.name : this.ship.name);
     if (err) return err;
     this.building = null;
     this.flagship = { hullId: id, launchedT: this.clock.t };
@@ -7815,6 +7819,15 @@ export class Game {
     // Pillars are the King's business and the Casa ships them: every sailing
     // from the Tagus carries three, and nobody has to remember to ask.
     if (def.id === 'lisboa') this.crown.padraoStock = Math.max(this.crown.padraoStock, 3);
+    // A word overheard on the Lisbon waterfront, once the Crown has made a
+    // name of you: the only door into the Biscayan's Ship.
+    if (def.id === 'lisboa' && this.chronicle.act >= 3 && this.crown.lifetimeStanding >= 150
+      && !this.secretsHeard.includes('galeao')) {
+      this.secretsHeard.push('galeao');
+      this.logEvent('note', 'A Canary Islands pilot in a waterfront tavern, telling anyone who will '
+        + 'listen that the Castilians have a Biscayan building them "a ship like nothing afloat" at '
+        + 'Las Palmas, and that the man has not been paid. Nobody listening seems to think it matters.', true);
+    }
     if (def.id === 'lisboa' && this.launchReady) {
       this.pushAlert(`The ${hullClass(this.building!.hullId).name} is finished and lying at the Ribeira. Shift your flag from the shipwrights.`, 'note');
     }
@@ -8823,6 +8836,7 @@ export class Game {
       namedFeatures: this.namedFeatures,
       foundFeatures: this.foundFeatures,
       isles: this.isles,
+      secretsHeard: this.secretsHeard,
       designs: this.designs,
       building: this.building,
       flagship: this.flagship,
@@ -8941,6 +8955,7 @@ export class Game {
     g.namedFeatures = d.namedFeatures ?? {};
     g.foundFeatures = d.foundFeatures ?? [];
     g.isles = { ...newIsleState(), ...(d.isles ?? {}) };
+    g.secretsHeard = d.secretsHeard ?? [];
     // An island raised with its scene still unanswered when the game was saved.
     for (const [id, f] of Object.entries(g.isles.found)) if (!f.name) delete g.isles.found[id];
     g.coastOrder = d.coastOrder ?? null;

@@ -117,6 +117,7 @@ export const TIER_CAP: Record<string, number> = {
   'nau-pequena': 4,
   nau: 5,
   'nau-da-india': 5,
+  galeao: 5,
 };
 
 export function tierCap(hullId: string): number {
