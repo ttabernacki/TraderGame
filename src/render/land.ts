@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { NM, clamp, cosd, lerp, wrap180, type LatLon } from '../core/math';
 import { LANDMASSES, elevationAt, isLand } from '../world/landmass';
 import { CoastScenery, hash3, regionAt } from './coastScenery';
+import { anchorageOf, portsNear } from '../world/ports';
+import { townHillsNear } from './settlement';
 
 /**
  * Depth of each rendered coastal band inland, in metres. Beyond the last of
@@ -82,6 +84,9 @@ const MIN_BAND_DEPTH = 700;
 const SLOPE_RELIEF = 7;
 
 const EARTH_RADIUS_M = 6371000;
+
+/** Grid for looking up the drawn land's height, metres. */
+const GROUND_CELL = 1000;
 
 /**
  * How far the earth's curve hides a point, in metres, at a given distance from
@@ -276,6 +281,29 @@ export class Land {
     const mPerDegLat = NM * 60;
     const mPerDegLon = mPerDegLat * Math.max(cosd(origin.lat), 1e-6);
 
+    // Towns are built on the smooth field, so the folds are laid flat where a
+    // town stands, or its houses would hang off the tops of the ridges.
+    const towns = portsNear(origin, rangeNm + 5).map(({ def }) => anchorageOf(def));
+    const settled = (lat: number, lon: number): number => {
+      let m = 1;
+      for (const t of towns) {
+        const d = Math.hypot((lat - t.lat) * mPerDegLat, wrap180(lon - t.lon) * mPerDegLon);
+        m = Math.min(m, clamp((d - 2600) / 1600, 0, 1));
+      }
+      return m;
+    };
+
+    const hills = townHillsNear(origin, rangeNm);
+    const hillAt = (lat: number, lon: number): number => {
+      let h = 0;
+      for (const hl of hills) {
+        const d = Math.hypot((lat - hl.lat) * mPerDegLat, wrap180(lon - hl.lon) * mPerDegLon) / hl.radiusM;
+        h += hl.height * Math.exp(-d * d * 1.6);
+      }
+      return h;
+    };
+    const drawnHeights: number[] = [];
+
     const toLocal = (lat: number, lon: number): [number, number] => [
       wrap180(lon - origin.lon) * mPerDegLon,
       -(lat - origin.lat) * mPerDegLat,
@@ -336,6 +364,11 @@ export class Land {
 
       const base = positions.length / 3;
       const relief = LANDMASSES[seg.land].relief;
+      // The Atlantic islands are green whatever their latitude says: Madeira
+      // was named for its forests, and the Azores are the wettest land a
+      // Portuguese ship ever raised. Drawn by the latitude alone they came out
+      // the same dun as the Barbary coast across the water.
+      const lush = regionAt((seg.aLat + seg.bLat) / 2, (seg.aLon + seg.bLon) / 2).name === 'islands' ? 1 : 0;
 
       // How much of the band this piece of coast has room for. Measured at
       // both ends and the narrower taken, or the far end of a piece running
@@ -378,12 +411,20 @@ export class Land {
           // whole thing as one level plateau. It is now a coastal bluff and
           // nothing more: the height field does the work everywhere else.
           const floor = relief * 0.06 * (1 - Math.exp(-inland / 1200));
-          const raw = Math.max(h, floor);
+          // The height field is smooth at the scale of miles, and from the deck
+          // that reads as a painted backdrop: one slope, no spurs, no valleys,
+          // nothing for the light to fall into. A little ridged detail on top —
+          // drawn only, the chart and the lead never see it — gives a coast its
+          // folds. None at the strand, so the shoreline stays where it is.
+          const detail = b === 0 ? 0
+            : terrainDetail(lat, lon) * (22 + relief * 0.07) * Math.min(inland / 1500, 1) * settled(lat, lon);
+          const raw = Math.max(h + detail, floor) + (b === 0 ? 0 : hillAt(lat, lon) * Math.min(inland / 500, 1));
           // Low ground is exaggerated and high ground is left nearly true.
           const exagg = lerp(LAND_LIFT, 1.05, clamp(raw / LIFT_FADES_BY, 0, 1));
           // Eased in over the first band so the shoreline still meets the sea.
           const height = raw * (1 + (exagg - 1) * Math.min(inland / 900, 1));
           positions.push(x, height - curvatureDrop(Math.hypot(x, z), eyeM), z);
+          drawnHeights.push(height);
           strip.push({ x, z, h: height, lat, lon });
 
           // The strand: a pale edge where the ground meets the water, so the
@@ -393,6 +434,7 @@ export class Land {
           // Vegetation and rock tinted by latitude: desert coasts are pale,
           // equatorial ones green, southern capes brown and scrubby.
           const c = groundColour(lat, height, relief);
+          if (lush) c.lerp(LUSH, 0.55 * (1 - clamp(height / Math.max(relief, 1), 0, 1) * 0.6));
           colors.push(c.r * tint, c.g * tint, c.b * tint, hazeAt(Math.hypot(x, z), rangeNm));
         }
       }
@@ -417,6 +459,17 @@ export class Land {
           // Exaggerated to match the heights: a real coast at this range slopes
           // a few degrees, and a few degrees of Lambert is no modelling at all.
           const k = SLOPE_RELIEF;
+          // Bare ground where it is steep: grass and scrub do not hold on a
+          // cliff, and a coast's rock faces are what a pilot draws in his
+          // panorama. Measured on the true slope, not the exaggerated one.
+          const steep = clamp((Math.hypot(gIn, gAlong) - 0.2) / 0.35, 0, 1) * (b === 0 ? 0 : 0.8);
+          if (steep > 0) {
+            const ci = (base + b * 2 + side) * 4;
+            const t = BAND_TINT[b];
+            colors[ci] = lerp(colors[ci], ROCK.r * t, steep * 0.7);
+            colors[ci + 1] = lerp(colors[ci + 1], ROCK.g * t, steep * 0.7);
+            colors[ci + 2] = lerp(colors[ci + 2], ROCK.b * t, steep * 0.7);
+          }
           let nX = -(gIn * k) * ux - (gAlong * k) * sx;
           let nZ = -(gIn * k) * uz - (gAlong * k) * sz;
           let nY = 1;
@@ -456,6 +509,7 @@ export class Land {
     }
 
     if (indices.length === 0) return;
+    this.indexGround(origin, positions, drawnHeights, indices);
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
@@ -547,6 +601,64 @@ export class Land {
         );
       }
     });
+  }
+
+  /** Triangles of the drawn land, bucketed on a grid, for asking its height. */
+  private ground: {
+    origin: LatLon; xs: Float32Array; zs: Float32Array; hs: Float32Array;
+    tris: Uint32Array; cells: Map<number, number[]>;
+  } | null = null;
+
+  private indexGround(origin: LatLon, positions: number[], heights: number[], indices: number[]): void {
+    const n = heights.length;
+    const xs = new Float32Array(n), zs = new Float32Array(n), hs = new Float32Array(heights);
+    for (let i = 0; i < n; i++) { xs[i] = positions[i * 3]; zs[i] = positions[i * 3 + 2]; }
+    const cells = new Map<number, number[]>();
+    for (let t = 0; t < indices.length; t += 3) {
+      const a = indices[t], b = indices[t + 1], c = indices[t + 2];
+      const x0 = Math.floor(Math.min(xs[a], xs[b], xs[c]) / GROUND_CELL);
+      const x1 = Math.floor(Math.max(xs[a], xs[b], xs[c]) / GROUND_CELL);
+      const z0 = Math.floor(Math.min(zs[a], zs[b], zs[c]) / GROUND_CELL);
+      const z1 = Math.floor(Math.max(zs[a], zs[b], zs[c]) / GROUND_CELL);
+      if ((x1 - x0 + 1) * (z1 - z0 + 1) > 400) continue;
+      for (let i = x0; i <= x1; i++) {
+        for (let j = z0; j <= z1; j++) {
+          const key = i * 100003 + j;
+          let list = cells.get(key);
+          if (!list) { list = []; cells.set(key, list); }
+          list.push(t);
+        }
+      }
+    }
+    this.ground = { origin: { ...origin }, xs, zs, hs, tris: new Uint32Array(indices), cells };
+  }
+
+  /**
+   * The height of the ground as it is drawn here, without the earth's curve,
+   * or null if this is not on the land that is built.
+   */
+  groundAt(lat: number, lon: number): number | null {
+    const g = this.ground;
+    if (!g) return null;
+    const mPerDegLat = NM * 60;
+    const mPerDegLon = mPerDegLat * Math.max(cosd(g.origin.lat), 1e-6);
+    const x = wrap180(lon - g.origin.lon) * mPerDegLon;
+    const z = -(lat - g.origin.lat) * mPerDegLat;
+    const list = g.cells.get(Math.floor(x / GROUND_CELL) * 100003 + Math.floor(z / GROUND_CELL));
+    if (!list) return null;
+    for (const t of list) {
+      const a = g.tris[t], b = g.tris[t + 1], c = g.tris[t + 2];
+      const x0 = g.xs[a], z0 = g.zs[a];
+      const d1x = g.xs[b] - x0, d1z = g.zs[b] - z0, d2x = g.xs[c] - x0, d2z = g.zs[c] - z0;
+      const det = d1x * d2z - d2x * d1z;
+      if (Math.abs(det) < 1e-6) continue;
+      const px = x - x0, pz = z - z0;
+      const u = (px * d2z - d2x * pz) / det;
+      const v = (d1x * pz - px * d1z) / det;
+      if (u < -1e-4 || v < -1e-4 || u + v > 1 + 1e-4) continue;
+      return g.hs[a] + (g.hs[b] - g.hs[a]) * u + (g.hs[c] - g.hs[a]) * v;
+    }
+    return null;
   }
 
   /**
@@ -724,6 +836,37 @@ export class Land {
     this.material.dispose();
     this.surfMaterial.dispose();
   }
+}
+
+const ROCK = new THREE.Color(0.47, 0.41, 0.35);
+const LUSH = new THREE.Color(0.20, 0.40, 0.15);
+
+/** Smooth value noise on a lattice, -1 to 1. */
+function valueNoise(x: number, y: number, salt: number): number {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const h = (i: number, j: number) => hash3(xi + i, yi + j, salt) * 2 - 1;
+  return lerp(lerp(h(0, 0), h(1, 0), u), lerp(h(0, 1), h(1, 1), u), v);
+}
+
+/**
+ * Ridges and gullies at the scale a deck can see, from a few hundred metres to
+ * a few miles, -1 to 1. Fixed to the earth, so the same spur is on the same
+ * headland every time the band is rebuilt.
+ */
+function terrainDetail(lat: number, lon: number): number {
+  const x = lon * 111 * Math.max(cosd(lat), 0.2), y = lat * 111; // kilometres
+  let sum = 0, amp = 1, norm = 0, f = 1 / 4.5;
+  for (let o = 0; o < 4; o++) {
+    // Ridged: folded about zero, so the tops are sharp and the valleys round.
+    const n = 1 - Math.abs(valueNoise(x * f, y * f, 911 + o * 17));
+    sum += (n * 2 - 1) * amp;
+    norm += amp;
+    amp *= 0.5;
+    f *= 2.1;
+  }
+  return sum / norm;
 }
 
 function groundColour(lat: number, height: number, relief: number): THREE.Color {

@@ -128,7 +128,8 @@ export class Renderer {
   private envCamera = new THREE.CubeCamera(1, 30000, this.envTarget);
   private envFrame = 0;
   land = new Land();
-  settlements = new Settlements();
+  // Towns stand on the ground as it is drawn, not on the raw height field.
+  settlements = new Settlements((lat, lon) => this.land.groundAt(lat, lon));
   spray = new Spray();
   ship: ShipMesh;
   /** The strange sail's hull, built the first time one is raised. */
@@ -619,14 +620,16 @@ export class Renderer {
     // The sea curves away from the same eye the land is sunk by, so the two
     // meet at one horizon instead of the flat water painting over the coast.
     this.ocean.setEye(eyeM);
+    let landRebuilt = false;
     if (this.land.needsRebuild(f.pos, landRange, eyeM)) {
       this.land.rebuild(f.pos, landRange, eyeM);
+      landRebuilt = true;
     }
     this.land.setFog(lighting.horizon, clamp(1 - f.visibilityNm / 24, 0, 0.7));
 
     // Towns, which are built from the same land range: a settlement that has
     // not risen over the curve yet has no business being drawn either.
-    if (this.settlements.needsRebuild(f.pos, landRange, eyeM)) {
+    if (landRebuilt || this.settlements.needsRebuild(f.pos, landRange, eyeM)) {
       this.settlements.rebuild(f.pos, landRange, eyeM);
     }
     // Carry both across the gap between rebuilds, so the coast goes by rather
@@ -636,6 +639,7 @@ export class Renderer {
     this.settlements.setFog(lighting.horizon, clamp(1 - f.visibilityNm / 24, 0, 0.7));
     // On the rigging clock, which runs on real seconds: smoke boils at the rate
     // smoke boils whatever the game's clock is set to.
+    this.settlements.setNight(lighting.night);
     this.settlements.setWind(f.windFrom, f.windKnots, this.riggingClock);
 
     this.updateCamera(f, realDt, centre.height, f.waveHeight);

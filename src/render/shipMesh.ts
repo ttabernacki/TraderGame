@@ -603,7 +603,7 @@ export class ShipMesh {
       h.visible = glow > 0.01;
       (h.material as THREE.SpriteMaterial).opacity = glow * 0.95;
     }
-    if (this.lampLight) this.lampLight.intensity = glow * 26;
+    if (this.lampLight) this.lampLight.intensity = glow * 8;
   }
 
   dispose(): void {

@@ -318,7 +318,7 @@ function shape(kind: PropKind): THREE.BufferGeometry {
       // Strata in the vertex colours, a ragged skyline, and a face that
       // bulges and recedes along its length, so it reads as rock and not as
       // a wall somebody built.
-      const w = new THREE.BoxGeometry(1, 1, 0.14, 14, 5, 1);
+      const w = new THREE.BoxGeometry(1, 1, 0.14, 18, 9, 1);
       const p = w.getAttribute('position');
       const col = new Float32Array(p.count * 3);
       for (let i = 0; i < p.count; i++) {
@@ -330,8 +330,10 @@ function shape(kind: PropKind): THREE.BufferGeometry {
         // Taper the ends into the land.
         const end = Math.min(1, (0.5 - Math.abs(x)) * 6);
         p.setY(i, (p.getY(i) + 0.5) * Math.max(end, 0.15) - 0.5);
-        const band = 0.86 + 0.14 * Math.sin((y + 0.5) * 19.0 + x * 1.3);
-        const foot = y < -0.3 ? 0.8 : 1;
+        // Strata that wander, not stripes ruled across it: the bedding dips
+        // and swells along the face, and the rock darkens toward the sea.
+        const band = 0.9 + 0.1 * Math.sin((y + 0.5) * 13.0 + Math.sin(x * 7.3) * 1.6 + x * 2.1);
+        const foot = 0.78 + 0.22 * Math.min(1, (y + 0.5) * 1.6);
         col[i * 3] = band * foot; col[i * 3 + 1] = band * foot; col[i * 3 + 2] = band * foot;
       }
       w.translate(0, 0.5, 0);

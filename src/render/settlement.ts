@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { NM, clamp, cosd, wrap180, type LatLon } from '../core/math';
+import { NM, clamp, cosd, lerp, wrap180, type LatLon } from '../core/math';
 import { elevationAt, isLand, nearestShore } from '../world/landmass';
 import { anchorageOf, portsNear, type PortDef } from '../world/ports';
 import { people } from '../world/peoples';
@@ -236,6 +236,264 @@ function reliefAround(lat: number, lon: number): number {
   return top;
 }
 
+const STONE = new THREE.Color(0.66, 0.62, 0.54);
+const DARK_STONE = new THREE.Color(0.40, 0.37, 0.33);
+const LEAD = new THREE.Color(0.42, 0.44, 0.46);
+const GILT = new THREE.Color(0.78, 0.62, 0.30);
+const PALM_THATCH = new THREE.Color(0.44, 0.36, 0.20);
+const RED_OCHRE = new THREE.Color(0.62, 0.30, 0.20);
+
+/** What a signature can draw with, in the town's own frame of metres. */
+interface Builder {
+  /** A block standing on the ground at (along, back), optionally lifted. */
+  box(along: number, back: number, w: number, d: number, h: number, c: THREE.Color, lift?: number): void;
+  /** A ridged roof on top of a block of the same footprint. */
+  roof(along: number, back: number, w: number, d: number, h: number, c: THREE.Color, lift: number): void;
+  tower(along: number, back: number, w: number, h: number, c: THREE.Color, cap?: 'crenel' | 'spire' | 'pyramid' | 'dome', lift?: number): void;
+  dome(along: number, back: number, r: number, c: THREE.Color, lift: number): void;
+  /** A wall with crenellations, from one point to another. */
+  wall(a0: number, b0: number, a1: number, b1: number, h: number, c: THREE.Color): void;
+  ground(along: number, back: number): number;
+}
+
+interface Signature {
+  /** Render-only rise of the ground the town is built on: the hill it climbs. */
+  hill?: { along: number; back: number; height: number; radius: number };
+  /** Spread overrides: more houses and further back, for a city on a hillside. */
+  count?: number;
+  radius?: number;
+  /** How high up the slope houses may climb. */
+  ceiling?: number;
+  /** Replace the generic tower or keep, and the generic feitoria fort. */
+  replaces: boolean;
+  draw(b: Builder): void;
+}
+
+/**
+ * The skylines a pilot knew a port by.
+ *
+ * Every rutter opens its account of a harbour with what stands up out of it:
+ * Lisbon's castle on its hill over the Alfama and the two towers of the Sé
+ * below; the white walls of São Jorge da Mina on its rock; the great mosque of
+ * Quíloa with its domes; the Zamorin's palace among the palms at Calicut. A
+ * generic town and a generic tower said "people live here"; these say where.
+ * Drawn a good deal bigger than life, like everything else ashore, because the
+ * point is to be recognised from the deck at five miles.
+ */
+const SIGNATURES: Record<string, Signature> = {
+  lisboa: {
+    hill: { along: -150, back: 1100, height: 150, radius: 900 },
+    count: 300, radius: 1500, ceiling: 260, replaces: true,
+    draw(b) {
+      // The castle of São Jorge, crowning the hill.
+      const ca = -150, cb = 1150;
+      const hw = 150, hd = 95, h = 36;
+      b.wall(ca - hw, cb - hd, ca + hw, cb - hd, h, STONE);
+      b.wall(ca + hw, cb - hd, ca + hw, cb + hd, h, STONE);
+      b.wall(ca + hw, cb + hd, ca - hw, cb + hd, h, STONE);
+      b.wall(ca - hw, cb + hd, ca - hw, cb - hd, h, STONE);
+      for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, -1], [0, 1]]) {
+        b.tower(ca + x * hw, cb + y * hd, 24, 56, STONE, 'crenel');
+      }
+      b.tower(ca + 30, cb + 10, 38, 74, STONE, 'crenel');
+      // The Sé, half way down: a fortress of a cathedral, two square towers
+      // over the west door and the nave running back up the hill.
+      const sa = 150, sb = 520;
+      b.box(sa, sb + 60, 44, 120, 34, STONE);
+      b.roof(sa, sb + 60, 44, 120, 14, TILE, 34);
+      b.tower(sa - 26, sb, 24, 64, STONE, 'crenel');
+      b.tower(sa + 26, sb, 24, 64, STONE, 'crenel');
+      // The king's palace on the Ribeira, long along the waterfront.
+      b.box(420, 70, 240, 44, 26, WHITEWASH);
+      b.roof(420, 70, 240, 44, 12, TILE, 26);
+      b.tower(560, 70, 30, 48, WHITEWASH, 'pyramid');
+      // São Vicente de Fora, and a convent further along, on their own hills.
+      b.box(-700, 700, 60, 110, 30, WHITEWASH);
+      b.roof(-700, 700, 60, 110, 13, TILE, 30);
+      b.tower(-700, 630, 26, 58, WHITEWASH, 'spire');
+      b.tower(900, 900, 24, 52, WHITEWASH, 'spire');
+    },
+  },
+  funchal: {
+    hill: { along: 0, back: 1100, height: 240, radius: 1300 },
+    count: 150, radius: 1100, ceiling: 380, replaces: true,
+    draw(b) {
+      // The Sé, new-built for the sugar money, with its tower.
+      b.box(0, 260, 34, 90, 26, WHITEWASH);
+      b.roof(0, 260, 34, 90, 11, TILE, 26);
+      b.tower(22, 215, 20, 56, WHITEWASH, 'pyramid');
+      // The fort on the waterfront, and a chapel high up the amphitheatre.
+      b.wall(-520, 40, -380, 40, 16, STONE);
+      b.tower(-520, 40, 22, 30, STONE, 'crenel');
+      b.tower(-380, 40, 22, 30, STONE, 'crenel');
+      b.tower(260, 1500, 18, 38, WHITEWASH, 'spire');
+    },
+  },
+  mina: {
+    count: 60, replaces: true,
+    draw(b) {
+      // São Jorge da Mina: the first European stone building in the tropics,
+      // shipped out cut and numbered from Lisbon in 1482 and raised in twenty
+      // days on the rock at the river mouth. White walls, a keep, and towers
+      // at the corners, standing on the point apart from the town.
+      const ca = 520, cb = 10;
+      b.box(ca, cb + 30, 210, 150, 8, DARK_STONE);
+      const hw = 90, hd = 60, h = 30;
+      b.wall(ca - hw, cb - hd, ca + hw, cb - hd, h, WHITEWASH);
+      b.wall(ca + hw, cb - hd, ca + hw, cb + hd, h, WHITEWASH);
+      b.wall(ca + hw, cb + hd, ca - hw, cb + hd, h, WHITEWASH);
+      b.wall(ca - hw, cb + hd, ca - hw, cb - hd, h, WHITEWASH);
+      for (const [x, y] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        b.tower(ca + x * hw, cb + y * hd, 26, 46, WHITEWASH, 'crenel', 8);
+      }
+      b.tower(ca + 10, cb + 20, 44, 62, WHITEWASH, 'crenel', 8);
+      b.box(ca - 40, cb + 10, 50, 30, 22, WHITEWASH, 8);
+      b.roof(ca - 40, cb + 10, 50, 30, 10, TILE, 30);
+    },
+  },
+  arguim: {
+    replaces: true,
+    draw(b) {
+      // The Infante's fort on the island, the first feitoria of all.
+      const ca = 220, cb = 60;
+      b.wall(ca - 50, cb - 40, ca + 50, cb - 40, 22, STONE);
+      b.wall(ca + 50, cb - 40, ca + 50, cb + 40, 22, STONE);
+      b.wall(ca + 50, cb + 40, ca - 50, cb + 40, 22, STONE);
+      b.wall(ca - 50, cb + 40, ca - 50, cb - 40, 22, STONE);
+      b.tower(ca - 50, cb - 40, 20, 36, STONE, 'crenel');
+      b.tower(ca + 50, cb + 40, 20, 36, STONE, 'crenel');
+      b.tower(ca, cb, 30, 44, STONE, 'crenel');
+    },
+  },
+  ceuta: {
+    hill: { along: 300, back: 500, height: 70, radius: 700 },
+    count: 180, radius: 1200, replaces: true,
+    draw(b) {
+      // The sea walls the Portuguese stormed in 1415 and have held since,
+      // running the whole waterfront, with the old mosque made a cathedral.
+      b.wall(-1000, 30, 1000, 30, 20, STONE);
+      for (let a = -1000; a <= 1000; a += 250) b.tower(a, 30, 22, 34, STONE, 'crenel');
+      b.box(0, 420, 60, 60, 28, WHITEWASH);
+      b.tower(40, 380, 22, 70, WHITEWASH, 'pyramid');
+      b.tower(700, 700, 40, 52, STONE, 'crenel');
+    },
+  },
+  calecute: {
+    count: 240, radius: 1600, replaces: true,
+    draw(b) {
+      // The Zamorin's palace: long, low, many-roofed, behind the beach.
+      for (let i = 0; i < 3; i++) {
+        const a = -200 + i * 90, back = 450 + i * 30;
+        b.box(a, back, 80, 50, 14 + i * 3, RED_OCHRE);
+        b.roof(a, back, 88, 58, 16, TILE, 14 + i * 3);
+      }
+      // A temple tower, stepped and pyramidal, and the mosques of the
+      // Mappila traders along the shore.
+      for (let k = 0; k < 4; k++) b.box(500, 700, 60 - k * 12, 60 - k * 12, 16, OCHRE, k * 16);
+      b.dome(500, 700, 10, GILT, 64);
+      b.box(-700, 150, 40, 40, 12, WHITEWASH);
+      b.roof(-700, 150, 44, 44, 18, PALM_THATCH, 12);
+      b.tower(-740, 150, 10, 44, WHITEWASH, 'dome');
+    },
+  },
+  quiloa: {
+    count: 120, replaces: true,
+    draw(b) {
+      // The Great Mosque of Kilwa, its roof a field of small domes, and the
+      // sultan's palace of Husuni Kubwa out on the headland.
+      b.box(0, 300, 110, 70, 12, WHITEWASH);
+      for (let i = -2; i <= 2; i++) for (let j = -1; j <= 1; j++) b.dome(i * 20, 300 + j * 20, 8, WHITEWASH, 12);
+      b.dome(0, 300, 16, WHITEWASH, 12);
+      b.box(700, 80, 140, 90, 18, STONE);
+      b.tower(630, 40, 18, 30, STONE, 'crenel');
+      b.tower(770, 40, 18, 30, STONE, 'crenel');
+    },
+  },
+  mombaca: {
+    hill: { along: 0, back: 600, height: 50, radius: 800 },
+    count: 140, replaces: true,
+    draw(b) {
+      b.box(-100, 350, 60, 50, 14, WHITEWASH);
+      b.dome(-100, 350, 18, WHITEWASH, 14);
+      b.tower(-60, 320, 12, 50, WHITEWASH, 'dome');
+      b.box(300, 520, 70, 60, 22, WHITEWASH);
+    },
+  },
+  ormuz: {
+    count: 200, radius: 1300, replaces: true,
+    draw(b) {
+      // Wind-towers over every house of any account, and the king's palace.
+      for (let i = 0; i < 18; i++) {
+        const a = -900 + (i * 97) % 1800, back = 150 + ((i * 263) % 900);
+        b.box(a, back, 8, 8, 30, MUDBRICK);
+      }
+      b.box(0, 500, 120, 90, 26, WHITEWASH);
+      b.dome(0, 500, 22, WHITEWASH, 26);
+      b.tower(70, 450, 14, 64, WHITEWASH, 'dome');
+    },
+  },
+};
+
+const sites = new Map<string, { lat: number; lon: number; brg: number } | null>();
+
+/**
+ * Where the houses of a town actually stand.
+ *
+ * The port's own coordinates are the harbour, which for a river port is
+ * water; the buildings belong on the bank. So the shore is found from the
+ * anchorage and the town is set a little way in from it, facing the water it
+ * was built for. The coastline is a coarse ring and the anchorage is derived
+ * from it, so where it says the beach is and where the ground actually starts
+ * do not always agree; walk in until the foot is dry rather than build a town
+ * on the water.
+ */
+function townSite(def: PortDef): { lat: number; lon: number; brg: number } | null {
+  if (sites.has(def.id)) return sites.get(def.id)!;
+  const at = anchorageOf(def);
+  const shore = nearestShore(at, 60);
+  let site: { lat: number; lon: number; brg: number } | null = null;
+  if (shore.land >= 0) {
+    const mPerDegLat = NM * 60;
+    const mPerDegLon = mPerDegLat * Math.max(cosd(at.lat), 1e-6);
+    const brg = (shore.bearing * Math.PI) / 180;
+    for (let inM = shore.distance + 140; inM < shore.distance + 3200; inM += 160) {
+      const lat = at.lat + (Math.cos(brg) * inM) / mPerDegLat;
+      const lon = at.lon + (Math.sin(brg) * inM) / mPerDegLon;
+      if (isLand({ lat, lon })) { site = { lat, lon, brg }; break; }
+    }
+  }
+  sites.set(def.id, site);
+  return site;
+}
+
+/**
+ * The hills the signature towns are built up, for the terrain to raise.
+ *
+ * Lisbon is seven hills and a castle on the highest, and the height field at
+ * a few kilometres' resolution has never heard of any of them. The land is
+ * lifted under the town by the same bump the houses are set on, so the city
+ * climbs a hillside that is actually there rather than floating up the sky.
+ */
+export function townHillsNear(origin: LatLon, rangeNm: number): { lat: number; lon: number; height: number; radiusM: number }[] {
+  const out: { lat: number; lon: number; height: number; radiusM: number }[] = [];
+  for (const { def } of portsNear(origin, rangeNm + 5)) {
+    const hill = SIGNATURES[def.id]?.hill;
+    if (!hill) continue;
+    const site = townSite(def);
+    if (!site) continue;
+    const { alongX, alongZ, backX, backZ } = frameOf(site.brg);
+    const x = alongX * hill.along + backX * hill.back;
+    const z = alongZ * hill.along + backZ * hill.back;
+    out.push({
+      lat: site.lat - z / (NM * 60),
+      lon: site.lon + x / (NM * 60 * Math.max(cosd(site.lat), 1e-6)),
+      height: hill.height,
+      radiusM: hill.radius,
+    });
+  }
+  return out;
+}
+
 export class Settlements {
   group = new THREE.Group();
 
@@ -243,13 +501,29 @@ export class Settlements {
   private smokeMap: THREE.Texture | null = null;
   /** How thick the haze is, for fading the plumes out at range. */
   private hazeIntensity = 0;
+  /** How dark it is, 0 day to 1 night: dims the smoke and lights the windows. */
+  private night = 0;
+  /** Lamplight in the windows after dark, one warm point to a house or so. */
+  private lights: THREE.Points | null = null;
+  private lightMaterial = new THREE.PointsMaterial({
+    color: 0xffb35c, size: 2.6, sizeAttenuation: false, transparent: true,
+    opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+  });
+  private lamps: number[] = [];
   private mesh: THREE.Mesh | null = null;
   private plumes: Plume[] = [];
   private lastOrigin: LatLon = { lat: 999, lon: 999 };
   private lastRangeNm = 0;
   private eyeM = 20;
 
-  constructor() {
+  /**
+   * The height of the ground as the coast is actually drawn, where it is
+   * built. Towns must stand on that and not on the raw field: the drawn land
+   * lifts low ground, raises a bluff behind the strand and folds the hills,
+   * and houses set on the raw height were buried inside the hillside they
+   * were meant to be climbing — most of why no town could be seen.
+   */
+  constructor(private drawnGround: (lat: number, lon: number) => number | null = () => null) {
     this.material = new THREE.MeshLambertMaterial({
       vertexColors: true, transparent: true, depthWrite: true,
     });
@@ -296,9 +570,19 @@ export class Settlements {
     const colours: number[] = [];
     const indices: number[] = [];
 
+    this.lamps = [];
     for (const town of towns) {
       this.buildTown(town, origin, positions, colours, indices);
       this.buildSmoke(town);
+    }
+    if (this.lamps.length) {
+      const lg = new THREE.BufferGeometry();
+      lg.setAttribute('position', new THREE.Float32BufferAttribute(this.lamps, 3));
+      lg.computeBoundingSphere();
+      this.lights = new THREE.Points(lg, this.lightMaterial);
+      this.lights.renderOrder = 4;
+      this.lights.visible = this.night > 0.05;
+      this.group.add(this.lights);
     }
     if (indices.length === 0) return;
 
@@ -332,31 +616,16 @@ export class Settlements {
     const out: Town[] = [];
     const mPerDegLat = NM * 60;
     const mPerDegLon = mPerDegLat * Math.max(cosd(origin.lat), 1e-6);
-
     for (const { def } of portsNear(origin, rangeNm)) {
-      const at = anchorageOf(def);
-      const shore = nearestShore(at, 60);
-      if (shore.land < 0) continue;
-      // In from the water's edge, by a couple of hundred yards. The coastline
-      // is a coarse ring and the anchorage is derived from it, so where it says
-      // the beach is and where the ground actually starts do not always agree;
-      // walk in until the foot is dry rather than build a town on the water.
-      const brg = (shore.bearing * Math.PI) / 180;
-      let lat = 0, lon = 0, dry = false;
-      for (let inM = shore.distance + 140; inM < shore.distance + 3200; inM += 160) {
-        lat = at.lat + (Math.cos(brg) * inM) / mPerDegLat;
-        lon = at.lon + (Math.sin(brg) * inM) / mPerDegLon;
-        if (isLand({ lat, lon })) { dry = true; break; }
-      }
-      if (!dry) continue;
-
+      const site = townSite(def);
+      if (!site) continue;
       out.push({
         def,
-        x: wrap180(lon - origin.lon) * mPerDegLon,
-        z: -(lat - origin.lat) * mPerDegLat,
-        brg,
-        lat,
-        lon,
+        x: wrap180(site.lon - origin.lon) * mPerDegLon,
+        z: -(site.lat - origin.lat) * mPerDegLat,
+        brg: site.brg,
+        lat: site.lat,
+        lon: site.lon,
       });
     }
     return out;
@@ -367,7 +636,10 @@ export class Settlements {
     positions: number[], colours: number[], indices: number[],
   ): void {
     const style = styleFor(town.def);
-    const plan = SPREAD[town.def.size] ?? SPREAD.village;
+    const sig = SIGNATURES[town.def.id];
+    const basePlan = SPREAD[town.def.size] ?? SPREAD.village;
+    const plan = { count: sig?.count ?? basePlan.count, radius: sig?.radius ?? basePlan.radius };
+    const ceiling = sig?.ceiling ?? TOWN_CEILING;
     const rng = Rng.fromString(town.def.id);
     const mPerDegLat = NM * 60;
     const mPerDegLon = mPerDegLat * Math.max(cosd(origin.lat), 1e-6);
@@ -387,10 +659,13 @@ export class Settlements {
      * the sky over the anchorage. A town may stand on a hillside; it may not
      * stand on a summit.
      */
+    const hill = sig?.hill;
     const groundAt = (x: number, z: number): number => {
       const lat = origin.lat - z / mPerDegLat;
       const lon = origin.lon + x / mPerDegLon;
-      return Math.min(elevationAt({ lat, lon }), TOWN_CEILING);
+      const drawn = this.drawnGround(lat, lon);
+      if (drawn !== null) return Math.min(drawn, ceiling * 2.4);
+      return Math.min(Math.max(elevationAt({ lat, lon }), 0), ceiling);
     };
 
     const place = (
@@ -422,17 +697,81 @@ export class Settlements {
     // waterfront, thinning inland, which is how a landing place grows.
     for (let i = 0; i < plan.count; i++) {
       const t = i / plan.count;
-      const backM = 30 + plan.radius * (0.15 + 0.85 * t * t) * rng.range(0.6, 1.25);
+      const backM = 30 + plan.radius * (0.15 + 0.85 * t * (hill ? 1 : t)) * rng.range(0.6, 1.25);
       const alongM = rng.range(-1, 1) * plan.radius * (0.45 + 0.9 * (1 - t));
       const w = (style.round ? rng.range(4.5, 7.5) : rng.range(6, 12)) * 1.5;
       const d = style.round ? w : rng.range(5, 10) * 1.5;
       const h = (style.round ? rng.range(2.4, 3.2) : rng.range(3.2, 6.5)) * BUILD_LIFT;
       place(alongM, backM, w, d, h, style.wall, style.roofColour, style.roof, style.round);
+      // A lamp or a hearth showing in about half of them after dark.
+      if (rng.next() < 0.5) {
+        const x = town.x + alongX * alongM + backX * (backM - d * 0.55);
+        const z = town.z + alongZ * alongM + backZ * (backM - d * 0.55);
+        const y = Math.max(groundAt(x, z), 0.5) - curvatureDrop(Math.hypot(x, z), this.eyeM) + h * 0.35;
+        this.lamps.push(x, y, z);
+      }
     }
 
     // The one building a lookout can see before any of the others, which is
     // exactly why towns built them where they did.
-    if (style.landmark !== 'none') {
+    if (sig) {
+      const at = (along: number, back: number) => {
+        const x = town.x + alongX * along + backX * back;
+        const z = town.z + alongZ * along + backZ * back;
+        return { x, z, y: Math.max(groundAt(x, z), 0.5) - curvatureDrop(Math.hypot(x, z), this.eyeM) };
+      };
+      const L = BUILD_LIFT * 0.8;
+      const P = positions, C = colours, I = indices;
+      const builder: Builder = {
+        ground: (a, bk) => at(a, bk).y,
+        box(a, bk, w, d, h, c, lift = 0) {
+          const p = at(a, bk);
+          box(P, C, I, p.x, p.y + lift * L, p.z, w, d, h * L, town.brg, c);
+        },
+        roof(a, bk, w, d, h, c, lift) {
+          const p = at(a, bk);
+          prism(P, C, I, p.x, p.y + lift * L, p.z, w, d, h * L, town.brg, c);
+        },
+        tower(a, bk, w, h, c, cap = 'crenel', lift = 0) {
+          const p = at(a, bk);
+          const y0 = p.y + lift * L, y1 = y0 + h * L;
+          box(P, C, I, p.x, y0, p.z, w, w, h * L, town.brg, c);
+          if (cap === 'crenel') {
+            for (const [u, v] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+              const k = w * 0.36;
+              box(P, C, I, p.x + (alongX * u + backX * v) * k, y1, p.z + (alongZ * u + backZ * v) * k,
+                w * 0.26, w * 0.26, w * 0.3, town.brg, c);
+            }
+          } else if (cap === 'spire') {
+            cone(P, C, I, p.x, y1, p.z, w * 0.62, w * 1.9, LEAD);
+          } else if (cap === 'pyramid') {
+            cone(P, C, I, p.x, y1, p.z, w * 0.72, w * 0.8, TILE);
+          } else {
+            dome(P, C, I, p.x, y1, p.z, w * 0.55, c);
+          }
+        },
+        dome(a, bk, r, c, lift) {
+          const p = at(a, bk);
+          dome(P, C, I, p.x, p.y + lift * L, p.z, r, c);
+        },
+        wall(a0, b0, a1, b1, h, c) {
+          const n = Math.max(1, Math.round(Math.hypot(a1 - a0, b1 - b0) / 40));
+          for (let k = 0; k < n; k++) {
+            const u = (k + 0.5) / n;
+            const a = a0 + (a1 - a0) * u, bk = b0 + (b1 - b0) * u;
+            const p = at(a, bk);
+            const len = Math.hypot(a1 - a0, b1 - b0) / n;
+            // Along the town's own axes: the wall's heading within the frame.
+            const ang = town.brg + Math.atan2(-(b1 - b0), a1 - a0);
+            box(P, C, I, p.x, p.y, p.z, len * 1.02, 9, h * L, ang, c);
+            box(P, C, I, p.x, p.y + h * L, p.z, len * 0.4, 9, 3.2 * L, ang, c);
+          }
+        },
+      };
+      sig.draw(builder);
+    }
+
+    if (style.landmark !== 'none' && !sig?.replaces) {
       // The landmark is the thing a lookout picks up first, so it is lifted
       // hardest: a minaret you can see at ten miles is the whole point of it.
       const tall = (style.landmark === 'minaret' ? 24
@@ -454,7 +793,7 @@ export class Settlements {
 
     // A fortress stands apart from the town, on the point, which is the whole
     // idea of a feitoria: a wall the Crown holds whether the town likes it or not.
-    if (town.def.feitoria && town.def.people !== 'portuguese') {
+    if (town.def.feitoria && town.def.people !== 'portuguese' && !sig?.replaces) {
       const alongM = plan.radius * 0.9;
       const x = town.x + alongX * alongM + backX * 20;
       const z = town.z + alongZ * alongM + backZ * 20;
@@ -523,7 +862,12 @@ export class Settlements {
           // the bottom of the range enormously — a linear tenth comes out of
           // the screen as a third. Smoke set to a plausible-looking 0.2 arrived
           // as pale tan. This is what black has to be written as here.
-          color: new THREE.Color(0.010 + t * 0.030, 0.0095 + t * 0.029, 0.009 + t * 0.027),
+          //
+          // Close to, though, a column of pitch-black the height of a mountain
+          // was an oil fire, not a town's cooking. The colour is set per frame
+          // in setWind: dark only when it is far enough off for that to be the
+          // thing that carries, a brown-grey woodsmoke when she is close in.
+          color: new THREE.Color(0.02, 0.02, 0.02),
         });
         const sprite = new THREE.Sprite(material);
         // Width follows the size of the place, not the height of the hills:
@@ -532,7 +876,7 @@ export class Settlements {
         sprite.scale.set(width, width, 1);
         this.plumes.push({
           sprite, material, x, z,
-          y: ground + tall * 0.06 + t * tall - drop,
+          y: ground - drop,
           rise: t,
           width,
           tall,
@@ -566,21 +910,42 @@ export class Settlements {
     const lean = clamp(knots, 2, 30) / 42;
     const rangeM = this.lastRangeNm * 1852;
     for (const p of this.plumes) {
-      const drift = p.rise * p.rise * p.tall * lean;
+      // The sign of a town at twenty miles and the smoke of its fires at two
+      // are drawn as the same column at different sizes: it is shrunk toward
+      // something like true height as she closes, so that from the anchorage
+      // it is a few hundred metres of woodsmoke and not a pillar into the sky.
+      const dist = Math.hypot(p.x, p.z);
+      const near = clamp((dist - 3 * 1852) / (12 * 1852), 0, 1);
+      const scale = 0.16 + 0.84 * near * near * (3 - 2 * near);
+      const tall = p.tall * scale;
+      const drift = p.rise * p.rise * tall * lean;
       const wobble = Math.sin(time * 0.33 + p.seed) * p.width * 0.14 * p.rise;
       const x = p.x + ex * drift + wobble;
       const z = p.z + ez * drift;
-      p.sprite.position.set(x, p.y + Math.sin(time * 0.21 + p.seed * 0.7) * p.width * 0.05, z);
+      const width = p.width * lerp(0.5, 1, scale) * lerp(1, scale, 0.5);
+      p.sprite.position.set(x, p.y + tall * (0.06 + p.rise) + Math.sin(time * 0.21 + p.seed * 0.7) * width * 0.05, z);
       // Boiling: each puff breathes, and the higher ones breathe wider.
       const swell = 1 + Math.sin(time * 0.5 + p.seed * 1.7) * 0.16 * (0.4 + p.rise);
-      const w = p.width * swell;
+      const w = width * swell;
+      // Woodsmoke up close, blue-grey going pale as it rises; soot only at the
+      // range where darkness is what carries. Linear values.
+      const grey = lerp(lerp(0.2, 0.34, p.rise), lerp(0.012, 0.04, p.rise), near) * (1 - this.night * 0.9);
+      p.material.color.setRGB(grey, grey * 0.97, grey * 0.93);
       p.sprite.scale.set(w, w, 1);
       // Thick at the fire, thinning as it goes up, and gone before the edge of
       // the built world so nothing arrives at the boundary.
       const far = clamp(1 - Math.max(Math.hypot(x, z) - rangeM * 0.6, 0) / (rangeM * 0.37), 0, 1);
-      p.material.opacity = (0.95 - p.rise * 0.3)
+      p.material.opacity = (0.95 - p.rise * 0.3) * lerp(0.62, 1, near)
         * (1 - this.hazeIntensity * 0.3) * far * far;
     }
+  }
+
+  /** Darkness, 0 to 1. Smoke goes dark with the sky and the windows light. */
+  setNight(night: number): void {
+    this.night = night;
+    const glow = clamp((night - 0.25) / 0.45, 0, 1);
+    this.lightMaterial.opacity = glow * (1 - this.hazeIntensity * 0.6);
+    if (this.lights) this.lights.visible = glow > 0.01;
   }
 
   setFog(color: THREE.Color, intensity: number): void {
@@ -589,6 +954,11 @@ export class Settlements {
   }
 
   clear(): void {
+    if (this.lights) {
+      this.group.remove(this.lights);
+      this.lights.geometry.dispose();
+      this.lights = null;
+    }
     for (const p of this.plumes) {
       this.group.remove(p.sprite);
       p.material.dispose();
@@ -604,6 +974,7 @@ export class Settlements {
     this.clear();
     this.material.dispose();
     this.smokeMap?.dispose();
+    this.lightMaterial.dispose();
     this.smokeMap = null;
   }
 }
@@ -699,6 +1070,32 @@ function cylinder(
     const n = (k + 1) % seg;
     indices.push(base[k], top[k], base[n]);
     indices.push(base[n], top[k], top[n]);
+  }
+}
+
+/** A low-poly dome: a hemisphere in three rings. */
+function dome(
+  positions: number[], colours: number[], indices: number[],
+  x: number, y: number, z: number, r: number, c: THREE.Color,
+): void {
+  const seg = 8, rings = 3;
+  const idx: number[][] = [];
+  for (let j = 0; j <= rings; j++) {
+    const phi = (j / rings) * (Math.PI / 2);
+    const row: number[] = [];
+    for (let k = 0; k < seg; k++) {
+      const a = (k / seg) * Math.PI * 2;
+      row.push(pushVertex(positions, colours,
+        x + Math.cos(a) * r * Math.cos(phi), y + r * Math.sin(phi), z + Math.sin(a) * r * Math.cos(phi), c));
+    }
+    idx.push(row);
+  }
+  for (let j = 0; j < rings; j++) {
+    for (let k = 0; k < seg; k++) {
+      const n = (k + 1) % seg;
+      indices.push(idx[j][k], idx[j + 1][k], idx[j][n]);
+      indices.push(idx[j][n], idx[j + 1][k], idx[j + 1][n]);
+    }
   }
 }
 
