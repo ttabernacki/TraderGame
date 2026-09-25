@@ -98,7 +98,7 @@ import { rollOfficerEvent } from './officerEvents';
 import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty';
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
 import { featureNear, type CoastFeature } from '../world/features';
-import { daysLeft, offerVentures, ventureLine, type Venture } from '../progression/ventures';
+import { charterDays, daysLeft, offerVentures, ventureLine, type Venture } from '../progression/ventures';
 import { advanceRival, newRival, rivalGossip, type RivalState } from '../progression/rival';
 import { rollRivalMeeting } from '../progression/rivalEvents';
 import { beyondScene, featureScene, landmarkScene } from './discovery';
@@ -8964,6 +8964,7 @@ export class Game {
       autoTrim: this.autoTrim,
       difficulty: this.difficulty,
       voltaAdvised: this.voltaAdvised,
+      voltaAllowance: true,
       orderedCanvas: this.orderedCanvas,
       helmOrder: this.helmOrder,
       latitudeOrder: this.latitudeOrder,
@@ -9156,6 +9157,16 @@ export class Game {
     g.startT = d.startT ?? 0;
     g.leads = d.leads ?? [];
     g.ventures = d.ventures ?? [];
+    // Charters homeward from the trades used to be allowed the crow's road,
+    // not the volta. Any still open are given the time a merchant now allows.
+    if (!d.voltaAllowance) {
+      for (const v of g.ventures) {
+        if (v.delivered || v.failed) continue;
+        const a = portDef(v.fromPort), b = portDef(v.toPort);
+        const extra = charterDays(a, b) - Math.min(260, Math.max(34, haversine(a, b) / NM / 78 + 26));
+        if (extra > 0) v.dueBy += extra * 86400;
+      }
+    }
     g.ventureOffers = d.ventureOffers ?? [];
     if (d.rival) g.rival = d.rival;
     g.rivalRace = d.rivalRace ?? null;

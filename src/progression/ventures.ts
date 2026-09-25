@@ -105,7 +105,7 @@ export function offerVentures(
 
     // A generous allowance — about twice a good passage — because a charter the
     // player cannot possibly keep is not a decision, it is a tax.
-    const days = clamp(distNm / 78 + 26, 34, 260);
+    const days = charterDays(at, to);
 
     out.push({
       id: nextId(),
@@ -122,6 +122,32 @@ export function offerVentures(
     });
   }
   return out;
+}
+
+/**
+ * Where the volta do mar turns: the latitude of the Azores, well out to the
+ * westward, which is where every ship homeward from Guinea actually goes.
+ */
+const VOLTA_TURN = { lat: 36, lon: -32 };
+
+/**
+ * Days a merchant allows for a charter.
+ *
+ * Measured by the road a ship really sails, not the line on the chart. Home to
+ * Portugal from anywhere down in the trades is not north up the coast but the
+ * volta — out to the Azores and back — and that is getting on for twice the
+ * straight line: Mina to Lisbon is two thousand miles as the crow flies and
+ * nearer three thousand seven hundred as the caravel goes. Allowing for the
+ * crow's road gave fifty-three days for a passage that takes forty-five in a
+ * good season and seventy-odd in a bad one, before a single thing went wrong.
+ */
+export function charterDays(from: { lat: number; lon: number }, to: { lat: number; lon: number }): number {
+  const straight = haversine(from, to) / NM;
+  const homeward = to.lat > 30 && to.lon < 5 && from.lat < 28 && from.lon < 20
+    && from.lat > -36 && to.lat - from.lat > 6;
+  if (!homeward) return clamp(straight / 78 + 26, 34, 260);
+  const road = (haversine(from, VOLTA_TURN) + haversine(VOLTA_TURN, to)) / NM;
+  return clamp(Math.max(road, straight) / 70 + 32, 45, 260);
 }
 
 /** A one-line description of what a charter is asking. */
