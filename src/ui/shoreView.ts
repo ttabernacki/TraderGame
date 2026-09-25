@@ -50,6 +50,11 @@ export class ShoreView {
       el('div', { style: { marginRight: 'auto', fontSize: '13.5px' } },
         `${g.clock.formatDate()} · ${g.crew.provisions.water.toFixed(0)} days of water`),
       button('The chart  (C)', () => this.onChart()),
+      button('Wait a day', () => {
+        g.waitDays(1);
+        this.notice = g.mode === 'gameover' ? null : `A day passes at anchor off the coast. It is ${g.clock.formatDate()}.`;
+        this.render();
+      }),
       button('Weigh anchor  (Space)', () => {
         const why = g.cannotWeigh();
         if (why) { this.notice = why; this.render(); return; }

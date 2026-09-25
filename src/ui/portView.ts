@@ -56,6 +56,8 @@ export class PortView {
   /** How his face reads this time, which changes each time you put it to him. */
   private faceNoise = 0;
   private notice: { text: string; grave?: boolean } | null = null;
+  /** The waiting row, opened from the foot of the page on any tab. */
+  private waitOpen = false;
   /** Which officer the inland card has selected, until one is sent. */
   private inlandMan: string | null = null;
   /** The standing order being composed before a station exists to carry it. */
@@ -71,6 +73,7 @@ export class PortView {
 
   open(g: Game): void {
     this.game = g;
+    this.waitOpen = false;
     // The story waits for the port screen: the King's summons at the start of
     // a career, and whatever is due on arrival.
     g.checkStory();
@@ -110,6 +113,10 @@ export class PortView {
         // into the market and is told no.
         primary: def.people !== 'portuguese' && !rel.mayTrade,
       }),
+      // Waiting lives at the foot of the page, beside weighing, on every tab:
+      // it was a card half way down the town page, under whatever the town
+      // had to say, and on a phone nobody ever scrolled far enough to find it.
+      button(this.waitOpen ? 'Close' : 'Wait…', () => { this.waitOpen = !this.waitOpen; this.render(); }),
       button('Weigh anchor  (Space)', () => {
         const why = g.cannotWeigh();
         if (why) { this.notice = { text: why, grave: true }; this.render(); return; }
@@ -146,6 +153,23 @@ export class PortView {
 
     if (this.notice) {
       this.body.append(el('div', { class: `notice${this.notice.grave ? ' grave' : ''}` }, this.notice.text));
+    }
+    if (this.waitOpen) {
+      const monsoon = g.monsoonNow();
+      this.body.append(card('Lie at anchor',
+        el('p', {}, 'The crew rest, the fresh food does its work, the market turns over, and the '
+          + 'weather and the season go on without you. The stores are eaten all the same.'),
+        el('div', { style: { display: 'flex', gap: '7px', flexWrap: 'wrap' } },
+          ...[1, 3, 7, 14, 30].map((d) => button(`${d} ${d === 1 ? 'day' : 'days'}`, () => {
+            g.waitDays(d);
+            this.notice = { text: `${d} ${d === 1 ? 'day passes' : 'days pass'} at anchor. It is ${g.clock.formatDate()}.` };
+            this.render();
+          })),
+          monsoon
+            ? button('Until the monsoon turns', () => { this.notice = { text: g.waitForTheMonsoon() }; this.render(); })
+            : null,
+        ),
+      ));
     }
 
     const inner = el('div', {});
