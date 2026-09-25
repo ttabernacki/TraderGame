@@ -14,7 +14,7 @@ import {
   QUESTS, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
 } from '../progression/quests';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
-import { itczLatitude } from '../world/wind';
+import { azoresHigh, itczLatitude } from '../world/wind';
 import {
   NM, angleDelta, atan2d, bearingTo, clamp, compassPoint, cosd, formatBearing, formatLat,
   formatLon, haversine, lerp, rhumbStep, sind, toENU, wrap180, wrap360, type LatLon,
@@ -3494,7 +3494,8 @@ export class Game {
       + 'Then we run in for Portugal with it behind us and make in a fortnight what we would not '
       + 'make in two months by the short road. He calls it the volta do mar, the turn of the sea. '
       + 'He says every man who has come home from Guinea has come home that way, and that the '
-      + 'ones who tried the short road are still out there.',
+      + 'ones who tried the short road are still out there. He will lay it on the chart if you '
+      + 'tell him to.',
       true);
   }
 
@@ -8524,6 +8525,61 @@ export class Game {
     if (this.route.length >= 12) return;
     this.route.push({ name, lat, lon, portId });
     this.pushAlert(`${name} added to the passage \u2014 ${this.route.length} marks.`, 'note');
+  }
+
+  /**
+   * Where a homeward volta would take her: the last mark on the passage if it
+   * lies up in Portuguese waters, or Lisbon if nothing is laid. Null when she
+   * is not down in the trades with Portugal to windward, which is the only
+   * case the volta answers.
+   */
+  voltaTarget(): { name: string; lat: number; lon: number; portId?: string } | null {
+    const p = this.nav.estimated;
+    if (p.lat > 28 || p.lat < -36 || p.lon < -45 || p.lon > 16) return null;
+    const last = this.route[this.route.length - 1];
+    const lisboa = portDef('lisboa');
+    const d = last ?? { name: lisboa.name, lat: lisboa.lat, lon: lisboa.lon, portId: lisboa.id };
+    if (d.lat < 30 || d.lat > 46 || d.lon < -35 || d.lon > 0) return null;
+    if (d.lat - p.lat < 6) return null;
+    return d;
+  }
+
+  /**
+   * Lay the volta do mar on the chart: the marks a Casa pilot would put down
+   * for the passage home, read off the season.
+   *
+   * Out of the Gulf of Guinea south of the current, west across the calms
+   * where they are narrowest, then up through the trades on the starboard tack
+   * — away from Portugal — round the western side of the Azores High to the
+   * latitude where the westerlies begin, and in. The high moves with the year,
+   * and the turn moves with it: about thirty-five north in winter, forty in
+   * summer.
+   */
+  layVolta(): string {
+    const d = this.voltaTarget();
+    if (!d) return 'The volta is the road home from the south; it has nothing to say about this passage.';
+    const p = this.nav.estimated;
+    const hi = azoresHigh(this.clock.dayOfYear);
+    const marks: { name: string; lat: number; lon: number }[] = [];
+    if (p.lat < 8 && p.lon > -14) {
+      marks.push({ name: p.lat < 1 ? 'Out into the trades' : 'South of the Guinea current', lat: Math.max(Math.min(p.lat - 3, 1.5), -3), lon: Math.min(p.lon - 5, -8) });
+    }
+    if (p.lat < 12 && p.lon > -25) marks.push({ name: 'Across the calms', lat: 10, lon: -27 });
+    marks.push({ name: 'West of the high', lat: hi.lat - 6, lon: hi.lon - 2 });
+    marks.push({ name: 'The turn of the sea', lat: Math.max(d.lat + 1, hi.lat + 3), lon: hi.lon + 6 });
+    // Nothing she is already past.
+    const ahead = marks.filter((m, i) => m.lat > p.lat + 1 || (i === 0 && p.lat < 8 && p.lon > -14));
+    this.setDestination(ahead[0].name, ahead[0].lat, ahead[0].lon);
+    for (const m of ahead.slice(1)) this.route.push({ ...m });
+    this.route.push({ ...d });
+    const turn = marks[marks.length - 1];
+    const text = `The pilot lays the volta for ${d.name}: ${ahead.map((m) => m.name.toLowerCase()).join(', then ')}, `
+      + `and in with the westerlies from ${turn.lat.toFixed(0)}° north. It is the long way round and it is `
+      + 'the only way home.';
+    this.logEvent('navigation', text, true);
+    this.pushAlert(`Volta laid for ${d.name} — ${this.route.length} marks.`, 'note');
+    this.voltaAdvised = true;
+    return text;
   }
 
   /** The errand this town has for you, if there is one still to do. */

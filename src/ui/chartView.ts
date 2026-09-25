@@ -279,6 +279,11 @@ export class ChartView {
             )),
           )
         : null,
+      g && g.voltaTarget() && !g.route.some((r) => r.name === 'The turn of the sea')
+        ? button(`Lay the volta for ${g.voltaTarget()!.name}`, () => {
+          g.layVolta(); this.buildTools(); this.buildVoyage(); this.draw();
+        }, { title: 'Have the pilot lay the road home: out round the Azores High and in with the westerlies' })
+        : null,
       hasRoute
         ? button('Clear course', () => {
           this.game?.clearDestination(); this.buildTools(); this.buildVoyage(); this.draw();

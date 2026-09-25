@@ -25,18 +25,31 @@ interface Band {
   /** When set, strength follows the monsoon and may reverse. */
   monsoonal?: boolean;
   reversing?: boolean;
+  /** A yearly swing in strength: times (1 + amp · cos) about the peak day. */
+  seasonal?: { peakDoy: number; amp: number };
 }
 
+/**
+ * Speeds are the long-run mean surface drift a ship would feel, from the
+ * pilot-chart and drifter climatologies, not the peak in the core of a jet: a
+ * band here is hundreds of miles wide, and a ship crossing it meets the mean.
+ * Several of these were once set at their peaks and summed where they
+ * overlapped, which put two and a half knots of set against every ship
+ * leaving Mina and a knot and a half across the whole South Atlantic.
+ */
 const BANDS: Band[] = [
   // North Atlantic gyre, clockwise.
   { name: 'Canary Current', latMin: 12, latMax: 33, lonMin: -22, lonMax: -8, toward: 200, knots: 0.45, feather: 3 },
-  { name: 'North Equatorial Current', latMin: 6, latMax: 19, lonMin: -60, lonMax: -18, toward: 278, knots: 0.5, feather: 3 },
-  // The counter-current hands over to the Guinea current off Cape Palmas;
-  // summed along the Mina coast the two came to two and a half knots.
-  { name: 'Equatorial Counter-Current', latMin: 3, latMax: 8, lonMin: -30, lonMax: -8, toward: 92, knots: 0.9, feather: 1.5 },
-  { name: 'Guinea Current', latMin: 1, latMax: 7, lonMin: -12, lonMax: 9, toward: 95, knots: 1.5, feather: 1.5 },
-  { name: 'Gulf Stream', latMin: 26, latMax: 42, lonMin: -80, lonMax: -55, toward: 50, knots: 2.6, feather: 3 },
-  { name: 'North Atlantic Drift', latMin: 40, latMax: 56, lonMin: -50, lonMax: -12, toward: 70, knots: 0.7, feather: 4 },
+  { name: 'North Equatorial Current', latMin: 8, latMax: 20, lonMin: -60, lonMax: -18, toward: 278, knots: 0.5, feather: 3 },
+  // The counter-current runs east under the doldrums, strongest from July to
+  // November and all but gone from the eastern Atlantic in the spring.
+  { name: 'Equatorial Counter-Current', latMin: 3, latMax: 9, lonMin: -35, lonMax: -10, toward: 90, knots: 0.6, feather: 1.5, seasonal: { peakDoy: 225, amp: 0.7 } },
+  // The Guinea Current hugs the coast from Cape Palmas into the Bight: about
+  // a knot in the summer, half that in the winter, and a narrow ribbon — the
+  // South Equatorial Current is setting the other way a degree or two south.
+  { name: 'Guinea Current', latMin: 3.2, latMax: 6.5, lonMin: -9, lonMax: 8, toward: 92, knots: 0.8, feather: 1, seasonal: { peakDoy: 190, amp: 0.4 } },
+  { name: 'Gulf Stream', latMin: 26, latMax: 40, lonMin: -80, lonMax: -60, toward: 45, knots: 1.6, feather: 2.5 },
+  { name: 'North Atlantic Drift', latMin: 42, latMax: 56, lonMin: -50, lonMax: -12, toward: 65, knots: 0.35, feather: 4 },
   // The Azores Current: the gyre's return flow east along 34-36°N, weak but
   // real, and fair for a ship coming home.
   { name: 'Azores Current', latMin: 33, latMax: 37, lonMin: -40, lonMax: -14, toward: 95, knots: 0.25, feather: 2 },
@@ -45,22 +58,33 @@ const BANDS: Band[] = [
   // setting her south on every approach to Lisbon.
   { name: 'Portugal Current', latMin: 33, latMax: 44, lonMin: -18, lonMax: -8, toward: 190, knots: 0.2, feather: 2.5 },
 
-  // South Atlantic gyre, anticlockwise.
-  { name: 'South Equatorial Current', latMin: -18, latMax: -1, lonMin: -35, lonMax: 8, toward: 282, knots: 0.9, feather: 3 },
-  { name: 'Brazil Current', latMin: -38, latMax: -12, lonMin: -50, lonMax: -35, toward: 200, knots: 1.2, feather: 3 },
-  { name: 'South Atlantic Current', latMin: -48, latMax: -36, lonMin: -45, lonMax: 15, toward: 88, knots: 1.0, feather: 4 },
-  { name: 'Benguela Current', latMin: -34, latMax: -14, lonMin: 5, lonMax: 17, toward: 340, knots: 0.9, feather: 3 },
+  // South Atlantic gyre, anticlockwise. The equatorial current is fast in a
+  // narrow band either side of the line and slack further south.
+  { name: 'South Equatorial Current', latMin: -5, latMax: 2, lonMin: -35, lonMax: 5, toward: 275, knots: 0.8, feather: 2 },
+  { name: 'South Equatorial Current', latMin: -18, latMax: -5, lonMin: -35, lonMax: 8, toward: 285, knots: 0.4, feather: 3 },
+  { name: 'Brazil Current', latMin: -38, latMax: -12, lonMin: -50, lonMax: -36, toward: 200, knots: 0.6, feather: 3 },
+  { name: 'South Atlantic Current', latMin: -46, latMax: -36, lonMin: -45, lonMax: 15, toward: 85, knots: 0.4, feather: 4 },
+  { name: 'Benguela Current', latMin: -34, latMax: -15, lonMin: 6, lonMax: 17, toward: 335, knots: 0.45, feather: 3 },
+  // Down the coast of Angola the other way, warm and weak, to meet the
+  // Benguela at the front off Cabo Frio.
+  { name: 'Angola Current', latMin: -16, latMax: -5, lonMin: 9, lonMax: 14, toward: 175, knots: 0.35, feather: 1.5 },
 
   // Southern Ocean.
-  { name: 'West Wind Drift', latMin: -58, latMax: -44, lonMin: -60, lonMax: 120, toward: 90, knots: 1.4, feather: 4 },
+  { name: 'West Wind Drift', latMin: -58, latMax: -44, lonMin: -60, lonMax: 120, toward: 90, knots: 0.8, feather: 4 },
 
-  // Indian Ocean. The Agulhas is genuinely lethal: a two-to-four knot set south
-  // along a coast where the westerlies blow against it and raise freak seas.
-  { name: 'Agulhas Current', latMin: -37, latMax: -26, lonMin: 26, lonMax: 34, toward: 218, knots: 3.0, feather: 2 },
-  { name: 'Mozambique Current', latMin: -25, latMax: -12, lonMin: 33, lonMax: 44, toward: 200, knots: 1.6, feather: 2 },
-  { name: 'South Equatorial Current', latMin: -20, latMax: -8, lonMin: 44, lonMax: 100, toward: 275, knots: 0.9, feather: 3 },
-  { name: 'Somali Current', latMin: -4, latMax: 12, lonMin: 42, lonMax: 55, toward: 40, knots: 3.2, feather: 2.5, monsoonal: true, reversing: true },
-  { name: 'Monsoon Drift', latMin: 2, latMax: 20, lonMin: 55, lonMax: 92, toward: 80, knots: 1.1, feather: 3, monsoonal: true, reversing: true },
+  // Indian Ocean. The Agulhas is genuinely dangerous: two knots and more set
+  // south along the shelf edge, with the westerlies blowing against it and
+  // raising freak seas. Averaged across the band here; the core runs faster.
+  { name: 'Agulhas Current', latMin: -37, latMax: -27, lonMin: 27, lonMax: 33, toward: 222, knots: 2.0, feather: 1.5 },
+  // The Mozambique Channel is eddies more than a current; the mean set is
+  // south, and about a knot down its western side.
+  { name: 'Mozambique Current', latMin: -25, latMax: -12, lonMin: 34, lonMax: 42, toward: 200, knots: 0.8, feather: 2 },
+  { name: 'South Equatorial Current', latMin: -18, latMax: -8, lonMin: 45, lonMax: 100, toward: 272, knots: 0.6, feather: 3 },
+  // Up the Swahili coast from Cape Delgado to Malindi, all the year round:
+  // the current that carried da Gama north to Mombasa.
+  { name: 'East African Coastal Current', latMin: -11, latMax: -2, lonMin: 38, lonMax: 43, toward: 20, knots: 1.2, feather: 1.5 },
+  { name: 'Somali Current', latMin: -2, latMax: 12, lonMin: 43, lonMax: 55, toward: 35, knots: 3.0, feather: 2.5, monsoonal: true, reversing: true },
+  { name: 'Monsoon Drift', latMin: 2, latMax: 20, lonMin: 55, lonMax: 92, toward: 80, knots: 0.8, feather: 3, monsoonal: true, reversing: true },
 ];
 
 function bandWeight(b: Band, p: LatLon): number {
@@ -86,11 +110,16 @@ export function currentAt(p: LatLon, dayOfYear: number): Current {
     let toward = b.toward;
     let knots = b.knots * w;
 
+    if (b.seasonal) {
+      knots *= Math.max(0, 1 + b.seasonal.amp * Math.cos((2 * Math.PI * (dayOfYear - b.seasonal.peakDoy)) / 365));
+    }
     if (b.monsoonal) {
       if (b.reversing && phase < 0) {
-        // The north-east monsoon drives these currents the other way.
+        // The north-east monsoon drives these currents the other way, and
+        // more weakly: the Somali Current runs a knot south in winter where
+        // it runs three or four north in the south-west monsoon.
         toward = wrap360(toward + 180);
-        knots *= 0.55;
+        knots *= 0.4;
       }
       knots *= 0.45 + 0.55 * Math.abs(phase);
     }
