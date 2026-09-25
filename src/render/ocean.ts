@@ -318,6 +318,9 @@ uniform float uChop;
 uniform float uRigHeight;
 uniform float uHullHeight;
 uniform float uShadow;
+uniform samplerCube uEnv;
+uniform float uEnvOn;
+uniform float uOvercast;
 
 varying vec3 vWorld;
 varying vec3 vNormal;
@@ -460,6 +463,16 @@ void main() {
 
   float slope = clamp(n.y, 0.0, 1.0);
   vec3 body = mix(uDeepColor, uShallowColor, pow(slope, 3.0) * 0.55);
+  // The body of the water is lit: faces turned to the sun carry more of the
+  // light scattered back up out of the sea, and the raised part of every swell
+  // is thinner water and a shade lighter. Without this the whole near sea was
+  // one flat colour from the bow to the bottom of the screen.
+  float bodyLift = clamp(vWorld.y / max(uCrestMax, 0.25), -1.0, 1.0);
+  float bodySun = max(dot(n, uSunDir), 0.0) * (1.0 - uNight) * (1.0 - uOvercast * 0.85);
+  // Under a grey deck the sea goes to slate: no sun in it, and less sky.
+  body *= (0.78 + 0.55 * bodySun + 0.22 * bodyLift) * (1.0 - uOvercast * 0.3);
+  body = mix(body, vec3(dot(body, vec3(0.33))) * vec3(0.8, 0.95, 1.05), uOvercast * 0.45);
+  body += uShallowColor * max(bodyLift, 0.0) * 0.18 * (1.0 - uNight);
 
   // And then the bottom, which is most of what decides the colour of the sea.
   //
@@ -492,6 +505,13 @@ void main() {
   vec3 reflDir = reflect(-viewDir, n);
   float up = clamp(reflDir.y * 0.5 + 0.5, 0.0, 1.0);
   vec3 sky = mix(uHorizonColor, uSkyColor, pow(up, 0.7));
+  // The sky itself, photographed a few times a second (Renderer.envCamera):
+  // clouds, the glow of a sunset and the moon's halo all reach the water. The
+  // sun's disc is capped, because its reflection is drawn below as glitter.
+  if (uEnvOn > 0.5) {
+    vec3 env = textureCube(uEnv, normalize(vec3(reflDir.x, max(reflDir.y, 0.015), reflDir.z))).rgb;
+    sky = min(env, vec3(1.25));
+  }
 
   // Sun glitter: a scattered track of individual reflections, not a mirror disc.
   float sunDot = max(dot(reflDir, uSunDir), 0.0);
@@ -525,7 +545,7 @@ void main() {
   // the water is the brightest thing in the scene — a broken silver road out
   // to the horizon under it. So the night dimming gives way to the moon.
   col += uSunColor * (spec + sheen * (1.0 + uMoon * 1.5))
-       * max(1.0 - uNight * 0.82, uMoon * 1.25);
+       * max(1.0 - uNight * 0.82, uMoon * 1.25) * (1.0 - uOvercast * 0.9);
 
   // Light carried through the back of a wave, which is what makes a sea look
   // like water rather than like painted metal.
@@ -757,6 +777,9 @@ export class Ocean {
         uRigHeight: { value: 18 },
         uHullHeight: { value: 4 },
         uShadow: { value: 1 },
+        uEnv: { value: null as THREE.Texture | null },
+        uEnvOn: { value: 0 },
+        uOvercast: { value: 0 },
         uTrack: { value: Array.from({ length: TRACK_POINTS }, () => new THREE.Vector2()) },
         uTrackAge: { value: new Array(TRACK_POINTS).fill(0) },
         uTrackRun: { value: new Array(TRACK_POINTS).fill(0) },
@@ -1041,6 +1064,17 @@ export class Ocean {
    */
   setShoalOffset(east: number, north: number): void {
     (this.material.uniforms.uShoalOffset.value as THREE.Vector2).set(east, -north);
+  }
+
+  /** 0 clear to 1 a full grey deck: the sun goes out of the water. */
+  setOvercast(c: number): void {
+    this.material.uniforms.uOvercast.value = clamp(c, 0, 1);
+  }
+
+  /** The sky's cube, for the water to reflect. See Renderer.envCamera. */
+  setEnvMap(tex: THREE.Texture): void {
+    this.material.uniforms.uEnv.value = tex;
+    this.material.uniforms.uEnvOn.value = 1;
   }
 
   setLighting(

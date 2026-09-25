@@ -124,6 +124,9 @@ export class Renderer {
 
   ocean = new Ocean();
   sky = new Sky();
+  private envTarget = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
+  private envCamera = new THREE.CubeCamera(1, 30000, this.envTarget);
+  private envFrame = 0;
   land = new Land();
   settlements = new Settlements();
   spray = new Spray();
@@ -258,6 +261,15 @@ export class Renderer {
 
     this.scene.fog = this.fog;
     this.scene.add(this.sky.group);
+    // The sky, and only the sky, is photographed into a small cube every few
+    // frames for the sea to reflect: the clouds, the sunset and the moon's glow
+    // on the water are the sky's own, not a two-colour guess at it.
+    // Not the stars: a point sprite a few pixels across on the screen is a
+    // quarter of a cube face at this resolution, and came back off the water
+    // as a string of white lamps along the horizon.
+    this.sky.group.traverse((o) => { if (!(o instanceof THREE.Points) && !(o instanceof THREE.LineSegments)) o.layers.enable(1); });
+    this.envCamera.children.forEach((c) => c.layers.set(1));
+    this.ocean.setEnvMap(this.envTarget.texture);
     this.scene.add(this.ocean.mesh);
     this.scene.add(this.land.group);
     this.scene.add(this.settlements.group);
@@ -457,6 +469,14 @@ export class Renderer {
       f.dayOfYear, f.year, f.cloud, f.simTime,
     );
     this.applyLighting(lighting, f.visibilityNm);
+    this.sky.drift(f.windFrom, f.windKnots, realDt);
+    this.ocean.setOvercast(clamp((f.cloud - 0.45) / 0.5, 0, 1));
+    // The reflection is refreshed a few times a second, which is far faster
+    // than a sky changes and far cheaper than every frame.
+    if (this.envFrame++ % 12 === 0) {
+      this.envCamera.position.copy(this.camera.position);
+      this.envCamera.update(this.renderer, this.scene);
+    }
 
     const wakeHdg = this.drawnHeading * DEG;
     this.ocean.setWake({

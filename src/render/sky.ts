@@ -51,33 +51,131 @@ uniform vec3 uSunGlow;
 uniform float uNight;
 uniform float uOvercast;
 uniform vec3 uCloudColor;
+// The sun itself, which is not always the key light (see Sky.update).
+uniform vec3 uSunDisc;
+uniform float uSunVis;
+uniform vec3 uSunColor;
+uniform float uTwilight;
+uniform vec3 uDuskWarm;
+// The cloud deck: how much of the sky it covers, where the wind has carried it,
+// and the two colours it is lit with.
+uniform float uCover;
+uniform vec2 uCloudOffset;
+uniform vec3 uCloudLit;
+uniform vec3 uCloudShade;
+uniform float uCloudOn;
 
 varying vec3 vDir;
+
+float hash21(vec2 p) {
+  vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
+  q += dot(q, q.yzx + 33.33);
+  return fract((q.x + q.y) * q.z);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+             mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+// Cumulus: a soft rounded body from the low octaves, with heaped, folded
+// detail on its edges from the high ones.
+float clouds(vec2 p) {
+  mat2 rot = mat2(0.8, -0.6, 0.6, 0.8);
+  float body = 0.0;
+  float a = 0.6;
+  vec2 q = p * 0.55;
+  for (int i = 0; i < 3; i++) {
+    body += a * vnoise(q);
+    q = rot * q * 2.1 + 5.3;
+    a *= 0.5;
+  }
+  float detail = 0.0;
+  a = 0.5;
+  q = p * 2.2;
+  for (int i = 0; i < CLOUD_OCTAVES - 3; i++) {
+    detail += a * (1.0 - abs(vnoise(q) * 2.0 - 1.0));
+    q = rot * q * 2.07 + 11.0;
+    a *= 0.5;
+  }
+  return body * 1.05 + detail * 0.32;
+}
 
 void main() {
   vec3 d = normalize(vDir);
   float up = clamp(d.y, -0.2, 1.0);
 
-  // The dome reaches its zenith colour more slowly than it did. At 0.55 the
-  // deep blue overhead took most of the frame the moment the zenith was made a
-  // real blue, and the sky went from pale to navy within a hand's breadth of
-  // the horizon — which is what a sky does through a polarising filter and not
-  // what it does over an ocean.
+  // The dome reaches its zenith colour slowly: a sky over open ocean stays pale
+  // for a long way up from the horizon.
   vec3 col = mix(uHorizon, uZenith, pow(clamp(up, 0.0, 1.0), 0.82));
 
-  // Glow around the sun, strongest along the horizon at sunrise and sunset.
+  // Twilight is not one colour round the whole horizon. The sun's side burns
+  // orange and gold; the opposite side carries the pink band and the blue-grey
+  // shadow of the earth rising under it.
+  vec2 hz = normalize(d.xz + 1e-5);
+  vec2 sz = normalize(uSunDisc.xz + 1e-5);
+  float toward = dot(hz, sz) * 0.5 + 0.5;
+  float low = 1.0 - smoothstep(0.0, 0.42, d.y);
+  vec3 warm = uDuskWarm * pow(toward, 2.2) * low;
+  vec3 belt = vec3(0.55, 0.32, 0.42) * pow(1.0 - toward, 3.0)
+            * smoothstep(0.02, 0.10, d.y) * (1.0 - smoothstep(0.10, 0.30, d.y));
+  col += (warm * 0.9 + belt * 0.35) * uTwilight;
+
+  // Glow about the key light (the sun, or the moon at night).
   float sunDot = max(dot(d, uSunDir), 0.0);
-  float halo = pow(sunDot, 6.0) * 0.55 + pow(sunDot, 90.0) * 1.6;
+  float halo = pow(sunDot, 6.0) * 0.45 + pow(sunDot, 90.0) * 1.2 + pow(sunDot, 900.0) * 2.0;
   float lowSun = 1.0 - smoothstep(-0.05, 0.35, uSunDir.y);
   col += uSunGlow * halo * (0.45 + lowSun * 1.5);
 
-  // Overcast flattens the whole dome toward a uniform grey.
-  col = mix(col, uCloudColor, uOvercast * (0.55 + 0.35 * (1.0 - up)));
+  // The sun's own disc, drawn here so the clouds can pass in front of it.
+  float discDot = dot(d, uSunDisc);
+  float disc = smoothstep(0.99994, 0.99998, discDot);
+  col += mix(uSunColor, vec3(1.0, 0.98, 0.92), 0.6) * disc * 6.0 * uSunVis;
 
-  // A band of haze thickening down to the horizon, reaching the horizon colour
-  // exactly at eye level. The sea fogs to the same colour at its rim, so the two
-  // meet there without a seam.
+  // The haze band, reaching the horizon colour exactly at eye level.
   col = mix(col, uHorizon, smoothstep(0.30, 0.0, d.y));
+
+  // Clouds, on a flat deck a long way up, seen through the haze.
+  if (uCloudOn > 0.5 && d.y > 0.02) {
+    // Held back from the horizon, where the deck is seen so edge-on that the
+    // noise is stretched into streaks; the haze has it by then anyway.
+    float t = 1.0 / max(d.y, 0.02);
+    vec2 p = d.xz * t * 0.9 + uCloudOffset;
+    float n = clouds(p);
+    // Coverage sets the threshold: a few fair-weather puffs in the trades, a
+    // broken deck in unsettled weather, and a lid of grey when it is overcast.
+    float cov = uCover;
+    float th = mix(1.02, 0.30, cov);
+    float dens = smoothstep(th, th + mix(0.16, 0.45, cov), n);
+    // Lit from the sun's side: sample a little way toward it and see whether
+    // the cloud thins, which is where light gets in.
+    vec2 toSun = normalize(uSunDisc.xz + 1e-4) * 0.16;
+    float n2 = clouds(p + toSun);
+    float lit = clamp(0.62 + (n - n2) * 3.2, 0.0, 1.0);
+    vec3 cc = mix(uCloudShade, uCloudLit, lit);
+    // Thin edges near the sun light up white-gold.
+    float lining = pow(max(dot(d, uSunDir), 0.0), 10.0) * (1.0 - dens) * 1.6;
+    cc += uSunGlow * lining;
+    // Clouds far off sink into the haze and lose their contrast.
+    float far = smoothstep(0.02, 0.22, d.y);
+    cc = mix(uHorizon, cc, 0.35 + 0.65 * far);
+    // And gone entirely in the last few degrees, where every row of the sky
+    // maps to nearly the same distance on the deck and the noise can only vary
+    // sideways — which draws as vertical streaks.
+    dens *= smoothstep(0.03, 0.11, d.y);
+    col = mix(col, cc, dens * mix(0.35, 1.0, far));
+  }
+
+  // A heavy deck closes completely: no blue left between the clouds, just the
+  // grey underside of the weather from one horizon to the other.
+  if (uCloudOn > 0.5) {
+    float lid = smoothstep(0.72, 0.98, uCover) * smoothstep(-0.02, 0.12, d.y);
+    col = mix(col, mix(uCloudShade, uHorizon, 0.25), lid * 0.85);
+  }
+
+  // Overcast flattens what is left toward a uniform grey.
+  col = mix(col, uCloudColor, uOvercast * 0.55 * (0.55 + 0.35 * (1.0 - up)));
 
   gl_FragColor = vec4(col, 1.0);
 }
@@ -167,6 +265,7 @@ export class Sky {
     this.domeMaterial = new THREE.ShaderMaterial({
       vertexShader: skyVertex,
       fragmentShader: skyFragment,
+      defines: { CLOUD_OCTAVES: phoneish() ? 4 : 6 },
       side: THREE.BackSide,
       depthWrite: false,
       uniforms: {
@@ -177,6 +276,16 @@ export class Sky {
         uNight: { value: 0 },
         uOvercast: { value: 0 },
         uCloudColor: { value: new THREE.Color(0.55, 0.57, 0.6) },
+        uSunDisc: { value: new THREE.Vector3(0, 1, 0) },
+        uSunVis: { value: 1 },
+        uSunColor: { value: new THREE.Color(1, 0.95, 0.85) },
+        uTwilight: { value: 0 },
+        uDuskWarm: { value: new THREE.Color(1.0, 0.45, 0.12) },
+        uCover: { value: 0.3 },
+        uCloudOffset: { value: new THREE.Vector2(0, 0) },
+        uCloudLit: { value: new THREE.Color(1, 1, 1) },
+        uCloudShade: { value: new THREE.Color(0.6, 0.65, 0.72) },
+        uCloudOn: { value: 1 },
       },
     });
     this.dome = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, 40, 24), this.domeMaterial);
@@ -242,6 +351,9 @@ export class Sky {
       new THREE.MeshBasicMaterial({ color: 0xfff4dc, transparent: true, depthWrite: false }),
     );
     this.sunSprite.renderOrder = -88;
+    // The disc is drawn in the dome now, under the clouds; the sprite is kept
+    // only so nothing else that refers to it has to change.
+    this.sunSprite.visible = false;
     this.group.add(this.sunSprite);
 
     this.moonGlow = new THREE.Mesh(
@@ -260,6 +372,18 @@ export class Sky {
     );
     this.moonSprite.renderOrder = -87;
     this.group.add(this.moonSprite);
+  }
+
+  /** Carry the cloud deck downwind. `dt` in real seconds. */
+  drift(windFromDeg: number, knots: number, dt: number): void {
+    const to = (windFromDeg + 180) * DEG;
+    const off = this.domeMaterial.uniforms.uCloudOffset.value as THREE.Vector2;
+    const k = (0.004 + knots * 0.0009) * dt;
+    off.x += Math.sin(to) * k;
+    off.y -= Math.cos(to) * k;
+    // Kept small, so the noise never runs out of precision.
+    if (Math.abs(off.x) > 4000) off.x = 0;
+    if (Math.abs(off.y) > 4000) off.y = 0;
   }
 
   /**
@@ -347,6 +471,25 @@ export class Sky {
       .lerp(new THREE.Color(0.30, 0.38, 0.58), moonlight);
     this.domeMaterial.uniforms.uNight.value = night;
     this.domeMaterial.uniforms.uOvercast.value = overcast;
+    const u = this.domeMaterial.uniforms;
+    (u.uSunDisc.value as THREE.Vector3).copy(sunDir);
+    u.uSunVis.value = clamp(smoothstep(-1.5, 1.5, sun.altitude) * (1 - overcast), 0, 1);
+    (u.uSunColor.value as THREE.Color).setRGB(1, 0.96, 0.88).lerp(new THREE.Color(1, 0.55, 0.25), twilight);
+    u.uTwilight.value = twilight * (1 - overcast * 0.7);
+    (u.uDuskWarm.value as THREE.Color).setRGB(1.0, 0.42, 0.10).lerp(new THREE.Color(0.85, 0.25, 0.12), smoothstep(0, -6, sun.altitude));
+    // A fair-weather sky is never empty: trade cumulus at a quarter cover even
+    // on the clearest day, building to a full grey deck with the weather.
+    u.uCover.value = clamp(0.22 + clamp(cloud, 0, 1) * 0.78, 0, 1);
+    // The cloud is lit by whatever lights everything else, and its underside by
+    // the sky; at night both go almost to nothing, and the moon silvers it.
+    const dayLit = new THREE.Color(1, 0.99, 0.97).lerp(new THREE.Color(1.0, 0.62, 0.38), twilight);
+    (u.uCloudLit.value as THREE.Color).copy(dayLit)
+      .multiplyScalar(0.25 + 0.75 * (1 - night))
+      .lerp(new THREE.Color(0.30, 0.34, 0.44), night * (1 - moonlight * 0.4))
+      .multiplyScalar(1 - overcast * 0.5);
+    (u.uCloudShade.value as THREE.Color).copy(zenith).lerp(horizon, 0.55).lerp(new THREE.Color(0.52, 0.55, 0.62), 0.45)
+      .lerp(new THREE.Color(0.7, 0.42, 0.40), twilight * 0.5)
+      .multiplyScalar(Math.max(0.05, 1 - overcast * 0.62 - night * 0.55));
 
     // --- Bodies ------------------------------------------------------------
     this.sunSprite.position.copy(sunDir).multiplyScalar(SKY_RADIUS * 0.94);
@@ -428,6 +571,12 @@ export class Sky {
     this.lines.geometry.dispose();
     this.lineMaterial.dispose();
   }
+}
+
+/** A small screen: fewer octaves of cloud. */
+function phoneish(): boolean {
+  return typeof window !== 'undefined' && !!window.matchMedia
+    && window.matchMedia('(max-width: 860px), (pointer: coarse)').matches;
 }
 
 /** Alt/az to a world direction, with X east, Y up, and north toward -Z. */
