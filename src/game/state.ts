@@ -800,6 +800,12 @@ export class Game {
   private lastManualTrim = -1e9;
   gameOverReason: string | null = null;
 
+  /**
+   * Which career this is, so each one keeps its own autosave and a new game
+   * can never write over another. Minted once, carried in the save.
+   */
+  careerId = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+
   constructor(seed = Math.floor(Math.random() * 1e9)) {
     this.seed = seed;
     this.rng = new Rng(seed);
@@ -8741,6 +8747,7 @@ export class Game {
     return JSON.stringify({
       version: 1,
       seed: this.seed,
+      careerId: this.careerId,
       t: this.clock.t,
       scaleIndex: this.clock.scaleIndex,
       ship: this.ship.serialize(),
@@ -8866,6 +8873,8 @@ export class Game {
   static deserialize(json: string): Game {
     const d = JSON.parse(json);
     const g = new Game(d.seed);
+    // A save from before careers had ids keeps a fresh one from here on.
+    if (typeof d.careerId === 'string' && d.careerId) g.careerId = d.careerId;
     g.clock.t = d.t;
     g.clock.scaleIndex = d.scaleIndex ?? 1;
     // Her own lines have to be known before she can be.

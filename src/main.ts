@@ -378,8 +378,18 @@ function frame(now: number): void {
 const AUTOSAVE_DAYS = 5;
 let lastAutoSaveT = -1e9;
 
+let wasDocked: string | null = null;
+
 function checkAutosave(g: Game): void {
   if (g.mode === 'gameover' || g.mode === 'title') return;
+  // Every port is written to the account as well: it is where a player stops.
+  if (g.dockedAt && g.dockedAt !== wasDocked) {
+    wasDocked = g.dockedAt;
+    lastAutoSaveT = g.clock.t;
+    void ui.save(g, false, true);
+    return;
+  }
+  if (!g.dockedAt) wasDocked = null;
   if (g.clock.t - lastAutoSaveT < AUTOSAVE_DAYS * 86400) return;
   lastAutoSaveT = g.clock.t;
   void ui.save(g, false);
@@ -468,7 +478,10 @@ setInterval(() => {
  * of those cases, and `pagehide` covers the back-forward cache.
  */
 function saveIfPlaying(): void {
-  if (game && game.mode !== 'gameover') Ui.saveQuietly(game);
+  if (!game || game.mode === 'gameover' || game.mode === 'title') return;
+  Ui.saveQuietly(game);
+  // And the account, which usually gets there before the page is frozen.
+  void ui.save(game, false, true);
 }
 window.addEventListener('beforeunload', saveIfPlaying);
 window.addEventListener('pagehide', saveIfPlaying);

@@ -78,6 +78,9 @@ export class Ui {
 
   constructor(host: HTMLElement, cb: UiCallbacks) {
     this.root = host;
+    // Ask for the account at once, so the title's Continue and the first
+    // autosave both find it. Nothing waits on the answer.
+    void this.shelf.connect();
     this.cb = cb;
     this.touch = new TouchControls({
       setKey: (k, down) => cb.onVirtualKey(k, down),
@@ -440,11 +443,37 @@ export class Ui {
    * a document store is not the place for a write on a timer — the account gets
    * the voyage when the player deliberately keeps one.
    */
-  async save(g: Game, announce = true): Promise<void> {
-    const r = await this.shelf.write(g, 'auto', 'The voyage in hand', false);
+  async save(g: Game, announce = true, forceCloud = false): Promise<void> {
+    // The account takes the autosave at most once a minute of wall clock, and
+    // always on a port, a deliberate save, or the page being put away. The
+    // browser takes every one.
+    const due = forceCloud || announce || Date.now() - this.shelf.lastCloudAt > 60000;
+    const r = await this.shelf.write(g, autosaveId(g), `${g.ship.name}, the voyage in hand`, due);
     if (announce) {
-      g.pushAlert(r.ok ? 'The voyage is recorded.' : r.message, r.ok ? 'note' : 'warning');
+      g.pushAlert(r.message, r.ok ? 'note' : 'warning');
     }
+    // Said once a session, when the account is not going to be there.
+    if (!this.warnedLocalOnly && due && !r.cloud) {
+      const settled = await this.shelf.connect(0);
+      if (!settled || this.shelf.cloudError) {
+        this.warnedLocalOnly = true;
+        g.pushAlert(this.shelf.cloudError
+          ?? 'Your account is not reachable from this view: the voyage is kept only in this browser. Keep a file of anything you would hate to lose.', 'warning');
+      }
+    }
+  }
+
+  private warnedLocalOnly = false;
+
+  /** One line on where the voyage in hand is kept, for the book of voyages. */
+  saveStatus(): { text: string; good: boolean } {
+    const at = this.shelf.lastCloudAt;
+    if (this.shelf.cloud && at) {
+      const s = Math.round((Date.now() - at) / 1000);
+      return { text: `Saved to your account ${s < 60 ? `${s}s` : `${Math.round(s / 60)} min`} ago.`, good: true };
+    }
+    if (this.shelf.cloud) return { text: 'Your account is connected; the next save goes there.', good: true };
+    return { text: 'Kept only in this browser.', good: false };
   }
 
   /**
@@ -458,24 +487,30 @@ export class Ui {
    * alternative is losing the passage.
    */
   static saveQuietly(g: Game): void {
+    const id = autosaveId(g);
     try {
       const json = g.serialize();
-      localStorage.setItem('carreira.save.auto', `p${btoaUtf8(json)}`);
+      localStorage.setItem(`carreira.save.${id}`, `p${btoaUtf8(json)}`);
       const raw = localStorage.getItem('carreira.saves');
       const index: any[] = raw ? JSON.parse(raw) : [];
-      const meta = describeSave(g, 'auto', 'The voyage in hand', json.length);
+      const meta = describeSave(g, id, `${g.ship.name}, the voyage in hand`, json.length);
       localStorage.setItem('carreira.saves',
-        JSON.stringify([...index.filter((m) => m.id !== 'auto'), meta]));
+        JSON.stringify([...index.filter((m) => m.id !== id), meta]));
     } catch { /* nowhere to put it, and nothing to be done about it here */ }
   }
 
   /** The most recent voyage on the shelf, for Continue. */
   async mostRecent(): Promise<string | null> {
+    // A few seconds for the account, whose copy may be the newer one.
+    await this.shelf.connect(4000);
     const slots = await this.shelf.list();
     return slots.length ? this.shelf.read(slots[0].id) : null;
   }
 
   async hasAnySave(): Promise<boolean> {
+    if ((await this.shelf.list()).length > 0) return true;
+    // Nothing in this browser: the account may still have the voyage.
+    await this.shelf.connect(4000);
     return (await this.shelf.list()).length > 0;
   }
 
@@ -505,6 +540,11 @@ export class Ui {
       localStorage.setItem('carreira.saves', JSON.stringify(index));
     } catch { /* nothing to rescue it with */ }
   }
+}
+
+/** Each career's own autosave slot, so a new game never writes over another. */
+export function autosaveId(g: Game): string {
+  return `voyage-${g.careerId}`;
 }
 
 /** Base64 of a UTF-8 string, which `btoa` alone cannot do. */

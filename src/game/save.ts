@@ -342,9 +342,11 @@ export class LocalStore implements SaveStore {
  * A document is capped at 256 KiB, which a save now fits inside with room to
  * spare, but the cap is real and the failure is reported rather than swallowed.
  *
- * And writes are one-at-a-time per document and are not free, so the cloud is
- * written on a deliberate act — a manual save, a port, a new voyage — and never
- * from the autosave timer, which would be a write every half minute for ever.
+ * And writes are one-at-a-time per document and are not free, so the autosave
+ * reaches the account at most once a minute of wall clock (see Ui.save), plus
+ * on a port, a deliberate save, and the page being hidden. Each slot keeps the
+ * save before the current one in the same document, so a bad write always has
+ * something behind it.
  */
 export class CloudStore implements SaveStore {
   readonly kind = 'cloud' as const;
@@ -384,25 +386,69 @@ export class CloudStore implements SaveStore {
     }
   }
 
+  /** The voyage, or the copy before it if the newest will not decode. */
   async read(id: string): Promise<string | null> {
+    let body: any;
     try {
       const snap = await this.ref(id).get();
       if (!snap.exists) return null;
-      const data = snap.data()?.data;
-      return typeof data === 'string' ? decodeSave(data) : null;
+      body = snap.data();
     } catch {
       return null;
     }
+    for (const payload of [body?.data, body?.prev?.data]) {
+      if (typeof payload !== 'string') continue;
+      try { return await decodeSave(payload); } catch { /* try the older copy */ }
+    }
+    return null;
   }
 
+  /** What each slot held last, so the next write can keep it as `prev`. */
+  private last = new Map<string, { meta: SaveMeta; data: string } | null>();
+  /** One write at a time per slot; a burst collapses to the newest. */
+  private inFlight = new Map<string, Promise<void>>();
+  private queued = new Map<string, { meta: SaveMeta; data: string }>();
+
   async write(id: string, meta: SaveMeta, data: string): Promise<void> {
-    // Well inside the platform's 256 KiB, and refused here with something
-    // sayable rather than as an `invalid_argument` from underneath.
-    if (data.length > 240 * 1024) {
+    // The document holds this save and the one before it, well inside the
+    // platform's 256 KiB, and a save too big for that is refused here with
+    // something sayable rather than as an `invalid_argument` from underneath.
+    if (data.length > 120 * 1024) {
       throw new Error('This voyage is too long to keep in your account. Keep it as a file.');
     }
+    const busy = this.inFlight.get(id);
+    if (busy) {
+      this.queued.set(id, { meta, data });
+      return busy;
+    }
+    const run = (async () => {
+      let next: { meta: SaveMeta; data: string } | undefined = { meta, data };
+      while (next) {
+        await this.writeNow(id, next.meta, next.data);
+        next = this.queued.get(id);
+        this.queued.delete(id);
+      }
+    })();
+    this.inFlight.set(id, run);
     try {
-      await this.ref(id).set({ meta, data });
+      await run;
+    } finally {
+      this.inFlight.delete(id);
+    }
+  }
+
+  private async writeNow(id: string, meta: SaveMeta, data: string): Promise<void> {
+    try {
+      if (!this.last.has(id)) {
+        const snap = await this.ref(id).get();
+        const body = snap.exists ? snap.data() : undefined;
+        this.last.set(id, typeof body?.data === 'string' ? { meta: body.meta, data: body.data } : null);
+      }
+      const prev = this.last.get(id);
+      const doc: Record<string, unknown> = { meta, data };
+      if (prev && prev.data !== data) doc.prev = prev;
+      await this.ref(id).set(doc);
+      this.last.set(id, { meta, data });
     } catch (e: any) {
       throw new Error(cloudReason(e));
     }
@@ -462,11 +508,32 @@ export class SaveShelf {
     this.local = LocalStore.available() ? new LocalStore() : null;
   }
 
-  /** Try for the account. Safe to call again; safe never to call at all. */
-  async connect(): Promise<boolean> {
+  /** When the account last took a save, in wall-clock ms; 0 for never. */
+  lastCloudAt = 0;
+  /** What went wrong on the last try at the account, if anything. */
+  cloudError: string | null = null;
+  private connecting: Promise<boolean> | null = null;
+
+  /**
+   * Try for the account. Safe to call again; safe never to call at all.
+   *
+   * Asked once and remembered. `waitMs` caps how long this caller waits — the
+   * title screen will not sit ten seconds on a view that never answers —
+   * without abandoning the attempt, which lights the account up when it lands.
+   */
+  async connect(waitMs = Infinity): Promise<boolean> {
     if (this.cloud) return true;
-    this.cloud = await CloudStore.attach();
-    return !!this.cloud;
+    if (!this.connecting) {
+      this.connecting = CloudStore.attach().then((c) => {
+        this.cloud = c;
+        return !!c;
+      });
+    }
+    if (!Number.isFinite(waitMs)) return this.connecting;
+    return Promise.race([
+      this.connecting,
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(!!this.cloud), waitMs)),
+    ]);
   }
 
   async list(): Promise<SlotView[]> {
@@ -502,8 +569,10 @@ export class SaveShelf {
     const lm = a.find((m) => m.id === id);
     const cm = b.find((m) => m.id === id);
     const preferCloud = (cm?.savedAt ?? 0) > (lm?.savedAt ?? 0);
-    return (preferCloud ? this.cloud!.read(id) : this.local!.read(id))
-      ?? (preferCloud ? this.local!.read(id) : this.cloud!.read(id));
+    // Awaited before falling back: a promise is never null, so the other
+    // copy was never actually tried when the newer one would not read.
+    const first = await (preferCloud ? this.cloud!.read(id) : this.local!.read(id));
+    return first ?? (preferCloud ? this.local!.read(id) : this.cloud!.read(id));
   }
 
   /**
@@ -529,11 +598,18 @@ export class SaveShelf {
     }
     let cloudOk = false;
     if (toCloud && this.cloud) {
-      try { await this.cloud.write(id, meta, data); cloudOk = true; } catch (e: any) {
-        message = message || e?.message || 'Could not reach your account.';
+      try {
+        await this.cloud.write(id, meta, data);
+        cloudOk = true;
+        this.lastCloudAt = Date.now();
+        this.cloudError = null;
+      } catch (e: any) {
+        this.cloudError = e?.message || 'Could not reach your account.';
+        message = message || this.cloudError!;
       }
     }
     if (!localOk && !cloudOk) return { ok: false, cloud: false, message };
+    if (cloudOk && !localOk) return { ok: true, cloud: true, message: 'The voyage is recorded in your account.' };
     return {
       ok: true,
       cloud: cloudOk,

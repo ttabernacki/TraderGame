@@ -92,7 +92,8 @@ export class SavesView {
     this.head.append(
       el('span', { class: cloud ? 'voyage-dot on' : 'voyage-dot' }),
       el('span', {}, cloud
-        ? 'Kept in this browser and in your account.'
+        ? `Kept in this browser and in your account${this.shelf.lastCloudAt
+          ? ` \u2014 last to the account ${ago(this.shelf.lastCloudAt)}` : ''}. The account copy follows you to any device.`
         : this.shelf.local
           ? 'Kept in this browser. Save a file for anything you would be sorry to lose, '
             + 'or to carry a voyage to another machine.'
@@ -119,10 +120,10 @@ export class SavesView {
   }
 
   private slotCard(s: SlotView): HTMLElement {
-    const auto = s.id === 'auto';
+    const auto = s.id === 'auto' || s.id.startsWith('voyage-');
     const body = el('div', { class: 'voyage-card' },
       el('div', { class: 'voyage-title' },
-        el('span', {}, auto ? 'The voyage in hand' : s.name),
+        el('span', {}, s.id === 'auto' ? 'The voyage in hand' : s.name),
         el('span', { class: 'voyage-age' }, `${ago(s.savedAt)} · ${s.kept}`)),
       el('div', { class: 'voyage-facts' },
         kv('Aboard', `${s.date}`),
@@ -226,7 +227,7 @@ export class SavesView {
     // Two presses, because there is no undo and a voyage is a great many hours.
     if (this.arming !== s.id) {
       this.arming = s.id;
-      this.say(`Press Delete again to lose ${s.id === 'auto' ? 'the autosave' : s.name} `
+      this.say(`Press Delete again to lose ${s.name} `
         + 'for good. There is no getting it back.', true);
       await this.refresh();
       return;
@@ -234,7 +235,7 @@ export class SavesView {
     this.arming = null;
     await this.guard(async () => {
       await this.shelf.remove(s.id);
-      this.say(`${s.id === 'auto' ? 'The autosave' : s.name} is gone.`);
+      this.say(`${s.name} is gone.`);
       await this.refresh();
     });
   }
