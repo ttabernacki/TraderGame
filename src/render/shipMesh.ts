@@ -3,19 +3,46 @@ import { DEG, clamp, lerp, smoothstep } from '../core/math';
 import type { HullClass, MastSpec } from '../ship/hull';
 import type { SailState } from '../ship/physics';
 
-const OAK = new THREE.Color(0xa8814f);
-/** Paint for the band above the wale, on a ship built to the captain's own lines. */
-const PAINT: Record<string, THREE.Color | null> = {
-  natural: null,
-  red: new THREE.Color(0x8a2e22),
-  black: new THREE.Color(0x221e1a),
-  ochre: new THREE.Color(0xb3893c),
-};
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import {
+  bandTexture, glowTexture, isShared, lookFor, plankTexture, seeded, type ShipLook,
+} from './shipLook';
+
 const OAK_DARK = new THREE.Color(0x6d5030);
 const WALE = new THREE.Color(0x4a3520);
 const BOTTOM = new THREE.Color(0x5b5046);
 const SPAR = 0x9a7a4e;
 const IRON = 0x2f2a24;
+
+/**
+ * How steeply the sheer of the ship being built rises to her ends. Set by the
+ * constructor before anything is lofted, and read by every builder through
+ * `sheerAt`, so the castles, rails and rigging all sit on the same line.
+ */
+let SHEER = 1;
+
+/** Planked timber: the shared plank texture, multiplied by the colour given. */
+function timber(color: number | THREE.Color, vertexColors = false): THREE.MeshStandardMaterial {
+  const tex = plankTexture();
+  return new THREE.MeshStandardMaterial({
+    color, vertexColors, map: tex, bumpMap: tex, bumpScale: 1.2,
+    roughness: 0.84, metalness: 0, side: THREE.DoubleSide,
+  });
+}
+
+/** Planking UVs in metres: strakes run along u, 12 of them to 3.2 m of v. */
+const PLANK_U = 1 / 5;
+const PLANK_V = 1 / 3.2;
+
+/** The materials one ship is built from, shared across her parts. */
+interface Kit {
+  look: ShipLook;
+  hullTone: THREE.Color;
+  castle: THREE.MeshStandardMaterial;
+  castleDeck: THREE.MeshStandardMaterial;
+  trim: THREE.MeshStandardMaterial;
+  glass: THREE.MeshLambertMaterial;
+}
 
 /** Rake of a lateen yard from the vertical. */
 const LATEEN_RAKE = 42;
@@ -162,21 +189,77 @@ export class ShipMesh {
   private tiller: THREE.Mesh;
   private runningRig!: THREE.LineSegments;
   private runningPos!: THREE.BufferAttribute;
+  private look: ShipLook;
+  private kit: Kit;
+  private lamps: THREE.Sprite[] = [];
+  private lampGlass = new THREE.MeshLambertMaterial({ color: 0x3a2a14 });
+  private lampLight: THREE.PointLight | null = null;
+  private lit = { night: -1, overcast: -1 };
 
-  constructor(hull: HullClass) {
+  /**
+   * `lamp` gives her a real light at the stern lantern, which only the
+   * player's own ship carries: every light in the scene is paid for by every
+   * lit surface in it.
+   */
+  constructor(hull: HullClass, opts: { lamp?: boolean } = {}) {
     const L = hull.lwl;
     const B = hull.beam;
     const D = hull.draft;
+    const look = lookFor(hull);
+    this.look = look;
+    SHEER = look.sheer;
 
-    // A ship built to the captain's lines carries her own castles and paint;
-    // the stock hulls keep the look they were modelled with.
-    const castle = hull.castles === undefined ? 1 : 0.3 + hull.castles * 0.95;
-    this.group.add(buildHull(L, B, D, PAINT[hull.paint ?? 'natural']));
+    const castleTone = look.castlePaint !== null
+      ? new THREE.Color(look.castlePaint)
+      : new THREE.Color(look.oak).multiplyScalar(0.72);
+    const kit: Kit = {
+      look,
+      hullTone: new THREE.Color(look.oak),
+      castle: timber(castleTone),
+      castleDeck: timber(new THREE.Color(0xb59468)),
+      trim: timber(new THREE.Color(0x4a3520)),
+      glass: new THREE.MeshLambertMaterial({ color: 0x1c1710 }),
+    };
+    this.kit = kit;
+
+    this.group.add(buildHull(L, B, D, kit));
+    if (look.band) this.group.add(buildBand(L, B, D, look));
     this.group.add(buildDeck(L, B, D));
-    this.group.add(buildSterncastle(L, B, D, castle));
-    if (castle > 0.45) this.group.add(buildForecastle(L, B, D, castle));
+    const aft = buildSterncastle(L, B, D, kit);
+    this.group.add(aft.group);
+    const foreH = D * 0.42 * look.fore;
+    if (look.fore > 0) this.group.add(buildForecastle(L, B, D, foreH, kit));
+    this.group.add(buildStem(L, D, foreH));
+    if (look.bowsprit) this.group.add(buildBowsprit(L, D, foreH));
+    if (look.beak) this.group.add(buildBeak(L, B, D, kit));
     this.group.add(buildRails(L, B, D));
     this.group.add(buildDeckFittings(L, B, D));
+    if (look.shields) this.group.add(buildShields(L, B, D, aft.height, foreH, look));
+    this.group.add(buildCrew(hull, look, aft.height, foreH));
+
+    // The stern lanterns, on the taffrail, and the glow they throw at night.
+    const n = look.lanterns;
+    for (let i = 0; i < n; i++) {
+      const x = n === 1 ? 0 : (i / (n - 1) - 0.5) * aft.halfWidth * 1.3;
+      const lantern = buildLantern(this.lampGlass);
+      const lift = n === 3 && i === 1 ? 0.5 : 0;
+      lantern.position.set(x, aft.top + lift, aft.z - 0.25);
+      this.group.add(lantern);
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTexture(), color: 0xffc070, transparent: true, depthWrite: false,
+        blending: THREE.AdditiveBlending, opacity: 0,
+      }));
+      halo.position.set(x, aft.top + lift + 0.75, aft.z - 0.25);
+      halo.scale.setScalar(2.6);
+      halo.visible = false;
+      this.lamps.push(halo);
+      this.group.add(halo);
+    }
+    if (opts.lamp) {
+      this.lampLight = new THREE.PointLight(0xffa860, 0, 34, 1.7);
+      this.lampLight.position.set(0, aft.top + 1.4, aft.z + 1.2);
+      this.group.add(this.lampLight);
+    }
 
     const steering = buildSteering(L, B, D);
     this.rudder = steering.rudder;
@@ -265,11 +348,31 @@ export class ShipMesh {
       ? buildLateenSail(spec.area, deckY)
       : buildSquareSail(spec.area, spec.ceHeight * 1.42);
 
+    // The device goes on the main course; a great ship carries it on every
+    // course she sets, and never on a topsail.
+    const topsail = spec.name.startsWith('Gávea');
+    const device = this.look.device === 'plain' || topsail ? null
+      : isMain || (this.look.crossAll && spec.rig === 'square') ? this.look.device : null;
+
+    // A round top at the head of each lower square mast, where the lookout
+    // stands and the topsail sheets lead.
+    if (this.look.tops && spec.rig === 'square' && !topsail) {
+      const r = clamp(0.7 + Math.sqrt(spec.area) * 0.04, 0.9, 1.6);
+      const y = mastHeight * 0.86 + D * 0.15;
+      const topMat = timber(new THREE.Color(0x7a5a38));
+      const rim = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.82, 0.85, 14, 1, true), topMat);
+      rim.position.y = y + 0.42;
+      pivot.add(rim);
+      const floor = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.82, r * 0.5, 0.18, 14), topMat);
+      floor.position.y = y;
+      pivot.add(floor);
+    }
+
     const sail = new THREE.Mesh(
       build.geometry,
       new THREE.MeshLambertMaterial({
         side: THREE.DoubleSide,
-        map: makeSailTexture(build, isMain && hull.device !== 'plain'),
+        map: makeSailTexture(build, device, this.look, this.masts.length),
         transparent: true,
         // Canvas is thin enough that the sun glows through it, so a backlit sail
         // is never just a black shape against the sky — and that glow is the
@@ -479,13 +582,43 @@ export class ShipMesh {
     this.group.rotation.x = pitchDeg * DEG;
   }
 
+  /**
+   * Match her to the light. Canvas under a storm sky is grey, not the white it
+   * is at noon, and the lamp in her stern is lit at dusk.
+   */
+  setLight(night: number, overcast: number): void {
+    if (Math.abs(night - this.lit.night) < 0.01 && Math.abs(overcast - this.lit.overcast) < 0.01) return;
+    this.lit = { night, overcast };
+    const dim = (1 - overcast * 0.72) * (1 - night * 0.82);
+    for (const m of this.masts) {
+      const mat = m.sail.material as THREE.MeshLambertMaterial;
+      mat.emissive.setHex(0x3a352a).multiplyScalar(dim);
+      mat.color.setScalar(1 - overcast * 0.34);
+    }
+    (this.flag.material as THREE.MeshLambertMaterial).emissive.setHex(0x2a0d0a).multiplyScalar(1 - night * 0.7);
+    const glow = smoothstep(0.2, 0.7, night);
+    this.kit.glass.emissive.setRGB(1, 0.6, 0.26).multiplyScalar(glow * 1.3);
+    this.lampGlass.emissive.setRGB(1, 0.72, 0.36).multiplyScalar(0.05 + glow * 3);
+    for (const h of this.lamps) {
+      h.visible = glow > 0.01;
+      (h.material as THREE.SpriteMaterial).opacity = glow * 0.95;
+    }
+    if (this.lampLight) this.lampLight.intensity = glow * 26;
+  }
+
   dispose(): void {
+    const done = new Set<THREE.Material>();
     this.group.traverse((o: THREE.Object3D) => {
       const mesh = o as THREE.Mesh;
       if (mesh.geometry) mesh.geometry.dispose();
       const m = mesh.material as THREE.Material | THREE.Material[] | undefined;
-      if (Array.isArray(m)) m.forEach((x) => x.dispose());
-      else m?.dispose();
+      for (const x of Array.isArray(m) ? m : m ? [m] : []) {
+        if (done.has(x)) continue;
+        done.add(x);
+        const map = (x as THREE.MeshLambertMaterial).map;
+        if (map && !isShared(map)) map.dispose();
+        x.dispose();
+      }
     });
   }
 }
@@ -690,7 +823,7 @@ function beamAt(t: number): number {
 function sheerAt(t: number): number {
   const mid = 0.52;
   const d = Math.abs(t - mid) / mid;
-  return lerp(1.05, 1.44, Math.pow(d, 1.9));
+  return lerp(1.05, 1.05 + 0.39 * SHEER, Math.pow(Math.min(d, 1), 1.9));
 }
 
 /**
@@ -738,38 +871,56 @@ function sectionWidth(v: number, t: number): number {
  * below the waterline, planked oak above it, and a heavy wale running the length
  * at the turn of the topsides.
  */
-function buildHull(L: number, B: number, D: number, paint: THREE.Color | null = null): THREE.Mesh {
+function hullPoint(t: number, v: number, side: number, L: number, B: number, D: number): THREE.Vector3 {
+  const bw = beamAt(t) * (B / 2);
+  const keel = -keelAt(t) * D;
+  const sheer = sheerAt(t) * D * FREEBOARD;
+  const y = lerp(keel, sheer, v);
+  // The wale is a heavier strake, standing slightly proud of the planking.
+  const waleness = Math.exp(-Math.pow((v - 0.74) / 0.055, 2));
+  const w = sectionWidth(v, t) * bw * (1 + waleness * 0.085);
+  return new THREE.Vector3(side * w, y, (t - 0.5) * L + rakeAt(t, L) * v);
+}
+
+function buildHull(L: number, B: number, D: number, kit: Kit): THREE.Mesh {
   const stations = 44;
   const rows = 22;
   const positions: number[] = [];
   const colors: number[] = [];
+  const uvs: number[] = [];
   const indices: number[] = [];
-  const halfB = B / 2;
   const c = new THREE.Color();
+  const oak = kit.hullTone;
+  const weed = new THREE.Color(0x4a5a3a);
+  const rnd = seeded(kit.look.seed);
+  // A few long runs of weathering along her length, different on every ship.
+  const stains = Array.from({ length: 5 }, () => ({ t: rnd(), w: 0.02 + rnd() * 0.05, k: 0.06 + rnd() * 0.12 }));
 
   const addVertex = (t: number, v: number, side: number) => {
-    const z = (t - 0.5) * L;
-    const bw = beamAt(t) * halfB;
-    const keel = -keelAt(t) * D;
-    const sheer = sheerAt(t) * D * FREEBOARD;
-    const y = lerp(keel, sheer, v);
-    // The wale is a heavier strake, standing slightly proud of the planking.
+    const p = hullPoint(t, v, side, L, B, D);
+    positions.push(p.x, p.y, p.z);
+    uvs.push(p.z * PLANK_U, p.y * PLANK_V);
+    const y = p.y;
     const waleness = Math.exp(-Math.pow((v - 0.74) / 0.055, 2));
-    const w = sectionWidth(v, t) * bw * (1 + waleness * 0.085);
-    positions.push(side * w, y, z + rakeAt(t, L) * v);
 
     if (y < 0.02) {
       // Tallow and pitch, fouling darker as it goes deeper.
       c.copy(BOTTOM).lerp(OAK_DARK, clamp(y / (D * 0.4) + 1, 0, 1) * 0.35);
+      // Weed at the boot-top, where the sea washes and the sun reaches.
+      c.lerp(weed, clamp(1 + y / 0.35, 0, 1) * 0.45);
     } else {
-      // Alternating strakes, with a little variation along the length so the
-      // planking does not read as a machine-cut stripe.
-      const strake = Math.sin(v * rows * Math.PI * 0.92) * 0.5 + 0.5;
-      c.copy(OAK).lerp(OAK_DARK, strake * 0.5 + Math.sin(t * 37) * 0.07 + 0.06);
+      c.copy(oak).lerp(OAK_DARK, Math.sin(t * 37) * 0.05 + 0.08);
+      // The wet band: the planking a wave has just run off is darker and
+      // richer than the dry wood above it.
+      c.multiplyScalar(lerp(0.62, 1, smoothstep(0.05, D * 0.32, y)));
+    }
+    for (const s of stains) {
+      c.multiplyScalar(1 - s.k * Math.exp(-Math.pow((t - s.t) / s.w, 2)) * (1 - v * 0.5));
     }
     c.lerp(WALE, waleness * 0.9);
-    // A painted band from the wale up to the rail.
-    if (paint && v > 0.7) c.lerp(paint, clamp((v - 0.7) / 0.05, 0, 1) * 0.78);
+    // Occlusion: the turn of the bilge and the tuck under the wale see less
+    // sky than the topsides.
+    c.multiplyScalar(lerp(0.72, 1, smoothstep(0.05, 0.55, v)));
     colors.push(c.r, c.g, c.b);
   };
 
@@ -791,22 +942,66 @@ function buildHull(L: number, B: number, D: number, paint: THREE.Color | null = 
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   g.setIndex(indices);
   g.computeVertexNormals();
-  return new THREE.Mesh(g, new THREE.MeshLambertMaterial({
-    vertexColors: true, side: THREE.DoubleSide,
+  const mat = timber(0xffffff, true);
+  mat.roughness = 0.72;
+  return new THREE.Mesh(g, mat);
+}
+
+/**
+ * The painted band from the wale to the rail, laid a finger's breadth proud of
+ * the planking so it never fights it for the same pixels.
+ */
+function buildBand(L: number, B: number, D: number, look: ShipLook): THREE.Mesh {
+  const stations = 44;
+  const rows = 4;
+  const v0 = 0.79, v1 = 0.985;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+  let base = 0;
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < stations; i++) {
+      const t = 0.01 + (i / (stations - 1)) * 0.975;
+      for (let j = 0; j <= rows; j++) {
+        const v = lerp(v0, v1, j / rows);
+        const p = hullPoint(t, v, side, L, B, D);
+        p.x += side * (0.025 + Math.abs(p.x) * 0.004);
+        positions.push(p.x, p.y, p.z);
+        uvs.push(p.z / 8, j / rows);
+      }
+    }
+    for (let i = 0; i < stations - 1; i++) {
+      for (let j = 0; j < rows; j++) {
+        const a = base + i * (rows + 1) + j;
+        const b = a + rows + 1;
+        indices.push(a, b, a + 1, a + 1, b, b + 1);
+      }
+    }
+    base += stations * (rows + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setIndex(indices);
+  g.computeVertexNormals();
+  return new THREE.Mesh(g, new THREE.MeshStandardMaterial({
+    map: bandTexture(look.band!, look.seed), roughness: 0.62, metalness: 0,
+    side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
   }));
 }
 
 function buildDeck(L: number, B: number, D: number): THREE.Mesh {
   const stations = 30;
-  const across = 7;
+  const across = 9;
   const positions: number[] = [];
   const colors: number[] = [];
+  const uvs: number[] = [];
   const indices: number[] = [];
   const c = new THREE.Color();
-  const deckLight = new THREE.Color(0xb59468);
-  const deckDark = new THREE.Color(0x8a6c46);
+  const deck = new THREE.Color(0xc2a47a);
 
   for (let i = 0; i < stations; i++) {
     const t = i / (stations - 1);
@@ -815,9 +1010,14 @@ function buildDeck(L: number, B: number, D: number): THREE.Mesh {
     const y = sheerAt(t) * D * FREEBOARD;
     for (let k = 0; k < across; k++) {
       const u = k / (across - 1);
-      positions.push((u - 0.5) * 2 * bw, y, z);
-      // Deck planks run fore and aft, so the caulking lines run athwartships.
-      c.copy(deckLight).lerp(deckDark, (Math.sin(u * across * Math.PI) * 0.5 + 0.5) * 0.45);
+      const x = (u - 0.5) * 2 * bw;
+      positions.push(x, y, z);
+      // Deck planks run fore and aft, so the strakes of the texture do too.
+      uvs.push(z * PLANK_U, x * PLANK_V + 0.37);
+      // Scrubbed pale down the middle where the watch walks; darker in the
+      // waterways along the bulwarks, where the water lies and the light
+      // does not reach.
+      c.copy(deck).multiplyScalar(lerp(1, 0.62, Math.pow(Math.abs(u - 0.5) * 2, 3)));
       colors.push(c.r, c.g, c.b);
     }
   }
@@ -832,42 +1032,118 @@ function buildDeck(L: number, B: number, D: number): THREE.Mesh {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   g.setIndex(indices);
   g.computeVertexNormals();
-  return new THREE.Mesh(g, new THREE.MeshLambertMaterial({
-    vertexColors: true, side: THREE.DoubleSide,
-  }));
+  return new THREE.Mesh(g, timber(0xffffff, true));
 }
 
-function buildSterncastle(L: number, B: number, D: number, scale = 1): THREE.Group {
-  const g = new THREE.Group();
-  const h = D * 0.72 * scale;
-  const deck = sheerAt(0.14) * D * FREEBOARD;
+/** Where the stern castle ends, for hanging the lanterns and the gallery on. */
+interface AftCastle {
+  group: THREE.Group;
+  /** Total rise of the castle above the ship's sheer. */
+  height: number;
+  /** Top of the taffrail, its z, and its half-width. */
+  top: number;
+  z: number;
+  halfWidth: number;
+}
 
-  const oak = new THREE.MeshLambertMaterial({ color: 0x6b4e30 });
-  const trim = new THREE.MeshLambertMaterial({ color: 0x4a3520 });
+function buildSterncastle(L: number, B: number, D: number, kit: Kit): AftCastle {
+  const look = kit.look;
+  const g = new THREE.Group();
+  const h = D * 0.72 * look.aft;
+  const deck = sheerAt(0.14) * D * FREEBOARD;
 
   // The quarterdeck: a raised deck following the ship's own plan, with bulwarks
   // up either side and a bulkhead closing it at the break. Built as a box, as it
   // was, it reads as a shed nailed to the stern — a castle aft is part of the
   // hull's shape and has to be lofted from the same stations.
-  g.add(buildRaisedDeck(L, B, D, 0.0, 0.26, h, oak, trim));
+  g.add(buildRaisedDeck(L, B, D, 0.0, look.aftLen, h, kit));
+  let total = h;
+  // A great ship carries a second storey aft, the poop, over the after half
+  // of the quarterdeck: the captain's cabin under it and the pilot on top.
+  if (look.aftTiers === 2) {
+    const h2 = D * 0.46 * look.aft;
+    g.add(buildRaisedDeck(L, B, D, 0.0, look.aftLen * 0.52, h2, kit, { base: h }));
+    total += h2;
+  }
 
   // The transom, planked across the stern and raked aft. It is lofted rather
   // than boxed: a slab of BoxGeometry here shows the player one enormous
   // unlit rectangle, because its after face is the only one he ever sees and it
   // points away from the sun all day.
-  g.add(buildTransom(L, B, D, h, deck));
+  g.add(buildTransom(L, B, D, h, deck, kit));
 
-  // Quarter windows, which catch the light and give the stern a face.
-  const glass = new THREE.MeshLambertMaterial({ color: 0x241f16, emissive: 0x2a2113 });
-  const sternBeam = railHalfBeam(0.06, B) * 2;
-  for (const side of [-1, 1]) {
-    const win = new THREE.Mesh(new THREE.BoxGeometry(sternBeam * 0.34, h * 0.24, 0.1), glass);
-    win.position.set(side * sternBeam * 0.42, deck + h * 0.34, -L * 0.474);
-    win.rotation.x = -0.2;
-    g.add(win);
+  const endZ = -L * 0.5 + rakeAt(0, L);
+  const endY = sheerAt(0) * D * FREEBOARD;
+  const endHalf = railHalfBeam(0, B) * 0.96;
+  const bulwark = D * 0.34;
+
+  // Stern windows: the great cabin's lights across the castle's after face,
+  // a row to each storey, and the quarter lights down either side.
+  const wins: THREE.Matrix4[] = [];
+  const m = new THREE.Matrix4();
+  const tiers = look.aft < 0.5 ? 0 : look.aftTiers;
+  for (let r = 0; r < tiers; r++) {
+    const y = endY + (r === 0 ? h * 0.5 : h + (total - h) * 0.5);
+    const n = look.aft > 1 ? 4 : look.aft > 0.75 ? 3 : 2;
+    for (let i = 0; i < n; i++) {
+      const x = ((i + 0.5) / n - 0.5) * endHalf * 1.55;
+      wins.push(m.clone().compose(new THREE.Vector3(x, y, endZ - 0.12), new THREE.Quaternion(), new THREE.Vector3(0.62, 0.58, 0.1)));
+    }
+    for (const side of [-1, 1]) {
+      for (const t of [0.06, 0.13]) {
+        if (r === 1 && t > look.aftLen * 0.45) continue;
+        const x = side * (railHalfBeam(t, B) * 0.96 + 0.04);
+        const z = (t - 0.5) * L + rakeAt(t, L);
+        wins.push(m.clone().compose(new THREE.Vector3(x, sheerAt(t) * D * FREEBOARD + (r === 0 ? h * 0.5 : h + (total - h) * 0.5), z),
+          new THREE.Quaternion(), new THREE.Vector3(0.1, 0.5, 0.55)));
+      }
+    }
   }
+  if (wins.length) {
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), kit.glass, wins.length);
+    wins.forEach((w, i) => im.setMatrixAt(i, w));
+    g.add(im);
+  }
+
+  const top = endY + total + bulwark;
+  if (look.gallery) g.add(buildGallery(endZ, endY + h * 0.18, endHalf, h, kit));
+  return { group: g, height: total, top, z: endZ, halfWidth: endHalf };
+}
+
+/**
+ * The stern gallery: a railed walk across the after face of the castle, roofed
+ * over, which is the most ornamented thing on a great ship and the first thing
+ * anyone astern of her sees.
+ */
+function buildGallery(z: number, y: number, half: number, h: number, kit: Kit): THREE.Group {
+  const g = new THREE.Group();
+  const depth = 1.0;
+  const w = half * 2 * 1.02;
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(w, 0.18, depth), kit.trim);
+  floor.position.set(0, y, z - depth / 2);
+  g.add(floor);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(w * 1.04, 0.14, depth * 1.15), kit.castle);
+  roof.position.set(0, y + h * 0.78, z - depth / 2);
+  g.add(roof);
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(w, 0.12, 0.14), kit.trim);
+  rail.position.set(0, y + 0.95, z - depth + 0.05);
+  g.add(rail);
+  // Balusters, and posts carrying the roof at the corners and between.
+  const n = Math.max(10, Math.round(w * 3));
+  const posts = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.05, 0.06, 1, 5), kit.trim, n + 5);
+  const m = new THREE.Matrix4();
+  for (let i = 0; i < n; i++) {
+    const x = ((i + 0.5) / n - 0.5) * w;
+    posts.setMatrixAt(i, m.compose(new THREE.Vector3(x, y + 0.5, z - depth + 0.05), new THREE.Quaternion(), new THREE.Vector3(1, 0.86, 1)));
+  }
+  for (let i = 0; i < 5; i++) {
+    const x = (i / 4 - 0.5) * w;
+    posts.setMatrixAt(n + i, m.compose(new THREE.Vector3(x, y + h * 0.39, z - depth + 0.05), new THREE.Quaternion(), new THREE.Vector3(1.8, h * 0.78, 1.8)));
+  }
+  g.add(posts);
   return g;
 }
 
@@ -875,35 +1151,58 @@ function buildSterncastle(L: number, B: number, D: number, scale = 1): THREE.Gro
  * A raised deck at one end of the ship — the quarterdeck aft, the forecastle
  * forward — lofted from the hull's own stations so it carries her sheer and her
  * plan shape, with bulwarks up either side and a bulkhead across the break.
+ *
+ * `base` stacks one on another; `overhang` carries a carrack's forecastle out
+ * past the stem in a triangle, its underside open to the sea.
  */
 function buildRaisedDeck(
   L: number, B: number, D: number,
   fromT: number, toT: number, rise: number,
-  oak: THREE.Material, trim: THREE.Material,
+  kit: Kit, opts: { base?: number; overhang?: boolean } = {},
 ): THREE.Group {
   const g = new THREE.Group();
-  const steps = 12;
+  const steps = 14;
+  const base = opts.base ?? 0;
   const bulwark = D * 0.34;
-  const level = (t: number) => sheerAt(t) * D * FREEBOARD + rise;
-  const zAt = (t: number) => (t - 0.5) * L + rakeAt(t, L);
+  const aft = fromT === 0;
+  const sheer = (t: number) => sheerAt(Math.min(t, 1)) * D * FREEBOARD;
+  const level = (t: number) => sheer(t) + base + rise;
+  const zAt = (t: number) => (t - 0.5) * L + rakeAt(Math.min(t, 1), L);
+  const halfAt = (t: number) => (opts.overhang && t > 0.9
+    ? railHalfBeam(0.9, B) * (1 - Math.pow((t - 0.9) / (toT - 0.9), 1.25) * 0.86)
+    : railHalfBeam(t, B));
+  // Where the castle's side comes down to: the ship's own sheer, lapping it,
+  // or for an overhang past the hull, a short skirt under its deck.
+  const footAt = (t: number) => (opts.overhang && t > 0.9
+    ? sheer(t) + base - 0.4
+    : sheer(t) + base - (base ? 0.05 : 0.12));
+  const ts = Array.from({ length: steps + 1 }, (_, i) => lerp(fromT, toT, i / steps));
+
+  const strip = (pts: number[], uv: number[], mat: THREE.Material) => {
+    const idx: number[] = [];
+    for (let i = 0; i < steps; i++) {
+      const a = i * 2;
+      idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    g.add(new THREE.Mesh(geo, mat));
+  };
 
   // The deck itself.
-  const deckPos: number[] = [];
-  const deckIdx: number[] = [];
-  for (let i = 0; i <= steps; i++) {
-    const t = lerp(fromT, toT, i / steps);
-    const bw = railHalfBeam(t, B) * 0.94;
-    deckPos.push(-bw, level(t), zAt(t), bw, level(t), zAt(t));
+  {
+    const pts: number[] = [];
+    const uv: number[] = [];
+    for (const t of ts) {
+      const bw = halfAt(t) * 0.94;
+      pts.push(-bw, level(t), zAt(t), bw, level(t), zAt(t));
+      uv.push(zAt(t) * PLANK_U, -bw * PLANK_V, zAt(t) * PLANK_U, bw * PLANK_V);
+    }
+    strip(pts, uv, kit.castleDeck);
   }
-  for (let i = 0; i < steps; i++) {
-    const a = i * 2;
-    deckIdx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
-  }
-  const deckGeo = new THREE.BufferGeometry();
-  deckGeo.setAttribute('position', new THREE.Float32BufferAttribute(deckPos, 3));
-  deckGeo.setIndex(deckIdx);
-  deckGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(deckGeo, oak));
 
   // The side of the castle, either hand: planked from the ship's own sheer all
   // the way up past the raised deck to the top of the bulwark.
@@ -912,46 +1211,75 @@ function buildRaisedDeck(
   // whole height of the rise — two thirds of the depth of the hold, aft — as
   // open air between the castle and the ship. The quarterdeck and the
   // forecastle both hung over the water with a gap you could see the sea
-  // through, which is what "the stern castle is floating" means. Only the one
-  // bulkhead at the break was closing anything.
+  // through, which is what "the stern castle is floating" means.
   for (const side of [-1, 1]) {
-    const pos: number[] = [];
-    const idx: number[] = [];
-    for (let i = 0; i <= steps; i++) {
-      const t = lerp(fromT, toT, i / steps);
-      const bw = railHalfBeam(t, B) * 0.96;
-      // A little below the sheer, so the castle's planking laps the hull's
-      // instead of meeting it exactly and leaving a hairline of daylight.
-      pos.push(side * bw, sheerAt(t) * D * FREEBOARD - 0.12, zAt(t));
-      pos.push(side * bw * 0.97, level(t) + bulwark, zAt(t));
+    const pts: number[] = [];
+    const uv: number[] = [];
+    const cap: number[] = [];
+    const capUv: number[] = [];
+    for (const t of ts) {
+      const bw = halfAt(t) * 0.96;
+      const foot = footAt(t);
+      const head = level(t) + bulwark;
+      pts.push(side * bw, foot, zAt(t), side * bw * 0.97, head, zAt(t));
+      uv.push(zAt(t) * PLANK_U, foot * PLANK_V, zAt(t) * PLANK_U, head * PLANK_V);
+      // A capping rail along the top, which draws the line of the castle.
+      cap.push(side * (bw * 0.97 + 0.1), head + 0.05, zAt(t), side * (bw * 0.97 - 0.14), head + 0.05, zAt(t));
+      capUv.push(0, 0, 0, 0.05);
     }
-    for (let i = 0; i < steps; i++) {
-      const a = i * 2;
-      idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+    strip(pts, uv, kit.castle);
+    strip(cap, capUv, kit.trim);
+  }
+
+  // The underside of an overhang, seen from the water under the bow.
+  if (opts.overhang) {
+    const pts: number[] = [];
+    const uv: number[] = [];
+    const under = ts.map((t) => Math.max(t, 0.9));
+    for (const t of under) {
+      const bw = halfAt(t) * 0.96;
+      pts.push(-bw, footAt(t), zAt(t), bw, footAt(t), zAt(t));
+      uv.push(zAt(t) * PLANK_U, -bw * PLANK_V, zAt(t) * PLANK_U, bw * PLANK_V);
     }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    geo.setIndex(idx);
-    geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, trim);
-    (mesh.material as THREE.MeshLambertMaterial).side = THREE.DoubleSide;
-    g.add(mesh);
+    strip(pts, uv, kit.trim);
+  }
+
+  // The end of the castle at the ship's own end — the after face aft, the
+  // point of the forecastle forward — closed in, so it is a castle and not a
+  // pair of walls.
+  {
+    const t = aft ? fromT : toT;
+    const bw = halfAt(t) * 0.96;
+    const shape = new THREE.Shape();
+    const foot = footAt(t);
+    const head = level(t) + bulwark;
+    shape.moveTo(-bw, foot); shape.lineTo(bw, foot);
+    shape.lineTo(bw * 0.97, head); shape.lineTo(-bw * 0.97, head);
+    const geo = new THREE.ShapeGeometry(shape);
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+    const uv = geo.getAttribute('uv') as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) * PLANK_U, pos.getY(i) * PLANK_V);
+    const face = new THREE.Mesh(geo, kit.castle);
+    face.position.z = zAt(t);
+    g.add(face);
   }
 
   // The bulkhead across the break, which is the face the rest of the deck sees.
-  const breakT = fromT < toT && fromT === 0 ? toT : fromT;
-  const bw = railHalfBeam(breakT, B) * 0.94;
-  const face = new THREE.Mesh(new THREE.BoxGeometry(bw * 2, rise + 0.3, 0.16), trim);
+  const breakT = aft ? toT : fromT;
+  const bw = halfAt(breakT) * 0.94;
+  const face = new THREE.Mesh(new THREE.BoxGeometry(bw * 2, rise + 0.3, 0.16), kit.castle);
   face.position.set(0, level(breakT) - rise / 2, zAt(breakT));
   g.add(face);
-
-  // A ladder up to it.
+  // A door in it, and a ladder up beside.
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.8, Math.min(1.7, rise * 0.8), 0.06), kit.glass);
+  door.position.set(-bw * 0.3, level(breakT) - rise + Math.min(1.7, rise * 0.8) / 2, zAt(breakT) + (aft ? 0.09 : -0.09));
+  if (rise > 1) g.add(door);
   for (let s = 0; s < 4; s++) {
-    const step = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.07, 0.16), oak);
+    const step = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.07, 0.16), kit.trim);
     step.position.set(
       bw * 0.45,
       level(breakT) - rise + (s + 0.6) * (rise / 4),
-      zAt(breakT) + (fromT === 0 ? 0.5 : -0.5) * (1 - s * 0.12),
+      zAt(breakT) + (aft ? 0.5 : -0.5) * (1 - s * 0.12),
     );
     g.add(step);
   }
@@ -965,12 +1293,13 @@ function buildRaisedDeck(
  * of it.
  */
 function buildTransom(
-  L: number, B: number, D: number, castle: number, deck: number,
+  L: number, B: number, D: number, castle: number, deck: number, kit: Kit,
 ): THREE.Mesh {
   const rows = 12;
   const cols = 9;
   const positions: number[] = [];
   const colors: number[] = [];
+  const uvs: number[] = [];
   const indices: number[] = [];
   const c = new THREE.Color();
   const top = deck + castle * 0.62;
@@ -983,16 +1312,17 @@ function buildTransom(
     // never wider than the rail it has to meet.
     const halfWidth = railHalfBeam(0.015 + v * 0.075, B) * (0.92 + v * 0.42);
     // Follows the same raked profile the hull's own after stations are lofted
-    // to, so it closes the planking off instead of sitting inside it and letting
-    // the hull's last station show as a flat wall astern of it.
+    // to, so it closes the planking off instead of sitting inside it.
     const z = -L * 0.5 + rakeAt(0.02, L) * v - 0.05;
     for (let i = 0; i < cols; i++) {
       const u = i / (cols - 1);
       // The corners are eased, so the transom reads as a panel rather than a box.
       const round = 1 - Math.pow(Math.abs(u - 0.5) * 2, 3.4) * 0.25;
-      positions.push((u - 0.5) * 2 * halfWidth * round, y, z);
-      const strake = Math.sin(v * rows * Math.PI * 0.86) * 0.5 + 0.5;
-      c.copy(OAK).lerp(OAK_DARK, strake * 0.42 + 0.18);
+      const x = (u - 0.5) * 2 * halfWidth * round;
+      positions.push(x, y, z);
+      uvs.push(x * PLANK_U, y * PLANK_V);
+      c.copy(kit.hullTone).multiplyScalar(0.86);
+      if (y < 0.3) c.multiplyScalar(lerp(0.6, 1, clamp((y + 0.2) / 0.5, 0, 1)));
       if (v < 0.12) c.lerp(WALE, 0.5);
       colors.push(c.r, c.g, c.b);
     }
@@ -1008,41 +1338,47 @@ function buildTransom(
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   g.setIndex(indices);
   g.computeVertexNormals();
-  return new THREE.Mesh(g, new THREE.MeshLambertMaterial({
-    vertexColors: true, side: THREE.DoubleSide,
-  }));
+  return new THREE.Mesh(g, timber(0xffffff, true));
 }
 
-function buildForecastle(L: number, B: number, D: number, scale = 1): THREE.Group {
-  const g = new THREE.Group();
-  const h = D * 0.42 * scale;
+function buildForecastle(L: number, B: number, D: number, h: number, kit: Kit): THREE.Group {
+  // A carrack's forecastle is a triangle thrust out over the stem; a caravel's
+  // or a galleon's is a low platform that stops at it.
+  return kit.look.overhang
+    ? buildRaisedDeck(L, B, D, 0.8, 1.085, h, kit, { overhang: true })
+    : buildRaisedDeck(L, B, D, 0.84, 0.995, h, kit);
+}
+
+/** The bowsprit, stepped through the forecastle and steeved up over the stem. */
+function buildBowsprit(L: number, D: number, foreH: number): THREE.Mesh {
   const deck = sheerAt(0.88) * D * FREEBOARD;
-  const oak = new THREE.MeshLambertMaterial({ color: 0x6b4e30 });
-  const trim = new THREE.MeshLambertMaterial({ color: 0x4a3520 });
-
-  g.add(buildRaisedDeck(L, B, D, 0.84, 0.995, h, oak, trim));
-
-  // The bowsprit, stepped through the forecastle and steeved up over the stem.
   const sprit = new THREE.Mesh(
     new THREE.CylinderGeometry(0.11, 0.18, L * 0.32, 8),
     new THREE.MeshLambertMaterial({ color: SPAR }),
   );
   sprit.rotation.x = Math.PI / 2 - 22 * DEG;
-  sprit.position.set(0, deck + h * 0.7, L * 0.57);
-  g.add(sprit);
+  sprit.position.set(0, deck + Math.max(foreH, 0.5) * 0.7, L * 0.57);
+  return sprit;
+}
 
-  // The stem: the timber the planking is rabbeted into, following the same raked
-  // profile the last station of the hull is lofted to, so the two meet instead
-  // of the planking stopping in mid air and the stem standing clear of it.
+/**
+ * The stem: the timber the planking is rabbeted into, following the same raked
+ * profile the last station of the hull is lofted to, so the two meet instead of
+ * the planking stopping in mid air and the stem standing clear of it.
+ */
+function buildStem(L: number, D: number, foreH: number): THREE.Mesh {
   const stemMat = new THREE.MeshLambertMaterial({ color: 0x574024 });
   const stemPos: number[] = [];
   const stemIdx: number[] = [];
   const rows = 12;
+  // A flush-decked caravel's stem stands up past her rail as a stemhead.
+  const top = sheerAt(1) * D * FREEBOARD + (foreH > 0 ? foreH * 0.55 : 0.7);
   for (let i = 0; i < rows; i++) {
     const v = i / (rows - 1);
-    const y = lerp(-keelAt(1) * D, sheerAt(1) * D * FREEBOARD + h * 0.55, v);
+    const y = lerp(-keelAt(1) * D, top, v);
     // Below the waterline the stem curves back into the forefoot.
     const forefoot = v < 0.28 ? Math.pow(v / 0.28, 1.7) : 1;
     const z = L * 0.5 + rakeAt(1, L) * v * forefoot;
@@ -1058,8 +1394,171 @@ function buildForecastle(L: number, B: number, D: number, scale = 1): THREE.Grou
   stemGeo.setAttribute('position', new THREE.Float32BufferAttribute(stemPos, 3));
   stemGeo.setIndex(stemIdx);
   stemGeo.computeVertexNormals();
-  g.add(new THREE.Mesh(stemGeo, stemMat));
+  return new THREE.Mesh(stemGeo, stemMat);
+}
 
+/**
+ * A galleon's beak: a low spur run out ahead of the stem under the bowsprit,
+ * with a grating to stand on and a knee beneath it down to the cutwater. It is
+ * the one feature that tells a galleon from a carrack at a glance.
+ */
+function buildBeak(L: number, B: number, D: number, kit: Kit): THREE.Group {
+  const g = new THREE.Group();
+  const y0 = sheerAt(1) * D * FREEBOARD * 0.72;
+  const z0 = L * 0.5 + rakeAt(1, L) * 0.72 - 0.4;
+  const len = L * 0.15;
+  const half = railHalfBeam(0.93, B) * 0.9 + 0.3;
+  const tipY = y0 - 0.1;
+  // The knee runs from well down the cutwater up to the point: a slender
+  // timber under the beak, not a keel.
+  const v = [
+    -half, y0, z0, half, y0, z0, // 0 1: base of the platform
+    -0.12, tipY, z0 + len, 0.12, tipY, z0 + len, // 2 3: the point
+    0, y0 - D * 0.42, z0 + len * 0.1, // 4: the knee, down on the cutwater
+  ];
+  const idx = [0, 2, 1, 1, 2, 3, 0, 4, 2, 1, 3, 4, 2, 4, 3];
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  g.add(new THREE.Mesh(geo, kit.trim));
+  // The head rails either side, sweeping up from the point to the bow.
+  for (const side of [-1, 1]) {
+    const a = new THREE.Vector3(side * 0.14, tipY + 0.35, z0 + len - 0.1);
+    const b = new THREE.Vector3(side * half * 0.95, y0 + 1.1, z0 - 0.3);
+    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, a.distanceTo(b), 6), kit.trim);
+    rail.position.copy(a).lerp(b, 0.5);
+    rail.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize());
+    g.add(rail);
+  }
+  // A figurehead's worth of carving at the point: a lion, at this distance a
+  // gilded lump, which is what a lion at this distance was.
+  const lion = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 6),
+    new THREE.MeshStandardMaterial({ color: 0xb8903e, roughness: 0.45, metalness: 0.4 }));
+  lion.scale.set(0.8, 1, 1.3);
+  lion.position.set(0, tipY + 0.3, z0 + len + 0.05);
+  g.add(lion);
+  return g;
+}
+
+/**
+ * The pavesade: painted shields hung along a great ship's castle rails, as
+ * much a ship's colours as her flag, and as much for show as for musket shot.
+ */
+function buildShields(L: number, B: number, D: number, aftH: number, foreH: number, look: ShipLook): THREE.InstancedMesh {
+  const spots: THREE.Vector3[] = [];
+  const bulwark = D * 0.34;
+  const along = (from: number, to: number, rise: number) => {
+    const n = Math.max(2, Math.floor(((to - from) * L) / 1.15));
+    for (let i = 0; i < n; i++) {
+      const t = lerp(from, to, (i + 0.5) / n);
+      const y = sheerAt(t) * D * FREEBOARD + rise + bulwark * 0.5;
+      const z = (t - 0.5) * L + rakeAt(t, L);
+      for (const side of [-1, 1]) spots.push(new THREE.Vector3(side * (railHalfBeam(t, B) * 0.95 + 0.06), y, z));
+    }
+  };
+  along(0.03, look.aftLen - 0.02, aftH);
+  if (foreH > 0) along(0.83, 0.93, foreH);
+  // And along the waist, between the castles.
+  along(look.aftLen + 0.04, 0.78, 0);
+
+  const im = new THREE.InstancedMesh(
+    new THREE.CylinderGeometry(0.36, 0.36, 0.07, 12).rotateZ(Math.PI / 2),
+    new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0 }),
+    spots.length,
+  );
+  const colours = [0xa63224, 0xe0d6bf, 0xc09340].map((h) => new THREE.Color(h));
+  const m = new THREE.Matrix4();
+  spots.forEach((p, i) => {
+    im.setMatrixAt(i, m.makeTranslation(p.x, p.y, p.z));
+    im.setColorAt(i, colours[Math.floor(i / 2) % 3]);
+  });
+  return im;
+}
+
+/**
+ * The people aboard: not a crew, which would be a hundred men, but enough of
+ * one — the helmsman at the whipstaff, an officer on the quarterdeck, a hand
+ * at each mast and a lookout forward and aloft — that she reads as a working
+ * ship and not a model of one.
+ */
+function buildCrew(hull: HullClass, look: ShipLook, aftH: number, foreH: number): THREE.Group {
+  const L = hull.lwl, B = hull.beam, D = hull.draft;
+  const g = new THREE.Group();
+  const rnd = seeded(look.seed + 31);
+  const deckY = (t: number) => sheerAt(t) * D * FREEBOARD
+    + (t < look.aftLen ? aftH : 0)
+    + (foreH > 0 && t > (look.overhang ? 0.8 : 0.84) ? foreH : 0);
+  const zOf = (t: number) => (t - 0.5) * L + rakeAt(t, L);
+  const spots: { x: number; y: number; z: number; face: number }[] = [];
+  const put = (t: number, across: number) => {
+    spots.push({ x: across * railHalfBeam(t, B), y: deckY(t), z: zOf(t), face: rnd() * Math.PI * 2 });
+  };
+
+  // The helmsman, at the break of the quarterdeck where the tiller comes in.
+  put(look.aftLen + 0.03, 0.08);
+  // Officer and pilot on the quarterdeck.
+  put(look.aftLen * 0.55, -0.35);
+  if (hull.crewFull > 40) put(look.aftLen * 0.4, 0.3);
+  // A hand or two at the foot of every mast, tending the sheets and braces.
+  for (const m of hull.masts) {
+    if (m.name.startsWith('Gávea')) continue;
+    const t = clamp((m.station * L * 0.42) / L + 0.5 - 0.035, 0.05, 0.92);
+    if (t < look.aftLen) continue;
+    put(t, rnd() < 0.5 ? -0.6 : 0.6);
+    if (hull.crewFull > 25) put(t + 0.05, rnd() < 0.5 ? -0.45 : 0.45);
+  }
+  // A lookout forward.
+  put(0.9, 0.12);
+  // Men about the waist, the more the bigger she is.
+  const extra = Math.min(6, Math.floor(hull.crewFull / 22));
+  for (let i = 0; i < extra; i++) put(lerp(look.aftLen + 0.06, 0.78, rnd()), (rnd() - 0.5) * 1.3);
+
+  // A figure of a man, merged into one shape: legs, body, arms and head.
+  const legs = new THREE.CylinderGeometry(0.13, 0.11, 0.82, 6).translate(0, 0.41, 0).scale(1.3, 1, 0.8);
+  const body = new THREE.CylinderGeometry(0.2, 0.15, 0.66, 7).translate(0, 1.14, 0).scale(1, 1, 0.75);
+  const arms = new THREE.CylinderGeometry(0.06, 0.06, 0.6, 5).rotateZ(0.15).translate(0.24, 1.1, 0);
+  const arms2 = arms.clone().scale(-1, 1, 1);
+  const tint = (geo: THREE.BufferGeometry, hex: number) => {
+    const c = new THREE.Color(hex);
+    const n = geo.getAttribute('position').count;
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(Array.from({ length: n * 3 }, (_, i) => [c.r, c.g, c.b][i % 3]), 3));
+    return geo;
+  };
+  const head = new THREE.SphereGeometry(0.12, 8, 6).translate(0, 1.62, 0);
+  const figure = mergeGeometries([
+    tint(legs.toNonIndexed(), 0x5a4a3a), tint(body.toNonIndexed(), 0xffffff),
+    tint(arms.toNonIndexed(), 0xffffff), tint(arms2.toNonIndexed(), 0xffffff),
+    tint(head.toNonIndexed(), 0xb0805a),
+  ]);
+  const men = new THREE.InstancedMesh(figure, new THREE.MeshLambertMaterial({ vertexColors: true }), spots.length);
+  const shirts = [0xe8e0cc, 0xd8cdb2, 0x9a3a2a, 0x5a6878, 0x8a7050, 0xe8e0cc].map((h) => new THREE.Color(h));
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  spots.forEach((s, i) => {
+    q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), s.face);
+    const k = 0.95 + rnd() * 0.1;
+    m.compose(new THREE.Vector3(s.x, s.y, s.z), q, new THREE.Vector3(k, k, k));
+    men.setMatrixAt(i, m);
+    men.setColorAt(i, shirts[i % shirts.length]);
+  });
+  g.add(men);
+  return g;
+}
+
+/** A stern lantern: a post, a glazed body and a cap. */
+function buildLantern(glass: THREE.Material): THREE.Group {
+  const g = new THREE.Group();
+  const iron = new THREE.MeshLambertMaterial({ color: IRON });
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.6, 5), iron);
+  post.position.y = 0.3;
+  g.add(post);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.26, 0.62, 6), glass);
+  body.position.y = 0.9;
+  g.add(body);
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.32, 6), iron);
+  cap.position.y = 1.37;
+  g.add(cap);
   return g;
 }
 
@@ -1491,13 +1990,16 @@ function buildSteering(L: number, _B: number, D: number): { rudder: THREE.Group;
  * the inverse of the sail's aspect so that it comes out square once the texture
  * is mapped onto the cut of the sail.
  */
-function makeSailTexture(build: SailBuild, withCross: boolean): THREE.Texture {
+function makeSailTexture(
+  build: SailBuild, device: 'cross' | 'saltire' | null, look: ShipLook, index: number,
+): THREE.Texture {
   const size = 1024;
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d')!;
+  const rnd = seeded(look.seed + index * 101 + 7);
 
-  ctx.fillStyle = '#ded3ba';
+  ctx.fillStyle = look.canvas;
   ctx.fillRect(0, 0, size, size);
 
   // The weave: a fine cross-hatch, which is what keeps canvas from reading as
@@ -1509,12 +2011,20 @@ function makeSailTexture(build: SailBuild, withCross: boolean): THREE.Texture {
     ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(size, i); ctx.stroke();
   }
 
+  // Each cloth came off a different bolt and has weathered its own way.
+  const cloths = 11;
+  const cw = size / cloths;
+  for (let i = 0; i < cloths; i++) {
+    const d = (rnd() - 0.5) * 0.06;
+    ctx.fillStyle = d > 0 ? `rgba(255,250,236,${d})` : `rgba(120,104,78,${-d})`;
+    ctx.fillRect(i * cw, 0, cw, size);
+  }
+
   // Cloth seams. The texture is laid out in the sail's own frame — across the
   // sail one way, up the luff the other — so these run straight up it whatever
   // the cut, and stay straight when the canvas bellies.
-  const cloths = 11;
   for (let i = 1; i < cloths; i++) {
-    const x = (i / cloths) * size;
+    const x = i * cw;
     ctx.strokeStyle = 'rgba(146, 132, 104, 0.55)';
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, size); ctx.stroke();
@@ -1524,18 +2034,42 @@ function makeSailTexture(build: SailBuild, withCross: boolean): THREE.Texture {
     ctx.beginPath(); ctx.moveTo(x + 3, 0); ctx.lineTo(x + 3, size); ctx.stroke();
   }
 
-  // Reef bands: the reinforced strips a sail is shortened along.
-  ctx.fillStyle = 'rgba(150, 137, 108, 0.3)';
-  for (const v of [0.3, 0.52]) ctx.fillRect(0, v * size, size, size * 0.018);
+  // Reef bands: the reinforced strips a sail is shortened along, with the
+  // points hanging from them.
+  for (const v of [0.3, 0.52]) {
+    ctx.fillStyle = 'rgba(150, 137, 108, 0.3)';
+    ctx.fillRect(0, v * size, size, size * 0.018);
+    ctx.fillStyle = 'rgba(110, 96, 72, 0.5)';
+    for (let x = cw / 2; x < size; x += cw / 2) ctx.fillRect(x, v * size + size * 0.018, 3, 16);
+  }
+
+  // Patches, where the sail has blown out and been mended at sea: a square of
+  // newer or older cloth let into a cloth, stitched round.
+  const patches = Math.round(look.wear * (3 + rnd() * 6));
+  for (let i = 0; i < patches; i++) {
+    const col = Math.floor(rnd() * cloths);
+    const w = cw * (0.6 + rnd() * 0.35);
+    const h = size * (0.05 + rnd() * 0.12);
+    const x = col * cw + (cw - w) / 2;
+    const y = size * (0.1 + rnd() * 0.78);
+    const newer = rnd() < 0.5;
+    ctx.fillStyle = newer ? 'rgba(248,244,232,0.55)' : 'rgba(150,132,100,0.4)';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = 'rgba(100,86,62,0.7)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 4]);
+    ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
+    ctx.setLineDash([]);
+  }
 
   // Sun, salt and weather. Canvas at sea is never one flat colour.
   for (let i = 0; i < 130; i++) {
-    const x = Math.random() * size;
-    const y = Math.random() * size;
-    const r = 30 + Math.random() * 130;
+    const x = rnd() * size;
+    const y = rnd() * size;
+    const r = 30 + rnd() * 130;
     const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    const dark = Math.random() < 0.62;
-    g.addColorStop(0, dark ? 'rgba(142, 128, 100, 0.08)' : 'rgba(255, 252, 244, 0.09)');
+    const dark = rnd() < 0.62;
+    g.addColorStop(0, dark ? `rgba(142, 128, 100, ${0.05 + look.wear * 0.08})` : 'rgba(255, 252, 244, 0.09)');
     g.addColorStop(1, 'rgba(150, 138, 110, 0)');
     ctx.fillStyle = g;
     ctx.beginPath();
@@ -1543,25 +2077,96 @@ function makeSailTexture(build: SailBuild, withCross: boolean): THREE.Texture {
     ctx.fill();
   }
 
+  // Rust and tar run down from the head, where the canvas is laced to the yard,
+  // and the foot is grey with spray and the hands that haul on it.
+  const runs = Math.round(4 + look.wear * 14);
+  for (let i = 0; i < runs; i++) {
+    const x = rnd() * size;
+    const len = size * (0.08 + rnd() * 0.3 * look.wear + 0.05);
+    const g = ctx.createLinearGradient(0, 0, 0, len);
+    g.addColorStop(0, `rgba(110,72,40,${0.12 + look.wear * 0.18})`);
+    g.addColorStop(1, 'rgba(110,72,40,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x, 0, 2 + rnd() * 7, len);
+  }
+  const foot = ctx.createLinearGradient(0, size * 0.72, 0, size);
+  foot.addColorStop(0, 'rgba(96,86,70,0)');
+  foot.addColorStop(1, `rgba(96,86,70,${0.1 + look.wear * 0.22})`);
+  ctx.fillStyle = foot;
+  ctx.fillRect(0, size * 0.72, size, size * 0.28);
+
   // Bolt rope round the edge.
   ctx.strokeStyle = 'rgba(112, 96, 70, 0.6)';
   ctx.lineWidth = 12;
   ctx.strokeRect(6, 6, size - 12, size - 12);
 
-  if (withCross) {
+  if (device) {
     const cx = build.crossAt[0] * size;
     const cy = (1 - build.crossAt[1]) * size;
     const a = build.crossArm;
-    ctx.fillStyle = '#a3302b';
-    drawCross(ctx, cx, cy, size, build.crossAxes, a, a * 0.30, a * 0.17);
-    ctx.fillStyle = '#ded3ba';
-    drawCross(ctx, cx, cy, size, build.crossAxes, a * 0.56, a * 0.115, a * 0.065);
+    if (device === 'cross') {
+      ctx.fillStyle = '#a3302b';
+      drawCross(ctx, cx, cy, size, build.crossAxes, a, a * 0.30, a * 0.17);
+      ctx.fillStyle = look.canvas;
+      drawCross(ctx, cx, cy, size, build.crossAxes, a * 0.56, a * 0.115, a * 0.065);
+    } else {
+      // The ragged saltire of Burgundy, which Biscay's ships wore: two knotted
+      // staves crossed, not a clean cross.
+      ctx.fillStyle = '#a3302b';
+      drawSaltire(ctx, cx, cy, size, build.crossAxes, a * 1.1, a * 0.16, rnd);
+    }
   }
+  // The paint has weathered with the cloth under it.
+  ctx.fillStyle = `rgba(210,200,176,${0.06 + look.wear * 0.1})`;
+  for (let i = 0; i < 60; i++) ctx.fillRect(rnd() * size, rnd() * size, 4 + rnd() * 30, 2 + rnd() * 6);
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 8;
   return tex;
+}
+
+/** Two knotted staves crossed corner to corner, in metres on the sail. */
+function drawSaltire(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number, size: number,
+  axes: { up: [number, number]; across: [number, number] },
+  len: number, thick: number, rnd: () => number,
+): void {
+  const ux = axes.up[0] * size, uy = -axes.up[1] * size;
+  const ax = axes.across[0] * size, ay = -axes.across[1] * size;
+  const at = (mUp: number, mAcross: number): [number, number] =>
+    [cx + mUp * ux + mAcross * ax, cy + mUp * uy + mAcross * ay];
+  for (const s of [1, -1]) {
+    // Along the diagonal (1, s), with the stave's width across it.
+    const d = Math.SQRT1_2;
+    const du = d, da = s * d;
+    const nu = -s * d, na = d;
+    const pts: [number, number][] = [];
+    const n = 9;
+    for (let i = 0; i <= n; i++) {
+      const k = -len + (2 * len * i) / n;
+      pts.push(at(du * k + nu * thick, da * k + na * thick));
+    }
+    for (let i = n; i >= 0; i--) {
+      const k = -len + (2 * len * i) / n;
+      pts.push(at(du * k - nu * thick, da * k - na * thick));
+    }
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.closePath();
+    ctx.fill();
+    // The knots: stubs of cut branches along each stave.
+    for (let i = 1; i < 6; i++) {
+      const k = -len + (2 * len * i) / 6;
+      const side = rnd() < 0.5 ? 1 : -1;
+      const [x0, y0] = at(du * k + nu * thick * side, da * k + na * thick * side);
+      const [x1, y1] = at(du * (k + thick * 0.8) + nu * thick * 2.4 * side, da * (k + thick * 0.8) + na * thick * 2.4 * side);
+      ctx.lineWidth = Math.max(4, thick * Math.hypot(ux, uy) * 0.9);
+      ctx.strokeStyle = '#a3302b';
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    }
+  }
 }
 
 /**

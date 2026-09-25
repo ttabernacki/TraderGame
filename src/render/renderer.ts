@@ -133,6 +133,7 @@ export class Renderer {
   ship: ShipMesh;
   /** The strange sail's hull, built the first time one is raised. */
   private stranger: ShipMesh | null = null;
+  private shipLight = { night: 0, overcast: 0 };
   private strangerHullId: string | null = null;
 
   cameraMode: CameraMode = 'chase';
@@ -257,7 +258,7 @@ export class Renderer {
     this.camera.position.set(0, 22, -55);
 
     this.hullClass = hull;
-    this.ship = new ShipMesh(hull);
+    this.ship = new ShipMesh(hull, { lamp: true });
 
     this.scene.fog = this.fog;
     this.scene.add(this.sky.group);
@@ -345,6 +346,7 @@ export class Renderer {
     }
     if (!mesh) return;
     mesh.group.visible = true;
+    mesh.setLight(this.shipLight.night, this.shipLight.overcast);
 
     const mPerDegLat = NM * 60;
     const mPerDegLon = mPerDegLat * Math.max(cosd(f.pos.lat), 1e-6);
@@ -387,7 +389,7 @@ export class Renderer {
     this.scene.remove(this.ship.group);
     this.ship.dispose();
     this.hullClass = hull;
-    this.ship = new ShipMesh(hull);
+    this.ship = new ShipMesh(hull, { lamp: true });
     this.scene.add(this.ship.group);
   }
 
@@ -470,7 +472,10 @@ export class Renderer {
     );
     this.applyLighting(lighting, f.visibilityNm);
     this.sky.drift(f.windFrom, f.windKnots, realDt);
-    this.ocean.setOvercast(clamp((f.cloud - 0.45) / 0.5, 0, 1));
+    const overcast = clamp((f.cloud - 0.45) / 0.5, 0, 1);
+    this.ocean.setOvercast(overcast);
+    this.shipLight = { night: lighting.night, overcast };
+    this.ship.setLight(lighting.night, overcast);
     // The reflection is refreshed a few times a second, which is far faster
     // than a sky changes and far cheaper than every frame.
     if (this.envFrame++ % 12 === 0) {
