@@ -189,6 +189,13 @@ export class ChartView {
       // What the chart *does*, and nothing that merely changes how it looks.
       // Laying a course is the reason a pilot comes to the table, so it is the
       // one button that is always here and always first.
+      // The road home from the south, where it applies: second only to laying
+      // a course, and ahead of the chips so it is never scrolled off a phone.
+      g && g.voltaTarget() && !g.route.some((r) => r.name === 'The turn of the sea')
+        ? button(`Lay the volta for ${g.voltaTarget()!.name}`, () => {
+          g.layVolta(); this.buildTools(); this.buildVoyage(); this.draw();
+        }, { primary: true, title: 'Have the pilot lay the road home: out round the Azores High and in with the westerlies' })
+        : null,
       button(
         `Steer for ${this.targetLabel()}`,
         () => this.steerForSelection(false),
@@ -278,11 +285,6 @@ export class ChartView {
                   : `Hold her ${nm} miles off the land and follow it wherever it goes.`,
             )),
           )
-        : null,
-      g && g.voltaTarget() && !g.route.some((r) => r.name === 'The turn of the sea')
-        ? button(`Lay the volta for ${g.voltaTarget()!.name}`, () => {
-          g.layVolta(); this.buildTools(); this.buildVoyage(); this.draw();
-        }, { title: 'Have the pilot lay the road home: out round the Azores High and in with the westerlies' })
         : null,
       hasRoute
         ? button('Clear course', () => {

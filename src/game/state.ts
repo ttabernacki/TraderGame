@@ -3495,7 +3495,7 @@ export class Game {
       + 'make in two months by the short road. He calls it the volta do mar, the turn of the sea. '
       + 'He says every man who has come home from Guinea has come home that way, and that the '
       + 'ones who tried the short road are still out there. He will lay it on the chart if you '
-      + 'tell him to.',
+      + 'tell him to. (Open the chart and choose Lay the volta.)',
       true);
   }
 
@@ -8535,12 +8535,19 @@ export class Game {
    */
   voltaTarget(): { name: string; lat: number; lon: number; portId?: string } | null {
     const p = this.nav.estimated;
-    if (p.lat > 28 || p.lat < -36 || p.lon < -45 || p.lon > 16) return null;
+    // Anywhere in the Atlantic trades or south of them: Guinea, the islands,
+    // Angola, the Cape. Not the Indian Ocean, which has its own road home.
+    if (p.lat > 30 || p.lat < -40 || p.lon < -50 || p.lon > 22) return null;
     const last = this.route[this.route.length - 1];
     const lisboa = portDef('lisboa');
-    const d = last ?? { name: lisboa.name, lat: lisboa.lat, lon: lisboa.lon, portId: lisboa.id };
-    if (d.lat < 30 || d.lat > 46 || d.lon < -35 || d.lon > 0) return null;
-    if (d.lat - p.lat < 6) return null;
+    const home = { name: lisboa.name, lat: lisboa.lat, lon: lisboa.lon, portId: lisboa.id };
+    // Home to wherever she is laid off for, if that is up in Portuguese
+    // waters; otherwise Lisbon. The button used to vanish altogether whenever
+    // the passage laid on the chart ended anywhere else — which, for a captain
+    // still in a Guinea port with his outbound course on the chart, was always.
+    const inPortugal = (d: { lat: number; lon: number }) => d.lat >= 30 && d.lat <= 46 && d.lon >= -35 && d.lon <= 0;
+    const d = last && inPortugal(last) ? last : home;
+    if (d.lat - p.lat < 5) return null;
     return d;
   }
 
