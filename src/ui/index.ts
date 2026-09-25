@@ -41,6 +41,10 @@ export interface UiCallbacks {
   onVirtualKey: (key: string, down: boolean) => void;
   /** Turn the sound on or off. Returns whether it is now on. */
   onToggleSound: () => boolean;
+  /** Photo mode: the controls away and the camera circling her. */
+  onPhoto: () => void;
+  /** Step the graphics setting round: auto, high, medium, low. */
+  onQuality: () => void;
 }
 
 /**
@@ -338,6 +342,7 @@ export class Ui {
     // The Book of Voyages opens from wherever you are, before the per-screen
     // routing below. A player who wants to keep the game does not first want to
     // work out which screen he is allowed to want that from.
+    if (k === 'f8') { this.cb.onQuality(); return true; }
     if (k === 'f2') {
       this.setMode((g.mode as GameMode) === 'voyages' ? 'sailing' : 'voyages');
       return true;
@@ -375,6 +380,7 @@ export class Ui {
         if (g.anchored && g.shoreHere) { this.setMode('shore'); return true; }
         return false;
       case 'v': this.cb.onCycleCamera(); return true;
+      case 'z': this.cb.onPhoto(); return true;
       case 'm': {
         const on = this.cb.onToggleSound();
         g.pushAlert(on ? 'Sound on.' : 'Sound off.', 'note');

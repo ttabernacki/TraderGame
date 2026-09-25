@@ -261,6 +261,14 @@ export class Sky {
   private lastUpdate = -1e9;
   private lastLat = 999;
 
+  /** Fewer octaves of cloud detail for a slower GPU. Recompiles the dome. */
+  setCloudOctaves(n: number): void {
+    const d = this.domeMaterial.defines as Record<string, number>;
+    if (d.CLOUD_OCTAVES === n) return;
+    d.CLOUD_OCTAVES = n;
+    this.domeMaterial.needsUpdate = true;
+  }
+
   constructor() {
     this.domeMaterial = new THREE.ShaderMaterial({
       vertexShader: skyVertex,

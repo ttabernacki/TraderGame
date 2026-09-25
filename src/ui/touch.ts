@@ -109,6 +109,8 @@ export class TouchControls {
     for (const s of [
       { label: 'Change the view', key: 'v', hint: 'Shift the view about the ship' },
       { label: 'Sound on / off', key: 'm', hint: 'Sound' },
+      { label: 'Photo mode', key: 'z', hint: 'Controls away; tap to come back' },
+      { label: 'Graphics quality', key: 'f8', hint: 'Auto, high, medium, low' },
       { label: 'Save or load', key: 'f2', hint: 'The Book of Voyages' },
     ] as Spec[]) {
       const b = this.button({ ...s, wide: true });

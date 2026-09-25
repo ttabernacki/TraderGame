@@ -16,7 +16,7 @@ import { rollSeaEvent } from './game/seaEvents';
 import { sightOpportunities, takeSight } from './navigation/navigator';
 import { KNOTS } from './ship/physics';
 import { sightingRangeNm } from './navigation/charts';
-import { Renderer, type RenderFrame } from './render/renderer';
+import { type CameraMode, Renderer, type RenderFrame } from './render/renderer';
 import { Sound } from './render/sound';
 import { InputState, Ui } from './ui';
 
@@ -84,13 +84,52 @@ const ui = new Ui(uiHost, {
     if (!renderer || !game) return;
     const mode = renderer.cycleCamera();
     game.pushAlert(
-      { chase: 'From astern', deck: 'From the quarterdeck', beam: 'From off the beam', masthead: 'From the masthead' }[mode],
+      {
+        chase: 'From astern', deck: 'From the quarterdeck', beam: 'From off the beam',
+        masthead: 'From the masthead', low: 'From the waterline', orbit: 'Circling her',
+      }[mode],
       'note',
     );
   },
   onVirtualKey: (key, down) => input.setVirtual(key, down),
   onToggleSound: () => { sound.start(); sound.setMuted(!sound.isMuted()); return !sound.isMuted(); },
+  onPhoto: () => togglePhoto(),
+  onQuality: () => {
+    if (!renderer || !game) return;
+    const order = ['auto', 'high', 'medium', 'low'] as const;
+    const next = order[(order.indexOf(renderer.qualitySetting) + 1) % order.length];
+    const level = renderer.setQuality(next);
+    game.pushAlert(next === 'auto' ? `Graphics: automatic (${level} for now).` : `Graphics: ${level}.`, 'note');
+  },
 });
+
+/**
+ * Photo mode. The controls go away and the camera takes a slow circle round
+ * her; the clock keeps running, so she keeps sailing. A click, a tap, Esc or
+ * the same key brings everything back.
+ */
+let photoFrom: CameraMode | null = null;
+function togglePhoto(): void {
+  if (!renderer) return;
+  const on = !renderer.photo;
+  renderer.photo = on;
+  document.body.classList.toggle('photo', on);
+  if (on) {
+    photoFrom = renderer.cameraMode;
+    renderer.cameraMode = 'orbit';
+  } else if (photoFrom) {
+    renderer.cameraMode = photoFrom;
+    photoFrom = null;
+  }
+}
+window.addEventListener('keydown', (e) => {
+  if (renderer?.photo && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); togglePhoto(); }
+}, true);
+window.addEventListener('pointerdown', (e) => {
+  if (!renderer?.photo) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  togglePhoto();
+}, true);
 
 /**
  * Put a ship somewhere and let her settle into a steady state there.
@@ -448,6 +487,8 @@ function buildFrame(g: Game): RenderFrame {
     waveHeight: g.displayWave,
     swellFrom: g.displaySwell,
     cloud: g.weatherNow.cloud,
+    rain: g.weatherNow.rain,
+    storm: !!g.weatherNow.storm,
     visibilityNm: g.weatherNow.visibility,
     dayFromEpoch: g.clock.day,
     hourLocal: g.clock.hour,

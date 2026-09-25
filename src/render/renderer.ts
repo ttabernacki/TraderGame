@@ -5,13 +5,15 @@ import { Settlements } from './settlement';
 import { Ocean } from './ocean';
 import { Sky, type SkyLighting } from './sky';
 import { ShipMesh } from './shipMesh';
+import { Life } from './life';
+import { QUALITY, loadAutoLevel, loadSetting, saveAutoLevel, saveSetting, stepDown, type QualityLevel, type QualitySetting } from './quality';
 import { Spray } from './spray';
 import { depthAt, nearestShore } from '../world/landmass';
 import { hullClass, type HullClass } from '../ship/hull';
 import { initialSails } from '../ship/physics';
 import type { SailState } from '../ship/physics';
 
-export type CameraMode = 'chase' | 'deck' | 'masthead' | 'beam';
+export type CameraMode = 'chase' | 'deck' | 'masthead' | 'beam' | 'low' | 'orbit';
 
 /**
  * How much faster than real time the water may be drawn streaming past her.
@@ -24,6 +26,7 @@ export type CameraMode = 'chase' | 'deck' | 'masthead' | 'beam';
 const WATER_GAIN = 3.4;
 
 /** Soundings taken round the ship to colour the shallows. See updateShoals. */
+const FLASH = new THREE.Color(0.85, 0.88, 1);
 const SHOAL_SIZE = 64;
 const SHOAL_SPAN_M = 16000;
 /** How far she may run before they are taken again. */
@@ -85,6 +88,9 @@ export interface RenderFrame {
   waveHeight: number;
   swellFrom: number;
   cloud: number;
+  rain: number;
+  /** A storm system is on her. */
+  storm: boolean;
   visibilityNm: number;
   dayFromEpoch: number;
   hourLocal: number;
@@ -131,6 +137,15 @@ export class Renderer {
   // Towns stand on the ground as it is drawn, not on the raw height field.
   settlements = new Settlements((lat, lon) => this.land.groundAt(lat, lon));
   spray = new Spray();
+  life = new Life();
+  /** What the player asked for, and the level actually in force. */
+  qualitySetting: QualitySetting = loadSetting();
+  quality: QualityLevel = 'high';
+  private frameTimes: number[] = [];
+  private landNm = Infinity;
+  private landCheckAt = -1e9;
+  /** Photo mode: the controls hidden and the camera orbiting slowly. */
+  photo = false;
   ship: ShipMesh;
   /** The strange sail's hull, built the first time one is raised. */
   private stranger: ShipMesh | null = null;
@@ -277,6 +292,7 @@ export class Renderer {
     this.scene.add(this.settlements.group);
     this.scene.add(this.ship.group);
     this.scene.add(this.spray.points);
+    this.scene.add(this.life.group);
     this.scene.add(this.sun);
     this.scene.add(this.sun.target);
     this.scene.add(this.ambient);
@@ -297,6 +313,7 @@ export class Renderer {
     this.sun.shadow.bias = -0.0009;
     this.sun.shadow.normalBias = 0.06;
 
+    this.applyQuality();
     this.resize();
   }
 
@@ -479,7 +496,7 @@ export class Renderer {
     this.ship.setLight(lighting.night, overcast);
     // The reflection is refreshed a few times a second, which is far faster
     // than a sky changes and far cheaper than every frame.
-    if (this.envFrame++ % 12 === 0) {
+    if (this.envFrame++ % QUALITY[this.quality].envEvery === 0) {
       this.envCamera.position.copy(this.camera.position);
       this.envCamera.update(this.renderer, this.scene);
     }
@@ -644,7 +661,28 @@ export class Renderer {
 
     this.updateCamera(f, realDt, centre.height, f.waveHeight);
     this.applyCameraFeel(f, realDt);
+
+    // --- Weather you can see, and life ---------------------------------------
+    if (this.riggingClock - this.landCheckAt > 2) {
+      this.landCheckAt = this.riggingClock;
+      const shore = nearestShore(f.pos, 60);
+      this.landNm = shore.land < 0 ? Infinity : shore.distance / 1852;
+    }
+    this.life.update({
+      dt: realDt, t: this.riggingClock, camera: this.camera,
+      rain: f.rain, storm: f.storm, windFrom: f.windFrom, windKnots: f.windKnots,
+      night: lighting.night, landNm: this.landNm, lat: f.pos.lat,
+      speedKnots: Math.abs(f.speedKnots), heading: this.drawnHeading,
+      length: this.hullClass.lwl, detail: QUALITY[this.quality].life, seaY: centre.height,
+    });
+    // A lightning flash lights everything at once, the sea and the sails.
+    if (this.life.flash > 0) {
+      this.ambient.intensity += this.life.flash * 2.6;
+      this.ambient.color.lerp(FLASH, this.life.flash * 0.7);
+    }
+
     this.renderer.render(this.scene, this.camera);
+    this.watchFrameRate(realDt);
   }
 
   /**
@@ -847,6 +885,31 @@ export class Renderer {
         );
         break;
       }
+      case 'low': {
+        // Down at the waterline off her lee bow, looking back and up at her:
+        // the view from a boat pulling across to her, and the one that shows
+        // what a ship under sail actually looks like.
+        const fwdX = Math.sin(hdg), fwdZ = -Math.cos(hdg);
+        const side = -f.trimSign || 1;
+        const stbX = Math.cos(hdg) * side, stbZ = Math.sin(hdg) * side;
+        const L = this.hullClass.lwl;
+        desired.set(
+          fwdX * L * 0.9 + stbX * L * 0.9,
+          2.2 + seaHeight + lift * 0.5,
+          fwdZ * L * 0.9 + stbZ * L * 0.9,
+        );
+        break;
+      }
+      case 'orbit': {
+        // A slow circle round her, for looking rather than sailing.
+        const az = this.riggingClock * 0.045 + this.lookYaw * DEG;
+        desired.set(
+          Math.sin(az) * this.distance * 1.15,
+          this.hullClass.lwl * 0.3 + seaHeight + lift,
+          -Math.cos(az) * this.distance * 1.15,
+        );
+        break;
+      }
       case 'chase':
       default: {
         // The camera trails the heading rather than snapping to it, so putting
@@ -910,8 +973,52 @@ export class Renderer {
     this.camera.position.z += Math.cos(t * 1.6 + 0.4) * shake * 0.32;
   }
 
+  /** Set what the player wants: a level, or auto. */
+  setQuality(s: QualitySetting): QualityLevel {
+    this.qualitySetting = s;
+    saveSetting(s);
+    this.applyQuality();
+    return this.quality;
+  }
+
+  private applyQuality(): void {
+    const phone = isPhone();
+    this.quality = this.qualitySetting === 'auto' ? loadAutoLevel(phone) : this.qualitySetting;
+    const q = QUALITY[this.quality];
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, q.pixelRatio));
+    this.renderer.shadowMap.type = q.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    if (this.sun.shadow.mapSize.x !== q.shadowSize) {
+      this.sun.shadow.mapSize.set(q.shadowSize, q.shadowSize);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+    this.sky.setCloudOctaves(q.cloudOctaves);
+    this.frameTimes = [];
+    this.resize();
+  }
+
+  /**
+   * On auto, step down a level when the frame rate says the device cannot
+   * keep up: measured over twelve seconds of drawing, ignoring the first few
+   * while shaders compile, and remembered for next time.
+   */
+  private watchFrameRate(dt: number): void {
+    if (this.qualitySetting !== 'auto' || this.quality === 'low') return;
+    if (dt <= 0 || dt > 0.5) return;
+    this.frameTimes.push(dt);
+    if (this.frameTimes.length < 60 * 14) return;
+    const recent = this.frameTimes.slice(-60 * 12);
+    const fps = recent.length / recent.reduce((a, b) => a + b, 0);
+    this.frameTimes = [];
+    if (fps < 32) {
+      const next = stepDown(this.quality);
+      saveAutoLevel(next);
+      this.applyQuality();
+    }
+  }
+
   cycleCamera(): CameraMode {
-    const order: CameraMode[] = ['chase', 'deck', 'beam', 'masthead'];
+    const order: CameraMode[] = ['chase', 'deck', 'beam', 'masthead', 'low', 'orbit'];
     const i = order.indexOf(this.cameraMode);
     this.cameraMode = order[(i + 1) % order.length];
     return this.cameraMode;

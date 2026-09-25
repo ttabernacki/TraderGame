@@ -2852,3 +2852,6 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
 .estate-sub { font-size: 12.5px; color: var(--ink-soft); line-height: 1.5; margin-top: 3px; }
 .estate-sub.good { color: #3f6b3a; }
 .estate-sub.bad { color: var(--warn); }
+
+/* Photo mode: everything but the scene put away. */
+body.photo #ui > *, body.photo #hud-strip, body.photo .pilot { visibility: hidden !important; }
