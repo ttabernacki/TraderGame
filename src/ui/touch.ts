@@ -22,6 +22,8 @@ export interface TouchHandlers {
 
 interface Spec {
   label: string;
+  /** A word under the glyph, so nobody has to guess what an arrow does. */
+  cap?: string;
   key: string;
   hold?: boolean;
   hint?: string;
@@ -56,42 +58,73 @@ export class TouchControls {
       if (document.hidden) this.releaseAll();
     });
 
+    // Built for one hand on a phone held upright.
+    //
+    // The old layout was three rows of glyphs — a top strip of eleven buttons
+    // that ran off the edge of the screen, and two corner pads of arrows whose
+    // meaning a player had to guess. Now the top carries only what is reached
+    // for every minute (the clock, the book, the anchor) and a "more" sheet
+    // holds the rest; the bottom is one dock, full width, with the helm on one
+    // row and the canvas on the other, every button saying what it does.
     const helm = this.pad('touch-helm', [
-      { label: '❮', key: 'a', hold: true, hint: 'Alter course to port' },
-      { label: '■', key: 'x', hold: true, hint: 'Steady as she goes' },
-      { label: 'Mark', key: 'h', hint: 'Give up your own course and steer for the mark' },
-      { label: '❯', key: 'd', hold: true, hint: 'Alter course to starboard' },
+      { label: '◀', cap: 'Port', key: 'a', hold: true, hint: 'Alter course to port' },
+      { label: '■', cap: 'Steady', key: 'x', hold: true, hint: 'Steady as she goes' },
+      { label: '⌖', cap: 'Mark', key: 'h', hint: 'Steer for the mark laid off on the chart' },
+      { label: '▶', cap: 'Starboard', key: 'd', hold: true, hint: 'Alter course to starboard' },
     ]);
 
     const rig = this.pad('touch-rig', [
-      { label: '▲', key: 'w', hold: true, hint: 'Make sail' },
-      { label: '▼', key: 's', hold: true, hint: 'Shorten' },
-      { label: '↶', key: 'q', hold: true, hint: 'Ease' },
-      { label: '↷', key: 'e', hold: true, hint: 'Harden' },
-      // Astern, which is wanted at exactly the moment nobody can find a menu.
-      { label: '⇄', key: 't', hint: 'About ship — put her on the other tack' },
-      { label: '⏪', key: 'b', hint: 'Back her astern, off whatever she is on' },
+      { label: '▲', cap: 'Make sail', key: 'w', hold: true, hint: 'Make sail' },
+      { label: '▼', cap: 'Shorten', key: 's', hold: true, hint: 'Shorten sail' },
+      { label: '↶', cap: 'Ease', key: 'q', hold: true, hint: 'Ease the sheets' },
+      { label: '↷', cap: 'Harden', key: 'e', hold: true, hint: 'Harden in the sheets' },
+      { label: '⇄', cap: 'Tack', key: 't', hint: 'About ship — put her on the other tack' },
+      { label: '⏪', cap: 'Astern', key: 'b', hint: 'Back her astern, off whatever she is on' },
     ]);
 
     const top = this.pad('touch-top', [
       { label: '‹‹', key: '[', hint: 'Slower' },
-      { label: '››', key: ']', hint: 'Faster' },
       { label: '', key: '', hint: 'Rate' },
-      { label: 'Cam', key: 'v', hint: 'View' },
-      // One button for the book, which is now everything written down.
-      { label: 'The book', key: 'j', hint: 'Chart, roteiro, log, orders, company', wide: true },
-      { label: 'Sight', key: 'n', hint: 'Sextant' },
-      { label: 'Lead', key: 'g', hint: 'Heave the lead — depth, ground, and the offing' },
-      { label: '♪', key: 'm', hint: 'Sound on or off' },
-      // There is no F2 on a phone, and the Book of Voyages is the only save
-      // screen there is — without a button for it here a player on a touch
-      // device has no way to save at all.
-      { label: 'Save', key: 'f2', hint: 'The Book of Voyages — save or load' },
-      { label: 'Anchor', key: ' ', hint: 'Anchor', wide: true },
+      { label: '››', key: ']', hint: 'Faster' },
+      // One button for the book, which is everything written down.
+      { label: 'Book', key: 'j', hint: 'Chart, rutter, log, orders, company', wide: true },
     ]);
+    this.anchorBtn = this.button({ label: 'Anchor', key: ' ', hint: 'Anchor, or weigh', wide: true });
+    const moreBtn = el('button', {
+      class: 'touch-btn touch-more-btn', type: 'button', 'aria-label': 'More', title: 'More',
+    }, '⋯');
+    moreBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.more.classList.toggle('on');
+    });
+    top.append(this.anchorBtn, moreBtn);
 
-    this.root.append(top, helm, rig);
+    // The things wanted now and then, in a sheet that drops from the top bar.
+    for (const s of [
+      { label: 'Take a sight', key: 'n', hint: 'The quadrant: the sun at noon, or the pole star' },
+      { label: 'Heave the lead', key: 'g', hint: 'Depth, the ground, and how far off the land she is' },
+      { label: 'Change the view', key: 'v', hint: 'Shift the view about the ship' },
+      { label: 'Sound on / off', key: 'm', hint: 'Sound' },
+      { label: 'Save or load', key: 'f2', hint: 'The Book of Voyages' },
+    ] as Spec[]) {
+      const b = this.button({ ...s, wide: true });
+      b.addEventListener('pointerup', () => this.more.classList.remove('on'));
+      this.more.append(b);
+    }
+
+    this.dock.append(helm, rig);
+    this.root.append(top, this.more, this.dock);
     this.setVisible(false);
+  }
+
+  private dock = el('div', { class: 'touch-dock' });
+  private more = el('div', { class: 'touch-more' });
+  private anchorBtn!: HTMLElement;
+
+  /** Whether she is at anchor, so the button says what it will do. */
+  setAnchored(down: boolean): void {
+    const word = down ? 'Weigh' : 'Anchor';
+    if (this.anchorBtn.textContent !== word) this.anchorBtn.textContent = word;
   }
 
   private pad(cls: string, specs: Spec[]): HTMLElement {
@@ -113,11 +146,12 @@ export class TouchControls {
 
   private button(s: Spec): HTMLElement {
     const b = el('button', {
-      class: `touch-btn${s.wide ? ' wide' : ''}`,
+      class: `touch-btn${s.wide ? ' wide' : ''}${s.cap ? ' capped' : ''}`,
       type: 'button',
       'aria-label': s.hint ?? s.label,
       title: s.hint ?? s.label,
-    }, s.label);
+    }, s.cap ? el('span', { class: 'touch-glyph' }, s.label) : s.label,
+    s.cap ? el('span', { class: 'touch-cap' }, s.cap) : null);
 
     if (s.hold) {
       // A held control is registered against the pointer that started it and
@@ -178,7 +212,7 @@ export class TouchControls {
     this.visible = on;
     this.root.classList.toggle('on', on);
     // Nothing should stay held while the controls are off the screen.
-    if (!on) this.releaseAll();
+    if (!on) { this.releaseAll(); this.more.classList.remove('on'); }
   }
 
   isVisible(): boolean {

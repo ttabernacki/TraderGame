@@ -44,8 +44,10 @@ export class PilotPanel {
 
     if (this.shown !== step.id) {
       this.shown = step.id;
-      // A new instruction opens itself once. The player has not read this one.
-      this.open = true;
+      // A new instruction opens itself once — except on a phone, where the
+      // paragraph would cover a third of the sea. There it is a single line,
+      // and the ? opens it.
+      this.open = !(typeof window !== 'undefined' && window.matchMedia?.('(max-width: 860px)').matches);
       this.rebuild(g, step.id);
     }
     // The distance to the mark moves every watch, so it is refreshed even when

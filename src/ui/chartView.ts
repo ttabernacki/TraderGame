@@ -106,7 +106,9 @@ export class ChartView {
       el('div', { class: 'screen-body', style: { padding: '0', overflow: 'hidden' } }, this.wrap),
       el('div', { class: 'screen-foot' },
         el('div', { style: { marginRight: 'auto', fontSize: '13px', opacity: '0.7' } },
-          'Drag to move the chart \u00b7 scroll to zoom \u00b7 click to prick off a mark'),
+          (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches)
+            ? 'Drag to move \u00b7 pinch to zoom \u00b7 tap to prick off a mark'
+            : 'Drag to move the chart \u00b7 scroll to zoom \u00b7 click to prick off a mark'),
         button('Shut the book  (Esc)', () => this.onClose()),
       ),
     );
@@ -744,7 +746,9 @@ export class ChartView {
       );
     } else if (pointing) {
       nodes.push(el('div', { style: { fontSize: '11.5px', fontStyle: 'italic', opacity: '0.72' } },
-        'Drag to move the chart, scroll to change the scale. Click anywhere to prick off a mark, and again to add another to the passage.'));
+        (typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches)
+          ? 'Drag to move the chart, pinch to change the scale. Tap anywhere to prick off a mark, and again to add another to the passage.'
+          : 'Drag to move the chart, scroll to change the scale. Click anywhere to prick off a mark, and again to add another to the passage.'));
     } else if (this.notice === null) {
       // Nothing selected and nothing said: the box collapses away entirely.
       return;

@@ -124,13 +124,30 @@ export class Hud {
       this.nav, this.course, this.ship);
     const right = el('div', { class: 'hud-col', id: 'hud-right' },
       this.wind, this.sail, this.orders, this.time);
-    this.root.append(this.tape.root, left, right, this.alerts, this.hint);
+    // On a phone the panels are folded away behind one line of the numbers a
+    // helmsman actually steers by; a tap on it opens them over the sea, and
+    // another puts them away. See style.css, "The strip".
+    this.strip.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      this.root.classList.toggle('open');
+    });
+    this.root.append(this.tape.root, this.strip, left, right, this.alerts, this.hint);
     this.hint.innerHTML = KEYS;
     this.hint.classList.add('idle');
   }
 
+  private strip = el('button', { id: 'hud-strip', type: 'button', 'aria-label': 'Show the instruments' });
+
   update(g: Game): void {
     this.tape.update(g);
+    {
+      const r0 = g.helmReport();
+      const w = g.weatherNow.wind;
+      const text = `${Math.round(r0.compass).toString().padStart(3, '0')}\u00b0 ${compassPoint(r0.compass)}`
+        + `  \u00b7  ${r0.speed.toFixed(1)} kn  \u00b7  wind ${w.speed.toFixed(0)} ${compassPoint(w.from)}`
+        + `  \u00b7  ${g.clock.formatTime()}  ${this.root.classList.contains('open') ? '\u25b4' : '\u25be'}`;
+      if (this.strip.textContent !== text) this.strip.textContent = text;
+    }
     const r = g.helmReport();
     const p = g.positionText();
 

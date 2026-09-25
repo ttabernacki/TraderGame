@@ -273,6 +273,7 @@ export class Ui {
       this.touch.setRate(g.clock.scaleLabel);
       this.bar.setRate(g.clock.scaleLabel, g.clock.paused || g.clock.scaleIndex === 0);
       this.bar.setAnchored(g.anchored || !!g.dockedAt);
+      this.touch.setAnchored(g.anchored || !!g.dockedAt);
       this.events.show(g.pendingEvent, g.pendingEvent ? g.counselOn(g.pendingEvent) : []);
       // The controls go quiet while a decision is outstanding: pressing the
       // helm against a ship whose clock is stopped only reads as a bug.
