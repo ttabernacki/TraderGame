@@ -86,10 +86,16 @@ export class TouchControls {
       { label: '‹‹', key: '[', hint: 'Slower' },
       { label: '', key: '', hint: 'Rate' },
       { label: '››', key: ']', hint: 'Faster' },
-      // One button for the book, which is everything written down.
-      { label: 'Book', key: 'j', hint: 'Chart, rutter, log, orders, company', wide: true },
     ]);
-    this.anchorBtn = this.button({ label: 'Anchor', key: ' ', hint: 'Anchor, or weigh', wide: true });
+    // The four things a captain reaches for on every watch, always in reach
+    // above the helm: the book, the quadrant, the lead and the anchor.
+    const actions = this.pad('touch-actions', [
+      { label: '📖', cap: 'Book', key: 'j', hint: 'Chart, rutter, log, orders, company' },
+      { label: '☉', cap: 'Sight', key: 'n', hint: 'The quadrant: the sun at noon, or the pole star' },
+      { label: '⤓', cap: 'Lead', key: 'g', hint: 'Heave the lead — depth, the ground, and how far off the land she is' },
+    ]);
+    this.anchorBtn = this.button({ label: '⚓', cap: 'Anchor', key: ' ', hint: 'Anchor, or weigh' });
+    actions.append(this.anchorBtn);
     const moreBtn = el('button', {
       class: 'touch-btn touch-more-btn', type: 'button', 'aria-label': 'More', title: 'More',
     }, '⋯');
@@ -97,12 +103,10 @@ export class TouchControls {
       e.preventDefault();
       this.more.classList.toggle('on');
     });
-    top.append(this.anchorBtn, moreBtn);
+    top.append(moreBtn);
 
     // The things wanted now and then, in a sheet that drops from the top bar.
     for (const s of [
-      { label: 'Take a sight', key: 'n', hint: 'The quadrant: the sun at noon, or the pole star' },
-      { label: 'Heave the lead', key: 'g', hint: 'Depth, the ground, and how far off the land she is' },
       { label: 'Change the view', key: 'v', hint: 'Shift the view about the ship' },
       { label: 'Sound on / off', key: 'm', hint: 'Sound' },
       { label: 'Save or load', key: 'f2', hint: 'The Book of Voyages' },
@@ -112,7 +116,7 @@ export class TouchControls {
       this.more.append(b);
     }
 
-    this.dock.append(helm, rig);
+    this.dock.append(actions, helm, rig);
     this.root.append(top, this.more, this.dock);
     this.setVisible(false);
   }
@@ -124,7 +128,8 @@ export class TouchControls {
   /** Whether she is at anchor, so the button says what it will do. */
   setAnchored(down: boolean): void {
     const word = down ? 'Weigh' : 'Anchor';
-    if (this.anchorBtn.textContent !== word) this.anchorBtn.textContent = word;
+    const cap = this.anchorBtn.querySelector('.touch-cap');
+    if (cap && cap.textContent !== word) cap.textContent = word;
   }
 
   private pad(cls: string, specs: Spec[]): HTMLElement {

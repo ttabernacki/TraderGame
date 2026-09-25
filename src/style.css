@@ -2800,3 +2800,48 @@ table.ledger { font-size: calc(13.5px * var(--ui)); }
 @media (max-width: 860px) {
   .pilot.ashore { bottom: calc(96px + var(--safe-b)); }
 }
+
+/* The watch's four actions — book, sight, lead, anchor — are never hidden in
+   a menu. On a tablet they sit under the clock at the top; on a phone they are
+   the first row of the dock (below). Only where there are fingers: a mouse has
+   the deck bar. */
+.touch-actions { display: none; }
+@media (pointer: coarse) {
+  .touch-actions {
+    display: flex;
+    left: 50%;
+    transform: translateX(-50%);
+    top: calc(62px + var(--safe-t));
+  }
+  .touch-more {
+    position: absolute;
+    top: calc(60px + var(--safe-t));
+    right: calc(8px + var(--safe-r));
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+    border-radius: 12px;
+    border: 1px solid rgba(200, 164, 78, 0.34);
+    background: rgba(15, 11, 7, 0.92);
+    pointer-events: auto;
+    z-index: 8;
+  }
+  .touch-more.on { display: flex; }
+  .touch-more .touch-btn { height: 48px; min-width: 200px; font-size: 15px; text-align: left; }
+  .touch-actions .touch-btn.capped { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+  .touch-actions .touch-cap { display: block; font-size: 11px; }
+}
+@media (max-width: 860px) {
+  #touch .touch-dock .touch-actions {
+    position: static;
+    transform: none;
+    display: flex;
+  }
+  #touch .touch-dock .touch-actions .touch-btn { height: 50px; }
+  .pilot { bottom: calc(194px + var(--safe-b)); }
+  #hud.open .hud-col { max-height: calc(100% - 380px); }
+}
+@media (max-width: 380px) {
+  #touch .touch-dock .touch-actions .touch-btn { height: 46px; }
+  .pilot { bottom: calc(176px + var(--safe-b)); }
+}
