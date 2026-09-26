@@ -1,5 +1,5 @@
 import { ACTS, ACT_CHARGE, HISTORY, actGoal, roman } from '../progression/chronicle';
-import { QUESTS, goalOf, markerOf } from '../progression/quests';
+import { QUESTS, goalOf, markerOf, rumoursHeard } from '../progression/quests';
 import { NM, compassPoint, formatLat, formatLon, haversine } from '../core/math';
 import { OFFICER_ROLES } from '../crew/crew';
 import { rivalStanding } from '../progression/rival';
@@ -589,6 +589,16 @@ export class OrdersView {
 
   /** The long stories: where each stands, and what has been done in it. */
   private renderMissions(g: Game): void {
+    for (const r of rumoursHeard(g)) {
+      this.body.append(el('div', { class: 'mission' },
+        el('div', { class: 'mission-head' },
+          el('h3', {}, r.title),
+          el('span', {}, 'Heard on the quay'),
+        ),
+        el('div', { class: 'mission-goal' }, r.text,
+          el('div', { class: 'mission-where' }, `Marked on the chart: ${r.mark.label}`)),
+      ));
+    }
     if (g.quests.length === 0) {
       this.body.append(card('No missions',
         el('p', {}, 'Nobody has asked you for anything beyond the King\u2019s business yet. '

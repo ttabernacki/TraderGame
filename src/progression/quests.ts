@@ -1531,6 +1531,30 @@ export function newQuest(id: QuestId, t: number): QuestState {
   };
 }
 
+/**
+ * Secret threads the captain has heard of but not yet taken up: what the log
+ * and the chart say about them, so a word overheard in a tavern is not lost.
+ */
+export interface Rumour { id: QuestId; title: string; text: string; mark: QuestMarker }
+const RUMOURS: Partial<Record<QuestId, { text: string; port: string; label: string }>> = {
+  galeao: {
+    text: 'A Canary Islands pilot in a Lisbon tavern says the Castilians have a Biscayan building '
+      + 'them "a ship like nothing afloat" at Las Palmas, and that the man has not been paid. '
+      + 'Ask about it in the harbour taverns of Las Palmas.',
+    port: 'las-palmas',
+    label: 'The Biscayan’s ship (rumour)',
+  },
+};
+export function rumoursHeard(g: Game): Rumour[] {
+  const out: Rumour[] = [];
+  for (const id of g.secretsHeard as QuestId[]) {
+    const r = RUMOURS[id];
+    if (!r || g.quests.some((q) => q.id === id) || !QUESTS[id]?.available(g)) continue;
+    out.push({ id, title: QUESTS[id].title, text: r.text, mark: portMark(r.port, r.label) });
+  }
+  return out;
+}
+
 /** Threads that could be picked up in this port. */
 export function offersAt(g: Game, portId: string): QuestDef[] {
   return (Object.values(QUESTS) as QuestDef[]).filter((d) => d.offeredAt.includes(portId)

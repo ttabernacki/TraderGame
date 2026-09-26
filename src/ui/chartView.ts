@@ -1,4 +1,4 @@
-import { markerOf } from '../progression/quests';
+import { markerOf, rumoursHeard } from '../progression/quests';
 import { clamp, compassPoint, cosd, formatLat, formatLon, wrap180 } from '../core/math';
 import { LANDMASSES } from '../world/landmass';
 import { PORTS, portDef } from '../world/ports';
@@ -1227,8 +1227,8 @@ export class ChartView {
 
   /** Where each open mission wants the ship next. */
   private drawQuestMarks(ctx: CanvasRenderingContext2D, g: Game): void {
-    for (const q of g.quests) {
-      const m = markerOf(g, q);
+    const marks = [...g.quests.map((q) => markerOf(g, q)), ...rumoursHeard(g).map((r) => r.mark)];
+    for (const m of marks) {
       if (!m) continue;
       const c = this.toScreen(m.lat, m.lon);
       const edge = this.toScreen(m.lat + m.nm / 60, m.lon);

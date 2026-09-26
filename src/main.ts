@@ -545,6 +545,8 @@ if (import.meta.env.DEV) {
       place(lat: number, lon: number, hour: number, heading: number, canvas = 1) {
         if (game) settle(game, lat, lon, hour, heading, canvas);
       },
+      /** Take up a voyage from its JSON, as a slot would. */
+      load(json: string) { resumeFrom(json); },
       /** Drop her straight into a port, for looking at the port screens. */
       anchorAt(id: string) {
         if (!game) return;

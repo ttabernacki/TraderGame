@@ -12,6 +12,7 @@ import {
 } from '../progression/chronicle';
 import {
   QUESTS, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
+  rumoursHeard,
 } from '../progression/quests';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
 import { azoresHigh, itczLatitude } from '../world/wind';
@@ -2258,7 +2259,8 @@ export class Game {
     // this coast has written.
     if (this.can('factorsEye') || this.can('ownAccount')) {
       for (const id of this.visitedPorts) {
-        if (id === def.id || regionOf(id) !== here || !this.relationsFor(id).mayTrade) continue;
+        if (id === def.id || !PORTS.some((x) => x.id === id)) continue;
+        if (regionOf(id) !== here || !this.relationsFor(id).mayTrade) continue;
         this.noteSheet(id, 'letter', 0.06);
       }
     }
@@ -4944,7 +4946,8 @@ export class Game {
     if (def.people === 'portuguese') return true;
     for (const id of this.visitedPorts) {
       if (id === ignorePort) continue;
-      if (portDef(id).people === def.people) return true;
+      // The set also holds markers such as "safim:traded"; only ports count.
+      if (PORTS.find((x) => x.id === id)?.people === def.people) return true;
     }
     return false;
   }
@@ -7960,6 +7963,10 @@ export class Game {
       this.logEvent('note', 'A Canary Islands pilot in a waterfront tavern, telling anyone who will '
         + 'listen that the Castilians have a Biscayan building them "a ship like nothing afloat" at '
         + 'Las Palmas, and that the man has not been paid. Nobody listening seems to think it matters.', true);
+    }
+    // A rumour not yet followed up is repeated at the port where it leads.
+    if (def.id === 'lisboa') {
+      for (const r of rumoursHeard(this)) this.pushAlert(`${r.title}: ${r.text}`, 'note');
     }
     if (def.id === 'lisboa' && this.launchReady) {
       this.pushAlert(`The ${hullClass(this.building!.hullId).name} is finished and lying at the Ribeira. Shift your flag from the shipwrights.`, 'note');
