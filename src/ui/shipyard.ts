@@ -1,7 +1,7 @@
 import { hullClass, type HullClass, type RigKind } from '../ship/hull';
 import {
-  DESIGN_LIMITS, defaultDesign,
-  type Fastening, type Paint, type SailDevice, type ShipDesign, type Timber,
+  BUILD, DESIGN_LIMITS, defaultDesign,
+  type Build, type Fastening, type Paint, type SailDevice, type Sheathing, type ShipDesign, type Timber,
 } from '../ship/design';
 import type { Game } from '../game/state';
 import { append, button, card, clear, el, svg } from './dom';
@@ -38,7 +38,9 @@ export function shipyardCard(g: Game, done: (text: string, grave?: boolean) => v
       cell('Reaching, 12 kn wind', `${r.reach12.toFixed(1)} kn`),
       cell('Running, 20 kn wind', `${r.run20.toFixed(1)} kn`),
       cell('Heel, 20 kn on the beam', `${r.heel20.toFixed(0)}°`),
-      cell('Strength', `${Math.round(h.strength * 100)}%`),
+      cell('Hull speed', `${r.hullSpeed.toFixed(1)} kn`),
+      cell('Strength', `${Math.round(h.strength * (h.toughness ?? 1) * 100)}%`),
+      cell('Weed and worm', (h.fouling ?? 1) < 0.35 ? 'Almost none' : (h.fouling ?? 1) < 0.8 ? 'Slow' : 'The usual'),
       cell('Handiness', `${Math.round(h.handiness * 100)}%`),
       cell('Company', `${h.crewMin}–${h.crewFull} men`),
       cell('On the stocks', `${Math.round(r.days / 30 * 10) / 10} months`),
@@ -61,7 +63,11 @@ export function shipyardCard(g: Game, done: (text: string, grave?: boolean) => v
   };
 
   const slider = (label: string, key: 'lwl' | 'beamRatio' | 'draft' | 'castles' | 'canvas', step: number, fmt: (v: number) => string) => {
-    const [lo, hi] = DESIGN_LIMITS[key];
+    const lo = DESIGN_LIMITS[key][0];
+    // The leanest lines and heaviest rig the chosen build will stand.
+    const bq = BUILD[d.build ?? 'yard'];
+    const hi = key === 'canvas' ? bq.canvas : key === 'beamRatio' ? bq.lean : DESIGN_LIMITS[key][1];
+    if (d[key] > hi) d[key] = hi;
     const out = el('span', { class: 'yard-val' }, fmt(d[key]));
     const input = el('input', {
       type: 'range', id: `yard-${key}`, min: lo, max: hi, step, value: d[key],
@@ -101,6 +107,23 @@ export function shipyardCard(g: Game, done: (text: string, grave?: boolean) => v
     drawMasts();
     const mainIdx = d.masts.length >= 3 ? 1 : 0;
     append(body,
+      el('div', { class: 'yard-presets' },
+        el('span', { class: 'yard-label' }, 'Start from:'),
+        button('The fastest ship afloat', () => {
+          Object.assign(d, {
+            lwl: 30, beamRatio: 4.6, draft: 3.2, castles: 0.1, masts: ['square', 'square', 'lateen', 'lateen'],
+            topsail: true, canvas: 1.7, timber: 'oak', fastening: 'iron', build: 'master', sheathing: 'lead',
+          });
+          rebuild();
+        }, { ghost: true, title: 'Long, lean, heavily sparred and master-built' }),
+        button('A ship that cannot be broken', () => {
+          Object.assign(d, {
+            lwl: 28, beamRatio: 3.0, draft: 3.8, castles: 0.7, masts: ['square', 'square', 'lateen'],
+            topsail: true, canvas: 1.1, timber: 'teak', fastening: 'iron', build: 'master', sheathing: 'lead',
+          });
+          rebuild();
+        }, { ghost: true, title: 'Teak, iron, lead and a master’s frames' }),
+      ),
       el('label', { class: 'yard-row' }, el('span', { class: 'yard-label' }, 'Her name'),
         el('input', {
           type: 'text', id: 'yard-name', value: d.name, maxlength: 40,
@@ -111,8 +134,15 @@ export function shipyardCard(g: Game, done: (text: string, grave?: boolean) => v
       slider('Length to beam', 'beamRatio', 0.05, (v) => `${v.toFixed(2)} : 1`),
       slider('Draft', 'draft', 0.1, (v) => `${v.toFixed(1)} m`),
       slider('Castles', 'castles', 0.05, (v) => v < 0.15 ? 'flush' : v < 0.5 ? 'low' : v < 0.8 ? 'a carrack’s' : 'towering'),
-      choice<Timber>('Timber', 'yard-timber', [['oak', 'Oak — strong, dear'], ['pine', 'Pine — light, cheap, short-lived']], () => d.timber, (v) => { d.timber = v; }),
+      el('div', { class: 'fit-cat-head' }, 'How she is built'),
+      choice<Build>('Built by', 'yard-build', [
+        ['yard', 'The yard’s own men'],
+        ['fine', 'A fine build — faster, stronger, ×1.8 the price'],
+        ['master', 'The master shipwright — the finest ship afloat, ×3'],
+      ], () => d.build ?? 'yard', (v) => { d.build = v; }),
+      choice<Timber>('Timber', 'yard-timber', [['oak', 'Oak — strong, dear'], ['pine', 'Pine — light, cheap, short-lived'], ['teak', 'Malabar teak — near unbreakable, ×1.7']], () => d.timber, (v) => { d.timber = v; }),
       choice<Fastening>('Fastened', 'yard-fast', [['trenail', 'Trenails'], ['iron', 'Iron bolts — stronger, dearer']], () => d.fastening, (v) => { d.fastening = v; }),
+      choice<Sheathing>('Her bottom', 'yard-sheath', [['none', 'Tallow and pitch'], ['lead', 'Sheathed in lead — no weed, no worm']], () => d.sheathing ?? 'none', (v) => { d.sheathing = v; }),
       el('div', { class: 'fit-cat-head' }, 'The rig'),
       choice<string>('Masts', 'yard-masts', [['1', 'One'], ['2', 'Two'], ['3', 'Three'], ['4', 'Four']], () => String(d.masts.length), (v) => {
         const n = Number(v);

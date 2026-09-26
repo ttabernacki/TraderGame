@@ -21,7 +21,9 @@ import { RIG_PROFILES, optimalTrim, sailForce } from './rig';
  * speeds and her heel are run through `stepShip`, the integrator that sails her.
  */
 
-export type Timber = 'oak' | 'pine';
+export type Timber = 'oak' | 'pine' | 'teak';
+export type Build = 'yard' | 'fine' | 'master';
+export type Sheathing = 'none' | 'lead';
 export type Fastening = 'trenail' | 'iron';
 export type Paint = 'natural' | 'red' | 'black' | 'ochre';
 export type SailDevice = 'cross' | 'plain';
@@ -46,10 +48,19 @@ export interface ShipDesign {
   fastening: Fastening;
   paint: Paint;
   device: SailDevice;
+  /**
+   * Who draws and builds her. The yard's own men; a fine build with the
+   * frames moulded and faired by eye; or the master shipwright himself, with
+   * every timber chosen and every seam doubled. The last is the finest ship
+   * in the world and costs like it.
+   */
+  build?: Build;
+  /** Sheets of lead nailed over tarred felt below the waterline, against the worm. */
+  sheathing?: Sheathing;
 }
 
 export const DESIGN_LIMITS = {
-  lwl: [13, 36], beamRatio: [2.5, 4.2], draft: [1.3, 5], castles: [0, 1], canvas: [0.7, 1.4],
+  lwl: [13, 40], beamRatio: [2.5, 4.8], draft: [1.3, 5.5], castles: [0, 1], canvas: [0.7, 1.7],
 } as const;
 
 export function defaultDesign(name = 'Nossa Senhora'): ShipDesign {
@@ -57,6 +68,7 @@ export function defaultDesign(name = 'Nossa Senhora'): ShipDesign {
     name, lwl: 21, beamRatio: 3.2, draft: 2.3, castles: 0.35,
     masts: ['square', 'lateen', 'lateen'], topsail: false, canvas: 1,
     timber: 'oak', fastening: 'trenail', paint: 'natural', device: 'cross',
+    build: 'yard', sheathing: 'none',
   };
 }
 
@@ -74,6 +86,23 @@ const SHARES: Record<number, number[]> = {
 };
 const MAIN_INDEX: Record<number, number> = { 1: 0, 2: 0, 3: 1, 4: 1 };
 
+/**
+ * What each quality of build does to her. A fine build is noticeably better
+ * and half again dearer; a master's build is another ship altogether — a
+ * smoother, fairer bottom, lines that carry her faster before the bow wave
+ * holds her back, frames that take a sea, spars that carry sail other ships
+ * would have to hand — at more than three times the price and nearly twice
+ * the time on the stocks.
+ */
+export const BUILD: Record<Build, { drag: number; lines: number; strength: number; toughness: number; spars: number; cost: number; days: number; canvas: number; lean: number; label: string }> = {
+  yard: { drag: 1, lines: 1, strength: 1, toughness: 1, spars: 1, cost: 1, days: 1, canvas: 1.4, lean: 4.2, label: 'The yard’s own men' },
+  fine: { drag: 0.82, lines: 1.12, strength: 1.06, toughness: 1.08, spars: 0.8, cost: 1.8, days: 1.3, canvas: 1.5, lean: 4.5, label: 'A fine build' },
+  master: { drag: 0.6, lines: 1.3, strength: 1.12, toughness: 1.2, spars: 0.5, cost: 3, days: 1.7, canvas: 1.7, lean: 4.8, label: 'The master shipwright' },
+};
+
+/** Teak from Malabar: the hardest, heaviest, longest-lived ship timber there is. */
+const TEAK = { strength: 1.22, toughness: 1.25, weight: 1.06, cost: 1.7, fouling: 0.7 };
+
 /** How high the centre of effort of a sail this size stands, fitted to the stock rigs. */
 function ceHeightFor(area: number, draft: number): number {
   return 0.85 * Math.sqrt(area) + 1.2 + draft * 0.5;
@@ -81,18 +110,24 @@ function ceHeightFor(area: number, draft: number): number {
 
 /** What she is, as the physics sees her. */
 export function hullFromDesign(d: ShipDesign, id: string): HullClass {
+  const bq = BUILD[d.build ?? 'yard'];
+  const teak = d.timber === 'teak';
+  const lead = d.sheathing === 'lead';
   const L = clamp(d.lwl, DESIGN_LIMITS.lwl[0], DESIGN_LIMITS.lwl[1]);
-  const B = L / clamp(d.beamRatio, DESIGN_LIMITS.beamRatio[0], DESIGN_LIMITS.beamRatio[1]);
+  // Only a better build can be drawn this lean or sparred this heavily.
+  const B = L / clamp(d.beamRatio, DESIGN_LIMITS.beamRatio[0], bq.lean);
   const D = clamp(d.draft, DESIGN_LIMITS.draft[0], DESIGN_LIMITS.draft[1]);
   const c = clamp(d.castles, 0, 1);
   const V = L * B * D;
-  const displacement = Math.round(V * (390 + 0.135 * V) * (1 + 0.05 * c) * (d.timber === 'pine' ? 0.93 : 1));
+  const displacement = Math.round(V * (390 + 0.135 * V) * (1 + 0.05 * c)
+    * (d.timber === 'pine' ? 0.93 : teak ? TEAK.weight : 1) * (lead ? 1.02 : 1));
   const tons = Math.max(10, Math.round(V * (0.215 + 0.00003 * V)));
   const hold = Math.max(6, Math.round(tons * (0.6 + 0.25 * Math.min(1, tons / 400)) * (1 - 0.03 * c)));
 
   const n = clamp(d.masts.length, 1, 4);
   const rigs = d.masts.slice(0, n);
-  const total = clamp(d.canvas, DESIGN_LIMITS.canvas[0], DESIGN_LIMITS.canvas[1]) * 0.12 * Math.pow(displacement, 2 / 3);
+  const canvas = clamp(d.canvas, DESIGN_LIMITS.canvas[0], bq.canvas);
+  const total = canvas * 0.12 * Math.pow(displacement, 2 / 3);
   // A topsail is part of the canvas, not extra to it.
   const topsail = d.topsail && rigs[MAIN_INDEX[n]] === 'square';
   const courses = topsail ? total / (1 + 0.29 * SHARES[n][MAIN_INDEX[n]]) : total;
@@ -112,16 +147,22 @@ export function hullFromDesign(d: ShipDesign, id: string): HullClass {
 
   const crewFull = Math.round(0.5 * 1.45 * Math.pow(tons, 0.75) + 0.5 * area / 9.5);
   const slender = L / B;
+  // A lean hull works in a seaway; a master's scarphs and doubled frames
+  // make up much of that.
+  const leanPenalty = Math.max(0, slender - 3.3) * 0.12 * (d.build === 'master' ? 0.45 : d.build === 'fine' ? 0.75 : 1);
   const strength = clamp(
-    (0.1 + 0.135 * Math.log(tons)) * (d.timber === 'pine' ? 0.88 : 1) * (d.fastening === 'iron' ? 1.04 : 1)
-    * clamp(1 - Math.max(0, slender - 3.3) * 0.12, 0.8, 1) + 0.04 * c,
-    0.4, 0.99);
+    (0.1 + 0.135 * Math.log(tons)) * (d.timber === 'pine' ? 0.88 : teak ? TEAK.strength : 1)
+    * (d.fastening === 'iron' ? 1.04 : 1) * bq.strength * (lead ? 1.03 : 1)
+    * clamp(1 - leanPenalty, 0.8, 1) + 0.04 * c,
+    0.4, 1.35);
   const handiness = clamp(1.25 - L * 0.027 + 0.18 * lateenFrac - 0.08 * c, 0.3, 0.95);
   const gmScale = Math.pow((B / D) / 2.8, 0.7) * (1.075 - 0.15 * c);
   // The Ribeira's price for a hull this size, and a tenth over for building to
   // somebody's own drawings.
-  const cost = Math.round((tons * (14 + tons * 0.035) + area * 0.5)
-    * (d.timber === 'oak' ? 1.05 : 0.85) * (d.fastening === 'iron' ? 1.08 : 1) * 1.1);
+  const cost = Math.round(((tons * (14 + tons * 0.035) + area * 0.5)
+    * (d.timber === 'oak' ? 1.05 : teak ? TEAK.cost : 0.85) * (d.fastening === 'iron' ? 1.08 : 1) * 1.1
+    // Lead by the hundredweight, a sheet to every square yard of her bottom.
+    + (lead ? L * (B + 2 * D) * 16 : 0)) * bq.cost);
 
   return {
     id,
@@ -132,15 +173,28 @@ export function hullFromDesign(d: ShipDesign, id: string): HullClass {
     strength: +strength.toFixed(3), handiness: +handiness.toFixed(3),
     cost, standing: Math.max(0, Math.round((tons - 40) * 1.05)),
     blurb: `Laid down at the Ribeira das Naus to your own lines: ${tons} tonéis, ${masts.length} `
-      + `${masts.length === 1 ? 'mast' : 'masts'}, ${d.timber === 'oak' ? 'oak' : 'pine'}-built.`,
+      + `${masts.length === 1 ? 'mast' : 'masts'}, ${d.timber}-built`
+      + `${d.build === 'master' ? ' by the master shipwright himself' : d.build === 'fine' ? ', finely built' : ''}`
+      + `${lead ? ', sheathed in lead' : ''}.`,
     castles: c, gmScale: +gmScale.toFixed(3),
-    sparStrain: +Math.pow(Math.max(1, d.canvas), 4).toFixed(2), paint: d.paint, device: d.device, custom: true,
+    sparStrain: +(Math.pow(Math.max(1, canvas), 4) * bq.spars).toFixed(2), paint: d.paint, device: d.device, custom: true,
+    drag: bq.drag * (lead ? 0.97 : 1),
+    lines: bq.lines,
+    fouling: (lead ? 0.3 : 1) * (teak ? TEAK.fouling : 1),
+    toughness: +(bq.toughness * (teak ? TEAK.toughness : 1)).toFixed(3),
   };
 }
 
 /** Days on the stocks. A nau was the better part of a year. */
 export function buildDays(h: HullClass): number {
-  return Math.round(50 + h.tons * 0.45 * (h.strength > 0.85 ? 1.1 : 1));
+  // A master's build takes its time; the lines field records which it was.
+  const slow = (h.lines ?? 1) >= 1.2 ? BUILD.master.days : (h.lines ?? 1) > 1.01 ? BUILD.fine.days : 1;
+  return Math.round((50 + h.tons * 0.45 * (h.strength > 0.85 ? 1.1 : 1)) * slow);
+}
+
+/** Renown a build asks for, beyond what her size asks. The master picks his captains. */
+export function buildStanding(d: ShipDesign): number {
+  return (d.build === 'master' ? 400 : d.build === 'fine' ? 120 : 0) + (d.timber === 'teak' ? 150 : 0);
 }
 
 /** The largest ship the Ribeira will lay down for you, by act. */
@@ -206,9 +260,11 @@ export function assessDesign(d: ShipDesign, act: number): DesignReport {
   const warnings: string[] = [];
   if (heel20 > 32) warnings.push('Crank: with all plain sail set she will lie down on her beam ends in a strong breeze.');
   else if (heel20 > 22) warnings.push('Tender: she will want canvas off her early, or she will lie over and sail on her side.');
-  if (d.canvas > 1.22) warnings.push('Heavily sparred: pressed hard, she will carry away her masts.');
+  if (d.canvas > 1.22 && d.build !== 'master') warnings.push('Heavily sparred: pressed hard, she will carry away her masts.');
+  if (d.canvas > BUILD[d.build ?? 'yard'].canvas) warnings.push(`The yard will not step more than ${Math.round(BUILD[d.build ?? 'yard'].canvas * 100)}% canvas without a better build.`);
+  if (d.beamRatio > BUILD[d.build ?? 'yard'].lean) warnings.push(`Lines this lean want a better build; the yard will draw her at ${BUILD[d.build ?? 'yard'].lean}:1.`);
   if (d.draft > 3.9) warnings.push('She draws a great deal: she must anchor well out, and is no ship for rivers or bars.');
-  if (hull.lwl / hull.beam > 3.55) warnings.push('Long and lean: fast, but she will work and leak in a heavy sea.');
+  if (hull.lwl / hull.beam > 3.55 && d.build !== 'master') warnings.push('Long and lean: fast, but she will work and leak in a heavy sea.');
   if (hull.tons > tonsAllowed(act)) warnings.push(`The Ribeira will not lay down more than ${tonsAllowed(act)} tonéis for you yet.`);
   return {
     hull, noGo: noGoOf(hull), hullSpeed: hullSpeedKnots(hull),

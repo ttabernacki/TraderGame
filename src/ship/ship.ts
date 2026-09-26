@@ -186,7 +186,7 @@ export class Ship {
   age(days: number, waterTempFactor: number, pumpEffort: number): { swamped: boolean; spoiled: string[]; lost: { goodId: string; qty: number; cost: number }[] } {
     const fx = this.effects;
     this.condition.fouling = clamp(
-      this.condition.fouling + days * 0.0042 * waterTempFactor * fx.foulingRate,
+      this.condition.fouling + days * 0.0042 * waterTempFactor * fx.foulingRate * (this.baseHull.fouling ?? 1),
       0, 1,
     );
 
@@ -220,7 +220,7 @@ export class Ship {
 
   /** Storm and grounding damage. */
   damage(amount: number): void {
-    const strength = this.baseHull.strength * this.effects.strength;
+    const strength = this.baseHull.strength * this.effects.strength * (this.baseHull.toughness ?? 1);
     const applied = amount / Math.max(strength, 0.2);
     this.condition.hull = clamp(this.condition.hull - applied, 0, 1);
     this.condition.leak += applied * 2.4;

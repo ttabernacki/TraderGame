@@ -125,7 +125,7 @@ import {
 } from './farLand';
 import { ISLES, landIndexOf, type OceanIsle } from '../world/isles';
 import {
-  assessDesign, hullFromDesign, polarTable, registerHull, tonsAllowed, buildDays, type ShipDesign,
+  assessDesign, hullFromDesign, polarTable, registerHull, tonsAllowed, buildDays, buildStanding, type ShipDesign,
 } from '../ship/design';
 import type { HullClass } from '../ship/hull';
 import {
@@ -5528,8 +5528,12 @@ export class Game {
     if (h.tons > tonsAllowed(this.chronicle.act)) {
       return `The Ribeira will not lay down more than ${tonsAllowed(this.chronicle.act)} tonéis for you yet.`;
     }
-    if (h.standing > this.crown.lifetimeStanding) {
-      return `A ship of ${h.tons} tonéis wants ${h.standing} renown behind it; you have ${this.crown.lifetimeStanding}.`;
+    const want = h.standing + buildStanding(d);
+    if (want > this.crown.lifetimeStanding) {
+      return `A ship of ${h.tons} tonéis${buildStanding(d) ? ', built so' : ''} wants ${want} renown behind it; you have ${this.crown.lifetimeStanding}.`;
+    }
+    if (d.timber === 'teak' && !this.chart.ports.has('calecute') && this.chronicle.act < 4) {
+      return 'Teak comes from Malabar, and nobody in Lisbon has seen a baulk of it. Reach the Indies first.';
     }
     if (this.crown.gold + this.creditFree < h.cost) return `She costs ${h.cost} cruzados, paid when the keel is laid.`;
     return null;

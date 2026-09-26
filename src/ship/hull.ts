@@ -49,6 +49,14 @@ export interface HullClass {
   sparStrain?: number;
   /** Built to the captain's own lines. See ship/design. */
   custom?: boolean;
+  /** Multiplies her skin friction: a fair, smooth hull from a master's yard. */
+  drag?: number;
+  /** Multiplies her hull speed: fine lines that push the wave wall further off. */
+  lines?: number;
+  /** Multiplies how fast weed and worm take her bottom: sheathing, teak. */
+  fouling?: number;
+  /** Divides the damage a sea does her, on top of strength: a hull built to take it. */
+  toughness?: number;
 }
 
 const lateen = (name: string, area: number, ceHeight: number, station: number): MastSpec =>
@@ -169,5 +177,5 @@ export function totalSailArea(h: HullClass): number {
  * bow wave, so this is a soft ceiling on everything below.
  */
 export function hullSpeedKnots(h: HullClass): number {
-  return 1.34 * Math.sqrt(h.lwl * 3.28084);
+  return 1.34 * Math.sqrt(h.lwl * 3.28084) * (h.lines ?? 1);
 }

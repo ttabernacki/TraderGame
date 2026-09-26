@@ -2862,3 +2862,6 @@ body.photo #ui > *, body.photo #hud-strip, body.photo .pilot { visibility: hidde
 .pilot.ashore { pointer-events: none; }
 .pilot.ashore button, .pilot.ashore a { pointer-events: auto; }
 body:has(.pilot.ashore) .screen-body { padding-bottom: 150px; }
+
+.yard-presets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.yard-presets .yard-label { margin-right: 4px; }

@@ -34,7 +34,7 @@ export interface HullDerived {
 
 export function deriveHull(h: HullClass): HullDerived {
   return {
-    wetted: h.lwl * (h.beam + 2 * h.draft) * 0.78,
+    wetted: h.lwl * (h.beam + 2 * h.draft) * 0.78 * (h.drag ?? 1),
     lateralArea: h.lwl * h.draft * 0.9,
     yawInertia: h.displacement * Math.pow(0.25 * h.lwl, 2),
     gm: 0.115 * h.beam * (h.gmScale ?? 1),
