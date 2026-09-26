@@ -3747,8 +3747,10 @@ export class Game {
     // reckoning has gone bad, or when nothing has been observed for days. On an
     // ordinary noon with good tables and a fresh fix it is one line in the
     // corner, and the passage runs on.
-    const worthStopping = grave || days > 3;
-    if (worthStopping) this.easeTheClock(2);
+    //
+    // And now not at all: the clock is the captain's, and a sight is offered
+    // in the corner and left to him. He can take it or let it go by.
+    void grave;
     this.pushAlert(
       `${best.label} may be had. `
       + `${days > 2 ? `Nothing observed for ${days.toFixed(0)} days. ` : ''}Press N.`,
