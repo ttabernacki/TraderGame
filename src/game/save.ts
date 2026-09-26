@@ -374,6 +374,31 @@ export class CloudStore implements SaveStore {
     return this.db.doc(`data/users/${this.uid}/voyages`).collection('slots').doc(id);
   }
 
+  /**
+   * A piece of a long voyage. A document holds 256 KiB, and a career of
+   * years — a surveyed coast, a thick log, a long track — outgrows that, so a
+   * save too big for one document is cut into parts, each its own document,
+   * and the slot's document says how many and which set. Two sets alternate,
+   * `a` and `b`: the new save is written into the set the current one is not
+   * using, and only once every part is down does the slot switch to it — so a
+   * write that dies half way leaves the last good save whole.
+   */
+  private part(id: string, gen: string, i: number) {
+    return this.db.doc(`data/users/${this.uid}/voyages`).collection('parts').doc(`${id}-${gen}-${i}`);
+  }
+
+  private async readParts(id: string, ptr: any): Promise<string | null> {
+    if (!ptr || typeof ptr.gen !== 'string' || typeof ptr.n !== 'number') return null;
+    const bits: string[] = [];
+    for (let i = 0; i < ptr.n; i++) {
+      const snap = await this.part(id, ptr.gen, i).get();
+      const d = snap.exists ? snap.data()?.d : undefined;
+      if (typeof d !== 'string') return null;
+      bits.push(d);
+    }
+    return bits.join('');
+  }
+
   async list(): Promise<SaveMeta[]> {
     try {
       const snap = await this.db.doc(`data/users/${this.uid}/voyages`)
@@ -396,15 +421,18 @@ export class CloudStore implements SaveStore {
     } catch {
       return null;
     }
-    for (const payload of [body?.data, body?.prev?.data]) {
-      if (typeof payload !== 'string') continue;
+    for (const copy of [body, body?.prev]) {
+      if (!copy) continue;
+      let payload: string | null = typeof copy.data === 'string' ? copy.data : null;
+      if (!payload && copy.parts) {
+        try { payload = await this.readParts(id, copy.parts); } catch { payload = null; }
+      }
+      if (!payload) continue;
       try { return await decodeSave(payload); } catch { /* try the older copy */ }
     }
     return null;
   }
 
-  /** What each slot held last, so the next write can keep it as `prev`. */
-  private last = new Map<string, { meta: SaveMeta; data: string } | null>();
   /** One write at a time per slot; a burst collapses to the newest. */
   private inFlight = new Map<string, Promise<void>>();
   private queued = new Map<string, { meta: SaveMeta; data: string }>();
@@ -413,7 +441,7 @@ export class CloudStore implements SaveStore {
     // The document holds this save and the one before it, well inside the
     // platform's 256 KiB, and a save too big for that is refused here with
     // something sayable rather than as an `invalid_argument` from underneath.
-    if (data.length > 120 * 1024) {
+    if (data.length > PART_SIZE * MAX_PARTS) {
       throw new Error('This voyage is too long to keep in your account. Keep it as a file.');
     }
     const busy = this.inFlight.get(id);
@@ -437,18 +465,40 @@ export class CloudStore implements SaveStore {
     }
   }
 
+  /** What the slot's document holds now: the current save, inline or as parts. */
+  private head = new Map<string, any | null>();
+
   private async writeNow(id: string, meta: SaveMeta, data: string): Promise<void> {
     try {
-      if (!this.last.has(id)) {
+      if (!this.head.has(id)) {
         const snap = await this.ref(id).get();
         const body = snap.exists ? snap.data() : undefined;
-        this.last.set(id, typeof body?.data === 'string' ? { meta: body.meta, data: body.data } : null);
+        this.head.set(id, body ? { meta: body.meta, data: body.data, parts: body.parts } : null);
       }
-      const prev = this.last.get(id);
-      const doc: Record<string, unknown> = { meta, data };
-      if (prev && prev.data !== data) doc.prev = prev;
+      const cur = this.head.get(id);
+      // The copy kept behind this one. Inline copies are dropped once the
+      // voyage has grown past one document: two of them no longer fit in it.
+      let entry: any;
+      if (data.length <= INLINE_MAX) {
+        entry = { meta, data };
+      } else {
+        const gen = cur?.parts?.gen === 'a' ? 'b' : 'a';
+        const n = Math.ceil(data.length / PART_SIZE);
+        for (let i = 0; i < n; i++) {
+          await this.part(id, gen, i).set({ d: data.slice(i * PART_SIZE, (i + 1) * PART_SIZE) });
+        }
+        entry = { meta, parts: { gen, n } };
+      }
+      const doc: Record<string, unknown> = { ...entry };
+      if (cur) {
+        const prev = cur.parts ? { meta: cur.meta, parts: cur.parts }
+          : typeof cur.data === 'string' && cur.data !== data && cur.data.length + (entry.data?.length ?? 0) < INLINE_MAX * 1.6
+            ? { meta: cur.meta, data: cur.data } : null;
+        // A parts copy behind parts in the same set would be the one just overwritten.
+        if (prev && !(prev.parts && entry.parts && prev.parts.gen === entry.parts.gen)) doc.prev = prev;
+      }
       await this.ref(id).set(doc);
-      this.last.set(id, { meta, data });
+      this.head.set(id, entry);
     } catch (e: any) {
       throw new Error(cloudReason(e));
     }
@@ -456,8 +506,20 @@ export class CloudStore implements SaveStore {
 
   async remove(id: string): Promise<void> {
     try { await this.ref(id).delete(); } catch { /* it is gone either way */ }
+    for (const gen of ['a', 'b']) {
+      for (let i = 0; i < MAX_PARTS; i++) {
+        try { await this.part(id, gen, i).delete(); } catch { break; }
+      }
+    }
+    this.head.delete(id);
   }
 }
+
+/** A save up to this long goes in the slot's own document, with the copy before it. */
+const INLINE_MAX = 110 * 1024;
+/** Longer saves are cut into parts of this size, one document each. */
+const PART_SIZE = 180 * 1024;
+const MAX_PARTS = 24;
 
 /** The platform's codes, in words a player can act on. */
 function cloudReason(e: any): string {
