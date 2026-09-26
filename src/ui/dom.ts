@@ -71,6 +71,27 @@ export function card(title: string, ...children: Child[]): HTMLElement {
   return el('div', { class: 'card' }, title ? el('h3', {}, title) : null, ...children);
 }
 
+/**
+ * A card that folds shut: its title and a one-line summary always showing,
+ * the body behind a tap. For the reference material a port screen needs to
+ * have but a captain does not need to read every visit.
+ */
+export function fold(title: string, summary: Child, open: boolean, ...children: Child[]): HTMLElement {
+  const d = el('details', { class: 'card fold' },
+    el('summary', {}, el('h3', {}, title), summary ? el('span', { class: 'fold-sum' }, summary) : null),
+    el('div', { class: 'fold-body' }, ...children));
+  (d as HTMLDetailsElement).open = open;
+  return d;
+}
+
+/** Fold a card that has already been built: its title becomes the summary line. */
+export function foldCard(c: HTMLElement, summary: Child = '', open = false): HTMLElement {
+  const h = c.querySelector(':scope > h3');
+  const title = h?.textContent ?? '';
+  h?.remove();
+  return fold(title, summary, open, ...Array.from(c.childNodes));
+}
+
 /** Append children to a node, skipping the nulls that conditional markup produces. */
 export function append(host: HTMLElement, ...children: Child[]): void {
   for (const c of children) {

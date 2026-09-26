@@ -34,9 +34,9 @@ import {
   troubleWord, type Feitoria,
 } from '../progression/feitoria';
 import type { Game, TradeListing } from '../game/state';
-import { append, button, card, clear, el, kv, plural } from './dom';
+import { append, button, card, clear, el, fold, foldCard, kv, plural } from './dom';
 
-type Tab = 'town' | 'market' | 'freight' | 'money' | 'station' | 'fit' | 'estate';
+type Tab = 'town' | 'market' | 'freight' | 'money' | 'station' | 'stores' | 'yard';
 
 /** Everything that happens at anchor: the market, the yard, and the wardroom. */
 export class PortView {
@@ -58,6 +58,8 @@ export class PortView {
   private notice: { text: string; grave?: boolean } | null = null;
   /** The waiting row, opened from the foot of the page on any tab. */
   private waitOpen = false;
+  /** The Ribeira's drawing table stays open while a design is being worked. */
+  private ribeiraOpen = false;
   /** Which officer the inland card has selected, until one is sent. */
   private inlandMan: string | null = null;
   /** The standing order being composed before a station exists to carry it. */
@@ -137,19 +139,19 @@ export class PortView {
     );
 
     clear(this.body);
+    // Six errands, one tab each, in the order a captain does them in port:
+    // see who is here, trade, take on freight, see to the money, victual and
+    // man her, and put her in the yard. Stores and the company used to share
+    // a page with the whole of the shipwrights' catalogue, and that one page
+    // ran to seven thousand pixels.
     const tabs: [Tab, string][] = [
       ['town', 'Town'],
       ['market', 'Market'],
       ['freight', g.ventureOffers.length > 0 ? `Freight (${g.ventureOffers.length})` : 'Freight'],
-      ['money', g.finance.owedTo() > 0 ? `Backers (${g.finance.owedTo().toFixed(0)} owed)` : 'Backers'],
-      // Stores, the yard and the hiring were three tabs for one errand: getting
-      // her ready for sea. They are one page now, in the order it is done.
-      ['fit', 'Fitting out'],
+      ['money', g.finance.owedTo() > 0 ? `Money (${g.finance.owedTo().toFixed(0)} owed)` : 'Money'],
+      ['stores', 'Stores & crew'],
+      ['yard', 'Shipyard'],
     ];
-    // Only where there is one or where there could be: the tab is not a
-    // permanent reminder of an article most captains never buy.
-    // What you own at home, where there is a Portuguese quay to hear of it.
-    if (def.people === 'portuguese') tabs.splice(4, 0, ['estate', 'Holdings']);
     if (g.factoryHere || g.canFoundFactory(def) === null) {
       const f = g.factoryHere;
       tabs.splice(4, 0, ['station',
@@ -188,20 +190,28 @@ export class PortView {
       case 'town': this.renderTown(inner, g, rel); break;
       case 'market': this.renderMarket(inner, g, rel); break;
       case 'freight': this.renderFreight(inner, g, rel); break;
-      case 'money': this.renderMoney(inner, g); break;
-      case 'station': this.renderStation(inner, g); break;
-      case 'estate': this.renderEstate(inner, g); break;
-      case 'fit': {
-        const part = (title: string, fill: (h: HTMLElement) => void) => {
+      case 'money': {
+        this.renderMoney(inner, g);
+        // What you own at home belongs with the rest of the money, where there
+        // is a Portuguese quay to hear of it.
+        if (def.people === 'portuguese') {
+          inner.append(el('h2', { class: 'fit-head' }, 'Your holdings'));
           const h = el('div', {});
-          fill(h);
-          inner.append(el('h2', { class: 'fit-head' }, title), h);
-        };
-        part('Stores', (h) => this.renderStores(h, g));
-        part('The company', (h) => this.renderHands(h, g));
-        part('Shipwrights', (h) => this.renderYard(h, g));
+          this.renderEstate(h, g);
+          inner.append(h);
+        }
         break;
       }
+      case 'station': this.renderStation(inner, g); break;
+      case 'stores': {
+        this.renderStores(inner, g);
+        inner.append(el('h2', { class: 'fit-head' }, 'The company'));
+        const h = el('div', {});
+        this.renderHands(h, g);
+        inner.append(h);
+        break;
+      }
+      case 'yard': this.renderYard(inner, g); break;
     }
     this.body.append(inner);
   }
@@ -290,14 +300,29 @@ export class PortView {
   private renderTown(host: HTMLElement, g: Game, rel: ReturnType<Game['relationsFor']>): void {
     const def = g.portHere!;
     const pe = people(def.people);
+    const unknown = !g.peopleKnown(def) && !rel.met;
+
+    // The facts of the place, in one line: who they are, how they take you,
+    // and what the harbour is. These were two tables of their own at the side
+    // of the page, every visit.
+    const faith = { catholic: 'Catholic', muslim: 'Muslim', hindu: 'Hindu', traditional: 'their own gods', buddhist: 'Buddhist' }[pe.faith];
+    const chip = (k: string, v: string, cls = '') => el('span', { class: cls }, el('b', {}, k), v);
+    host.append(el('div', { class: 'port-strip' },
+      chip('', `${pe.name} · ${pe.language} · ${faith}`),
+      def.people === 'portuguese' ? null : chip('Regard', regardWord(rel.regard), rel.regard > 0.2 ? 'good' : rel.regard < -0.2 ? 'bad' : ''),
+      def.people === 'portuguese' ? null : chip('Trade', rel.mayTrade ? 'leave granted' : 'no leave yet', rel.mayTrade ? 'good' : 'bad'),
+      rel.exclusive ? chip('', 'exclusive terms', 'good') : null,
+      rel.factory ? chip('', 'your factory', 'good') : null,
+      chip('Shelter', qualityWord(def.anchorage)),
+      chip('Victuals', qualityWord(def.refit)),
+      chip('', { anchorage: 'a bare roadstead', village: 'a village', town: 'a town', city: 'a city', emporium: 'a great emporium' }[def.size]),
+    ));
 
     const left = el('div', {});
     const right = el('div', {});
-    // Coming among a people nobody from Europe has met is the single most
-    // dramatic thing in the game, and it used to be one line of prose in the
-    // same grey box as the harbour's holding ground.
-    const unknown = !g.peopleKnown(def) && !rel.met;
 
+    // Coming among a people nobody from Europe has met is the single most
+    // dramatic thing in the game.
     if (unknown) {
       left.append(el('div', { class: 'first-contact' },
         el('div', { class: 'first-contact-eyebrow' }, 'No Portuguese has stood here before'),
@@ -307,6 +332,9 @@ export class PortView {
           'Nothing may be bought or sold until whoever governs the place has seen you '
           + 'and decided what you are. Seek an audience.'),
       ));
+    } else if (!rel.mayTrade && def.people !== 'portuguese') {
+      left.append(el('div', { class: 'notice' },
+        'You have no leave to trade here. Seek an audience with whoever governs the place before you open the hold.'));
     }
 
     // Somebody on the quay with a story. See progression/quests.
@@ -325,42 +353,26 @@ export class PortView {
       ));
     }
 
-    left.append(card('', el('p', { style: { fontSize: '15px', lineHeight: '1.7' } }, def.blurb)));
-
-    // What makes this place itself. See world/portCharacter.
+    // The place itself: the blurb and what it is known for, as one card.
     const ch = characterOf(def.id);
-    if (ch) {
-      const quest = g.questHere();
-      left.append(el('div', { class: 'port-character' },
-        el('div', { class: 'port-character-eyebrow' }, 'Known for'),
-        el('h2', {}, ch.signature),
-        ch.custom ? el('p', {}, ch.custom) : null,
-        ch.danger ? el('p', { class: 'port-character-danger' }, ch.danger) : null,
-        quest ? el('div', { class: 'port-character-quest' },
-          el('p', {}, quest.ask),
-          el('div', { class: 'row' },
-            button(`Give ${quest.qty} ${good(quest.good).english.toLowerCase()}`, () => {
-              this.notice = { text: g.doQuestHere() };
-              this.render();
-            }, { disabled: g.ship.quantityOf(quest.good) < quest.qty }),
-            el('span', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', alignSelf: 'center' } },
-              `${g.ship.quantityOf(quest.good).toFixed(0)} aboard`),
-          ),
-        ) : null,
-      ));
-    }
-
-    // Voyages are lost in port, a fortnight before anybody notices. Every one
-    // of these numbers already existed; every one was on a different screen.
-    const checks = g.readiness();
-    const bad = checks.filter((c) => c.state === 'bad').length;
-    left.append(card(bad > 0 ? 'Before you sail — she is not ready' : 'Before you sail',
-      ...checks.map((c) => el('div', { class: `ready-row ${c.state}` },
-        el('div', { class: 'ready-line' },
-          el('span', {}, c.label),
-          el('em', {}, c.value)),
-        c.note ? el('div', { class: 'ready-note' }, c.note) : null,
-      )),
+    const quest = ch ? g.questHere() : null;
+    left.append(el('div', { class: 'port-character' },
+      el('div', { class: 'port-character-eyebrow' }, ch ? 'Known for' : def.name),
+      ch ? el('h2', {}, ch.signature) : null,
+      el('p', {}, def.blurb),
+      ch?.custom ? el('p', {}, ch.custom) : null,
+      ch?.danger ? el('p', { class: 'port-character-danger' }, ch.danger) : null,
+      quest ? el('div', { class: 'port-character-quest' },
+        el('p', {}, quest.ask),
+        el('div', { class: 'row' },
+          button(`Give ${quest.qty} ${good(quest.good).english.toLowerCase()}`, () => {
+            this.notice = { text: g.doQuestHere() };
+            this.render();
+          }, { disabled: g.ship.quantityOf(quest.good) < quest.qty }),
+          el('span', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', alignSelf: 'center' } },
+            `${g.ship.quantityOf(quest.good).toFixed(0)} aboard`),
+        ),
+      ) : null,
     ));
 
     if (g.portGossip) {
@@ -368,38 +380,28 @@ export class PortView {
         el('p', { style: { fontStyle: 'italic', lineHeight: '1.7' } }, g.portGossip)));
     }
 
-    // The people, in the sidebar. When the card above has just introduced them
-    // at length, this is the reference table and not a second introduction.
-    right.append(card(pe.name,
-      unknown ? null : el('p', {}, pe.blurb),
-      kv('Language', pe.language),
-      kv('Faith', { catholic: 'Catholic', muslim: 'Muslim', hindu: 'Hindu', traditional: 'Their own', buddhist: 'Buddhist' }[pe.faith]),
-      kv('Regard for you', regardWord(rel.regard)),
-      kv('Leave to trade', rel.mayTrade ? 'Granted' : 'Not granted'),
-      rel.exclusive ? kv('Exclusive terms', 'Agreed') : null,
-      rel.factory ? kv('Factory', 'Established') : null,
-    ));
-
-    // Said once. The hero card above already says it better.
-    if (!rel.mayTrade && def.people !== 'portuguese' && !unknown) {
-      right.append(el('div', { class: 'notice' },
-        'You have no leave to trade here. Seek an audience with whoever governs the place before you open the hold.'));
-    }
-
-    right.append(card('The anchorage',
-      kv('Shelter', qualityWord(def.anchorage)),
-      kv('Water and provisions', qualityWord(def.refit)),
-      kv('Size', { anchorage: 'A bare roadstead', village: 'A village', town: 'A town', city: 'A city', emporium: 'A great emporium' }[def.size]),
-      kv('Wealth', qualityWord(def.wealth)),
-    ));
+    // Before you sail: what is wrong with her, first and alone. When nothing
+    // is, one line says so and the full list waits behind it.
+    const checks = g.readiness();
+    const wrong = checks.filter((c) => c.state !== 'good');
+    const row = (c: typeof checks[number]) => el('div', { class: `ready-row ${c.state}` },
+      el('div', { class: 'ready-line' }, el('span', {}, c.label), el('em', {}, c.value)),
+      c.note ? el('div', { class: 'ready-note' }, c.note) : null);
+    right.append(wrong.length
+      ? card(wrong.some((c) => c.state === 'bad') ? 'Before you sail — she is not ready' : 'Before you sail',
+        ...wrong.map(row),
+        checks.length > wrong.length
+          ? el('div', { class: 'ready-note', style: { marginTop: '6px' } },
+            `${checks.filter((c) => c.state === 'good').map((c) => c.label.toLowerCase()).join(', ')}: all well.`)
+          : null)
+      : fold('Before you sail', 'She is ready for sea.', false, ...checks.map(row)));
 
     // Soundings, which are what make the lead line worth heaving on a coast
     // nobody from Lisbon has sounded. See Game.knowsGroundAt.
     const soundPrice = g.localSoundingsPrice();
     if (soundPrice !== null) {
       right.append(card('The local pilots',
-        el('p', {}, 'A pilot here knows how the bottom lies for a hundred and fifty miles each way: '
-          + 'where it shoals, where the sand turns to mud, where the rocks are. With it in the '
+        el('p', {}, 'A pilot here knows the bottom for a hundred and fifty miles each way. With it in the '
           + 'book, the lead tells you how far off the land you are, not just how deep the water is.'),
         button(`Buy his soundings \u2014 ${soundPrice} cruzados`, () => {
           this.notice = { text: g.buyLocalSoundings() };
@@ -408,37 +410,26 @@ export class PortView {
       ));
     }
 
-    const monsoon = g.monsoonNow();
-    right.prepend(card('Pass the time',
-      el('p', {}, 'Lying at anchor rests the crew, mends their spirits, and lets fresh food do its work — and it also lets the weather change, and the season turn.'),
-      el('div', { style: { display: 'flex', gap: '7px', flexWrap: 'wrap' } },
-        ...[1, 3, 7, 14, 30].map((d) => button(`${d} ${d === 1 ? 'day' : 'days'}`, () => {
-          g.waitDays(d);
-          this.notice = { text: `${d} days pass at anchor.` };
-          this.render();
-        })),
-      ),
-      // The thing every hull in this ocean actually did, and the reason its
-      // harbours were full: lie here until the wind comes round.
-      monsoon
-        ? el('div', { style: { marginTop: '13px', paddingTop: '11px', borderTop: '1px solid rgba(90,74,55,0.2)' } },
-            kv('The season', monsoon.name),
-            el('p', { style: { fontSize: '13px' } }, monsoon.carries),
-            el('p', { style: { fontSize: '13px', fontStyle: 'italic', color: 'var(--ink-soft)' } },
-              monsoon.against),
-            el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginTop: '8px' } },
-              el('span', { style: { fontSize: '13px', color: 'var(--ink-soft)' } },
-                `${Math.round(monsoon.daysToTurn)} days to the turn, and a month of calms after it`),
-              button('Lie here until the wind comes round', () => {
-                this.notice = { text: g.waitForTheMonsoon() };
-                this.render();
-              }),
-            ),
-          )
-        : null,
-    ));
+    // The people at length, for a captain who wants to read about them.
+    if (!unknown) right.append(fold(`About the ${pe.name}`, '', false, el('p', {}, pe.blurb)));
 
-    host.append(el('div', { class: 'cols two' }, left, right));
+    const monsoon = g.monsoonNow();
+    if (monsoon) {
+      right.append(card('The season',
+        el('p', { style: { fontSize: '13.5px' } }, `${monsoon.name}. ${monsoon.carries}`),
+        el('p', { style: { fontSize: '13px', fontStyle: 'italic', color: 'var(--ink-soft)' } }, monsoon.against),
+        el('div', { class: 'row', style: { alignItems: 'center' } },
+          el('span', { style: { fontSize: '12.5px', color: 'var(--ink-soft)' } },
+            `${Math.round(monsoon.daysToTurn)} days to the turn`),
+          button('Lie here until the wind comes round', () => {
+            this.notice = { text: g.waitForTheMonsoon() };
+            this.render();
+          }),
+        ),
+      ));
+    }
+
+    host.append(el('div', { class: 'cols side' }, left, right));
   }
 
   private renderMarket(host: HTMLElement, g: Game, rel: ReturnType<Game['relationsFor']>): void {
@@ -478,11 +469,11 @@ export class PortView {
     const eye = this.factorsEye(g);
     if (eye) l2.append(eye);
     const letters = this.lettersCard(g);
-    if (letters) l2.append(letters);
+    if (letters) l2.append(foldCard(letters));
     if (def.id === 'lisboa') {
-      r2.append(this.kingsGoodsCard(g));
+      r2.append(foldCard(this.kingsGoodsCard(g)));
       const ant = this.antwerpCard(g);
-      if (ant) r2.append(ant);
+      if (ant) r2.append(foldCard(ant));
     }
     extras.append(l2, r2);
     host.append(extras);
@@ -497,7 +488,7 @@ export class PortView {
     const news = g.newsHeard.filter((n) => n.def.ports.includes(def.id) && n.shock.end > g.clock.t);
     const takes = Object.entries(pay.takes).sort((a, b) => b[1] - a[1]).slice(0, 5)
       .map(([id, m]) => `${good(id).english.toLowerCase()} (+${Math.round((m - 1) * 100)}%)`);
-    return card('This market',
+    return fold('This market', pay.line, fairs.length + news.length > 0,
       kv('What they take', pay.line),
       pay.coin > 1.02 ? kv('Coin', `buys about ${Math.round((1 - 1 / pay.coin) * 100)}% less than its face`, 'warn') : null,
       takes.length ? kv('In barter they prize', takes.join(', ')) : null,
@@ -877,7 +868,7 @@ export class PortView {
     ));
 
     const heard = g.openLeads;
-    right.append(card('What the waterfront says',
+    right.append(fold('What the waterfront says', '', false,
       heard.length === 0
         ? el('p', {}, 'Nothing you have not heard before. Buy a pilot a drink and wait.')
         : el('div', {}, ...heard.slice(0, 4).map((l) =>
@@ -981,7 +972,8 @@ export class PortView {
         : null,
     ));
 
-    right.append(card('The Casa’s own credit',
+    right.append(fold('The Casa’s own credit',
+      `${g.creditFree.toFixed(0)} left to draw${g.crown.debt > 0 ? `, ${g.crown.debt.toFixed(0)} drawn` : ''}`, false,
       kv('Left to draw', `${g.creditFree.toFixed(0)} cruzados`),
       g.crown.debt > 0 ? kv('Already drawn', `${g.crown.debt.toFixed(0)} cruzados`) : null,
       el('p', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', lineHeight: '1.55' } },
@@ -992,7 +984,7 @@ export class PortView {
         + 'you, which is why they can lend so much more.'),
     ));
 
-    right.append(card('Your name on this street',
+    right.append(fold('Your name on this street', '', false,
       ...HOUSES.map((h) => el('div', { style: { marginBottom: '5px' } },
         kv(h.short, creditWord(g.finance.credit[h.id]),
           g.finance.credit[h.id] < h.floor ? 'bad' : ''))),
@@ -1009,7 +1001,7 @@ export class PortView {
         el('p', {}, 'The Rua Nova reaches a long way and it does not reach here. Whatever you are '
           + 'going to do next, you are going to do it on what is in the ship.')));
     } else {
-      left.append(el('p', { class: 'quote', style: { marginBottom: '14px' } },
+      left.append(el('p', { class: 'fit-blurb', style: { marginBottom: '10px' } },
         'A sea loan is insurance with a loan’s face on it: it costs three times what an '
         + 'ordinary bill costs, and if she never comes home nobody ever asks you for it. A letra '
         + 'is cheap and is owed by you whatever happens to her. Sixteenths are never repaid at '
@@ -1031,7 +1023,11 @@ export class PortView {
     // A house that will not deal at all says so once. Listing its instruments
     // underneath and repeating the same refusal against each of them read as a
     // bug: the same sentence three times in one card.
-    if (credit < h.floor) return card(h.name, ...body);
+    const owed = g.finance.live.filter((d) => d.house === h.id && !d.settled).reduce((a, d) => a + d.owed, 0);
+    // Each house folded to a line: what you owe it, or whether it will deal.
+    // Six houses' worth of instruments laid open was most of this page.
+    const summary = owed > 0 ? `${Math.round(owed)} owed` : credit < h.floor ? 'will not deal with you' : 'will lend';
+    if (credit < h.floor) return fold(h.name, summary, false, ...body);
 
     for (const kind of h.writes) {
       const t = g.termsFor(h, kind as DebtKind);
@@ -1066,7 +1062,7 @@ export class PortView {
       ));
     }
 
-    return card(h.name, ...body);
+    return fold(h.name, summary, owed > 0, ...body);
   }
 
   /**
@@ -1330,9 +1326,7 @@ export class PortView {
     ));
 
     const right = el('div', {});
-    right.append(card('Why it matters',
-      el('p', { class: 'quote' },
-        'Water is the hard limit on every passage, and fresh food is the only thing standing between your company and the scurvy. Vasco da Gama went ninety-three days from the Cape Verde islands to the coast of Africa without sighting land, and by the time he reached India and came home again he had buried a hundred men out of a hundred and seventy, and burned one of his three ships because he had not enough left alive to sail her.'),
+    right.append(card('Aboard now',
       kv('Water aboard', `${g.crew.provisions.water.toFixed(0)} days`),
       kv('Fresh provisions', `${g.crew.provisions.fresh.toFixed(0)} days`),
       kv('Days since fresh food', `${g.crew.daysWithoutFresh.toFixed(0)}`),
@@ -1416,7 +1410,13 @@ export class PortView {
       const trunk = nodes.filter((u) => u.tier === 1);
       const a = nodes.filter((u) => u.branch === 'a');
       const b = nodes.filter((u) => u.branch === 'b');
-      right.append(card(sys.english,
+      // Folded, each of them: nine trees of five works apiece laid open at
+      // once was most of the length of the old page. The summary says what
+      // is fitted, which is what a captain looks for first.
+      const fitted = nodes.filter((u) => g.ship.upgrades.includes(u.id));
+      right.append(fold(sys.english,
+        fitted.length ? fitted.map((u) => u.english).join(', ') : 'nothing fitted',
+        false,
         el('p', { class: 'fit-blurb' }, sys.blurb),
         plan.length ? el('div', { class: 'fit-cat-head' }, 'Rig plan') : null,
         ...plan.map(node),
@@ -1428,11 +1428,15 @@ export class PortView {
       ));
     }
     const services = UPGRADES.filter((u) => u.service);
-    right.append(card('The yard\u2019s own work', ...services.map(node)));
+    left.append(card('The yard\u2019s own work', ...services.map(node)));
 
-    // A ship to your own lines, at the Ribeira.
+    // A ship to your own lines, at the Ribeira: folded until wanted, open
+    // while one is on the stocks.
     if (def.id === 'lisboa') {
-      right.append(shipyardCard(g, (text, grave) => { this.notice = { text, grave }; this.render(); }));
+      left.append(fold('The Ribeira das Naus',
+        g.building ? 'a ship of yours on the stocks' : 'a ship built to your own lines',
+        !!g.building || this.ribeiraOpen,
+        shipyardCard(g, (text, grave) => { this.ribeiraOpen = true; this.notice = { text, grave }; this.render(); })));
     }
 
     // A larger ship, once the Crown thinks you are worth one.
@@ -1440,7 +1444,7 @@ export class PortView {
     if (def.id === 'lisboa' && hulls.length > 0) {
       const tradeIn = g.tradeInValue();
       const tons = g.ship.cargoTons;
-      right.append(card('Ships lying in the river',
+      left.append(fold('Ships lying in the river', `${hulls.length} for sale, ${tradeIn} allowed for yours`, false,
         el('p', { class: 'quote' },
           `The yard will allow ${tradeIn} cruzados against the ${hullClass(g.ship.hullId).name} `
           + 'and her hull and keel work. Her rig, stores, quarters, instruments and arms come across '
@@ -1469,7 +1473,7 @@ export class PortView {
     }
 
     // Instruments.
-    right.append(this.instrumentCard(g));
+    left.append(foldCard(this.instrumentCard(g), 'what is aboard, and what may be bought'));
 
     host.append(el('div', { class: 'cols two' }, left, right));
   }
@@ -1598,7 +1602,7 @@ export class PortView {
 
     // The officers' chests: a share of the hold for their own trade.
     const officers = g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length;
-    left.append(card('The officers\u2019 chests',
+    left.append(fold('The officers\u2019 chests', '', false,
       el('p', { class: 'flavour' }, 'Every officer of a Portuguese ship expected room in the hold for a chest of his own, to trade on his own account. It was most of what the voyage paid him, and he took it as his right. Refuse it and you have the room, and every officer remembers it at every port.'),
       kv('Room it takes', `${(officers * CHEST_TONS).toFixed(1)} tons, for ${officers} officers`),
       el('div', { class: 'row' },
@@ -1613,7 +1617,7 @@ export class PortView {
     // and the ones who decide, between them, whether there is a mutiny.
     const fo = g.hands.filter((h) => h.alive && h.aboard);
     if (fo.length > 0) {
-      left.append(card('The fo’c’sle',
+      left.append(fold('The fo’c’sle', '', false,
         el('p', { class: 'quote' },
           'The men you know by name. There are others.'),
         ...fo.map((h) => el('div', { style: { marginBottom: '8px' } },
@@ -1648,7 +1652,7 @@ export class PortView {
 
     // Who you already have, and what they are. A captain knows his own officers.
     const aboard = g.crew.officers.filter((o) => o.alive && !o.ashoreAt);
-    left.append(card('Your officers',
+    left.append(fold('Your officers', `${aboard.length} aboard`, false,
       ...aboard.map((o) => {
         // A written man is described by what was written for him. Falling back
         // to the trait blurb put the same sentence under two different officers
@@ -1702,7 +1706,7 @@ export class PortView {
       (r) => r.role !== 'lingua' && r.role !== 'degredado'
         && !g.crew.officers.some((o) => o.alive && o.role === r.role));
     if (empty.length > 0) {
-      right.append(card('Berths standing empty',
+      right.append(fold('Berths standing empty', `${empty.length}`, false,
         el('p', { class: 'quote' },
           'These men were not engaged off a list and cannot be replaced off one. What they knew '
           + 'has gone with them.'),
@@ -1761,7 +1765,7 @@ export class PortView {
     const langs = g.linguaLanguagesAt(def);
     const portuguese = def.people === 'portuguese';
 
-    return card('Línguas',
+    return fold('Línguas', '', false,
       el('p', { class: 'quote' },
         'An audience with a people whose tongue nobody aboard has is conducted in signs, and '
         + 'goes about as well as that sounds. An interpreter is the difference between being '
@@ -1832,7 +1836,7 @@ export class PortView {
       : men[0];
     const backing = backingFor(g, def, chosen);
 
-    right.append(card('Send a man inland',
+    right.append(fold('Send a man inland', '', false,
       el('p', { class: 'quote' },
         'The Crown did this for sixty years and it was never once a small thing. A man walks '
         + 'away from the coast with a letter and a bag of goods, and either he comes back with '
