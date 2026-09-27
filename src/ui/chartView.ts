@@ -91,6 +91,8 @@ export class ChartView {
   private ink = 1;
   private game: Game | null = null;
   private onClose: () => void;
+  /** Sail her home asks twice: the page may not show a browser dialog. */
+  private homeArmed = false;
 
   constructor(onClose: () => void) {
     this.onClose = onClose;
@@ -124,6 +126,7 @@ export class ChartView {
 
   open(g: Game): void {
     this.game = g;
+    this.homeArmed = false;
     if (this.compact) { this.showVoyage = false; this.showLegend = false; }
     this.centre = { ...g.nav.estimated };
     this.buildTools();
@@ -192,9 +195,13 @@ export class ChartView {
       // The road home from the south, where it applies: second only to laying
       // a course, and ahead of the chips so it is never scrolled off a phone.
       g && g.can('homeward') && g.homewardPassage() && !g.dockedAt
-        ? button('Sail her home', () => {
+        ? button(this.homeArmed
+          ? `Sail home: ${g.homewardPassage()!.miles} miles, ${g.homewardPassage()!.days} days — confirm`
+          : 'Sail her home', () => {
           const road = g.homewardPassage();
-          if (!road || !confirm(`Sail home to Lisbon by the road? About ${road.miles} miles and ${road.days} days.`)) return;
+          if (!road) return;
+          if (!this.homeArmed) { this.homeArmed = true; this.buildTools(); return; }
+          this.homeArmed = false;
           g.pushAlert(g.sailHome(), 'note');
           this.buildTools(); this.buildVoyage(); this.draw();
           this.onClose();

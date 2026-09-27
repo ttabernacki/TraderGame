@@ -105,7 +105,7 @@ export class Ui {
 
     this.events = new EventView((i) => this.game?.resolveEvent(i));
 
-    const back = () => this.setMode('sailing');
+    const back = () => this.setMode(this.game?.dockedAt ? 'port' : 'sailing');
     this.chart = new ChartView(back);
     this.rutter = new RutterView(back);
     this.book = new BookView((m) => this.setMode(m));

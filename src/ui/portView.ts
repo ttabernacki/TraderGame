@@ -58,6 +58,8 @@ export class PortView {
   private notice: { text: string; grave?: boolean } | null = null;
   /** The waiting row, opened from the foot of the page on any tab. */
   private waitOpen = false;
+  /** Sail her home asks twice: the page may not show a browser dialog. */
+  private homeArmed = false;
   /** The Ribeira's drawing table stays open while a design is being worked. */
   private ribeiraOpen = false;
   /** Which officer the inland card has selected, until one is sent. */
@@ -76,6 +78,7 @@ export class PortView {
   open(g: Game): void {
     this.game = g;
     this.waitOpen = false;
+    this.homeArmed = false;
     // The story waits for the port screen: the King's summons at the start of
     // a career, and whatever is due on arrival.
     g.checkStory();
@@ -119,15 +122,18 @@ export class PortView {
       // it was a card half way down the town page, under whatever the town
       // had to say, and on a phone nobody ever scrolled far enough to find it.
       g.can('homeward') && def.id !== 'lisboa'
-        ? button('Sail her home', () => {
+        ? button(this.homeArmed
+          ? `Sail home: ${g.homewardPassage()?.miles ?? 0} miles, ${g.homewardPassage()?.days ?? 0} days — confirm`
+          : 'Sail her home', () => {
           const road = g.homewardPassage();
           if (!road) return;
-          if (!confirm(`Sail home to Lisbon by the road? About ${road.miles} miles and ${road.days} days, and she will be in the Tagus at the end of it.`)) return;
+          if (!this.homeArmed) { this.homeArmed = true; this.render(); return; }
+          this.homeArmed = false;
           const text = g.sailHome();
           this.notice = { text, grave: false };
           this.tab = 'town';
           this.render();
-        }, { title: 'The road home: skip the passage and come into Lisbon in the days it takes' })
+        }, { primary: this.homeArmed, title: 'The road home: skip the passage and come into Lisbon in the days it takes' })
         : null,
       button(this.waitOpen ? 'Close' : 'Wait…', () => { this.waitOpen = !this.waitOpen; this.render(); }),
       button('Weigh anchor  (Space)', () => {
