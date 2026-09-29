@@ -1,0 +1,13 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "5.4",
+	"Category": "",
+	"Description": "Hansa & Heir - medieval trading prototype (Unreal port)",
+	"Modules": [
+		{
+			"Name": "HansaTrader",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
