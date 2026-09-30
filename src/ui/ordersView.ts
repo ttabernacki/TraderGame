@@ -5,6 +5,7 @@ import { OFFICER_ROLES } from '../crew/crew';
 import { rivalStanding } from '../progression/rival';
 import { daysLeft, ventureLine } from '../progression/ventures';
 import { roadPlan } from '../progression/road';
+import { MILESTONES } from '../progression/milestones';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
 import { officerOpinion } from '../game/officerEvents';
 import type { Game } from '../game/state';
@@ -129,7 +130,6 @@ export class OrdersView {
     if (stops.length === 0) {
       this.body.append(card('Nothing asked',
         el('p', {}, 'Nobody is waiting on you. Sail where you like, and see what the coast has to say.')));
-      return;
     }
     for (const s of stops) {
       const dist = s.along < 0 ? '' : s.here ? 'here' : s.nm < 30 ? 'close' : `${s.nm.toLocaleString()} miles`;
@@ -142,6 +142,23 @@ export class OrdersView {
           el('span', { class: 'road-text' }, t.text)))),
       ));
     }
+    this.renderMilestones(g);
+    const r = g.rival;
+    this.body.append(card(`Your rival: ${r.name}`,
+      el('p', { class: 'flavour' }, rivalStanding(r, g.crown.lifetimeStanding)),
+      kv('Furthest south', `${formatLat(r.frontierLat)} against your ${formatLat(g.furthestSouth)}`)));
+  }
+
+  /** The captain's own small goals, done and to do. */
+  private renderMilestones(g: Game): void {
+    const todo = MILESTONES.filter((m) => !g.milestones.includes(m.id));
+    const done = MILESTONES.length - todo.length;
+    this.body.append(card(`Your own reckoning (${done}/${MILESTONES.length})`,
+      ...todo.map((m) => el('div', { class: 'milestone' },
+        el('b', {}, m.title), ` \u2014 ${m.hint} +${m.renown} renown${m.gold ? `, +${m.gold} cruzados` : ''}`)),
+      done > 0 ? el('p', { class: 'flavour' },
+        `Done: ${MILESTONES.filter((m) => g.milestones.includes(m.id)).map((m) => m.title).join(', ')}.`) : null,
+    ));
   }
 
   private renderCommission(g: Game): void {

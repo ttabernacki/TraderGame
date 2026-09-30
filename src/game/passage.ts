@@ -23,6 +23,9 @@ export interface PassageRecord {
   doldrumsT: number;
   capeT: number;
   waterT: number;
+  barbaryT?: number;
+  tomeT?: number;
+  arabianT?: number;
 }
 
 export function newPassageRecord(): PassageRecord {
@@ -169,6 +172,145 @@ export function capeScene(g: Game): SeaEvent | null {
   };
 }
 
+/**
+ * Bojador and the Barbary shore: off, or close.
+ *
+ * Asked south of the Canaries with a mark laid down the Saharan coast. The old
+ * fear was not the land but the shoals off Bojador and the set of the Canary
+ * current; the pilots' answer was the volta — stand well out, and come in on
+ * the far side. Close in is faster and has breezes off the land, and lives in
+ * the lee of a coast nobody has sounded.
+ */
+export function barbaryScene(g: Game): SeaEvent | null {
+  const dest = g.destination;
+  if (!dest || dest.lat > 24) return null;
+  const pos = g.nav.estimated;
+  if (pos.lat < 24 || pos.lat > 29.5 || pos.lon < -19.5 || pos.lon > -12) return null;
+  const off = seaMark(23, -20.5);
+  const close = seaMark(24.2, -16.4);
+  return {
+    id: 'passage:barbary',
+    council: true,
+    title: 'Bojador',
+    severity: 'warning',
+    text: 'The Saharan coast runs south from here, low, sandy, and sounded by nobody. Off Cabo '
+      + 'Bojador the shoals run out a long way to the west, and the current sets along the '
+      + 'land. Old pilots say a man who goes close in does not come back; the men who came '
+      + 'back went a long way out first.\n\nThe short road is also the one with the land aboard.',
+    facts: { dry: g.crew.provisions.water < 40 ? 1 : 0 },
+    choices: [
+      {
+        label: 'Stand off the Barbary shore and come in on the far side',
+        detail: 'Twenty leagues out, with the trade and the current. Longer, and nothing to hit.',
+        resolve: (g2) => {
+          g2.insertWaypointAhead('Offing of Bojador', off.lat, off.lon);
+          return 'Stood well out from the Barbary shore to give Bojador a wide berth.';
+        },
+      },
+      {
+        label: 'Keep the land aboard and run down the coast',
+        detail: 'The shortest way, with breezes off the land at night and the shoals close under her lee.',
+        resolve: (g2) => {
+          g2.insertWaypointAhead('Off the Barbary shore', close.lat, close.lon);
+          return 'Kept the Saharan coast aboard, and the lead going.';
+        },
+      },
+    ],
+  };
+}
+
+/**
+ * São Tomé, or straight on.
+ *
+ * Asked leaving the Gulf of Guinea for the Congo. The island is a day or two out of the way, has
+ * water and a market and the King's factor, and is the only place between Mina and the Congo where
+ * a ship in any trouble is not alone.
+ */
+export function tomeScene(g: Game): SeaEvent | null {
+  const dest = g.destination;
+  if (!dest || dest.lat > -2.5) return null;
+  const pos = g.nav.estimated;
+  if (pos.lat < -1.5 || pos.lat > 6 || pos.lon < -2 || pos.lon > 9) return null;
+  const tome = PORTS.find((p) => p.id === 'sao-tome-porto');
+  if (!tome) return null;
+  const at = anchorageOf(tome);
+  return {
+    id: 'passage:tome',
+    council: true,
+    title: 'The island on the line',
+    severity: 'note',
+    text: 'The Gulf of Guinea falls behind and the Congo is a long way on. On the line, a little '
+      + 'to the east, is São Tomé: a young colony of convicts and Jewish children sent out to learn '
+      + 'to grow sugar, with a spring, a chapel, and a factor who will take your word for '
+      + 'a price.\n\nIt is a detour. It is also the last land before the long board south.',
+    facts: { water: g.crew.provisions.water < 60 ? 1 : 0, sick: g.crew.sickness > 0.15 || g.crew.scurvy > 0.15 ? 1 : 0 },
+    choices: [
+      {
+        label: 'Put in at São Tomé',
+        detail: 'A day or two out of the way: water, fresh food, and a ship to lean on.',
+        resolve: (g2) => {
+          g2.insertWaypointAhead(tome.name, at.lat, at.lon, tome.id);
+          return 'Bore up for São Tomé to fill the casks and let the men stretch.';
+        },
+      },
+      {
+        label: 'Stand on for the Congo',
+        detail: 'Every day not spent at anchor is a day nearer home.',
+        resolve: () => 'Stood on past São Tomé with the trade on the quarter.',
+      },
+    ],
+  };
+}
+
+/**
+ * Crossing to India: on the monsoon, or by the coast.
+ *
+ * Asked leaving the Swahili coast for the east. The south-west monsoon, April
+ * to September, carries a ship to Malabar in three weeks with nothing in sight;
+ * the rest of the year the wind is in her face, and the coast road by Guardafui and Socotorá is
+ * longer but does not end in a dead calm.
+ */
+export function arabianScene(g: Game): SeaEvent | null {
+  const dest = g.destination;
+  if (!dest || dest.lon < 62 || dest.lat < 5 || dest.lat > 20) return null;
+  const pos = g.nav.estimated;
+  if (pos.lat < -6 || pos.lat > 6 || pos.lon < 39 || pos.lon > 52) return null;
+  const doy = g.clock.dayOfYear;
+  const monsoon = doy > 105 && doy < 270;
+  const across = seaMark(6, 62);
+  const coast = seaMark(12.4, 52.2);
+  return {
+    id: 'passage:arabian',
+    council: true,
+    title: 'The crossing',
+    severity: 'warning',
+    text: `The Melinde pilots say the crossing is made on the monsoon, and the monsoon is `
+      + `${monsoon ? 'blowing from the south-west now, which is the way to India' : 'in the north-east now, which is the wrong way for India'}.\n\n`
+      + 'Out of sight of land for three weeks the open road is fast if the wind holds, and '
+      + 'a calm or a contrary wind there has no land behind it. The coast road runs north to '
+      + 'Guardafui and then east, longer, with somewhere to run to.',
+    facts: { monsoon: monsoon ? 1 : 0 },
+    choices: [
+      {
+        label: 'Cross the open sea on the monsoon',
+        detail: 'Straight across on the wind. Fastest, and out of sight of anything for weeks.',
+        resolve: (g2) => {
+          g2.insertWaypointAhead('Mid-ocean crossing', across.lat, across.lon);
+          return 'Stood out east across the open sea to meet the monsoon.';
+        },
+      },
+      {
+        label: 'Coast north to Guardafui, then east',
+        detail: 'A week or two longer. Land to run for if the weather turns, and the coast to learn.',
+        resolve: (g2) => {
+          g2.insertWaypointAhead('Off Cape Guardafui', coast.lat, coast.lon);
+          return 'Coasted north to Guardafui, to cross from the Arabian side.';
+        },
+      },
+    ],
+  };
+}
+
 /** Days of water left at the present ration. */
 export function waterDays(g: Game): number {
   return g.crew.provisions.water / Math.max(g.ration, 0.1);
@@ -274,6 +416,18 @@ export function passageQuestion(g: Game, rec: PassageRecord): SeaEvent | null {
   if (t - rec.capeT > 60 * DAY) {
     const s = capeScene(g);
     if (s) { rec.capeT = t; return s; }
+  }
+  if (t - (rec.barbaryT ?? -1e12) > 40 * DAY) {
+    const s = barbaryScene(g);
+    if (s) { rec.barbaryT = t; return s; }
+  }
+  if (t - (rec.tomeT ?? -1e12) > 40 * DAY) {
+    const s = tomeScene(g);
+    if (s) { rec.tomeT = t; return s; }
+  }
+  if (t - (rec.arabianT ?? -1e12) > 60 * DAY) {
+    const s = arabianScene(g);
+    if (s) { rec.arabianT = t; return s; }
   }
   return null;
 }

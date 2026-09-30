@@ -83,12 +83,26 @@ function go(g: Game, q: QuestState, next: string, line: string): string {
   return line;
 }
 
+/** What the purse and the renown stood at when the scene now being answered was put. */
+let snap = { gold: 0, standing: 0 };
+
+/** "+120 cruzados, +25 renown" for what the last scene changed, or an empty string. */
+function whatChanged(g: Game): string {
+  const parts: string[] = [];
+  const gold = Math.round(g.crown.gold - snap.gold);
+  const st = Math.round(g.crown.lifetimeStanding - snap.standing);
+  if (gold) parts.push(`${gold > 0 ? '+' : '\u2212'}${Math.abs(gold)} cruzados`);
+  if (st) parts.push(`${st > 0 ? '+' : '\u2212'}${Math.abs(st)} renown`);
+  return parts.join(', ');
+}
+
 function end(g: Game, q: QuestState, outcome: string, line: string): string {
   q.outcome = outcome;
   q.fired = false;
-  q.journal.push({ t: g.clock.t, text: line });
+  const change = whatChanged(g);
+  q.journal.push({ t: g.clock.t, text: change ? `${line} (${change})` : line });
   g.logEvent('crown', `${QUESTS[q.id].title} — ${line}`, true);
-  g.pushAlert(`${QUESTS[q.id].title} is finished.`, 'note');
+  g.pushAlert(`${QUESTS[q.id].title} is finished${change ? `: ${change}` : ''}.`, 'note');
   refreshQuestPrices(g);
   return line;
 }
@@ -2713,6 +2727,43 @@ export function originEnding(g: Game): string | null {
   return q && q.outcome ? ORIGIN_ENDINGS[`${id}:${q.outcome}`] ?? null : null;
 }
 
+/**
+ * The world remembering. A finished thread is noticed, once, at the place it
+ * touched — a greeting at the gate, a note in the King's book, a fish sold at
+ * cost — so that what the captain did is something the road shows him, not
+ * only something the journal says.
+ */
+const CALLBACKS: { quest: QuestId; outcomes?: string[]; ports: string[]; text: string }[] = [
+  { quest: 'pesos', outcomes: ['inland'], ports: ['mina', 'axim', 'acara'], text: 'The gold traders at the gate nod to you before they nod to the factor. Word of the scales has gone along the coast.' },
+  { quest: 'pesos', outcomes: ['cheat'], ports: ['mina', 'axim', 'acara'], text: 'The gold traders find something to do when you come down the beach. The clerk’s scales are still the Casa’s.' },
+  { quest: 'pesos', outcomes: ['repaid'], ports: ['axim'], text: 'A trader at Axim gives you a nod that is almost warm. He has been told about the hundred and fifty.' },
+  { quest: 'adrift', outcomes: ['boy', 'salvage'], ports: ['arguim'], text: 'The garrison at Arguim turns out to watch you come in. Somebody knows whose the caravel was that you brought news of.' },
+  { quest: 'padrao', ports: ['mocambique'], text: 'The King’s factor at Moçambique has left the page with Dias’s padrão open on his desk, and leaves it there when you come in.' },
+  { quest: 'mercador', outcomes: ['freely', 'pilotage'], ports: ['melinde'], text: 'A dish of figs is sent down to the ship from a house on the terrace. The sheikh’s harbour-master bows lower than he need.' },
+  { quest: 'mercador', outcomes: ['freely', 'pilotage'], ports: ['mombaca'], text: 'At Mombaça a boy on the beach watches you and says nothing, and then holds up his hand in greeting.' },
+  { quest: 'monsoon', outcomes: ['freed'], ports: ['calecute', 'cochim', 'cananor'], text: 'A pilot on the quay at Calecute touches his brow to you. They know the name of the ship.' },
+  { quest: 'monsoon', outcomes: ['kept'], ports: ['calecute', 'cochim', 'cananor'], text: 'The pilots on the quay at Calecute look at Malemo standing at your rail, and then do not look at him.' },
+  { quest: 'roteiro', outcomes: ['named'], ports: ['mocambique', 'melinde'], text: 'A Moçambique pilot has the Baía do Piloto in his book, in a hand you do not know. He asks whether it is yours.' },
+  { quest: 'ficheiro', outcomes: ['closed'], ports: ['lisboa', 'lagos'], text: 'The Casa’s clerk on the quay does not look up when you come ashore. It is the first time that has been a kindness.' },
+  { quest: 'aprendiz', outcomes: ['chose'], ports: ['lagos', 'lisboa', 'funchal'], text: 'A fishwife on the quay sells you her whole basket at cost and will not hear a word about it.' },
+  { quest: 'nome', outcomes: ['self', 'brother', 'friend'], ports: ['lisboa'], text: 'A letter in Duarte’s hand is waiting at the Casa. It is four lines, and none of them is about money.' },
+  { quest: 'escudeiro', outcomes: ['honest'], ports: ['lisboa', 'lagos'], text: 'The men at the Casa stand a little straighter when you pass. A man who tells the King the truth is either feared or trusted.' },
+  { quest: 'leak', ports: ['lisboa'], text: 'The Rua Nova has a new contador, and a new way of looking at the ships’ books.' },
+];
+
+export function callbackAt(g: Game, portId: string): string | null {
+  for (let i = 0; i < CALLBACKS.length; i++) {
+    const cb = CALLBACKS[i];
+    const key = `cb:${cb.quest}:${i}`;
+    if (!cb.ports.includes(portId) || g.secretsHeard.includes(key)) continue;
+    const q = g.quests.find((x) => x.id === cb.quest);
+    if (!q?.outcome || (cb.outcomes && !cb.outcomes.includes(q.outcome))) continue;
+    g.secretsHeard.push(key);
+    return cb.text;
+  }
+  return null;
+}
+
 export function newQuest(id: QuestId, t: number): QuestState {
   return {
     id, step: QUESTS[id].first, stepT: t, fired: false, flags: {}, started: t,
@@ -2758,6 +2809,7 @@ export function dueScene(g: Game, port: string | null): SeaEvent | null {
     const step = QUESTS[q.id].steps[q.step];
     if (!step || !step.when(g, q, port)) continue;
     q.fired = true;
+    snap = { gold: g.crown.gold, standing: g.crown.lifetimeStanding };
     return step.scene(g, q);
   }
   return null;

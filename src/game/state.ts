@@ -11,9 +11,11 @@ import {
   type ChronicleState,
 } from '../progression/chronicle';
 import {
-  QUESTS, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
+  QUESTS, callbackAt, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
   rumoursHeard,
 } from '../progression/quests';
+import { barkAt } from '../progression/barks';
+import { MILESTONES, checkMilestones } from '../progression/milestones';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
 import { azoresHigh, itczLatitude } from '../world/wind';
 import {
@@ -241,6 +243,7 @@ export class Game {
   /** The story beats due now: the chronicle first, then the quest lines. */
   checkStory(): void {
     this.refreshObjectives();
+    this.checkWorld();
     const c = this.chronicle;
     // A scene put and since lost is put again.
     c.pending = c.pending.filter((id) => this.pendingEvent?.id === `chronicle:${id}`
@@ -446,6 +449,29 @@ export class Game {
     this.logEvent('crown', `Took up: ${QUESTS[id].title}. ${QUESTS[id].blurb}`, true);
     this.checkQuests();
     return `${QUESTS[id].title} — in the Book, under Missions.`;
+  }
+
+  /** Milestones reached, by id. */
+  milestones: string[] = [];
+
+  /**
+   * The small things the road says back: a remark from the wardroom at a place
+   * worth remarking on, the world noticing a finished thread, and the captain's
+   * own milestones as they are reached.
+   */
+  private checkWorld(): void {
+    if (this.mode === 'gameover' || this.mode === 'title') return;
+    const bark = barkAt(this);
+    if (bark) { this.pushAlert(bark, 'note'); this.logEvent('note', bark, false); }
+    if (this.dockedAt) {
+      const cb = callbackAt(this, this.dockedAt);
+      if (cb) { this.pushAlert(cb, 'note'); this.logEvent('note', cb, false); }
+    }
+    for (const m of checkMilestones(this)) {
+      const line = `${m.title}: ${m.hint.replace(/\.$/, '')}. +${m.renown} renown${m.gold ? `, +${m.gold} cruzados` : ''}.`;
+      this.pushAlert(`Milestone — ${line}`, 'note');
+      this.logEvent('crown', `Milestone — ${line}`, true);
+    }
   }
 
   /** Put whichever quest beat is due. In port, straight onto the screen. */
@@ -9187,6 +9213,7 @@ export class Game {
       foundFeatures: this.foundFeatures,
       isles: this.isles,
       secretsHeard: this.secretsHeard,
+      milestones: this.milestones,
       estate: this.estate,
       designs: this.designs,
       building: this.building,
@@ -9307,6 +9334,7 @@ export class Game {
     g.foundFeatures = d.foundFeatures ?? [];
     g.isles = { ...newIsleState(), ...(d.isles ?? {}) };
     g.secretsHeard = d.secretsHeard ?? [];
+    g.milestones = d.milestones ?? [];
     g.estate = { ...newEstate(g.clock.t), ...(d.estate ?? {}) };
     // An island raised with its scene still unanswered when the game was saved.
     for (const [id, f] of Object.entries(g.isles.found)) if (!f.name) delete g.isles.found[id];
@@ -9392,6 +9420,11 @@ export class Game {
     g.displayHeading = g.ship.state.heading;
     g.displayHeel = g.ship.state.heel;
     g.refreshEnvironment();
+    // A voyage begun before milestones existed has already done what it has
+    // done: claim it quietly rather than paying it all out at once.
+    if (d.milestones === undefined) {
+      for (const m of MILESTONES) if (m.done(g)) g.milestones.push(m.id);
+    }
     return g;
   }
 }

@@ -206,6 +206,7 @@ function startNew(difficulty: Difficulty = 'watch', origin: OriginId = 'segundo'
   // in Lisbon with a purse, no orders, and nothing telling him where to go.
   if (renderer) renderer.cameraMode = 'chase';
   ui.setMode('court');
+  lastThreads = -1; lastMilestones = -1; lastDock = undefined;
   lastCheckpointT = game.clock.t;
 }
 
@@ -253,6 +254,7 @@ function resumeFrom(json: string): void {
   // left the Book of Voyages empty behind the player — which reads exactly like
   // an import that silently failed — and closing the tab in that window lost
   // the import altogether.
+  lastThreads = -1; lastMilestones = -1; lastDock = undefined;
   lastCheckpointT = game.clock.t;
   lastAutoSaveT = game.clock.t;
   void ui.takeUp(game, json);
@@ -405,7 +407,18 @@ function frame(now: number): void {
       discoveryBanner.show(game.discoveryCue);
       sound.discovery(game.discoveryCue.kind);
     }
+    if (game) {
+      // Making a harbour, closing a thread, a milestone: each has its own sound.
+      const threads = game.quests.filter((q) => q.outcome).length;
+      if (game.dockedAt !== lastDock) { if (game.dockedAt && lastDock !== undefined) sound.cue('landfall'); lastDock = game.dockedAt; }
+      if (lastThreads >= 0 && threads > lastThreads) sound.cue('thread');
+      lastThreads = threads;
+      if (lastMilestones >= 0 && game.milestones.length > lastMilestones) sound.cue('milestone');
+      lastMilestones = game.milestones.length;
+    } else { lastDock = undefined; lastThreads = -1; lastMilestones = -1; }
     sound.update({
+      shoreNm: game && game.mode === 'sailing' ? game.sounding.shoreDistNm : undefined,
+      day: frame.hourLocal > 7 && frame.hourLocal < 18,
       windKnots: frame.windKnots,
       apparentKnots: frame.apparentKnots,
       speedKnots: frame.speedKnots,
@@ -437,6 +450,9 @@ const CHECKPOINT_DAYS = 20;
 let lastCheckpointT = -1e9;
 
 let wasDocked: string | null = null;
+let lastDock: string | null | undefined;
+let lastThreads = -1;
+let lastMilestones = -1;
 
 function checkAutosave(g: Game): void {
   if (g.mode === 'gameover' || g.mode === 'title') return;

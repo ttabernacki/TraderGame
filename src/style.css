@@ -2940,3 +2940,4 @@ details.card.fold[open] > .fold-body { margin-top: 9px; }
 .voyage-checkpoints { margin-top: 10px; }
 .voyage-checkpoints > summary { cursor: pointer; opacity: 0.75; padding: 6px 0; }
 .voyage-checkpoints[open] > summary { margin-bottom: 8px; }
+.milestone { margin: 4px 0; }

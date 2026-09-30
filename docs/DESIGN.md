@@ -67,6 +67,12 @@ checkpoint between acts.
   port). Every step is further down the road than the last, except the two
   that end at a Portuguese port the ship is bound for anyway.
 
+- **The road answers back.** Passage decisions now also at Bojador, São Tomé and the
+  Arabian crossing (`passage.ts`); finished threads print what they changed and are
+  remembered at the places they touched (`callbackAt`); officers remark at places
+  (`barks.ts`); the captain's own milestones and the rival sit under the Road
+  (`milestones.ts`); a harbour bell, gulls and a thread cue in `sound.ts`.
+
 ## Verdicts
 
 Keep and deepen:

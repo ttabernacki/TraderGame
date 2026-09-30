@@ -34,6 +34,10 @@ export interface SoundFrame {
   /** Bells of the watch, 1-8, or 0 when nothing is to be struck. */
   bells: number;
   belowDecks: boolean;
+  /** Miles to the nearest shore, for the gulls. Omitted when unknown. */
+  shoreNm?: number;
+  /** Broad daylight, when gulls are about. */
+  day?: boolean;
 }
 
 export class Sound {
@@ -47,6 +51,7 @@ export class Sound {
   private creakGain: GainNode | null = null;
 
   private lastBells = -1;
+  private nextGull = 0;
   private started = false;
   private muted = false;
 
@@ -172,6 +177,15 @@ export class Sound {
       this.creakGain.gain.setTargetAtTime(work * 0.05 * (f.belowDecks ? 1.6 : 1), now, 0.6);
     }
 
+    // --- Gulls -------------------------------------------------------------
+    // Near land, by day, now and then: a few cries, never a loop. Not at high
+    // clock rates, where they would be a stutter.
+    if (f.day && f.shoreNm !== undefined && f.shoreNm < 14 && f.rate <= 600 && !f.belowDecks
+        && now > this.nextGull) {
+      this.nextGull = now + 5 + Math.random() * 14 + f.shoreNm * 0.6;
+      this.gulls(Math.random() < 0.5 ? 2 : 3);
+    }
+
     // --- The bell ----------------------------------------------------------
     // Struck on the half-hour, one to eight, and it is the only clock anybody
     // aboard has. Silenced when the clock is wound right up, because eight
@@ -224,6 +238,66 @@ export class Sound {
       o.connect(f);
       o.start(t0);
       o.stop(t0 + 5.6);
+    }
+  }
+
+  /** A gull: a band of noise with a falling, mewing sweep. */
+  private gulls(n: number): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || this.muted) return;
+    let t = ctx.currentTime + 0.05;
+    for (let i = 0; i < n; i++) {
+      const base = 1500 + Math.random() * 500;
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(base, t);
+      o.frequency.exponentialRampToValueAtTime(base * 1.35, t + 0.09);
+      o.frequency.exponentialRampToValueAtTime(base * 0.8, t + 0.34);
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = 2100;
+      f.Q.value = 2.2;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.028, t + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.38);
+      o.connect(f).connect(g).connect(this.master);
+      o.start(t);
+      o.stop(t + 0.4);
+      t += 0.32 + Math.random() * 0.12;
+    }
+  }
+
+  /**
+   * The moments between the watch bells: making a harbour, finishing one of the
+   * long threads, reaching a milestone. Short, and each its own shape.
+   */
+  cue(kind: 'landfall' | 'thread' | 'milestone'): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || this.muted) return;
+    const t0 = ctx.currentTime + 0.05;
+    if (kind === 'landfall') {
+      // The harbour bell, slow and low, then a gull.
+      this.ding(t0, 440, 0.12);
+      this.ding(t0 + 1.1, 440, 0.1);
+      window.setTimeout(() => this.gulls(2), 1800);
+    } else if (kind === 'thread') {
+      // A low stone-on-stone thud under a settling fifth: a chapter closed.
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.setValueAtTime(110, t0);
+      o.frequency.exponentialRampToValueAtTime(48, t0 + 0.4);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.22, t0 + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.6);
+      o.connect(g).connect(this.master);
+      o.start(t0);
+      o.stop(t0 + 0.65);
+      this.ding(t0 + 0.25, 392, 0.09);
+      this.ding(t0 + 0.65, 262, 0.09);
+    } else {
+      [1, 1.25, 1.5].forEach((m, i) => this.ding(t0 + i * 0.22, 520 * m, 0.08));
     }
   }
 

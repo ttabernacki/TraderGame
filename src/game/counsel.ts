@@ -88,6 +88,12 @@ const LET_RAIN = /^Let it rain/;
 const INSHORE = /^Stand in/;
 const OFFING = /^Keep your offing/;
 const WEST = /^Stand away west/;
+const OFF_SHORE = /^Stand off the Barbary/;
+const IN_SHORE = /^Keep the land aboard/;
+const PUT_IN = /^Put in at São Tomé/;
+const PRESS_ON = /^Stand on for the Congo/;
+const ACROSS = /^Cross the open sea/;
+const BY_COAST = /^Coast north to Guardafui/;
 const COAST = /^Keep in with the coast/;
 const STRAIGHT = /^Stand on as she is/;
 const WIDE = /^Stand south into the westerlies/;
@@ -413,6 +419,60 @@ const RULES: Record<string, Rule> = {
         piloto: 'Straight through. The belt is no narrower anywhere else that I have seen written down.',
         mestre: 'Stand on. Every league we sail out of our way is a league of water drunk for nothing.',
         escrivao: 'Hold the course laid, sir. The King is paying by the month.',
+      }],
+    ],
+  },
+
+  'passage:barbary': {
+    voices: ['piloto', 'mestre', 'escrivao'],
+    right: () => OFF_SHORE,
+    bias: { piloto: OFF_SHORE, mestre: IN_SHORE, escrivao: IN_SHORE },
+    args: [
+      [OFF_SHORE, {
+        piloto: 'Out, sir. Every pilot who has come back from Bojador went a long way out first, and the ones who did not are the reason for the saying.',
+        mestre: 'Stand off. I would not put her on a bar I have never sounded.',
+        escrivao: 'The Casa’s rule is to stand off, and the Casa has lost more ships than we have.',
+      }],
+      [IN_SHORE, {
+        piloto: 'Close, sir, if the lead is going. There are breezes off the land at night.',
+        mestre: 'Take the land aboard and save the days. She is sound enough for it.',
+        escrivao: 'The short road, sir. The King pays by the month, and we are already late.',
+      }],
+    ],
+  },
+
+  'passage:tome': {
+    voices: ['cirurgiao', 'mestre', 'piloto'],
+    right: (_g, e) => ((e.facts?.water || e.facts?.sick) ? PUT_IN : PRESS_ON),
+    bias: { cirurgiao: PUT_IN, mestre: PUT_IN, piloto: PRESS_ON },
+    args: [
+      [PUT_IN, {
+        cirurgiao: 'Put in, sir. Fresh fruit and a few days ashore will do more for the men than I can.',
+        mestre: 'São Tomé, sir. The casks will not top themselves.',
+        piloto: 'The island is on the way, near enough. A day is a day well spent.',
+      }],
+      [PRESS_ON, {
+        cirurgiao: 'They will last, sir, if nothing new breaks out.',
+        mestre: 'We have water enough. Press on, and let the trade carry us.',
+        piloto: 'Stand on. The longer we keep the sea the better our reckoning is.',
+      }],
+    ],
+  },
+
+  'passage:arabian': {
+    voices: ['piloto', 'mestre', 'lingua'],
+    right: (_g, e) => (e.facts?.monsoon ? ACROSS : BY_COAST),
+    bias: { piloto: ACROSS, mestre: BY_COAST, lingua: BY_COAST },
+    args: [
+      [ACROSS, {
+        piloto: 'Across, sir, on the monsoon. It is the road every Melinde pilot takes, and the wind is fair.',
+        mestre: 'Out across. Twenty days and no sea-room to worry about.',
+        lingua: 'The pilots at Melinde all say across, at this season.',
+      }],
+      [BY_COAST, {
+        piloto: 'The coast, sir, if the wind is wrong. A calm in the middle of the ocean has no land behind it.',
+        mestre: 'The coast, sir. At least we can put in if it turns.',
+        lingua: 'The coast, sir. The Arabs there know the road, and will tell us for a price.',
       }],
     ],
   },
