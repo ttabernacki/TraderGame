@@ -51,8 +51,9 @@ checkpoint between acts.
   Costa's letter), and Prester's envoy can go inland from any port of the
   Kongo/Angola coast, because an act's letter arrives a port or two down the
   road from where its goal was met.
-- **The Road** (Orders, first tab): every live obligation in road order, with
-  distance, so the next leg can be planned.
+- ~~The Road tab / port road card / HUD next-stop~~ were tried and cut: Missions
+  (Orders, first tab) is the one list. `road.ts` remains for the chart's gold marks
+  and for placing threads in order.
 
 - **Origins have a thread each** (`quests.ts`, ids `nome`, `ficheiro`, `roteiro`,
   `escudeiro`): offered at Lisbon, Lagos or Funchal to the matching origin only;

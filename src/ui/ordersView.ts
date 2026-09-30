@@ -4,7 +4,6 @@ import { NM, compassPoint, formatLat, formatLon, haversine } from '../core/math'
 import { OFFICER_ROLES } from '../crew/crew';
 import { rivalStanding } from '../progression/rival';
 import { daysLeft, ventureLine } from '../progression/ventures';
-import { roadPlan } from '../progression/road';
 import { MILESTONES } from '../progression/milestones';
 import { policyOf } from '../progression/feitoria';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
@@ -22,7 +21,7 @@ import {
   capacityOf, regardWordF, stockTons, stockValue, troubleWord,
 } from '../progression/feitoria';
 
-type Tab = 'road' | 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 'stations' | 'wardroom';
+type Tab = 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 'stations' | 'wardroom';
 
 /**
  * The captain's orders.
@@ -39,7 +38,7 @@ type Tab = 'road' | 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 
 export class OrdersView {
   root = el('div', { class: 'screen' });
   private body = el('div', { class: 'screen-body' });
-  private tab: Tab = 'road';
+  private tab: Tab = 'missions';
   private tradeGood = '';
   private game: Game | null = null;
 
@@ -68,7 +67,6 @@ export class OrdersView {
     clear(this.body);
 
     const counts: Record<Tab, number> = {
-      road: 0,
       chronicle: 0,
       missions: (g.crown.patent ? g.crown.patent.objectives.filter((o) => !o.complete).length : 0)
         + g.quests.filter((q) => !q.outcome).length + g.activeVentures.length,
@@ -79,7 +77,7 @@ export class OrdersView {
       wardroom: g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length,
     };
     const names: Record<Tab, string> = {
-      road: 'The Road', chronicle: 'Chronicle', missions: 'Missions', trade: 'Trade', courts: 'Courts', reports: 'Hearsay',
+      chronicle: 'Chronicle', missions: 'Missions', trade: 'Trade', courts: 'Courts', reports: 'Hearsay',
       stations: 'Factories', wardroom: 'Wardroom',
     };
 
@@ -94,8 +92,7 @@ export class OrdersView {
       }, counts[t] > 0 ? `${names[t]} (${counts[t]})` : names[t])),
     ));
 
-    if (this.tab === 'road') this.renderRoad(g);
-    else if (this.tab === 'chronicle') { this.renderChronicle(g); this.renderRival(g); }
+    if (this.tab === 'chronicle') { this.renderChronicle(g); this.renderRival(g); }
     else if (this.tab === 'missions') {
       // Everything the ship is bound to, on one page: the King's commission,
       // the long stories, and the merchants' charters.
@@ -107,6 +104,7 @@ export class OrdersView {
       this.renderMissions(g);
       this.body.append(el('h2', { class: 'fit-head' }, 'Charters'));
       this.renderCharters(g);
+      this.renderMilestones(g);
     }
     else if (this.tab === 'trade') this.renderTrade(g);
     else if (this.tab === 'courts') this.renderCourts(g);
@@ -116,39 +114,6 @@ export class OrdersView {
   }
 
   // -------------------------------------------------------------------------
-
-  /**
-   * Everything the ship is bound to, in the order the road meets it. See
-   * progression/road: one voyage should do all the business at a place in one
-   * call and go on, and this is how the player can see what that is.
-   */
-  private renderRoad(g: Game): void {
-    const stops = roadPlan(g);
-    this.body.append(el('div', { class: 'road-intro' },
-      'The road runs south and east from Lisbon: the Canaries, Arguim, Mina, the Congo, the Cape, '
-      + 'the Swahili coast, Malabar. Whatever is asked of you lies somewhere along it. Do what is '
-      + 'to be done at a place while you are there, and go on.'));
-    if (stops.length === 0) {
-      this.body.append(card('Nothing asked',
-        el('p', {}, 'Nobody is waiting on you. Sail where you like, and see what the coast has to say.')));
-    }
-    for (const s of stops) {
-      const dist = s.along < 0 ? '' : s.here ? 'here' : s.nm < 30 ? 'close' : `${s.nm.toLocaleString()} miles`;
-      this.body.append(el('div', { class: `road-stop${s.here ? ' here' : ''}` },
-        el('div', { class: 'road-stop-head' },
-          el('h3', {}, s.where),
-          el('span', { class: 'road-dist' }, dist)),
-        el('ul', { class: 'road-tasks' }, ...s.tasks.map((t) => el('li', { class: `road-task k-${t.kind}` },
-          el('span', { class: 'road-tag' }, t.tag),
-          el('span', { class: 'road-text' }, t.text)))),
-      ));
-    }
-    this.renderMilestones(g);
-    const r = g.rival;
-    this.body.append(card(`Your rival: ${r.name}`,
-      el('p', { class: 'flavour' }, rivalStanding(r, g.crown.lifetimeStanding)),
-      kv('Furthest south', `${formatLat(r.frontierLat)} against your ${formatLat(g.furthestSouth)}`)));
-  }
 
   /** The captain's own small goals, done and to do. */
   private renderMilestones(g: Game): void {
