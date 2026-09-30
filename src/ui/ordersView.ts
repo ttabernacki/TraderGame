@@ -180,8 +180,11 @@ export class OrdersView {
       kv('Reward', `${p.reward} cruzados and ${p.standingReward} renown`),
       g.crown.patentReady
         ? el('p', { class: 'good' },
-            'Every article but the return is discharged. Bring her home to Lisbon and present '
-            + 'yourself at court.')
+            Object.values(ACT_CHARGE).includes(p.title)
+              ? 'Every article is discharged. The King\u2019s factor at the next quay will pay you; '
+                + 'or present yourself at court in Lisbon.'
+              : 'Every article but the return is discharged. Bring her home to Lisbon and present '
+                + 'yourself at court.')
         : null,
     ));
 
@@ -208,8 +211,9 @@ export class OrdersView {
       unreported.length > 0
         ? el('p', {},
             `${unreported.length} discoveries are in your book and not yet on the padrão real. `
-            + `They are worth ${unreported.reduce((s, d) => s + d.value, 0)} renown when reported, `
-            + 'and nothing at all if the ship does not come home.')
+            + `They are worth ${unreported.reduce((s, d) => s + d.value, 0)} renown when reported: `
+            + 'the next act\u2019s letter enters them at any quay, and the court in Lisbon pays best. '
+            + 'They are worth nothing if the ship is lost.')
         : null,
     ));
 
@@ -665,7 +669,7 @@ export class OrdersView {
       kv('Your furthest south', `${formatLat(g.furthestSouth)}`),
       kv('Coasts entered under his name', `${r.claimed.length}`),
       kv('His standing at court', `${Math.round(r.standing)} against your ${Math.round(g.crown.lifetimeStanding)}`),
-      r.frontierLat < g.ship.state.pos.lat
+      r.frontierLat < g.furthestSouth
         ? el('p', { class: 'bad' },
             'He is further down the coast than you are. Every headland between him and the '
             + 'end of Africa is his to name unless you get there first.')

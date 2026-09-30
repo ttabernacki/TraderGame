@@ -1,4 +1,4 @@
-import { Clock, dateFromDays, formatDateAt } from '../core/clock';
+import { Clock, dateFromDays, formatDateAt, monthName } from '../core/clock';
 import { counselFor, type Counsel } from './counsel';
 import { characterOf } from '../world/portCharacter';
 import {
@@ -3585,7 +3585,7 @@ export class Game {
     const { entry } = this.rutter.open(
       'passage', key,
       `The sea in ${Math.abs(s.lat)}\u00b0${s.lat < 0 ? 'S' : 'N'}, `
-      + `${Math.abs(s.lon)}\u00b0${s.lon < 0 ? 'W' : 'E'}`,
+      + `${Math.abs(s.lon)}\u00b0${s.lon < 0 ? 'W' : 'E'}, in ${monthName(month)}`,
       this.nav.estimated, this.clock.t,
     );
     this.rutter.note(entry, seaSentence(s), 'observed', this.clock.t,

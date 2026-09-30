@@ -64,7 +64,7 @@ export class RutterView {
       el('div', { class: 'sub' },
         all.length === 0
           ? 'Nothing in it yet. It fills itself as you sail.'
-          : `${all.length} pages · ${g.rutter.unpublished().length} nobody else has seen`
+          : `${all.length} pages · ${g.rutter.unpublished().length === all.length ? 'none yet shared' : `${g.rutter.unpublished().length} still yours alone`}`
             + (atlas.entries > 0 ? ` · ${atlas.entries} in your atlas` : '')),
     );
 
