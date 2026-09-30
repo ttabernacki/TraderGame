@@ -463,15 +463,27 @@ export class Sky {
 
     let intensity = clamp(smoothstep(-6, 12, sun.altitude), 0.02, 1) * (1 - overcast * 0.55);
 
-    // Once the sun is well down, the key light is the moon's: its direction,
-    // a cold silver, and a strength that at the full is enough to throw a
-    // shadow and lay a path of light across the water. The swap happens where
-    // the sun's own light has already gone to nothing, so there is no jump.
+    // As the sun goes and the moon comes, the key light passes from one to the
+    // other over the time it takes their strengths to trade places. It used to
+    // switch at a threshold — the direction, the colour and the strength all at
+    // once — which on the water is the glitter track jumping across a hundred
+    // degrees of sea between one frame and the next.
+    //
+    // Its direction is the two blended by how much of the light each is
+    // carrying: a moon that has just cleared the horizon lights the night by a
+    // few hundredths, and moves the key light by the same few hundredths.
     let keyDir = sunDir;
-    if (night > 0.6 && moon.altitude > -1) {
-      keyDir = moonDir;
-      sunColor.setRGB(0.72, 0.82, 1.0);
-      intensity = Math.max(intensity, moonlight * 0.34);
+    const moonI = moonlight * 0.34;
+    if (moonI > 0.002) {
+      // The share of the light the moon is carrying, held back through the first
+      // part of her rise so the change is spread over it, and handed back to the
+      // sun as the sun's own light returns at dawn.
+      const w = (moonI / (moonI + Math.max(intensity, 0.02))) * smoothstep(0, 0.6, moonUp);
+      keyDir = new THREE.Vector3().copy(sunDir).multiplyScalar(1 - w).addScaledVector(moonDir, w);
+      if (keyDir.lengthSq() < 1e-4) keyDir.copy(moonDir);
+      keyDir.normalize();
+      sunColor.lerp(new THREE.Color(0.72, 0.82, 1.0), w * w * (3 - 2 * w));
+      intensity = Math.max(intensity, moonI);
     }
 
     // --- Dome --------------------------------------------------------------

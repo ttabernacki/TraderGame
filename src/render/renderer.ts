@@ -458,13 +458,47 @@ export class Renderer {
   private visVis = NaN;
 
   /** Forget the eased state: the next frame is drawn at the true time and weather. */
-  resetEase(): void { this.visT = NaN; }
+  resetEase(): void { this.visT = NaN; this.keyInit = false; }
+
+  // The key light — its direction, colour and strength — eased in real seconds.
+  private keyInit = false;
+  private keyDir = new THREE.Vector3();
+  private keyColor = new THREE.Color();
+  private keyIntensity = 0;
+  private keyMoon = 0;
+
+  /**
+   * Everything the sun's glitter on the water and the light on the ship are
+   * driven from is one direction and one colour, and at the half-day rate they
+   * change fast: a moon coming up hands the night's light from one side of the
+   * sky to the other in a few frames. A short real-time low-pass on the key light
+   * turns that hand-over into a sweep, and costs nothing at ordinary speeds,
+   * where the light moves too slowly for the lag to be seen.
+   */
+  private easeKey(l: SkyLighting, realDt: number): void {
+    if (!this.keyInit) {
+      this.keyDir.copy(l.sunDir); this.keyColor.copy(l.sunColor);
+      this.keyIntensity = l.intensity; this.keyMoon = l.moon; this.keyInit = true;
+    }
+    const k = 1 - Math.exp(-Math.min(realDt, 0.25) / 0.4);
+    this.keyDir.lerp(l.sunDir, k);
+    if (this.keyDir.lengthSq() < 1e-4) this.keyDir.copy(l.sunDir);
+    this.keyDir.normalize();
+    this.keyColor.lerp(l.sunColor, k);
+    this.keyIntensity += (l.intensity - this.keyIntensity) * k;
+    this.keyMoon += (l.moon - this.keyMoon) * k;
+    l.sunDir = this.keyDir.clone();
+    l.sunColor = this.keyColor.clone();
+    l.intensity = this.keyIntensity;
+    l.moon = this.keyMoon;
+  }
 
   private easeFrame(raw: RenderFrame, realDt: number, simDt: number): RenderFrame {
     const rate = realDt > 1e-5 ? simDt / realDt : 0;
     const T = raw.simTime;
     if (Number.isNaN(this.visT) || T < this.visT || T - this.visT > 30 * 3600) {
       this.visT = T;
+      this.keyInit = false;
       this.visCloud = raw.cloud; this.visRain = raw.rain; this.visVis = raw.visibilityNm;
     }
     // --- Sun time --------------------------------------------------------
@@ -554,7 +588,10 @@ export class Renderer {
       // water flows past her. Advancing both together reads as a film run fast;
       // advancing only the flow reads as a ship going fast, which is the thing
       // the player turned the clock up to feel.
-      Math.min(simDt, realDt * 2) * 0.62,
+      // The water's own animation runs no faster than real time whatever the
+      // clock: at the half-day rate it used to run twice as fast as at any
+      // ordinary one, and the ripple and the glitter on it crawled and flickered.
+      Math.min(simDt, realDt) * 0.62,
     );
     this.waveClock += Math.min(simDt, realDt * 2);
 
@@ -564,6 +601,7 @@ export class Renderer {
       f.pos.lat, f.pos.lon, f.dayFromEpoch, f.hourLocal,
       f.dayOfYear, f.year, f.cloud, f.simTime,
     );
+    this.easeKey(lighting, realDt);
     this.applyLighting(lighting, f.visibilityNm);
     this.sky.drift(f.windFrom, f.windKnots, realDt);
     const overcast = clamp((f.cloud - 0.45) / 0.5, 0, 1);

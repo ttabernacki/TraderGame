@@ -519,8 +519,8 @@ void main() {
   // the range where a pixel can hold it, it flattens to its own average rather
   // than being sampled at random.
   float glint = resolvable(2.1, px);
-  float sparkle = 0.55 + 0.45 * glint * sin(vSurface.x * 3.1 + uNoiseTime * 4.3)
-                                      * sin(vSurface.y * 2.7 - uNoiseTime * 3.7);
+  float sparkle = 0.60 + 0.40 * glint * sin(vSurface.x * 3.1 + uNoiseTime * 2.6)
+                                      * sin(vSurface.y * 2.7 - uNoiseTime * 2.2);
   // The slope the pixel could not resolve becomes roughness: a narrow, bright
   // highlight is spread into a wide, dim one of the same total energy. Leaving
   // the highlight narrow instead is what makes a distant sea flash and crawl —
