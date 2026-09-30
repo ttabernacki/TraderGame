@@ -391,7 +391,8 @@ function frame(now: number): void {
     // book, the town. The clock is stopped there, so nothing is missed, and a
     // player who leaves a port screen open for ten minutes is not running the
     // GPU flat out to paint a picture nobody can see.
-    if (!(game && COVERED_MODES.has(game.mode))) renderer.render(frame, realDt, simDt);
+    if (game && COVERED_MODES.has(game.mode)) renderer.resetEase();
+    else renderer.render(frame, realDt, simDt);
     if (game?.lookCue && game.lookCue.id !== lastLookCue) {
       lastLookCue = game.lookCue.id;
       renderer.glance(game.lookCue.bearing - game.displayHeading);
