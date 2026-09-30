@@ -1059,14 +1059,19 @@ export class Game {
    */
   dischargeAtDispatch(): string[] {
     const p = this.crown.patent;
-    if (!p || !this.crown.patentReady) return [];
+    const ready = !!p && this.crown.patentReady;
+    // A letter from the King also enters whatever has been found since the last
+    // report, commission or no: discoveries should not wait on a trip to court.
+    if (!ready && this.crown.unreportedValue() <= 0) return [];
     const beyond = this.crown.discoveries.filter(
       (d) => !d.reported && d.kind !== 'coast' && d.kind !== 'padrao').length;
     const s = this.crown.settle(this.clock.t, this.settlementBias);
     const shared = this.takeShares(s.gold);
     if (shared > 0.5) s.lines.push(`${Math.round(shared)} cruzados to the men holding sixteenths of the voyage.`);
-    const points = this.awardCommission(p, beyond);
-    s.lines.push(`${points} points to spend on yourself, in the book under Captain.`);
+    if (ready && p) {
+      const points = this.awardCommission(p, beyond);
+      s.lines.push(`${points} points to spend on yourself, in the book under Captain.`);
+    }
     this.logEvent('crown', `Reported to the King\u2019s factor. ${s.gold} cruzados and ${s.standing} renown. ${this.crown.title.name}.`, true);
     return s.lines;
   }

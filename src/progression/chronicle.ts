@@ -718,6 +718,14 @@ export function chronicleDue(g: Game, c: ChronicleState): SeaEvent | null {
     g.logEvent('crown', `Act ${c.act}, ${act.english}: ${actGoal(g, c.act)} Done — the King will hear it by the next ship, and answer at the next port.`, true);
   }
 
+  // The King's word reaches a captain wherever he lies: after the news has had
+  // time to be carried, the next act opens at the next port he enters, and its
+  // commission comes with the letter. Lisbon is not the only door.
+  if (!inLisbon && g.dockedAt && c.goalMet && c.act < ACTS.length
+      && g.clock.t - Number(c.flags[`met${c.act}`] ?? 0) >= DISPATCH_DELAY) {
+    return dispatch(g, c);
+  }
+
   // A commission of the act, finished, is paid at the next quay. Only the
   // ordinary coast work waits for Lisbon.
   if (g.dockedAt && !inLisbon && g.crown.patent && g.crown.patentReady
@@ -727,14 +735,6 @@ export function chronicleDue(g: Game, c: ChronicleState): SeaEvent | null {
     g.pushAlert(`"${title}" discharged by the King\u2019s factor. ${lines.find((l) => l.startsWith('Commission')) ?? ''}`, 'note');
     const next = g.takeChargeByDispatch();
     if (next) g.pushAlert(`The King\u2019s next commission is aboard: "${next}".`, 'note');
-  }
-
-  // The King's word reaches a captain wherever he lies: after the news has had
-  // time to be carried, the next act opens at the next port he enters, and its
-  // commission comes with the letter. Lisbon is not the only door.
-  if (!inLisbon && g.dockedAt && c.goalMet && c.act < ACTS.length
-      && g.clock.t - Number(c.flags[`met${c.act}`] ?? 0) >= DISPATCH_DELAY) {
-    return dispatch(g, c);
   }
 
   if (inLisbon) {
