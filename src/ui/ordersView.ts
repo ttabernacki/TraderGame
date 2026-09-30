@@ -4,6 +4,7 @@ import { NM, compassPoint, formatLat, formatLon, haversine } from '../core/math'
 import { OFFICER_ROLES } from '../crew/crew';
 import { rivalStanding } from '../progression/rival';
 import { daysLeft, ventureLine } from '../progression/ventures';
+import { roadPlan } from '../progression/road';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
 import { officerOpinion } from '../game/officerEvents';
 import type { Game } from '../game/state';
@@ -19,7 +20,7 @@ import {
   capacityOf, regardWordF, stockTons, stockValue, troubleWord,
 } from '../progression/feitoria';
 
-type Tab = 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 'stations' | 'wardroom' | 'rival';
+type Tab = 'road' | 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 'stations' | 'wardroom' | 'rival';
 
 /**
  * The captain's orders.
@@ -36,7 +37,7 @@ type Tab = 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 'stations
 export class OrdersView {
   root = el('div', { class: 'screen' });
   private body = el('div', { class: 'screen-body' });
-  private tab: Tab = 'chronicle';
+  private tab: Tab = 'road';
   private tradeGood = '';
   private game: Game | null = null;
 
@@ -65,6 +66,7 @@ export class OrdersView {
     clear(this.body);
 
     const counts: Record<Tab, number> = {
+      road: 0,
       chronicle: 0,
       missions: (g.crown.patent ? g.crown.patent.objectives.filter((o) => !o.complete).length : 0)
         + g.quests.filter((q) => !q.outcome).length + g.activeVentures.length,
@@ -76,7 +78,7 @@ export class OrdersView {
       rival: 0,
     };
     const names: Record<Tab, string> = {
-      chronicle: 'Chronicle', missions: 'Missions', trade: 'Trade', courts: 'Courts', reports: 'Hearsay',
+      road: 'The Road', chronicle: 'Chronicle', missions: 'Missions', trade: 'Trade', courts: 'Courts', reports: 'Hearsay',
       stations: 'Factories', wardroom: 'Wardroom', rival: 'Rival',
     };
 
@@ -91,7 +93,8 @@ export class OrdersView {
       }, counts[t] > 0 ? `${names[t]} (${counts[t]})` : names[t])),
     ));
 
-    if (this.tab === 'chronicle') this.renderChronicle(g);
+    if (this.tab === 'road') this.renderRoad(g);
+    else if (this.tab === 'chronicle') this.renderChronicle(g);
     else if (this.tab === 'missions') {
       // Everything the ship is bound to, on one page: the King's commission,
       // the long stories, and the merchants' charters.
@@ -113,6 +116,35 @@ export class OrdersView {
   }
 
   // -------------------------------------------------------------------------
+
+  /**
+   * Everything the ship is bound to, in the order the road meets it. See
+   * progression/road: one voyage should do all the business at a place in one
+   * call and go on, and this is how the player can see what that is.
+   */
+  private renderRoad(g: Game): void {
+    const stops = roadPlan(g);
+    this.body.append(el('div', { class: 'road-intro' },
+      'The road runs south and east from Lisbon: the Canaries, Arguim, Mina, the Congo, the Cape, '
+      + 'the Swahili coast, Malabar. Whatever is asked of you lies somewhere along it. Do what is '
+      + 'to be done at a place while you are there, and go on.'));
+    if (stops.length === 0) {
+      this.body.append(card('Nothing asked',
+        el('p', {}, 'Nobody is waiting on you. Sail where you like, and see what the coast has to say.')));
+      return;
+    }
+    for (const s of stops) {
+      const dist = s.along < 0 ? '' : s.here ? 'here' : s.nm < 30 ? 'close' : `${s.nm.toLocaleString()} miles`;
+      this.body.append(el('div', { class: `road-stop${s.here ? ' here' : ''}` },
+        el('div', { class: 'road-stop-head' },
+          el('h3', {}, s.where),
+          el('span', { class: 'road-dist' }, dist)),
+        el('ul', { class: 'road-tasks' }, ...s.tasks.map((t) => el('li', { class: `road-task k-${t.kind}` },
+          el('span', { class: 'road-tag' }, t.tag),
+          el('span', { class: 'road-text' }, t.text)))),
+      ));
+    }
+  }
 
   private renderCommission(g: Game): void {
     const p = g.crown.patent;
@@ -561,7 +593,7 @@ export class OrdersView {
           el('div', { class: 'act-sub' }, state === 'future' ? '' : `${a.title} \u00b7 ${a.years}`),
           state === 'now'
             ? el('div', { class: 'act-goal' },
-              c.goalMet ? 'Done. Carry the news to the King in Lisbon.' : actGoal(g, a.n))
+              c.goalMet ? 'Done. The King\u2019s answer will reach you at the next port.' : actGoal(g, a.n))
             : null,
           state === 'now' && a.n >= 2 && ACT_CHARGE[a.n]
             ? el('div', { class: 'act-changes' }, `The King\u2019s commission for it: \u201c${ACT_CHARGE[a.n]}\u201d${g.crown.completedPatents.includes(ACT_CHARGE[a.n]) ? ' \u2014 discharged' : g.crown.patent?.title === ACT_CHARGE[a.n] ? ' \u2014 yours' : ', at court in Lisbon'}.`)

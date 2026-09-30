@@ -382,10 +382,10 @@ const leak: QuestDef = {
                 if (gg.rng.chance(odds)) {
                   gg.shiftPeopleRegard('castilian', -0.2);
                   gg.crew.morale = clamp(gg.crew.morale + 0.05, 0, 1);
-                  return go(gg, q, 'ruanova',
+                  return go(gg, q, 'arguim',
                     'Took the Castilian. In her master’s chest, a copy of the Casa’s own '
-                    + 'chart of the Mina coast — in a Lisbon hand, with a merchant’s mark in '
-                    + 'the corner: a Flemish house in the Rua Nova.');
+                    + 'chart of the Mina coast — in a Lisbon hand, and on the back the note '
+                    + '“by Arguim, as before”. The trail goes up the coast for home.');
                 }
                 gg.ship.condition.hull = clamp(gg.ship.condition.hull - 0.05, 0, 1);
                 gg.crew.morale = clamp(gg.crew.morale - 0.08, 0, 1);
@@ -402,88 +402,92 @@ const leak: QuestDef = {
           ], 'warning');
       },
     },
-    ruanova: {
-      goal: () => 'Take the copied chart to Lisbon and find the Flemish house in the Rua Nova.',
-      marker: () => portMark('lisboa', 'The Rua Nova'),
-      when: (_g, _q, port) => port === 'lisboa',
-      scene: (g, q) => scene(q, 'ruanova', 'The Flemish house',
-        'A narrow counting room over a warehouse in the Rua Nova dos Mercadores. The merchant, '
-        + 'Jan Bernaerts, looks at the chart for a long time and then says he has never seen it.\n\n'
-        + 'He is lying, and he knows you know.',
+    // The trail runs home along the coast — Arguim, then Lagos, then the Rua Nova
+    // — so the whole thread is one passage north from Mina and nobody sails back
+    // for a clue. See docs/DESIGN.md.
+    arguim: {
+      goal: () => 'On the way home, look at the Arguim factor’s books.',
+      marker: () => portMark('arguim', 'Two ledgers'),
+      when: (_g, _q, port) => port === 'arguim',
+      scene: (_g, q) => scene(q, 'arguim', 'Two ledgers',
+        'The factor keeps two books, which is what factors do. The second has the packets in it — '
+        + 'dates, weights, and where they went next: a shipwright at Lagos, who copies more than hull '
+        + 'plans, and money coming back the other way from a Flemish house in the Rua Nova. The '
+        + 'seal on the packets is the Casa’s own.',
         [
           {
-            label: 'Pay him for a name',
-            detail: 'Sixty cruzados.',
-            resolve: (gg) => {
-              if (gg.crown.gold < 60) return later(q, 'Not enough in the purse to make it worth his while.');
-              gg.crown.gold -= 60;
-              return go(gg, q, 'lagos',
-                'Bernaerts took sixty cruzados and gave a name: a shipwright at Lagos who copies '
-                + 'more than hull plans.');
-            },
+            label: 'Take the ledger',
+            detail: 'The factor will not stop you. He will write to Lisbon on the next ship.',
+            resolve: (gg) => go(gg, q, 'lagos',
+              'Took the Arguim ledger. The pages went on to a shipwright at Lagos, and the money '
+              + 'came from the Rua Nova.'),
           },
-          {
-            label: 'Threaten him with the King',
-            detail: g.crown.lifetimeStanding >= 60
-              ? 'You have the standing to make it stick.'
-              : 'You are not important enough yet. He may laugh.',
-            resolve: (gg) => {
-              if (gg.crown.lifetimeStanding < 60) {
-                return later(q, 'Bernaerts laughed, politely. Come back when your name means something at court.');
-              }
-              return go(gg, q, 'lagos',
-                'Bernaerts decided he would rather talk to you than to the King. The pages come '
-                + 'from a shipwright at Lagos.');
-            },
-          },
-        ]),
+        ], 'warning'),
     },
     lagos: {
-      goal: () => 'Find the shipwright at Lagos who has been copying charts.',
+      goal: () => 'Make Lagos on the way up and find the shipwright who has been copying charts.',
       marker: () => portMark('lagos', 'The shipwright'),
       when: (_g, _q, port) => port === 'lagos',
       scene: (_g, q) => scene(q, 'lagos', 'The shipwright’s loft',
         'Álvaro Teles, master shipwright, is sixty and frightened. He copied the charts, yes. '
-        + 'He never saw the originals: they came to him in sealed packets from the Arguim factor’s '
-        + 'ledgers, and the seal on the packets was the Casa’s own.',
+        + 'He never saw the originals: they came to him in sealed packets, and the copies went '
+        + 'on to a Flemish house in Lisbon. He is very sure of the name over the door.',
         [
           {
-            label: 'Let him go, and follow the packets to Arguim',
+            label: 'Let him go, and follow the copies to the Rua Nova',
             detail: 'He is a small man in a large business.',
-            resolve: (gg) => go(gg, q, 'arguim',
-              'Teles talked. The pages went through the factor at Arguim, under a Casa seal.'),
+            resolve: (gg) => go(gg, q, 'ruanova',
+              'Teles talked. The copies went to Jan Bernaerts, in the Rua Nova dos Mercadores.'),
           },
           {
             label: 'Take his confession in writing',
             detail: 'Proof, signed. He will hang for it if it is ever read.',
             resolve: (gg) => {
               q.flags.confession = true;
-              return go(gg, q, 'arguim',
-                'Teles signed a confession. The pages went through the factor at Arguim, under a Casa seal.');
+              return go(gg, q, 'ruanova',
+                'Teles signed a confession. The copies went to Jan Bernaerts, in the Rua Nova.');
             },
           },
         ]),
     },
-    arguim: {
-      goal: () => 'Look at the Arguim factor’s books.',
-      marker: () => portMark('arguim', 'Two ledgers'),
-      when: (_g, _q, port) => port === 'arguim',
+    ruanova: {
+      goal: () => 'In Lisbon, find the Flemish house in the Rua Nova and get the name from it.',
+      marker: () => portMark('lisboa', 'The Rua Nova'),
+      when: (_g, _q, port) => port === 'lisboa',
       scene: (g, q) => {
         const who = g.casa.pact ? 'Aires Tinoco' : 'Brás Leitão, Tinoco’s own clerk';
         q.flags.culprit = who;
-        return scene(q, 'arguim', 'Two ledgers',
-          'The factor keeps two books, which is what factors do. The second has the packets in it — '
-          + 'dates, weights, and the name the money went to in Lisbon.\n\n'
-          + `It is ${who}.`
-          + (g.casa.pact ? ' And three lines above the entry for the charts, in the same hand, is '
-            + 'the arrangement you made with him.' : ''),
+        const name = (gg: Game) => go(gg, q, 'reckoning',
+          `Bernaerts gave a name, with the Arguim ledger and Teles’s pages to bear it out: ${who}.`
+          + (gg.casa.pact ? ' Three lines above the entry for the charts, in the same hand, is the '
+            + 'arrangement you made with him.' : ''));
+        return scene(q, 'ruanova', 'The Flemish house',
+          'A narrow counting room over a warehouse in the Rua Nova dos Mercadores. The merchant, '
+          + 'Jan Bernaerts, looks at the copies and the ledger for a long time and then says he has '
+          + 'never seen them.\n\nHe is lying, and he knows you know.',
           [
             {
-              label: 'Take the ledger',
-              detail: 'The factor will not stop you. He will write to Lisbon on the next ship.',
-              resolve: (gg) => go(gg, q, 'reckoning', `Took the Arguim ledger. The name is ${who}.`),
+              label: 'Pay him for the name',
+              detail: 'Sixty cruzados.',
+              resolve: (gg) => {
+                if (gg.crown.gold < 60) return later(q, 'Not enough in the purse to make it worth his while.');
+                gg.crown.gold -= 60;
+                return name(gg);
+              },
             },
-          ], 'warning');
+            {
+              label: 'Threaten him with the King',
+              detail: g.crown.lifetimeStanding >= 60
+                ? 'You have the standing to make it stick.'
+                : 'You are not important enough yet. He may laugh.',
+              resolve: (gg) => {
+                if (gg.crown.lifetimeStanding < 60) {
+                  return later(q, 'Bernaerts laughed, politely. Come back when your name means something at court.');
+                }
+                return name(gg);
+              },
+            },
+          ]);
       },
     },
     reckoning: {
@@ -540,6 +544,17 @@ const leak: QuestDef = {
     },
   },
 };
+
+/** The King's gift for Kongo comes down to the quay with the envoys and is stowed, not left for the captain to hunt for. */
+function stowTools(g: Game): string {
+  const short = 20 - g.ship.quantityOf('ferramenta');
+  if (short <= 0) return 'The King’s iron tools are already in the hold.';
+  const took = g.ship.addCargo('ferramenta', short, 0, 0.6);
+  return took >= short
+    ? 'Twenty quintals of iron tools came down to the quay with them and are stowed in our hold.'
+    : 'The King’s iron tools came down to the quay, and there was not room for all of them: find '
+      + 'stowage before Mpinda.';
+}
 
 // ---------------------------------------------------------------------------
 // 3. The Manikongo's Embassy
@@ -615,7 +630,7 @@ const kongo: QuestDef = {
               renown(gg, 20 + Number(q.flags.envoys) * 8);
               gg.adjustPolity('kongo', { trust: 0.2, respect: 0.1 }, 'their envoys were received in Lisbon as ambassadors');
               return go(gg, q, 'gifts', 'The King received the Kongo envoys as ambassadors, and '
-                + 'is sending masons, priests and tools back with them. The tools must go in our hold.');
+                + `is sending masons, priests and tools back with them. ${stowTools(gg)}`);
             },
           },
           {
@@ -629,9 +644,9 @@ const kongo: QuestDef = {
               gg.adjustPolity('kongo', { trust: good ? 0.25 : 0.1, respect: 0.05 }, 'their envoys spoke before the King of Portugal');
               return go(gg, q, 'gifts', good
                 ? 'The eldest envoy spoke to the King through our língua for half an hour, and the '
-                  + 'court was silent. The King is sending masons, priests and tools. The tools go in our hold.'
+                  + `court was silent. The King is sending masons, priests and tools. ${stowTools(gg)}`
                 : 'The envoys spoke, badly translated. The King is courteous and is sending tools '
-                  + 'back with them, to go in our hold.');
+                  + `back with them. ${stowTools(gg)}`);
             },
           },
           {
@@ -643,7 +658,7 @@ const kongo: QuestDef = {
               gg.shiftPeopleRegard('kongo', -0.35);
               gg.adjustPolity('kongo', { respect: -0.2 }, 'their envoys were shown in Lisbon as a curiosity');
               return go(gg, q, 'gifts', 'The court paid well to see the Kongo envoys. They know '
-                + 'exactly what was done. The King still sends tools back, in our hold.');
+                + `exactly what was done. The King still sends tools back. ${stowTools(gg)}`);
             },
           },
         ]),
@@ -669,7 +684,7 @@ const kongo: QuestDef = {
                 gg.shiftPeopleRegard('kongo', q.flags.court === 'curiosity' ? 0.2 : 0.45);
                 renown(gg, 40);
                 return go(gg, q, 'succession', 'The envoys and the King’s gifts are home. Kongo '
-                  + 'is open to us — for now. The old Manikongo is not well.');
+                  + 'is open to us, and the old Manikongo is failing fast.');
               },
             }]
             : [{
@@ -681,11 +696,12 @@ const kongo: QuestDef = {
       },
     },
     succession: {
-      goal: () => 'Return to the Kongo river in time. The old Manikongo is dying.',
+      goal: () => 'At Mpinda: the old Manikongo is dying, and the capital is choosing.',
       marker: () => portMark('mpinda', 'The succession'),
-      when: (g, q, port) => port === 'mpinda' && g.clock.t - q.stepT > 90 * DAY,
+      when: (_g, _q, port) => port === 'mpinda',
       scene: (_g, q) => scene(q, 'succession', 'Two sons',
-        'Nzinga a Nkuwu is dead. His son Mvemba a Nzinga, baptised Afonso, holds the capital with '
+        'Nzinga a Nkuwu is dead — he died in the week the ships were being unloaded, and the '
+        + 'envoys’ homecoming was the last public thing he did. His son Mvemba a Nzinga, baptised Afonso, holds the capital with '
         + 'the priests and the Portuguese behind him. His brother Mpanzu a Kitima holds the old '
         + 'ways and most of the army. Both have sent men to your ship.',
         [
@@ -725,27 +741,31 @@ const kongo: QuestDef = {
           },
         ], 'grave'),
     },
+    // The king's letter is written to Lisbon, so it is answered in Lisbon: the
+    // last beat waits at the Casa for the voyage home, not at the far end of the
+    // river for a second trip.
     letter: {
-      goal: () => 'The king of Kongo has written to Lisbon. Go back to hear what he asks.',
-      marker: () => portMark('mpinda', 'The king’s letter'),
-      when: (g, q, port) => port === 'mpinda' && g.clock.t - q.stepT > 60 * DAY,
+      goal: () => 'Word from the king of Kongo is waiting at the Casa. Take it to the King in Lisbon.',
+      marker: () => portMark('lisboa', 'The king’s letter'),
+      when: (g, q, port) => port === 'lisboa' && g.clock.t - q.stepT > 45 * DAY,
       scene: (_g, q) => scene(q, 'letter', 'The king’s letter',
-        'The king has written to the King of Portugal, and he reads you the letter himself before '
-        + 'it goes. Portuguese traders on the coast are buying his people — his subjects, his '
-        + 'nobles’ own sons — and carrying them to São Tomé. He asks that it stop. He asks '
-        + 'you, who brought his envoys home, to make it stop on this river.\n\n'
+        'The letter from Kongo has come up the coast by a São Tomé ship and is waiting at the Casa '
+        + 'with your name on it. Portuguese traders on the coast are buying the king’s people — his '
+        + 'subjects, his nobles’ own sons — and carrying them to São Tomé. He asks that it stop. '
+        + 'He asks you, who brought his envoys home, to carry the request to the King of Portugal '
+        + 'and press it.\n\n'
         + 'It would cost a great deal: the São Tomé men are rich and well-connected in Lisbon.',
         [
           {
-            label: 'Enforce his request on this river',
-            detail: 'Turn Portuguese slavers away at Mpinda. Enemies at the Casa; a king’s trust.',
+            label: 'Carry his request to the King and press it',
+            detail: 'Turn the São Tomé traders away from the Kongo river. Enemies at the Casa; a king’s trust.',
             resolve: (gg) => {
               gg.shiftPeopleRegard('kongo', 0.4);
               gg.casa.regard = clamp(gg.casa.regard - 0.3, -1, 1);
               renown(gg, 60);
               q.flags.enforced = true;
-              return end(gg, q, 'enforced', 'Turned the São Tomé traders off the Kongo river '
-                + 'under the king’s letter. The Casa is furious. Kongo trades with us alone.');
+              return end(gg, q, 'enforced', 'Pressed the king of Kongo’s request at court and got the '
+                + 'São Tomé traders turned off his river. The Casa is furious. Kongo trades with us alone.');
             },
           },
           {
@@ -1249,38 +1269,24 @@ const galeao: QuestDef = {
               'Resolved to see the galleon on her trials, south-west of Gran Canaria.'),
           },
           {
-            label: 'Carry word to Lisbon first',
-            detail: 'The King may want a say in how this is done, and may pay for it.',
-            resolve: (gg) => go(gg, q, 'casa',
-              'Kept it quiet here and made for Lisbon, to put the Biscayan’s ship before the Casa.'),
-          },
-        ]),
-    },
-    casa: {
-      goal: () => 'Put the Biscayan’s ship before the Vedor da Fazenda, in Lisbon.',
-      marker: () => portMark('lisboa', 'The Vedor da Fazenda'),
-      when: (_g, _q, port) => port === 'lisboa',
-      scene: (_g, q) => scene(q, 'casa', 'A private word at the Casa',
-        'The Vedor hears it out in a small room with the door shut. He has heard of Arana: the '
-        + 'Biscayans are the best shipwrights in Spain and do not love Seville. "The King cannot '
-        + 'know of this," he says, and puts a purse on the table. "Which is to say he will be very '
-        + 'pleased if it is done well."',
-        [
-          {
-            label: 'Take the purse to buy the man',
-            detail: '500 cruzados from the Vedor. Arana, not his ship, is what is wanted.',
+            label: 'Go to the Casa’s man here for a purse, and find Arana',
+            detail: 'The Casa keeps a factor wherever the Crown trades. 500 cruzados to buy the man, on your name.',
             resolve: (gg) => {
               gg.crown.gold += 500;
               q.flags.casa = true;
-              return go(gg, q, 'arana', 'The Vedor gave 500 cruzados to bring Arana over, or his drawings. Back to Las Palmas.');
+              return go(gg, q, 'arana',
+                'The Casa’s man at Las Palmas counted out 500 cruzados on your name, quietly, to '
+                + 'bring Arana over — or his drawings.');
             },
           },
           {
-            label: 'Ask for a letter to take the ship',
-            detail: 'A sealed letter that makes it a prize and not piracy — in Lisbon, anyway.',
+            label: 'Go to the Casa’s man here for a letter, and take the ship',
+            detail: 'A sealed letter that makes her a prize and not piracy — in Lisbon, anyway.',
             resolve: (gg) => {
               q.flags.letter = true;
-              return go(gg, q, 'trials', 'Carry a sealed letter from the Vedor. If the galleon is taken at sea, she is the King’s prize. South-west of Gran Canaria.');
+              return go(gg, q, 'trials',
+                'The Casa’s man wrote the letter and sealed it: if the galleon is taken at sea, she is '
+                + 'the King’s prize. South-west of Gran Canaria, when the wind serves.');
             },
           },
         ]),

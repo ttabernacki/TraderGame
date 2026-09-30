@@ -2880,3 +2880,17 @@ details.card.fold[open] > .fold-body { margin-top: 9px; }
 .port-strip span b { font-weight: 400; color: var(--ink-soft); margin-right: 4px; }
 .port-strip span.good { border-color: rgba(77, 122, 62, .55); }
 .port-strip span.bad { border-color: rgba(168, 50, 40, .55); color: #8a2c22; }
+
+/* The road: everything the ship is bound to, in the order the road meets it. */
+.road-intro { font-size: 13.5px; line-height: 1.5; color: var(--ink-soft); margin: 4px 0 14px; max-width: 62ch; }
+.road-stop { border-left: 3px solid rgba(90, 74, 55, 0.35); padding: 4px 0 6px 14px; margin: 0 0 14px; }
+.road-stop.here { border-left-color: var(--accent, #8a3b12); }
+.road-stop-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.road-stop-head h3 { margin: 0; font-size: 17px; }
+.road-dist { font-size: 12.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.road-stop.here .road-dist { color: var(--accent, #8a3b12); font-weight: 600; }
+.road-tasks { list-style: none; padding: 0; margin: 7px 0 0; display: grid; gap: 6px; }
+.road-task { display: grid; grid-template-columns: 9.5em 1fr; gap: 10px; font-size: 13.5px; line-height: 1.4; }
+.road-tag { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); padding-top: 2px; }
+.road-task.k-act .road-tag { color: var(--accent, #8a3b12); font-weight: 600; }
+@media (max-width: 560px) { .road-task { grid-template-columns: 1fr; gap: 1px; } }

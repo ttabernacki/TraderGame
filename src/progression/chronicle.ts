@@ -24,7 +24,7 @@ import { writeTheSea } from './quests';
 
 export interface ChronicleState {
   act: number;
-  /** The current act's goal has been met; the news waits for Lisbon. */
+  /** The current act's goal has been met; the King's answer is on its way. */
   goalMet: boolean;
   /** Acts whose opening scene has been played. */
   opened: number[];
@@ -713,8 +713,28 @@ export function chronicleDue(g: Game, c: ChronicleState): SeaEvent | null {
   const act = actDef(c.act);
   if (!c.goalMet && act.met(g)) {
     c.goalMet = true;
-    g.pushAlert(`${act.english}: done. Carry the news to the King in Lisbon.`, 'note');
-    g.logEvent('crown', `Act ${c.act}, ${act.english}: ${actGoal(g, c.act)} Done — the King must hear it in Lisbon.`, true);
+    c.flags[`met${c.act}`] = g.clock.t;
+    g.pushAlert(`${act.english}: done. The King will have the news within a fortnight, and answer at whatever port you next make.`, 'note');
+    g.logEvent('crown', `Act ${c.act}, ${act.english}: ${actGoal(g, c.act)} Done — the King will hear it by the next ship, and answer at the next port.`, true);
+  }
+
+  // A commission of the act, finished, is paid at the next quay. Only the
+  // ordinary coast work waits for Lisbon.
+  if (g.dockedAt && !inLisbon && g.crown.patent && g.crown.patentReady
+      && Object.values(ACT_CHARGE).includes(g.crown.patent.title)) {
+    const title = g.crown.patent.title;
+    const lines = g.dischargeAtDispatch();
+    g.pushAlert(`"${title}" discharged by the King\u2019s factor. ${lines.find((l) => l.startsWith('Commission')) ?? ''}`, 'note');
+    const next = g.takeChargeByDispatch();
+    if (next) g.pushAlert(`The King\u2019s next commission is aboard: "${next}".`, 'note');
+  }
+
+  // The King's word reaches a captain wherever he lies: after the news has had
+  // time to be carried, the next act opens at the next port he enters, and its
+  // commission comes with the letter. Lisbon is not the only door.
+  if (!inLisbon && g.dockedAt && c.goalMet && c.act < ACTS.length
+      && g.clock.t - Number(c.flags[`met${c.act}`] ?? 0) >= DISPATCH_DELAY) {
+    return dispatch(g, c);
   }
 
   if (inLisbon) {
@@ -770,6 +790,65 @@ export function chronicleDue(g: Game, c: ChronicleState): SeaEvent | null {
     }
   }
   return null;
+}
+
+/** Days for the news of a finished act to reach the King and his answer to come back. */
+const DISPATCH_DELAY = 14 * 86400;
+
+/** What the King writes, in his own words, when the answer comes by ship. */
+const DISPATCH_TEXT: Record<number, string> = {
+  1: 'A caravel has been asking after your ship along the coast, and has found her. The letter is '
+    + 'from the King\u2019s secretary. The Mina gold has been weighed on the strength of your '
+    + 'report, and the King has not talked about gold at all: he has talked about Diogo C\u00e3o, '
+    + 'and about a river so large it freshens the sea for twenty leagues.',
+  2: 'The Casa\u2019s factor comes aboard with a sealed packet. The King has had your chart of the '
+    + 'Congo spread on his table and his finger on the coast running south from it. "It goes on," '
+    + 'he writes. "It always goes on. How far?"',
+  3: 'A letter under the King\u2019s own seal, brought out by the outward fleet. He has heard about the '
+    + 'storms, and the coast turning north-east at last. He will not have it called the Cape of '
+    + 'Storms. It will be the Cape of Good Hope, because of what lies beyond it.',
+  4: 'A packet by the fleet, under the King\u2019s own seal. He has read what you wrote of Malabar, '
+    + 'and of the pepper, and did not speak of it to anybody for a long time. "A fleet," he writes. '
+    + '"Not a caravel. A fleet, and you to lead it."',
+};
+
+/**
+ * An act closed and the next opened by letter, at whatever port the captain is
+ * in. Effects are applied here and now, not when the scene is answered, so
+ * that a scene lost is not a career left half-advanced.
+ */
+function dispatch(g: Game, c: ChronicleState): SeaEvent {
+  const done = actDef(c.act);
+  const next = actDef(c.act + 1);
+  const rewards = done.closing(g, c).choices?.[0]?.resolve(g) ?? '';
+  c.act += 1;
+  c.goalMet = false;
+  if (!c.opened.includes(c.act)) c.opened.push(c.act);
+  c.flags[`open${c.act}`] = g.clock.t;
+  const charged = next.opening(g, c).choices?.[0]?.resolve(g) ?? '';
+  const paid = g.dischargeAtDispatch();
+  const title = g.takeChargeByDispatch();
+  const goal = actGoal(g, c.act);
+  g.announce('act', `Act ${roman(c.act)}`, next.english, `${next.title} \u00b7 ${next.years}`, goal);
+  g.logEvent('crown', `Act ${c.act - 1}, ${done.english}: done, and the King has answered by letter. ${rewards}`, true);
+  const lines = [
+    DISPATCH_TEXT[c.act - 1] ?? '',
+    `${next.english}: ${goal}`,
+    // The clerk's long list of places entered is the court's to read out; at
+    // the quay it is one line, then what was paid.
+    (() => {
+      const entered = paid.filter((l) => l.includes('entered on the padr\u00e3o real')).length;
+      return entered > 0 ? `${entered} discoveries entered on the padr\u00e3o real by the King\u2019s factor.` : '';
+    })(),
+    ...paid.filter((l) => !l.includes('entered on the padr\u00e3o real')),
+    title ? `His commission for it is enclosed: \u201c${title}\u201d.`
+      : (g.crown.patent && ACT_CHARGE[c.act] && g.crown.patent.title !== ACT_CHARGE[c.act]
+        ? `His commission for it waits at court: finish the one you hold first, "${g.crown.patent.title}".` : ''),
+    charged && charged !== rewards ? charged : '',
+  ].filter(Boolean);
+  return courtScene(`act${c.act - 1}:dispatch`, `The King\u2019s letter \u2014 Act ${roman(c.act)}: ${next.english}`,
+    lines.join('\n\n'),
+    one('Read it again at sea', 'The road goes on from here.', () => 'The King\u2019s word is aboard. On, then.'));
 }
 
 /** A scene answered: take it off the pending list. */

@@ -275,6 +275,12 @@ export class Game {
     if (!p || p.complete) return;
     for (const o of p.objectives) {
       if (o.complete || !o.target) continue;
+      // Ground already covered: a captain who rounded the Cape for one act's
+      // sake has rounded it for the next act's commission too.
+      if (o.kind === 'reach' && (this.crown.landmarksFound.has(o.target) || this.visitedPorts.has(o.target))) {
+        o.complete = true; o.progress = 1;
+        continue;
+      }
       const ports = PORTS.filter((d) => d.people === o.target);
       if (o.kind === 'contact' && ports.some((d) => this.relations.get(d.id)?.mayTrade)) {
         o.complete = true; o.progress = 1;
@@ -1038,6 +1044,49 @@ export class Game {
     this.pushAlert(
       `${points} skill points. ${this.captain.points} unspent \u2014 the book, under Captain.`, 'note');
     return points;
+  }
+
+  /**
+   * A finished commission, paid where the captain stands.
+   *
+   * The Crown's word travels by the annual caravel and by every ship coming
+   * home, and there is a factor at every station. Making a captain sail back to
+   * the Tagus to be told what he already knows was the game's single biggest
+   * cause of backtracking: an act's news could be carried home and nowhere
+   * else. This is the King's clerk on the quay instead. Discoveries are
+   * entered, the reward paid, and the skill points credited; what waits for
+   * Lisbon is the Casa's side of it — the sale of charts, the sixteenths.
+   */
+  dischargeAtDispatch(): string[] {
+    const p = this.crown.patent;
+    if (!p || !this.crown.patentReady) return [];
+    const beyond = this.crown.discoveries.filter(
+      (d) => !d.reported && d.kind !== 'coast' && d.kind !== 'padrao').length;
+    const s = this.crown.settle(this.clock.t, this.settlementBias);
+    const shared = this.takeShares(s.gold);
+    if (shared > 0.5) s.lines.push(`${Math.round(shared)} cruzados to the men holding sixteenths of the voyage.`);
+    const points = this.awardCommission(p, beyond);
+    s.lines.push(`${points} points to spend on yourself, in the book under Captain.`);
+    this.logEvent('crown', `Reported to the King\u2019s factor. ${s.gold} cruzados and ${s.standing} renown. ${this.crown.title.name}.`, true);
+    return s.lines;
+  }
+
+  /** Take the King's charge for the act as his letter brings it: the commission, issued where you stand. */
+  takeChargeByDispatch(): string | null {
+    if (this.crown.patent) return null;
+    const act = this.chronicle.act;
+    const charge = act >= 2 ? ACT_CHARGE[act] : undefined;
+    if (!charge || this.crown.completedPatents.includes(charge)) return null;
+    const own = this.commissionOffers().find((o) => o.title === charge);
+    if (!own) return null;
+    const stones = this.crown.accept(own, this.clock.t);
+    this.crown.hasKingsLetter = true;
+    this.refreshObjectives();
+    this.logEvent('crown',
+      `The King\u2019s commission came with his letter: "${own.title}". ${own.advance} cruzados advanced.`
+      + (stones > 0 ? ` ${stones} padr\u00f5es came with it.` : ''), true);
+    this.layCourseForCommission();
+    return own.title;
   }
 
   can(perk: PerkId): boolean {
