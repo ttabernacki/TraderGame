@@ -2632,7 +2632,11 @@ const aprendiz: QuestDef = {
                 return go(gg, q, 'home', `The boy was right. His drawing corrected ${n} squares of this coast in your book `
                   + 'and embarrassed the pilot, who has asked him to stay.');
               }
-              return go(gg, q, 'home', 'The boy was wrong by a league, but it was a good drawing. He wept. '
+              // A chart taken on trust that turns out a league wrong costs the pilot his confidence.
+              gg.nav.sigmaLat += 6;
+              gg.nav.sigmaLon += 6;
+              gg.crew.morale = clamp(gg.crew.morale - 0.03, 0, 1);
+              return go(gg, q, 'home', 'The boy was wrong by a league, and the pilot, who had half believed him, is now six miles less sure where he is. He wept. '
                 + 'The hands, for once, said nothing.');
             },
           },
@@ -3684,6 +3688,11 @@ const CALLBACKS: { quest: QuestId; outcomes?: string[]; ports: string[]; text: s
   { quest: 'malay', outcomes: ['malacca', 'quay'], ports: ['cochim', 'calecute', 'columbo'], text: 'A pilot in the Cochim roadstead has heard of Malacca and of the ship that went there. He asks whether the cloves are what he has been told.' },
   { quest: 'pepperrace', outcomes: ['won'], ports: ['lisboa', 'lagos'], text: 'A Ribeira porter touches his cap. The men who lost money on the other ship are not among the ones who look you in the eye.' },
   { quest: 'feverfleet', outcomes: ['nursed', 'landed'], ports: ['mocambique', 'lisboa', 'lagos'], text: 'A man with a scar at the corner of his mouth recognises the ship and stands to attention on the quay. He was one of the São Vicente’s.' },
+  { quest: 'caravel', outcomes: ['paid', 'mass'], ports: ['funchal', 'lagos', 'lisboa'], text: 'A sugar merchant’s clerk finds you on the quay with a cask and a card: Isabel da Costa’s brother sends his thanks, and will not hear of payment.' },
+  { quest: 'kongo', outcomes: ['enforced'], ports: ['mpinda'], text: 'The Manikongo’s men line the beach at Mpinda and bow as you land. The priests are a little further off, and do not.' },
+  { quest: 'kongo', outcomes: ['lookedaway'], ports: ['mpinda'], text: 'The Manikongo receives you coolly. He remembers what you did not say.' },
+  { quest: 'prester', outcomes: ['found', 'proof'], ports: ['melinde', 'mocambique'], text: 'A Melinde scribe asks whether it is true about the Abyssinian letter, and whether he might copy it. Word travels on this coast faster than ships.' },
+  { quest: 'galeao', ports: ['las-palmas', 'lisboa'], text: 'A shipwright’s apprentice on the careenage stops work to watch you pass. He has a sketch of a long, low hull on his bench, and does not try to hide it.' },
   { quest: 'leak', ports: ['lisboa'], text: 'The Rua Nova has a new contador, and a new way of looking at the ships’ books.' },
 ];
 
