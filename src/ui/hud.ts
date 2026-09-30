@@ -1,4 +1,6 @@
 import { angleDelta, bearingTo, clamp, compassPoint, formatBearing, wrap360 } from '../core/math';
+import { ACT_CHARGE } from '../progression/chronicle';
+import { roadPlan, type RoadStop } from '../progression/road';
 import { describeStranger, strangerIntentText } from '../game/encounter';
 import { beaufortName } from '../world/wind';
 import { tideClock } from '../navigation/tides';
@@ -717,6 +719,10 @@ export class Hud {
     this.sailGame = g;
   }
 
+  private road: RoadStop[] = [];
+  private roadAt = 0;
+  private roadFor: Game | null = null;
+
   private renderOrders(g: Game): void {
     const lines: { k: string; v: string; urgent?: boolean }[] = [];
 
@@ -724,7 +730,10 @@ export class Hud {
     if (patent) {
       const next = patent.objectives.find((o) => !o.complete && o.kind !== 'return')
         ?? patent.objectives.find((o) => !o.complete);
-      if (next) {
+      if (next && next.kind === 'return' && Object.values(ACT_CHARGE).includes(patent.title)) {
+        // An act's commission is paid by the King's factor at the next quay.
+        lines.push({ k: 'The King', v: 'Discharged. The factor at the next quay pays you.' });
+      } else if (next) {
         const want = next.amount ?? 1;
         lines.push({
           k: 'The King',
@@ -735,6 +744,25 @@ export class Hud {
       } else {
         lines.push({ k: 'The King', v: 'Discharged. Bring her home.' });
       }
+    }
+
+    // The next place on the road with business in it, and the story waiting
+    // there: what a captain forty days out actually wants to know. The plan is
+    // rebuilt at most every couple of seconds; it walks every port.
+    const now = Date.now();
+    if (!this.roadAt || now - this.roadAt > 2000 || this.roadFor !== g) {
+      this.road = roadPlan(g).filter((st) => st.along >= 0 && !st.here);
+      this.roadAt = now;
+      this.roadFor = g;
+    }
+    const nextStop = this.road.slice().sort((a, b) => a.nm - b.nm)[0];
+    if (nextStop) {
+      const first = nextStop.tasks.find((t) => t.kind === 'story') ?? nextStop.tasks[0];
+      lines.push({
+        k: 'Next stop',
+        v: `${nextStop.where}, ${nextStop.nm.toLocaleString()} mi \u2014 ${first.tag === first.text ? first.text : first.tag}`
+          + (nextStop.tasks.length > 1 ? ` (+${nextStop.tasks.length - 1})` : ''),
+      });
     }
 
     const soonest = g.activeVentures

@@ -147,7 +147,7 @@ export function roadPlan(g: Game): RoadStop[] {
   const act = ACTS[Math.min(ACTS.length, c.act) - 1];
   if (c.goalMet && c.act < ACTS.length) {
     // The answer comes to the captain, not the other way about.
-    put(ship, 'At sea', {
+    anywhere('The King\u2019s answer', {
       kind: 'act',
       tag: `Act ${c.act}`,
       text: `${act.english}: done. The King’s answer will find you at the next port you make.`,
