@@ -32,6 +32,7 @@ export const MILESTONES: Milestone[] = [
   { id: 'india', title: 'India', hint: 'Make a port on the coast of India.', done: (g) => g.crown.landmarksFound.has('india'), renown: 40, gold: 300 },
   { id: 'padroes', title: 'Three padrões', hint: 'Raise three padrões on new coasts.', done: (g) => g.crown.padroesRaised >= 3, renown: 20 },
   { id: 'gales', title: 'Hard weather', hint: 'Weather three gales.', done: (g) => g.galeRecord.weathered >= 3, renown: 15 },
+  { id: 'malacca', title: 'The far end', hint: 'Make a port at Malacca.', done: (g) => g.visitedPorts.has('malaca'), renown: 60, gold: 300 },
   { id: 'threads3', title: 'Three stories told', hint: 'Finish three of the long threads.', done: (g) => threads(g) >= 3, renown: 20 },
   { id: 'threads8', title: 'A life’s stories', hint: 'Finish eight of the long threads.', done: (g) => threads(g) >= 8, renown: 50, gold: 400 },
   { id: 'years3', title: 'Three years out', hint: 'Keep the sea for three years.', done: (g) => (g.clock.t - g.startT) / (86400 * 365) >= 3, renown: 20 },

@@ -87,6 +87,11 @@ checkpoint between acts.
   the old captain's chart and rutter, and surviving stations (same factor, stock
   and chest; town regard reduced). Heir is a fidalgo if the line reached 400 renown.
 
+- **The far end** (act IV+): `feitorcal` (the factory at Calecute: fortify, withdraw or trust
+  the Zamorin; maybe a riot, maybe Cochim as ally), `mappila` (off-book pepper, the dhow
+  lane, the Kolathiri's treaty), `malay` (Cochim → Columbo → Malacca: cinnamon, cloves, the
+  strait; the one optional push beyond the road, for renown and the Malacca milestone).
+
 ## Verdicts
 
 Keep and deepen:

@@ -27,7 +27,7 @@ import { skill } from '../crew/skills';
 
 export type QuestId = 'caravel' | 'leak' | 'kongo' | 'prester' | 'zamorin' | 'galeao'
   | 'nome' | 'ficheiro' | 'roteiro' | 'escudeiro'
-  | 'adrift' | 'pesos' | 'padrao' | 'mercador' | 'monsoon' | 'aprendiz' | 'sofala' | 'count';
+  | 'adrift' | 'pesos' | 'padrao' | 'mercador' | 'monsoon' | 'aprendiz' | 'sofala' | 'count' | 'feitorcal' | 'mappila' | 'malay';
 
 export interface QuestState {
   id: QuestId;
@@ -2932,9 +2932,361 @@ const count: QuestDef = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// 19–21. The Malabar coast and what lies beyond it: the far end of the road, where the last act's
+// pepper is bought and the first real trouble with the merchants who held it before.
+
+/** Between Calecute and Cananor, where the coastal dhows pass. */
+const DHOW_LANE: LatLon = { lat: 11.55, lon: 75.1 };
+
+const feitorCalecute: QuestDef = {
+  id: 'feitorcal',
+  title: 'The Factory at Calecute',
+  blurb: 'The factor at Calecute is frightened, and the men who make him so have not said why.',
+  offeredAt: ['melinde', 'mocambique', 'calecute', 'cananor', 'cochim'],
+  available: (g) => g.chronicle.act >= 4,
+  offer: () => ({
+    who: 'A fleet’s courier, with a packet',
+    text: 'The captain-major’s compliments. He has a fleet a month behind you, and a letter from the '
+      + 'factor at Calecute that the courier says is "not what a King’s factor writes", and he would be '
+      + 'obliged if the nearest captain on the coast would go and see what is the matter before the '
+      + 'fleet comes in.',
+    accept: 'Take the factor’s letter, and go and see',
+  }),
+  first: 'factor',
+  steps: {
+    factor: {
+      goal: () => 'See the factor at Calecute and judge for yourself.',
+      marker: () => portMark('calecute', 'The factor, Aires Correia'),
+      when: (_g, _q, port) => port === 'calecute',
+      scene: (_g, q) => scene(q, 'factor', 'The factory at Calecute',
+        'The Portuguese house on the waterfront has its shutters half closed in the middle of the day. Aires '
+        + 'Correia, the factor, takes you into a back room and tells you in a low voice what he has not '
+        + 'dared put in a letter: the Moorish pepper merchants have lost three years’ trade to the King’s '
+        + 'prices, the Zamorin’s ministers have stopped meeting him, and on Friday a man in the bazaar '
+        + 'said, pleasantly, that the house would make a good fire.',
+        [
+          {
+            label: 'Put your own men in the house, and build a stockade',
+            detail: '250 cruzados and six of your hands, and the Zamorin will know you fear him.',
+            resolve: (gg) => {
+              if (gg.crown.gold < 250) return later(q, 'You have not got the two hundred and fifty to build with. Aires will wait.');
+              gg.crown.gold -= 250;
+              gg.crew.morale = clamp(gg.crew.morale - 0.03, 0, 1);
+              q.flags.armed = true;
+              gg.adjustPolity('calicut', { respect: 0.1, trust: -0.1 }, 'fortified the Portuguese factory');
+              return go(gg, q, 'aftermath', 'Raised a stockade round the factory at Calecute and left six of your hands in it. Aires Correia wept. '
+                + 'The Zamorin’s ministers have begun to meet him again, stiffly.');
+            },
+          },
+          {
+            label: 'Take the factor and the stock off, and sail for Cochim',
+            detail: 'The King loses a position. Aires keeps his life, and so do you.',
+            resolve: (gg) => {
+              q.flags.evacuated = true;
+              renown(gg, -10);
+              gg.adjustPolity('calicut', { trust: -0.1 }, 'withdrew the Portuguese factor');
+              return go(gg, q, 'aftermath', 'Took the factor and the stock off from Calecute and stood down the coast for Cochim. '
+                + 'The house is shuttered, and will not open again until the fleet comes.');
+            },
+          },
+          {
+            label: 'Go to the Zamorin, and ask for his word',
+            detail: 'A King’s word is a King’s word. It may also be a great deal less.',
+            resolve: (gg) => {
+              q.flags.trusted = true;
+              gg.adjustPolity('calicut', { trust: 0.15, respect: 0.05 }, 'asked the Zamorin for his word');
+              renown(gg, 10);
+              return go(gg, q, 'aftermath', 'Went to the Zamorin and asked for his word that the factory would be left in peace. '
+                + 'He gave it gravely, and the Mappila merchants at his elbow said nothing at all.');
+            },
+          },
+        ], 'warning'),
+    },
+    aftermath: {
+      goal: () => 'Put into Cochim, and hear what comes of it.',
+      marker: () => portMark('cochim', 'News from Calecute'),
+      when: (g, q, port) => port === 'cochim' && g.clock.t - q.stepT > 30 * DAY,
+      scene: (g, q) => {
+        // What the merchants do is partly dice, weighted by what was done about it.
+        const risk = q.flags.armed ? 0.25 : q.flags.evacuated ? 0.1 : 0.6;
+        const riot = gg_rng(g) < risk;
+        q.flags.riot = riot;
+        return scene(q, 'aftermath', riot ? 'Fire at Calecute' : 'A quiet month at Calecute',
+          riot
+            ? 'The word reaches Cochim on a fisher’s boat: the Mappila crowd came down to the Portuguese '
+              + 'house on the Friday, and the Zamorin’s guard did not stop them.'
+              + (q.flags.armed ? ' Your stockade held for a night. The six men in it are alive, and so is Aires Correia, and the house is ash.'
+                : q.flags.evacuated ? ' The house burned with nobody in it, and the stock you took away is the only Portuguese pepper on the coast.'
+                  : ' Aires Correia and every man in the house are dead. Nobody will say who opened the gate.')
+            : 'The word reaches Cochim with a pepper broker: nothing has happened at Calecute. The Mappila '
+              + 'merchants have sulked, the Zamorin’s ministers have kept their word, and the factory is open. '
+              + 'You are told, several times, that it was very sensible of you.',
+          riot
+            ? [
+              {
+                label: 'Offer the Raja of Cochim the King’s friendship',
+                detail: 'He has been waiting for this, and will say so. A factory here, and an ally against Calicut.',
+                resolve: (gg) => {
+                  allyWithCochin(gg);
+                  renown(gg, q.flags.armed ? 55 : q.flags.evacuated ? 35 : -20);
+                  return end(gg, q, 'riot', 'Calecute burned the King’s factory, and Cochim took the King’s side. Cochim is now an ally, and there is a pepper house '
+                    + 'here where the stock from Calecute is kept.');
+                },
+              },
+              {
+                label: 'Ask for nothing, and carry the news home',
+                detail: 'The fleet will want the account from somebody who was there.',
+                resolve: (gg) => {
+                  renown(gg, q.flags.armed ? 40 : 10);
+                  gg.adjustPolity('calicut', { trust: -0.3 }, 'a Portuguese factory burned at Calecute');
+                  return end(gg, q, 'riot-home', 'Carried the news of the burning home. The Zamorin is now, for practical purposes, an enemy, and Cochim '
+                    + 'is the only friend on this coast.');
+                },
+              },
+            ]
+            : [
+              {
+                label: 'Go back and thank the factor',
+                detail: 'A present of cloth. He earned it.',
+                resolve: (gg) => {
+                  gg.crown.gold = Math.max(0, gg.crown.gold - 60);
+                  renown(gg, 45);
+                  gg.adjustPolity('calicut', { trust: 0.15 }, 'the factory kept the peace');
+                  return end(gg, q, 'peace', 'Calecute stayed quiet, and the King’s factory stayed open. The fleet will come into a harbour that still '
+                    + 'has a Portuguese house in it.');
+                },
+              },
+            ],
+          riot ? 'warning' : 'note');
+      },
+    },
+  },
+};
+
+/** A roll drawn from the game's own generator, so the scene is repeatable from a save. */
+function gg_rng(g: Game): number { return g.rng.next(); }
+
+const mappila: QuestDef = {
+  id: 'mappila',
+  title: 'The Pepper Houses',
+  blurb: 'The Moorish merchants of the Malabar coast held the pepper trade before you came, and have opinions about it.',
+  offeredAt: ['calecute', 'cochim', 'cananor'],
+  available: (g) => g.chronicle.act >= 4,
+  offer: () => ({
+    who: 'A pepper broker in a grey turban',
+    text: 'He has been at the water stairs for three days, and he is very polite. There are merchants, he '
+      + 'says, who would rather sell a hundred quintals to a captain who will pay in silver on the beach '
+      + 'than to a King’s factor who pays in promises. There would be no paper. There would be no '
+      + 'commission. He has a house he would like to show you.',
+    accept: 'Go and see the house',
+  }),
+  first: 'house',
+  steps: {
+    house: {
+      goal: () => 'Hear the merchants’ offer, at Calecute, Cochim or Cananor.',
+      marker: () => portMark('calecute', 'The pepper house'),
+      when: (_g, _q, port) => port === 'calecute' || port === 'cochim' || port === 'cananor',
+      scene: (_g, q) => scene(q, 'house', 'The house on the canal',
+        'It is a stone warehouse with a carved door, a great many clerks, and sacks of pepper stacked to the '
+        + 'rafters. The owner, Khwaja Muhammad, pours tea. He would like to sell you a hundred quintals at '
+        + 'a third less than the Crown’s price and he would like it not to appear in any book. He would also, '
+        + 'he says, be glad of a Portuguese captain who could be talked to.',
+        [
+          {
+            label: 'Buy the hundred quintals, off the books',
+            detail: 'A great deal of money, and the King’s factor will not like it if he hears.',
+            resolve: (gg) => {
+              const n = gg.ship.addCargo('pimenta', 100, 0, 0.75);
+              q.flags.bought = true;
+              gg.secretsHeard.push('pepper-off-books');
+              renown(gg, -10);
+              return go(gg, q, 'dhows', `Took ${n} quintals of pepper from Khwaja Muhammad's house and entered none of it. `
+                + 'The King’s factor will hear, eventually. Coastal dhows pass between here and Cananor.');
+            },
+          },
+          {
+            label: 'Decline, and tell him the King’s price is the King’s price',
+            detail: 'He will not be offended. He will remember.',
+            resolve: (gg) => {
+              renown(gg, 15);
+              q.flags.refused = true;
+              return go(gg, q, 'dhows', 'Declined Khwaja Muhammad’s off-book pepper. He bowed, and poured more tea. '
+                + 'Coastal dhows pass between here and Cananor.');
+            },
+          },
+          {
+            label: 'Decline, and tell the King’s factor',
+            detail: 'The Crown will act on it. The merchants will know who told.',
+            resolve: (gg) => {
+              renown(gg, 35);
+              gg.crown.gold += 150;
+              q.flags.informed = true;
+              gg.adjustPolity('calicut', { respect: -0.1 }, 'informed on the pepper houses');
+              return go(gg, q, 'dhows', 'Told the King’s factor about Khwaja Muhammad’s offer. The factor paid 150 cruzados and was not as glad as he '
+                + 'might have been. Coastal dhows pass between here and Cananor.');
+            },
+          },
+        ]),
+    },
+    dhows: {
+      goal: () => 'The coastal dhows pass between Calecute and Cananor; look at what they carry.',
+      marker: () => ({ lat: DHOW_LANE.lat, lon: DHOW_LANE.lon, nm: 60, label: 'The dhow lane' }),
+      when: (g) => near(g, DHOW_LANE, 35) && !g.dockedAt,
+      scene: (_g, q) => scene(q, 'dhows', 'Six dhows in line',
+        'They come out of the haze abreast, laden to the wash, bound up the coast for Cambaia: Mappila '
+        + 'pepper for the Red Sea. Every one of them is carrying what the King’s ships are supposed to '
+        + 'carry. '
+        + (q.flags.bought ? 'One of them has a carved door on her stern that you recognise.' : 'Nobody aboard them has a pass.'),
+        [
+          {
+            label: 'Stop and search them for the King',
+            detail: 'The King’s law says the pepper is his. The merchants’ law says otherwise, and so does the coast.',
+            resolve: (gg) => {
+              const n = gg.ship.addCargo('pimenta', 40, 0, 0.7);
+              renown(gg, 35);
+              q.flags.searched = true;
+              gg.adjustPolity('calicut', { trust: -0.25, respect: 0.05 }, 'stopped and searched the coastal dhows');
+              return go(gg, q, 'raja', `Stopped the dhows and took ${n} quintals as the King’s. The Mappila houses will long remember the ship.`);
+            },
+          },
+          {
+            label: 'Let them pass',
+            detail: 'A man cannot stop every dhow on a coast, and you are one ship.',
+            resolve: (gg) => go(gg, q, 'raja', 'Let the dhows go by. They dipped their flags as they passed, which might have been a courtesy.'),
+          },
+        ], 'warning'),
+    },
+    raja: {
+      goal: () => 'The Raja of Cananor has heard, and wants a word.',
+      marker: () => portMark('cananor', 'The Raja of Cananor'),
+      when: (_g, _q, port) => port === 'cananor',
+      scene: (_g, q) => scene(q, 'raja', 'The Kolathiri',
+        'The Raja of Cananor is old, fat, and delighted to see you. The Zamorin’s enemy is his friend, he '
+        + 'says, and a Portuguese ship is worth two regiments. '
+        + (q.flags.searched ? 'He has heard about the dhows, and is very pleased. ' : q.flags.informed ? 'He has heard that there is an honest captain on the coast, and would like to see the animal. ' : '')
+        + 'He would like a factory, and a treaty, and would like them both now.',
+        [
+          {
+            label: 'Sign the treaty, and leave a factor',
+            detail: 'Cananor against Calicut. It costs your word in both courts.',
+            resolve: (gg) => {
+              leaveToTrade(gg, 'kolathiri', { trust: 0.3, interest: 0.2 }, 'signed with the Kolathiri against Calicut');
+              gg.relationsFor('cananor').factory = true;
+              renown(gg, 60);
+              gg.adjustPolity('calicut', { trust: -0.15 }, 'signed a treaty with Cananor');
+              return end(gg, q, 'treaty', 'Signed the treaty with the Kolathiri of Cananor. There is ground for a factory, and a friend on the coast, '
+                + 'and the Zamorin will not forget it.');
+            },
+          },
+          {
+            label: 'Take his friendship, but sign nothing',
+            detail: 'A pleasant lunch, a cargo of rice, and no promises.',
+            resolve: (gg) => {
+              leaveToTrade(gg, 'kolathiri', { trust: 0.1 }, 'a cordial visit');
+              renown(gg, 20);
+              return end(gg, q, 'friendly', 'Dined with the Raja of Cananor and signed nothing. He sent a cargo of rice to the ship with his regards.');
+            },
+          },
+        ]),
+    },
+  },
+};
+
+const malay: QuestDef = {
+  id: 'malay',
+  title: 'The Cinnamon Island',
+  blurb: 'A Malay merchant at Cochim has letters to Ceylon and Malacca. Nobody in Portugal has ever been further.',
+  offeredAt: ['cochim', 'calecute', 'cananor'],
+  available: (g) => g.chronicle.act >= 4 && g.crown.lifetimeStanding >= 250,
+  offer: () => ({
+    who: 'Nina Chatu, a Malay merchant, at the water stairs',
+    text: 'He is sixty, small, tattooed to the wrist, and has been sailing this sea since before the '
+      + 'Portuguese were a nation. He has letters of introduction to the King of Kotte and to the Sultan of '
+      + 'Malacca, and a passage he would like to make. He will go, he says, with any captain who cares to '
+      + 'see where the cloves come from.',
+    accept: 'Take his letters, and go to Ceylon',
+  }),
+  first: 'kotte',
+  steps: {
+    kotte: {
+      goal: () => 'Bear away for Ceylon with Nina Chatu’s letter to the King of Kotte, at Columbo.',
+      marker: () => portMark('columbo', 'The King of Kotte'),
+      when: (_g, _q, port) => port === 'columbo',
+      scene: (_g, q) => scene(q, 'kotte', 'The cinnamon gardens',
+        'Columbo is a white town under palm trees, and the cinnamon is not a crop but a forest: men '
+        + 'strip the bark from wild trees in the hills and carry it down in bundles. The King of Kotte '
+        + 'receives you on a cushion under an umbrella, reads Nina Chatu’s letter twice, and names his '
+        + 'terms: a yearly tribute of cloth and silver to a factory here, in return for the King of '
+        + 'Portugal’s friendship and a monopoly on Portuguese shipping.',
+        [
+          {
+            label: 'Agree, and carry the first cinnamon home',
+            detail: '200 cruzados of tribute now. Thirty quintals of the finest cinnamon in the world, aboard.',
+            resolve: (gg) => {
+              if (gg.crown.gold < 200) return later(q, 'The King wants two hundred cruzados of tribute, and there is not that much in the purse.');
+              gg.crown.gold -= 200;
+              gg.ship.addCargo('canela', 30, 0, 0.85);
+              leaveToTrade(gg, 'kotte', { trust: 0.3, respect: 0.1 }, 'agreed the King of Kotte’s terms');
+              gg.relationsFor('columbo').factory = true;
+              q.flags.tribute = true;
+              return go(gg, q, 'strait', 'Agreed the King of Kotte’s terms and loaded thirty quintals of cinnamon. Nina Chatu says Malacca is three weeks '
+                + 'east on the monsoon, past the Nicobars and the great strait.');
+            },
+          },
+          {
+            label: 'Take the cinnamon and promise nothing',
+            detail: 'Buy what he has on the quay, at the price, and leave the treaty for the King of Portugal.',
+            resolve: (gg) => {
+              gg.ship.addCargo('canela', 15, 0, 0.8);
+              leaveToTrade(gg, 'kotte', { trust: 0.1 }, 'traded at Columbo');
+              return go(gg, q, 'strait', 'Bought what cinnamon the quay had and promised the King of Kotte nothing. Nina Chatu says Malacca is three weeks '
+                + 'east on the monsoon, past the Nicobars and the great strait.');
+            },
+          },
+        ]),
+    },
+    strait: {
+      goal: () => 'Malacca, at the end of the strait, is the last port of the Indian Ocean.',
+      marker: () => portMark('malaca', 'Malacca'),
+      when: (_g, _q, port) => port === 'malaca',
+      scene: (_g, q) => scene(q, 'strait', 'The strait of Malacca',
+        'Malacca is the largest port you have ever seen. A thousand ships at once in a roadstead crowded '
+        + 'with junks, dhows, prahus, and every kind of hull that has ever floated in the eastern seas. There '
+        + 'are four harbour-masters, one for every nation’s merchants, and the Sultan’s palace stands over '
+        + 'the whole. The merchants have heard of the Portuguese, and are divided about it.',
+        [
+          {
+            label: 'Present Nina Chatu’s letter to the Sultan',
+            detail: 'A cordial beginning. The Sultan wants to know what a Portuguese captain has brought to sell.',
+            resolve: (gg) => {
+              leaveToTrade(gg, 'malacca', { trust: 0.25, respect: 0.1 }, 'presented a letter of introduction');
+              gg.ship.addCargo('cravo', 15, 0, 0.8);
+              gg.ship.addCargo('noz', 10, 0, 0.8);
+              const n = writeTheSea(gg, -8, 15, 78, 110);
+              renown(gg, 120);
+              return end(gg, q, 'malacca', `The Sultan of Malacca received you, and cloves and nutmeg are in the hold. ${n} squares of the Bay of Bengal `
+                + 'and the strait are in your book. Nobody from Portugal has been so far east.');
+            },
+          },
+          {
+            label: 'Buy what you can at the quay, unannounced',
+            detail: 'Less ceremony, less risk, and less of a name.',
+            resolve: (gg) => {
+              gg.ship.addCargo('cravo', 8, 0, 0.7);
+              const n = writeTheSea(gg, -8, 15, 78, 110);
+              renown(gg, 60);
+              return end(gg, q, 'quay', `Bought cloves on the Malacca quay and left before anybody asked who you were. ${n} squares of the strait are in your book.`);
+            },
+          },
+        ]),
+    },
+  },
+};
+
 export const QUESTS: Record<QuestId, QuestDef> = {
   caravel, leak, kongo, prester, zamorin, galeao, nome, ficheiro, roteiro, escudeiro,
-  adrift, pesos, padrao, mercador, monsoon, aprendiz, sofala, count,
+  adrift, pesos, padrao, mercador, monsoon, aprendiz, sofala, count, feitorcal: feitorCalecute, mappila, malay,
 };
 
 /** Leave to trade across a whole state, as an audience would give it, and the court's opinion with it. */
@@ -3010,6 +3362,10 @@ const CALLBACKS: { quest: QuestId; outcomes?: string[]; ports: string[]; text: s
   { quest: 'escudeiro', outcomes: ['honest'], ports: ['lisboa', 'lagos'], text: 'The men at the Casa stand a little straighter when you pass. A man who tells the King the truth is either feared or trusted.' },
   { quest: 'sofala', outcomes: ['fair'], ports: ['sofala', 'quiloa', 'mocambique'], text: 'A dhow captain at the water stairs tells you, unasked, that the Portuguese at Çofala paid what they said. He says it like a man reporting a miracle.' },
   { quest: 'count', outcomes: ['honest', 'declared'], ports: ['lisboa'], text: 'The weigh-house clerks are very civil this morning. The contador has been telling the story of your book.' },
+  { quest: 'feitorcal', outcomes: ['peace'], ports: ['calecute', 'cochim'], text: 'Aires Correia, the factor, has put a jar of Calecute’s best pepper-wine on your table with no note. The shutters of the house are wide open.' },
+  { quest: 'feitorcal', outcomes: ['riot', 'riot-home'], ports: ['cochim', 'calecute'], text: 'Nobody at the water stairs will meet your eye. The black patch on the waterfront, where the factory was, has a fresh flower on it.' },
+  { quest: 'mappila', outcomes: ['treaty'], ports: ['cananor', 'calecute'], text: 'A Cananor boatman offers to carry you ashore for nothing. The Kolathiri’s friends are everywhere on the water.' },
+  { quest: 'malay', outcomes: ['malacca', 'quay'], ports: ['cochim', 'calecute', 'columbo'], text: 'A pilot in the Cochim roadstead has heard of Malacca and of the ship that went there. He asks whether the cloves are what he has been told.' },
   { quest: 'leak', ports: ['lisboa'], text: 'The Rua Nova has a new contador, and a new way of looking at the ships’ books.' },
 ];
 
