@@ -424,7 +424,9 @@ function arcLine(o: Officer): HTMLElement | null {
       ? 'Whatever there was between you is finished. He does his work.'
       : stage === 0
         ? 'You have not sailed far enough with him to know him.'
-        : `You are ${stage} of the way into whatever this is.`;
+        : `You are ${stage / Math.max(1, arc.beats.length) < 0.4 ? 'a little way'
+          : stage / Math.max(1, arc.beats.length) < 0.75 ? 'about half way'
+            : 'most of the way'} into whatever this is.`;
   return el('div', {
     style: { fontSize: '12px', marginTop: '4px', color: o.bonded ? 'var(--green)' : 'var(--ink-soft)' },
   }, text);

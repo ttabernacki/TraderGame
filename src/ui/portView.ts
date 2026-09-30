@@ -372,12 +372,14 @@ export class PortView {
       if (here || ahead.length > 0) {
         left.append(el('div', { class: 'port-road' },
           el('div', { class: 'port-road-eyebrow' }, here ? 'On the road: business here, and what comes next' : 'On the road ahead'),
-          ...(here ? [el('div', { class: 'port-road-row here' },
-            el('b', {}, 'Here'),
-            el('span', {}, here.tasks.map((t) => t.text).join(' \u00b7 ')))] : []),
-          ...ahead.map((st) => el('div', { class: 'port-road-row' },
-            el('b', {}, st.where),
-            el('span', {}, `${st.tasks.map((t) => t.text).join(' \u00b7 ')} \u2014 ${st.nm.toLocaleString()} miles`))),
+          ...(here ? [el('div', { class: 'port-road-stop here' },
+            el('div', { class: 'port-road-head' }, el('b', {}, 'Here')),
+            ...here.tasks.map((t) => el('div', { class: 'port-road-task' }, t.text)))] : []),
+          ...ahead.map((st) => el('div', { class: 'port-road-stop' },
+            el('div', { class: 'port-road-head' },
+              el('b', {}, st.where),
+              el('span', {}, `${st.nm.toLocaleString()} miles`)),
+            ...st.tasks.map((t) => el('div', { class: 'port-road-task' }, t.text)))),
         ));
       }
     }
@@ -465,7 +467,12 @@ export class PortView {
     const def = g.portHere!;
     if (!rel.mayTrade) {
       host.append(el('div', { class: 'notice grave' },
-        'The market is closed to you. Nobody will deal until the governor says they may.'));
+        'The market is closed to you. Nobody will deal until the governor says they may.',
+        el('div', { style: { marginTop: '9px' } },
+          button('Seek an audience', () => this.onAudience(), {
+            primary: true,
+            disabled: def.people === 'portuguese',
+          }))));
       return;
     }
     const listings = g.marketHere();

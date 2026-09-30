@@ -1708,6 +1708,10 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   text-align: right;
   font-variant-numeric: normal;
 }
+/* A sentence is read left to right, under its label, not shoved to the far edge. */
+#hud-orders .hud-row.stack { display: block; margin-top: 3px; }
+#hud-orders .hud-row.stack .k { display: block; font-size: 11px; letter-spacing: 0.04em; }
+#hud-orders .hud-row.stack .v { display: block; text-align: left; line-height: 1.35; }
 
 @media (max-width: 860px) {
   #hud-orders { font-size: 11px; }
@@ -2898,6 +2902,9 @@ details.card.fold[open] > .fold-body { margin-top: 9px; }
 /* The road, as it reads in a port's Town page. */
 .port-road { border: 1px solid rgba(90, 74, 55, 0.3); border-radius: 3px; padding: 10px 13px; margin: 0 0 14px; background: rgba(255, 250, 235, 0.35); }
 .port-road-eyebrow { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 6px; }
-.port-road-row { display: grid; grid-template-columns: 9em 1fr; gap: 10px; font-size: 13.5px; line-height: 1.4; padding: 3px 0; }
-.port-road-row.here b { color: var(--accent, #8a3b12); }
-@media (max-width: 560px) { .port-road-row { grid-template-columns: 1fr; gap: 0; } }
+.port-road-stop { padding: 5px 0 6px; border-top: 1px solid rgba(90, 74, 55, 0.16); }
+.port-road-stop:first-of-type { border-top: 0; }
+.port-road-head { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.port-road-head span { color: var(--ink-soft); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.port-road-stop.here .port-road-head b { color: var(--accent, #8a3b12); }
+.port-road-task { font-size: 13px; line-height: 1.4; color: var(--ink-soft); padding-left: 2px; }

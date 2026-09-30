@@ -789,7 +789,7 @@ export class Hud {
 
     append(this.orders,
       el('div', { class: 'hud-title' }, 'Under orders'),
-      ...lines.map(({ k, v, urgent }) => el('div', { class: 'hud-row' },
+      ...lines.map(({ k, v, urgent }) => el('div', { class: `hud-row${v.length > 26 ? ' stack' : ''}` },
         el('span', { class: 'k' }, k),
         el('span', { class: 'v', style: urgent ? { color: '#d4553f' } : {} }, v))),
       el('div', { class: 'hud-row', style: { marginTop: '3px' } },

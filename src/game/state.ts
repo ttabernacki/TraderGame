@@ -3712,7 +3712,7 @@ export class Game {
     this.logEvent('navigation',
       `Noon. ${nm.toFixed(0)} miles made good in ${period}, `
       + `latitude ${formatLat(lat)} by the reckoning.${verdict}${remaining}`);
-    this.pushAlert(`Noon — ${nm.toFixed(0)} miles run.${remaining}`, 'note');
+    this.pushAlert(`Noon — ${nm.toFixed(0)} ${Math.round(nm) === 1 ? 'mile' : 'miles'} run.${remaining}`, 'note');
 
     // And the other half of noon: the sun is on the meridian, which is the one
     // moment in the day the latitude can be had. The pilot asks for it, because
@@ -8108,6 +8108,10 @@ export class Game {
     // letters are waiting on the quay.
     this.tickEstate();
     if (this.dockedAt && portDef(this.dockedAt).people === 'portuguese') this.settleEstate();
+    // A letter due while she lies at anchor is delivered at anchor: the King's
+    // answer and the stories' timed beats do not wait for her to leave and come
+    // back in again.
+    if (this.dockedAt && this.mode !== 'gameover') this.checkStory();
   }
 
   private waitDaysInner(days: number): void {
