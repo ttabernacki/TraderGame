@@ -61,6 +61,12 @@ checkpoint between acts.
   choice that changes the epilogue (`originEnding`); The File can close the
   Casa's watch (`isWatched`).
 
+- **Six road threads** (`adrift` off the Barbary shore, `pesos` at Mina/Axim,
+  `padrao` east of the Cape, `mercador` Moçambique→Mombaça→Melinde, `monsoon`
+  Melinde→open sea→Calecute, `aprendiz` the stowaway, Lagos→south coast→home
+  port). Every step is further down the road than the last, except the two
+  that end at a Portuguese port the ship is bound for anyway.
+
 ## Verdicts
 
 Keep and deepen:

@@ -26,7 +26,8 @@ import { skill } from '../crew/skills';
  */
 
 export type QuestId = 'caravel' | 'leak' | 'kongo' | 'prester' | 'zamorin' | 'galeao'
-  | 'nome' | 'ficheiro' | 'roteiro' | 'escudeiro';
+  | 'nome' | 'ficheiro' | 'roteiro' | 'escudeiro'
+  | 'adrift' | 'pesos' | 'padrao' | 'mercador' | 'monsoon' | 'aprendiz';
 
 export interface QuestState {
   id: QuestId;
@@ -2058,8 +2059,608 @@ const escudeiro: QuestDef = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// 11–16. More of the road: what happens to a ship on the way
+//
+// Six threads that belong to the road itself rather than to the captain's past
+// or to the Crown's errands. They are offered at the ports a voyage passes and
+// each one's beats sit further down the road than the last.
+
+/** Off the Barbary shore, where the Canaries' fishermen say a caravel is drifting. */
+const DRIFT: LatLon = { lat: 22.4, lon: -17.6 };
+/** Where Dias's padrão stood, east of the Cape. */
+const KWAAIHOEK: LatLon = { lat: -33.7, lon: 26.3 };
+/** The open sea between Melinde and Calecute, where the monsoon is. */
+const MONSOON: LatLon = { lat: 4.0, lon: 58.0 };
+
+const adrift: QuestDef = {
+  id: 'adrift',
+  title: 'The Ship Adrift',
+  blurb: 'A caravel has been seen drifting off the Barbary shore with nobody at her helm.',
+  offeredAt: ['funchal', 'las-palmas', 'lagos'],
+  available: (g) => g.chronicle.act >= 1,
+  offer: () => ({
+    who: 'A Canary fisherman, mending net',
+    text: 'He will not say where he heard it, which is how you know it is true. A caravel with her '
+      + 'foresail in rags has been turning slowly in the current off the Barbary shore for a week, '
+      + 'and the boat that went out to her came back without going aboard. "There is a smell," '
+      + 'he says.',
+    accept: 'Ask where, and go and see',
+  }),
+  first: 'drift',
+  steps: {
+    drift: {
+      goal: () => 'Find the drifting caravel off the Barbary shore, south of the Canaries.',
+      marker: () => ({ lat: DRIFT.lat, lon: DRIFT.lon, nm: 90, label: 'A drifting caravel' }),
+      when: (g) => near(g, DRIFT, 35) && !g.dockedAt,
+      scene: (_g, q) => scene(q, 'drift', 'The Nossa Senhora da Ajuda',
+        'She is a Lagos caravel, and there is nobody at her helm because the helmsman is at the foot '
+        + 'of it, past help. The fever has been through her. Four are dead, two are dying, and '
+        + 'one boy of about fifteen is sitting in the waist with his knees drawn up, watching you '
+        + 'come alongside as if you were something in a dream. Her hold is still full.',
+        [
+          {
+            label: 'Take off the boy and bring her in',
+            detail: 'A prize crew, the fever aboard, and three weeks’ delay. She is worth having.',
+            resolve: (gg) => {
+              gg.crew.morale = clamp(gg.crew.morale - 0.06, 0, 1);
+              gg.ship.addCargo('ferramenta', 12, 0, 0.55);
+              q.flags.boy = true;
+              return go(gg, q, 'factor', 'Took the boy off the Nossa Senhora da Ajuda and sent a prize crew '
+                + 'aboard her. Her master’s papers are for the factor at Arguim.');
+            },
+          },
+          {
+            label: 'Take the boy and her papers, and leave her',
+            detail: 'Fever ships are burnt. There is nothing to be done for the rest.',
+            resolve: (gg) => {
+              q.flags.boy = true;
+              renown(gg, 5);
+              return go(gg, q, 'factor', 'Took the boy and the master’s papers off the Nossa Senhora da '
+                + 'Ajuda, and burnt her. The papers are for the factor at Arguim.');
+            },
+          },
+          {
+            label: 'Stand off and let the fever go by',
+            detail: 'Nobody would blame you. The boy would.',
+            resolve: (gg) => {
+              renown(gg, -5);
+              gg.crew.morale = clamp(gg.crew.morale + 0.03, 0, 1);
+              return end(gg, q, 'left', 'Left the Nossa Senhora da Ajuda to her fever, and sailed on.');
+            },
+          },
+        ], 'warning'),
+    },
+    factor: {
+      goal: () => 'Carry her master’s papers to the factor at Arguim.',
+      marker: () => portMark('arguim', 'The factor at Arguim'),
+      when: (_g, _q, port) => port === 'arguim',
+      scene: (_g, q) => scene(q, 'factor', 'The master’s papers',
+        'The factor reads them standing. The master, Jorge Lobo, was carrying two hundred '
+        + 'cruzados of the King’s money for the garrison and a good deal of his own, and has been '
+        + 'thought lost since the spring. The boy, Zé, is his nephew. The factor looks at the '
+        + 'boy, and at you, and waits to be told what kind of man you are.',
+        [
+          {
+            label: 'Hand over the King’s money, and keep the rest',
+            detail: 'The garrison is paid. What Lobo owned is salvage.',
+            resolve: (gg) => {
+              renown(gg, 25);
+              gg.crown.gold += 120;
+              return end(gg, q, 'salvage', 'Handed the garrison’s money to the factor at Arguim and kept the '
+                + 'salvage. The factor sent 120 cruzados and a good word to Lisbon.');
+            },
+          },
+          {
+            label: 'Give it all to the boy',
+            detail: 'Lobo’s nephew has nothing else. The Crown’s share is another matter.',
+            resolve: (gg) => {
+              renown(gg, 45);
+              gg.crew.morale = clamp(gg.crew.morale + 0.06, 0, 1);
+              return end(gg, q, 'boy', 'Gave Lobo’s nephew what his uncle left. The hands remember things like that, '
+                + 'and so does the Casa’s man at Arguim.');
+            },
+          },
+        ]),
+    },
+  },
+};
+
+const pesos: QuestDef = {
+  id: 'pesos',
+  title: 'False Weights',
+  blurb: 'The gold traders of the Mina coast say the Casa’s scales are not honest. They would be right.',
+  offeredAt: ['mina', 'axim'],
+  available: (g) => g.chronicle.act >= 1,
+  offer: () => ({
+    who: 'A gold trader at the factory gate',
+    text: 'He has come down from the interior three times this year and has gone home three times '
+      + 'with a little less than the trade was worth. He does not say the scales are false. He puts '
+      + 'a stone he has carried from home in your hand and asks you to hold it.',
+    accept: 'Weigh his stone against the Casa’s',
+  }),
+  first: 'scales',
+  steps: {
+    scales: {
+      goal: () => 'Weigh the trader’s stone against the Casa’s scales, at Mina or Axim.',
+      marker: () => portMark('mina', 'The Casa’s scales'),
+      when: (_g, _q, port) => port === 'mina' || port === 'axim',
+      scene: (_g, q) => scene(q, 'scales', 'Two sets of weights',
+        'The stone is a third lighter against the Casa’s marco than against the trader’s own weights. '
+        + 'The clerk sees your face and begins to explain. The explanation is long and ends in a '
+        + 'request that you not make a scene.',
+        [
+          {
+            label: 'Put it to the factor, in front of the traders',
+            detail: 'Public, and the factor will not thank you.',
+            resolve: (gg) => {
+              renown(gg, 25);
+              gg.shiftPeopleRegard(portDef('mina').people, 0.3);
+              q.flags.public = true;
+              return go(gg, q, 'axim', 'Put the false weights to the factor at Mina in front of the gold traders. '
+                + 'The scales were changed the same afternoon. The trader’s brother runs a market at Axim.');
+            },
+          },
+          {
+            label: 'Say nothing, and buy the clerk’s silence for yourself',
+            detail: 'A third off every marco you buy, for as long as he keeps his post.',
+            resolve: (gg) => {
+              q.flags.cheat = true;
+              gg.shiftPeopleRegard(portDef('mina').people, -0.25);
+              return go(gg, q, 'axim', 'Took the clerk’s offer at Mina. You will buy gold cheaper than anyone '
+                + 'on the coast, for a while. The trader’s brother runs a market at Axim.');
+            },
+          },
+        ]),
+    },
+    axim: {
+      goal: () => 'The trader’s brother has a market at Axim.',
+      marker: () => portMark('axim', 'The trader’s brother'),
+      when: (_g, _q, port) => port === 'axim',
+      scene: (_g, q) => scene(q, 'axim', 'The brother',
+        q.flags.cheat
+          ? 'He knows already. Word goes along the coast faster than a ship. He stands in the market '
+            + 'with his arms folded and nothing whatever to sell you.'
+          : 'He has heard what you did at Mina, and has done a good deal of thinking about it. He '
+            + 'has a place, a day’s walk inland, where the gold is washed out of the river and not '
+            + 'mined, and no Portuguese has been allowed to see it.',
+        q.flags.cheat
+          ? [
+            {
+              label: 'Pay him what the trader was short',
+              detail: '150 cruzados, and the coast may forget.',
+              resolve: (gg) => {
+                gg.crown.gold = Math.max(0, gg.crown.gold - 150);
+                gg.shiftPeopleRegard(portDef('mina').people, 0.2);
+                return end(gg, q, 'repaid', 'Repaid the gold traders what the scales had taken, and the coast is '
+                  + 'less cold. Not warm.');
+              },
+            },
+            {
+              label: 'Go on as you are',
+              detail: 'The price is good.',
+              resolve: (gg) => end(gg, q, 'cheat', 'The gold traders of Axim sell to other flags. You buy '
+                + 'cheaper than anyone on the coast, from fewer men.'),
+            },
+          ]
+          : [
+            {
+              label: 'Go inland with him',
+              detail: 'A day’s walk each way, and what you see there is not for the Casa.',
+              resolve: (gg) => {
+                gg.shiftPeopleRegard(portDef('mina').people, 0.35);
+                leaveToTrade(gg, 'eguafo', { trust: 0.25, respect: 0.1 }, 'stood up for the traders against false weights');
+                renown(gg, 30);
+                return end(gg, q, 'inland', 'Saw where the river gold is washed. The traders of the coast will '
+                  + 'deal with you first from now on, and say so to each other.');
+              },
+            },
+            {
+              label: 'Send word of it to the Casa',
+              detail: 'Everything you saw, written down, for the King’s factor.',
+              resolve: (gg) => {
+                renown(gg, 40);
+                gg.crown.gold += 200;
+                gg.shiftPeopleRegard(portDef('mina').people, -0.2);
+                return end(gg, q, 'report', 'Told the Casa where the river gold is washed, and was paid two '
+                  + 'hundred cruzados for it. The traders did not thank you.');
+              },
+            },
+          ],
+        q.flags.cheat ? 'warning' : 'note'),
+    },
+  },
+};
+
+const padrao: QuestDef = {
+  id: 'padrao',
+  title: 'The Fallen Padrão',
+  blurb: 'Dias set a stone east of the Cape. Nobody has been back to see whether it is still standing.',
+  offeredAt: ['benguela', 'mpinda', 'luanda'],
+  available: (g) => g.chronicle.act >= 2,
+  offer: () => ({
+    who: 'An old pilot who sailed with Dias',
+    text: 'He was a grumete on the São Cristóvão in 1488, and he will tell you so without being '
+      + 'asked. They set a stone at the far end of the land — the padrão of São Gregório — and '
+      + 'turned back, and nobody has been to see it since. "It will be down," he says. "They '
+      + 'always are. But there should be somebody to know where it lay."',
+    accept: 'Ask him where he remembers it',
+  }),
+  first: 'stone',
+  steps: {
+    stone: {
+      goal: () => 'Find where Dias’s padrão stood: a bay east of the Cape, close under a low headland.',
+      marker: () => ({ lat: KWAAIHOEK.lat, lon: KWAAIHOEK.lon, nm: 80, label: 'Where Dias’s stone stood' }),
+      when: (g) => near(g, KWAAIHOEK, 30) && g.sounding.shoreDistNm < 14,
+      scene: (g, q) => scene(q, 'stone', 'The padrão of São Gregório',
+        'It is lying on its side in the dune grass above the beach, cracked across, with the '
+        + 'cross at one end and the arms of Portugal at the other. The herdsmen have used the '
+        + 'foot of it to grind something. There is still a line of letters that can be read: '
+        + '"... DA BOA ESPERANÇA ... A DIAS ..."',
+        [
+          {
+            label: g.crown.padraoStock > 0 ? 'Raise a new stone on the old foot' : 'Take a rubbing of the inscription and lay the cross upright',
+            detail: g.crown.padraoStock > 0
+              ? 'One of your padrões. The Crown will hear it stood again.'
+              : 'You have no padrão to spare. The cross, at least, can stand.',
+            resolve: (gg) => {
+              if (gg.crown.padraoStock > 0) {
+                gg.crown.padraoStock -= 1;
+                gg.crown.padroesRaised += 1;
+                q.flags.raised = true;
+                renown(gg, 55);
+              } else {
+                renown(gg, 30);
+              }
+              return go(gg, q, 'factor',
+                'Found Dias’s padrão of São Gregório where the old pilot said it would be, fallen, and '
+                + (q.flags.raised ? 'raised a new stone on its foot. ' : 'stood the cross up again. ')
+                + 'The King’s factor at Moçambique will want the inscription.');
+            },
+          },
+          {
+            label: 'Carry the stone home',
+            detail: 'Too heavy for a caravel’s deck. Half of it, at any rate — the arms of Portugal.',
+            resolve: (gg) => {
+              renown(gg, 40);
+              gg.crew.morale = clamp(gg.crew.morale - 0.05, 0, 1);
+              q.flags.carried = true;
+              return go(gg, q, 'factor', 'Cut the arms of Portugal from Dias’s padrão and stowed them '
+                + 'in the hold. The herdsmen watched it done and said nothing.');
+            },
+          },
+        ], 'warning'),
+    },
+    factor: {
+      goal: () => 'Report the padrão to the King’s factor, at Moçambique.',
+      marker: () => portMark('mocambique', 'The King’s factor'),
+      when: (_g, _q, port) => port === 'mocambique',
+      scene: (_g, q) => scene(q, 'factor', 'What became of the stone',
+        'The factor at Moçambique is a thin, tired man who has never been further south than '
+        + 'the bar. He has been told Dias’s stone fell, and has been waiting for a captain to say '
+        + 'whether it is true. He reads the inscription you copied aloud, twice, and then sets the '
+        + 'paper down.',
+        [
+          {
+            label: 'Ask for nothing',
+            detail: 'The stone is the King’s. The finding is yours, and that is enough.',
+            resolve: (gg) => {
+              renown(gg, 30);
+              return end(gg, q, 'modest', 'Reported Dias’s padrão to the King’s factor at Moçambique and asked '
+                + 'for nothing. He wrote it up in the king’s book under your name.');
+            },
+          },
+          {
+            label: 'Ask the Crown’s price',
+            detail: 'A discovery is a discovery. 300 cruzados.',
+            resolve: (gg) => {
+              gg.crown.gold += 300;
+              renown(gg, 15);
+              return end(gg, q, 'paid', 'The factor at Moçambique paid three hundred cruzados for news of '
+                + 'Dias’s padrão, and did not write your name in the king’s book.');
+            },
+          },
+        ]),
+    },
+  },
+};
+
+const mercador: QuestDef = {
+  id: 'mercador',
+  title: 'A Passenger for Melinde',
+  blurb: 'A Swahili merchant stranded at Moçambique wants to get home to Melinde by way of Mombaça.',
+  offeredAt: ['mocambique'],
+  available: (g) => g.chronicle.act >= 3,
+  offer: () => ({
+    who: 'A merchant in a white robe, on the quay',
+    text: 'His name is Hasan ibn Salim, and his ship was taken by the sultan of Kilwa’s men two months '
+      + 'ago. He has a wife at Melinde and a son at Mombaça, and has been reading the Portuguese ship '
+      + 'lists each morning for a captain bound north. He has nothing to pay with but what he '
+      + 'knows about the coast.',
+    accept: 'Take him aboard, north to Melinde',
+  }),
+  first: 'mombaca',
+  steps: {
+    mombaca: {
+      goal: () => 'Put into Mombaça with Hasan ibn Salim aboard: his son is there.',
+      marker: () => portMark('mombaca', 'Hasan’s son'),
+      when: (_g, _q, port) => port === 'mombaca',
+      scene: (_g, q) => scene(q, 'mombaca', 'Hasan’s son',
+        'Mombaça has not forgotten the Portuguese, and is not glad to see a Portuguese ship with a '
+        + 'Swahili merchant aboard. Hasan’s son comes down to the beach, which takes courage, '
+        + 'and stands with the crowd behind him. The sultan’s men are at the top of the beach.',
+        [
+          {
+            label: 'Put Hasan ashore to see his son',
+            detail: 'A quarter of an hour. The sultan’s men may not wait.',
+            resolve: (gg) => {
+              q.flags.landed = true;
+              gg.adjustPolity('mombasa', { trust: 0.1, respect: 0.05 }, 'let a merchant see his son');
+              return go(gg, q, 'melinde', 'Put Hasan ashore at Mombaça to see his son. The sultan’s men let it '
+                + 'be done. Melinde is next, and his wife.');
+            },
+          },
+          {
+            label: 'Keep him aboard, and trade',
+            detail: 'The sultan’s men are the sort you would rather not quarrel with.',
+            resolve: (gg) => {
+              gg.adjustPolity('mombasa', { respect: 0.05 }, 'kept clear of trouble');
+              return go(gg, q, 'melinde', 'Kept Hasan aboard at Mombaça, and he did not speak. Melinde is next, '
+                + 'and his wife.');
+            },
+          },
+        ], 'warning'),
+    },
+    melinde: {
+      goal: () => 'Bring Hasan ibn Salim home to Melinde.',
+      marker: () => portMark('melinde', 'Hasan’s house'),
+      when: (_g, _q, port) => port === 'melinde',
+      scene: (_g, q) => scene(q, 'melinde', 'Hasan’s house',
+        'His wife is at the water stairs, veiled and very still. Hasan goes down the side slowly '
+        + 'and then not slowly. '
+        + (q.flags.landed ? 'He has seen his son, and says so, and his voice is not quite steady. ' : '')
+        + 'The sheikh of Melinde is watching from the terrace, and does not miss much.',
+        [
+          {
+            label: 'Accept nothing',
+            detail: 'Let the sheikh see a Portuguese captain do a kindness for its own sake.',
+            resolve: (gg) => {
+              leaveToTrade(gg, 'malindi', { trust: 0.3, respect: 0.1 }, 'brought a Melinde merchant home');
+              renown(gg, 30);
+              q.flags.freely = true;
+              return end(gg, q, 'freely', 'Brought Hasan ibn Salim home to Melinde and took nothing. The sheikh '
+                + 'has made a note of that.');
+            },
+          },
+          {
+            label: 'Take what Hasan knows about the coast',
+            detail: 'Every anchorage and bar between here and Kilwa, written down by a man who sailed it.',
+            resolve: (gg) => {
+              const n = writeTheSea(gg, -30, 0, 32, 50);
+              leaveToTrade(gg, 'malindi', { trust: 0.15 }, 'brought a Melinde merchant home');
+              return end(gg, q, 'pilotage', `Hasan ibn Salim’s pilotage of the Swahili coast is in your book now: ${n} squares.`);
+            },
+          },
+        ]),
+    },
+  },
+};
+
+const monsoon: QuestDef = {
+  id: 'monsoon',
+  title: 'A Pilot for Calecute',
+  blurb: 'The Melinde pilots know the monsoon. One of them may be willing to show a Portuguese captain.',
+  offeredAt: ['melinde'],
+  available: (g) => g.chronicle.act >= 3,
+  offer: () => ({
+    who: 'The sheikh of Melinde’s harbour-master',
+    text: 'The Gujarati pilot is named Malemo, and he is the best on the coast. He has made the '
+      + 'crossing to Calecute since before the Portuguese were a sea power, and he knows the days '
+      + 'on which the wind turns. He will go with you if you ask properly, and will say so to '
+      + 'nobody if you do not.',
+    accept: 'Ask him to take you across',
+  }),
+  first: 'hire',
+  steps: {
+    hire: {
+      goal: () => 'Ask the Gujarati pilot Malemo to take you across to Calecute, at Melinde.',
+      marker: () => portMark('melinde', 'The pilot, Malemo'),
+      when: (_g, _q, port) => port === 'melinde',
+      scene: (_g, q) => scene(q, 'hire', 'Malemo',
+        'He is forty, small, dry, and looks at the ship’s compass as if it were something a child '
+        + 'had brought. He has a wooden instrument on his lap with a string through it: a '
+        + 'kamal. "You want to go to Calecute," he says. "Everyone wants to go to Calecute. '
+        + 'The question is when."',
+        [
+          {
+            label: 'Give him a present, and ask',
+            detail: '200 cruzados in cloth and silver. Nothing is asked of him but the crossing.',
+            resolve: (gg) => {
+              if (gg.crown.gold < 200) return later(q, 'He looks at your purse without seeming to. Come back with two hundred cruzados.');
+              gg.crown.gold -= 200;
+              q.flags.free = true;
+              return go(gg, q, 'crossing', 'Gave Malemo a present of two hundred cruzados and he '
+                + 'came aboard with his kamal. He will show you the crossing at the turn of the wind.');
+            },
+          },
+          {
+            label: 'Ask the sheikh to command it',
+            detail: 'Quicker, and the pilot will not forget how he came aboard.',
+            resolve: (gg) => {
+              q.flags.commanded = true;
+              gg.adjustPolity('malindi', { respect: -0.05 }, 'asked the sheikh to command a pilot');
+              return go(gg, q, 'crossing', 'Had the sheikh command Malemo to take you across. He came aboard '
+                + 'without a word, and has not looked at the compass since.');
+            },
+          },
+        ]),
+    },
+    crossing: {
+      goal: () => 'Cross the open sea to Calecute with Malemo at the monsoon’s turn.',
+      marker: () => ({ lat: MONSOON.lat, lon: MONSOON.lon, nm: 240, label: 'The monsoon crossing' }),
+      when: (g) => near(g, MONSOON, 260) && !g.dockedAt && g.sounding.shoreDistNm > 120,
+      scene: (_g, q) => scene(q, 'crossing', 'What Malemo knows',
+        'On the fourth day out of sight of land he has you stand to and looks for a long time at '
+        + 'the colour of the water, the flight of a tern, and the set of the swell. Then he '
+        + 'begins to talk — in a low voice, in pieces, to the helmsman and not to you — about what '
+        + 'the wind does here in each month of the year, and where the sea turns, and which stars stand '
+        + 'where on which night.'
+        + (q.flags.commanded ? ' He does not look at you once.' : ''),
+        [
+          {
+            label: 'Write it all down',
+            detail: 'Every month. It takes the rest of the crossing.',
+            resolve: (gg) => {
+              const n = writeTheSea(gg, -10, 25, 45, 80);
+              renown(gg, 30);
+              return go(gg, q, 'calecute', `Wrote down the whole of Malemo’s monsoon: ${n} squares of the Indian `
+                + 'Ocean are in your book now, every month of the year.');
+            },
+          },
+        ]),
+    },
+    calecute: {
+      goal: () => 'Put into Calecute; Malemo will go ashore there.',
+      marker: () => portMark('calecute', 'Malemo’s farewell'),
+      when: (_g, _q, port) => port === 'calecute',
+      scene: (_g, q) => scene(q, 'calecute', 'A pilot’s leave',
+        'He stands at the rail, looking at the town, and says that he has crossed this sea four hundred '
+        + 'times and never before with anyone who wrote it down. He says it without rancour. '
+        + 'He wants to know what is to be done with what he has said.',
+        [
+          {
+            label: 'Give him his freedom, and a hundred cruzados',
+            detail: q.flags.commanded ? 'He came aboard under command. This is the least he is owed.' : 'He asked for nothing but the crossing.',
+            resolve: (gg) => {
+              gg.crown.gold = Math.max(0, gg.crown.gold - 100);
+              renown(gg, 30);
+              gg.shiftPeopleRegard('gujarati', 0.25);
+              return end(gg, q, 'freed', 'Paid Malemo a hundred cruzados at Calecute and let him go ashore. '
+                + 'The pilots of the Gujarati ports know the name of the ship.');
+            },
+          },
+          {
+            label: 'Ask him to stay on as your pilot',
+            detail: 'He would be the best in any ship in India. He would also be a prisoner of a kind.',
+            resolve: (gg) => {
+              gg.crew.morale = clamp(gg.crew.morale + 0.05, 0, 1);
+              gg.shiftPeopleRegard('gujarati', -0.15);
+              return end(gg, q, 'kept', 'Malemo stayed aboard as your pilot. He is the best you will have, '
+                + 'and he has never said whether he wanted to.');
+            },
+          },
+        ]),
+    },
+  },
+};
+
+const aprendiz: QuestDef = {
+  id: 'aprendiz',
+  title: 'The Stowaway',
+  blurb: 'There is a boy in the lazarette who cannot be put ashore until somebody decides what he is for.',
+  offeredAt: OUT,
+  available: (g) => g.chronicle.act >= 1,
+  offer: () => ({
+    who: 'A cook’s mate, with a boy by the ear',
+    text: 'He was found under the spare canvas, asleep and very hungry. He says he is fourteen. He '
+      + 'says his name is Nuno, and that he can draw. He has a scrap of paper with a coast on '
+      + 'it that is, the pilot says grudgingly, not bad.',
+    accept: 'Keep him, and see what he can do',
+  }),
+  first: 'hold',
+  steps: {
+    hold: {
+      goal: () => 'Decide what to do with the boy, on the way south: Las Palmas, Arguim, or Mina.',
+      marker: () => portMark('arguim', 'The boy in the lazarette'),
+      when: (_g, _q, port) => port === 'las-palmas' || port === 'arguim' || port === 'mina',
+      scene: (_g, q) => scene(q, 'hold', 'Nuno',
+        'The boy has been a week aboard and has worked out, without being taught, which man to be '
+        + 'useful to. The pilot lets him sit with the chart. The cook has put him to peeling. He '
+        + 'has drawn every headland you have passed, and got three of them right.',
+        [
+          {
+            label: 'Put him to the pilot',
+            detail: 'A boy who can draw a coast is worth more to the chart than to the galley.',
+            resolve: (gg) => {
+              q.flags.pilot = true;
+              return go(gg, q, 'coast', 'Put Nuno to the pilot as a chart boy. He took to it the way some boys '
+                + 'take to fighting.');
+            },
+          },
+          {
+            label: 'Keep him in the galley',
+            detail: 'A boy has to earn his biscuit. The hands like him.',
+            resolve: (gg) => {
+              gg.crew.morale = clamp(gg.crew.morale + 0.04, 0, 1);
+              return go(gg, q, 'coast', 'Kept Nuno in the galley. The hands gave him their crusts and taught '
+                + 'him knots.');
+            },
+          },
+        ]),
+    },
+    coast: {
+      goal: () => 'Somewhere on the long coast south of the Congo, the boy’s drawing will be tested.',
+      marker: () => portMark('benguela', 'Nuno’s coast'),
+      when: (_g, _q, port) => port === 'benguela' || port === 'luanda' || port === 'angra-pequena',
+      scene: (_g, q) => scene(q, 'coast', 'A coast drawn from the masthead',
+        'You have been writing the coast from the deck for a month and it has come out with the land '
+        + 'in the wrong place. Nuno has been at the masthead every morning, and his drawing, which '
+        + 'he has pinned above his hammock, has the land a full league east of where your chart puts it.',
+        [
+          {
+            label: 'Check his drawing against the chart',
+            detail: 'Half a day, and a bruised pride if the boy is right.',
+            resolve: (gg) => {
+              const right = !!q.flags.pilot || gg.rng.chance(0.5);
+              if (right) {
+                const n = writeTheSea(gg, -40, -5, 5, 25);
+                renown(gg, 15);
+                return go(gg, q, 'home', `The boy was right. His drawing corrected ${n} squares of this coast in your book `
+                  + 'and embarrassed the pilot, who has asked him to stay.');
+              }
+              return go(gg, q, 'home', 'The boy was wrong by a league, but it was a good drawing. He wept. '
+                + 'The hands, for once, said nothing.');
+            },
+          },
+        ]),
+    },
+    home: {
+      goal: () => 'The boy has a mother. She is at Lisbon, or Lagos, or Funchal.',
+      marker: () => portMark('lagos', 'Nuno’s mother'),
+      when: (_g, _q, port) => port === 'funchal' || port === 'lagos' || port === 'lisboa',
+      scene: (_g, q) => scene(q, 'home', 'Nuno’s mother',
+        'She is a fishwife, forty and stout, and she has been standing on the quay since she '
+        + 'heard the ship was in. She sees the boy on the gangway and does not shout. She cries, '
+        + 'and then she does shout.',
+        [
+          {
+            label: 'Give her his wages, and let him choose',
+            detail: 'Fifty cruzados. He has earned it, and more.',
+            resolve: (gg) => {
+              gg.crown.gold = Math.max(0, gg.crown.gold - 50);
+              renown(gg, 25);
+              return end(gg, q, 'chose', 'Gave Nuno’s mother his wages. The boy stayed on the quay for one night and '
+                + 'was aboard again before the tide. His mother lit a candle for you.');
+            },
+          },
+          {
+            label: 'Send him home with her',
+            detail: 'He is fourteen. The sea will keep.',
+            resolve: (gg) => {
+              renown(gg, 15);
+              gg.crew.morale = clamp(gg.crew.morale - 0.03, 0, 1);
+              return end(gg, q, 'home', 'Sent Nuno home to his mother. You will not know what became of '
+                + 'him.');
+            },
+          },
+        ]),
+    },
+  },
+};
+
 export const QUESTS: Record<QuestId, QuestDef> = {
   caravel, leak, kongo, prester, zamorin, galeao, nome, ficheiro, roteiro, escudeiro,
+  adrift, pesos, padrao, mercador, monsoon, aprendiz,
 };
 
 /** Leave to trade across a whole state, as an audience would give it, and the court's opinion with it. */

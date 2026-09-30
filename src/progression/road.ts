@@ -29,7 +29,7 @@ const TRUNK: string[] = [
 const TRUNK_POINTS: LatLon[] = TRUNK.flatMap((id, i): LatLon[] => {
   const p = anchorageOf(portDef(id));
   return id === 'benguela' && TRUNK[i + 1] === 'mocambique'
-    ? [p, { lat: -34.4, lon: 18.5 }, { lat: -26, lon: 34 }]
+    ? [p, { lat: -34.4, lon: 18.5 }, { lat: -34.0, lon: 26.3 }, { lat: -26, lon: 34 }]
     : [p];
 });
 
