@@ -319,6 +319,8 @@ uniform float uRigHeight;
 uniform float uHullHeight;
 uniform float uShadow;
 uniform samplerCube uEnv;
+uniform samplerCube uEnvPrev;
+uniform float uEnvMix;
 uniform float uEnvOn;
 uniform float uOvercast;
 
@@ -509,7 +511,11 @@ void main() {
   // clouds, the glow of a sunset and the moon's halo all reach the water. The
   // sun's disc is capped, because its reflection is drawn below as glitter.
   if (uEnvOn > 0.5) {
-    vec3 env = textureCube(uEnv, normalize(vec3(reflDir.x, max(reflDir.y, 0.015), reflDir.z))).rgb;
+    // Two photographs of the sky, the last and the one before, blended by how far
+    // through the interval between them we are: the water's reflection of the
+    // sunset changes continuously instead of in steps every few frames.
+    vec3 envDir = normalize(vec3(reflDir.x, max(reflDir.y, 0.015), reflDir.z));
+    vec3 env = mix(textureCube(uEnvPrev, envDir).rgb, textureCube(uEnv, envDir).rgb, uEnvMix);
     sky = min(env, vec3(1.25));
   }
 
@@ -778,6 +784,8 @@ export class Ocean {
         uHullHeight: { value: 4 },
         uShadow: { value: 1 },
         uEnv: { value: null as THREE.Texture | null },
+        uEnvPrev: { value: null as THREE.Texture | null },
+        uEnvMix: { value: 1 },
         uEnvOn: { value: 0 },
         uOvercast: { value: 0 },
         uTrack: { value: Array.from({ length: TRACK_POINTS }, () => new THREE.Vector2()) },
@@ -1072,9 +1080,16 @@ export class Ocean {
   }
 
   /** The sky's cube, for the water to reflect. See Renderer.envCamera. */
-  setEnvMap(tex: THREE.Texture): void {
+  setEnvMap(tex: THREE.Texture, prev: THREE.Texture = tex, mix = 1): void {
     this.material.uniforms.uEnv.value = tex;
+    this.material.uniforms.uEnvPrev.value = prev;
+    this.material.uniforms.uEnvMix.value = mix;
     this.material.uniforms.uEnvOn.value = 1;
+  }
+
+  /** How far through the change from the previous sky photograph to the current one. */
+  setEnvMix(mix: number): void {
+    this.material.uniforms.uEnvMix.value = mix;
   }
 
   setLighting(

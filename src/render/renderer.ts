@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DEG, NM, clamp, cosd, lerp, wrap180, type LatLon } from '../core/math';
+import { DEG, NM, clamp, cosd, lerp, smoothstep, wrap180, type LatLon } from '../core/math';
 import { Land } from './land';
 import { Settlements } from './settlement';
 import { Ocean } from './ocean';
@@ -132,7 +132,14 @@ export class Renderer {
   ocean = new Ocean();
   sky = new Sky();
   private envTarget = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
+  private envTargetB = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
   private envCamera = new THREE.CubeCamera(1, 30000, this.envTarget);
+  /** Which of the two cubes holds the newest photograph, and how long since it was taken. */
+  private envCur: THREE.WebGLCubeRenderTarget = this.envTarget;
+  private envAge = 0;
+  private envSpan = 0.12;
+  private envSince = 0;
+  private envFirst = true;
   private envFrame = 0;
   private finish!: Finish;
   private glareV = new THREE.Vector3();
@@ -291,7 +298,7 @@ export class Renderer {
     // as a string of white lamps along the horizon.
     this.sky.group.traverse((o) => { if (!(o instanceof THREE.Points) && !(o instanceof THREE.LineSegments)) o.layers.enable(1); });
     this.envCamera.children.forEach((c) => c.layers.set(1));
-    this.ocean.setEnvMap(this.envTarget.texture);
+    this.ocean.setEnvMap(this.envTarget.texture, this.envTargetB.texture, 1);
     this.scene.add(this.ocean.mesh);
     this.scene.add(this.land.group);
     this.scene.add(this.settlements.group);
@@ -571,9 +578,29 @@ export class Renderer {
     this.ship.setLight(lighting.night, overcast);
     // The reflection is refreshed a few times a second, which is far faster
     // than a sky changes and far cheaper than every frame.
+    // Two cubes in turn. The newest photograph is blended in over the time to the
+    // next one, so what the water reflects changes smoothly whatever the frame
+    // rate, rather than in a step every few frames.
+    this.envAge += realDt;
+    this.envSince += realDt;
     if (this.envFrame++ % QUALITY[this.quality].envEvery === 0) {
+      const prev = this.envCur;
+      const next = prev === this.envTarget ? this.envTargetB : this.envTarget;
+      this.envCamera.renderTarget = next;
       this.envCamera.position.copy(this.camera.position);
       this.envCamera.update(this.renderer, this.scene);
+      this.envCur = next;
+      // The interval measured, not assumed: it is what the blend runs over.
+      // Run a little short of it, so the blend has finished when the next photograph
+      // arrives and there is no step to it.
+      if (this.envSince > 0.02) this.envSpan = Math.min(this.envSince * 0.85, 1.2);
+      this.envSince = 0;
+      this.envAge = 0;
+      // The very first photograph has nothing before it to blend from.
+      this.ocean.setEnvMap(next.texture, this.envFirst ? next.texture : prev.texture, this.envFirst ? 1 : 0);
+      this.envFirst = false;
+    } else {
+      this.ocean.setEnvMix(clamp(this.envAge / this.envSpan, 0, 1));
     }
 
     const wakeHdg = this.drawnHeading * DEG;
@@ -888,7 +915,13 @@ export class Renderer {
     this.sun.intensity = l.intensity * 3.1;
     // Shadows are meaningless once the sun is on the horizon, and the long
     // stretched maps they produce are worse than none.
-    this.sun.castShadow = l.sunDir.y > 0.12;
+    // Faded out, not switched off: the ship's shadow on her own deck and rig went
+    // from full strength to nothing in one frame as the sun crossed seven degrees.
+    // Switching the light's shadow on and off outright also recompiles every lit
+    // material, so it is left on until it is invisible.
+    const shadowK = smoothstep(0.03, 0.17, l.sunDir.y);
+    this.sun.castShadow = shadowK > 0.002;
+    this.sun.shadow.intensity = shadowK;
 
     // Skylight is blue, but not as blue as the zenith looks: most of what falls
     // on a deck comes from the whole dome, not from the darkest part of it.
