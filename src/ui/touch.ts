@@ -107,6 +107,7 @@ export class TouchControls {
 
     // The things wanted now and then, in a sheet that drops from the top bar.
     for (const s of [
+      { label: 'Sheets: the watch / yourself', key: 'y', hint: 'Hand the sheets to the watch, or take them yourself' },
       { label: 'Change the view', key: 'v', hint: 'Shift the view about the ship' },
       { label: 'Sound on / off', key: 'm', hint: 'Sound' },
       { label: 'Photo mode', key: 'z', hint: 'Controls away; tap to come back' },
@@ -126,6 +127,20 @@ export class TouchControls {
   private dock = el('div', { class: 'touch-dock' });
   private more = el('div', { class: 'touch-more' });
   private anchorBtn!: HTMLElement;
+
+  /**
+   * With the watch on the sheets there is nothing for the captain to ease or
+   * harden, so the two buttons are taken away rather than left to do nothing.
+   */
+  setSheetsWithWatch(on: boolean): void {
+    if (on === this.watchHasSheets) return;
+    this.watchHasSheets = on;
+    for (const b of this.root.querySelectorAll<HTMLElement>('.touch-btn')) {
+      const h = b.getAttribute('title');
+      if (h === 'Ease the sheets' || h === 'Harden in the sheets') b.style.display = on ? 'none' : '';
+    }
+  }
+  private watchHasSheets = false;
 
   /** Whether she is at anchor, so the button says what it will do. */
   setAnchored(down: boolean): void {

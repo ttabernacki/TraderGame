@@ -79,7 +79,7 @@ export const DIFFICULTIES: DifficultyDef[] = [
     english: 'Full',
     blurb:
       'You trim the yards yourself and you carry what canvas you judge she will '
-      + 'bear. Hand the sheets to the watch with T when you want them, and take '
+      + 'bear. Hand the sheets to the watch with Y when you want them, and take '
       + 'them back with Q and E — but a crew of no great seamanship settle for a '
       + 'rougher trim than you would, and nobody will shorten sail unless you say '
       + 'so. Losing a mast because you carried too much in a rising wind is then '

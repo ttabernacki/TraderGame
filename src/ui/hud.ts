@@ -18,12 +18,14 @@ import { HeadingTape } from './headingTape';
  * deck bar. One constant rather than a string built in two places, because the
  * strip has to be able to recognise it to know when to fade.
  */
-const KEYS =
-  '<b>A</b>/<b>D</b> alter course &nbsp; <b>X</b> steady as she goes &nbsp; ' +
-  '<b>H</b> steer for the mark &nbsp; ' +
-  '<b>W</b>/<b>S</b> canvas &nbsp; <b>Q</b>/<b>E</b> trim &nbsp; ' +
-  '<b>T</b> about ship &nbsp; <b>B</b> back her astern &nbsp; ' +
-  'drag to look about, wheel to close in';
+function keysFor(autoTrim: boolean): string {
+  return '<b>A</b>/<b>D</b> alter course &nbsp; <b>X</b> steady as she goes &nbsp; ' +
+    '<b>H</b> steer for the mark &nbsp; ' +
+    // With the watch on the sheets there is nothing to ease or harden.
+    '<b>W</b>/<b>S</b> canvas &nbsp; ' + (autoTrim ? '' : '<b>Q</b>/<b>E</b> trim &nbsp; ') +
+    '<b>T</b> about ship &nbsp; <b>B</b> back her astern &nbsp; ' +
+    'drag to look about, wheel to close in';
+}
 
 /**
  * The sailing head-up display: everything a captain would have in front of him
@@ -134,7 +136,7 @@ export class Hud {
       this.root.classList.toggle('open');
     });
     this.root.append(this.tape.root, this.strip, left, right, this.alerts, this.hint);
-    this.hint.innerHTML = KEYS;
+    this.hint.innerHTML = keysFor(false);
     this.hint.classList.add('idle');
   }
 
@@ -649,7 +651,7 @@ export class Hud {
     } else if (g.dockedAt) {
       this.hint.innerHTML = `At anchor off <b>${g.portHere?.name}</b>. Press <b>P</b> to go ashore, <b>Space</b> to weigh.`;
     } else {
-      this.hint.innerHTML = KEYS;
+      this.hint.innerHTML = keysFor(g.autoTrim);
       keysOnly = true;
     }
     // The key list is scenery once it has been read — the same eleven items,

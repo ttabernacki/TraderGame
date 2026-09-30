@@ -266,7 +266,7 @@ export class CrewView {
         )),
       ),
       el('p', { class: 'flavour', style: { marginTop: '10px' } }, rules.blurb),
-      kv('The sheets', g.autoTrim ? 'with the watch' : 'yours (T to hand them over)'),
+      kv('The sheets', g.autoTrim ? 'with the watch' : 'yours (Y to hand them over)'),
       kv('Shortening sail', rules.autoCanvas ? 'the watch see to it' : 'your affair'),
       kv('Canvas ordered', `${(g.orderedCanvas * 100).toFixed(0)}%`),
     ));
