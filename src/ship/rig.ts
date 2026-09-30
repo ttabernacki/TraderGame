@@ -145,8 +145,37 @@ export function sailForce(
  * the crew's automatic trim and to show the player how far off they are.
  */
 export function optimalTrim(beta: number, p: RigProfile, current?: number): number {
-  const absBeta = Math.abs(beta);
+  const e = trimEntry(Math.abs(beta), p);
+  let best = e.best;
+  if (current !== undefined && e.bestDrive > 0) {
+    // Anything within a couple of per cent of the best is, for a crew hauling on
+    // a rope in a seaway, the same trim.
+    let nearestGap = Math.abs(best - current);
+    for (const t of e.good) {
+      const gap = Math.abs(t - current);
+      if (gap < nearestGap) { nearestGap = gap; best = t; }
+    }
+  }
+  return clamp(best, p.minTrim, p.maxTrim);
+}
 
+interface TrimEntry { best: number; bestDrive: number; good: number[] }
+
+/**
+ * The search below, done once per quarter-degree of wind angle and rig and
+ * remembered. The crew's automatic trim asks this for every sail on every
+ * physics tick; searched afresh each time it was two hundred evaluations a sail,
+ * and the largest single cost on the main thread.
+ */
+const TRIM_TABLES = new WeakMap<RigProfile, Map<number, TrimEntry>>();
+
+function trimEntry(absBeta: number, p: RigProfile): TrimEntry {
+  let table = TRIM_TABLES.get(p);
+  if (!table) { table = new Map(); TRIM_TABLES.set(p, table); }
+  const q = Math.round(absBeta * 4);
+  let e = table.get(q);
+  if (e) return e;
+  const beta = q / 4;
   // Search rather than solve: the objective is not convex once the sail stalls.
   //
   // With the wind abaft the beam it has two competing maxima, and they are both
@@ -164,26 +193,20 @@ export function optimalTrim(beta: number, p: RigProfile, current?: number): numb
   // would do and what stops them hunting.
   let best = p.minTrim;
   let bestDrive = -Infinity;
+  const drives: number[] = [];
   for (let t = p.minTrim; t <= p.maxTrim; t += 1) {
-    const f = sailForce(10, absBeta, t, 100, p);
-    if (f.drive > bestDrive) { bestDrive = f.drive; best = t; }
+    const d = sailForce(10, beta, t, 100, p).drive;
+    drives.push(d);
+    if (d > bestDrive) { bestDrive = d; best = t; }
   }
-
-  if (current !== undefined && bestDrive > 0) {
-    // Anything within a couple of per cent of the best is, for a crew hauling on
-    // a rope in a seaway, the same trim.
-    const good = bestDrive * 0.975;
-    let nearest = best;
-    let nearestGap = Math.abs(best - current);
-    for (let t = p.minTrim; t <= p.maxTrim; t += 1) {
-      if (sailForce(10, absBeta, t, 100, p).drive < good) continue;
-      const gap = Math.abs(t - current);
-      if (gap < nearestGap) { nearestGap = gap; nearest = t; }
-    }
-    best = nearest;
+  const good: number[] = [];
+  if (bestDrive > 0) {
+    const floor = bestDrive * 0.975;
+    drives.forEach((d, i) => { if (d >= floor) good.push(p.minTrim + i); });
   }
-
-  return clamp(best, p.minTrim, p.maxTrim);
+  e = { best, bestDrive, good };
+  table.set(q, e);
+  return e;
 }
 
 

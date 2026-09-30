@@ -72,9 +72,20 @@ export class Ship {
     return hullClass(this.hullId);
   }
 
+  /**
+   * Everything her fittings do, combined. Read a dozen times a physics tick, so
+   * it is worked out once per change to the fittings, not once per read.
+   */
   get effects() {
-    return combineEffects(this.upgrades);
+    const sig = this.upgrades.join('|');
+    if (this.fxVal === null || sig !== this.fxSig) {
+      this.fxVal = combineEffects(this.upgrades);
+      this.fxSig = sig;
+    }
+    return this.fxVal;
   }
+  private fxSig = '';
+  private fxVal: ReturnType<typeof combineEffects> | null = null;
 
   get holdCapacity(): number {
     return Math.max(4, this.baseHull.hold + this.effects.hold);

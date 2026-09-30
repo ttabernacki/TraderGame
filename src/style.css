@@ -2908,3 +2908,10 @@ details.card.fold[open] > .fold-body { margin-top: 9px; }
 .port-road-head span { color: var(--ink-soft); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .port-road-stop.here .port-road-head b { color: var(--accent, #8a3b12); }
 .port-road-task { font-size: 13px; line-height: 1.4; color: var(--ink-soft); padding-left: 2px; }
+
+/* On a short window the commentary must not climb into the panels above it. */
+@media (min-width: 861px) and (max-height: 820px) {
+  #hud-alerts .alert:nth-last-child(n + 3) { display: none; }
+  /* The King's word and the next stop are the two that matter; the rest is in the book. */
+  #hud-orders .hud-row:nth-of-type(n + 4) { display: none; }
+}

@@ -8145,8 +8145,9 @@ export class Game {
   }
 
   pushAlert(text: string, severity: Alert['severity']): void {
-    const last = this.alerts[this.alerts.length - 1];
-    if (last && last.text === text && this.clock.t - last.t < 7200) return;
+    // The same words within two hours are the same alert, even with another
+    // one between them: a ship that keeps touching the same shoal says so once.
+    if (this.alerts.some((a) => a.text === text && this.clock.t - a.t < 7200)) return;
     this.alerts.push({
       id: this.nextAlertId++, text, severity, t: this.clock.t, said: nowMs(),
     });

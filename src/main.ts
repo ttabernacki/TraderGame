@@ -356,6 +356,12 @@ function applyContinuousInput(g: Game, dt: number): void {
 
 let last = performance.now();
 
+/** Modes whose screen is opaque and fills the window. */
+const COVERED_MODES: ReadonlySet<string> = new Set([
+  'rutter', 'chart', 'logbook', 'crew', 'orders', 'voyages', 'port', 'court', 'audience',
+  'shore', 'epilogue',
+]);
+
 function frame(now: number): void {
   const realDt = Math.min((now - last) / 1000, 0.1);
   last = now;
@@ -381,7 +387,11 @@ function frame(now: number): void {
     const simDt = shown.clock.t - before;
 
     const frame = buildFrame(shown);
-    renderer.render(frame, realDt, simDt);
+    // The sea is not drawn behind a screen that hides all of it: the chart, the
+    // book, the town. The clock is stopped there, so nothing is missed, and a
+    // player who leaves a port screen open for ten minutes is not running the
+    // GPU flat out to paint a picture nobody can see.
+    if (!(game && COVERED_MODES.has(game.mode))) renderer.render(frame, realDt, simDt);
     if (game?.lookCue && game.lookCue.id !== lastLookCue) {
       lastLookCue = game.lookCue.id;
       renderer.glance(game.lookCue.bearing - game.displayHeading);
