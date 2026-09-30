@@ -107,7 +107,7 @@ import { castLead, landfallScene, type LeadCast } from './soundings';
 import { mutinyScene } from './mutiny';
 import { newCasa, rollCasaScene, type CasaState } from '../progression/casa';
 import { TEMPER, aboardHands, musterHands, shiftAll, signOnHands, type Hand } from '../crew/hands';
-import { originDef, type OriginId } from '../progression/origins';
+import { originDef, isWatched, type OriginId } from '../progression/origins';
 import { assignTraits, wardroom, type TraitEffects } from '../progression/officers';
 import { GOOD_BY_ID, good, unitOf } from '../economy/goods';
 import {
@@ -1149,7 +1149,7 @@ export class Game {
       * (this.has('theDraughtsman') ? 1.5 : 1)
       // A new Christian selling the Crown's charts out of the back door is not
       // doing the same thing a fidalgo is doing, and the file says so.
-      * (originDef(this.origin).watched ? 0.6 : 1);
+      * (isWatched(this) ? 0.6 : 1);
     return Math.round((this.chartedThisPassage + this.correctedNm * 0.6) * rate);
   }
 

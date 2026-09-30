@@ -1,5 +1,5 @@
 import { clamp } from '../core/math';
-import { originDef } from './origins';
+import { isWatched } from './origins';
 import type { SeaEvent } from '../game/seaEvents';
 import type { Game } from '../game/state';
 
@@ -215,7 +215,7 @@ export const CASA_SCENES: CasaScene[] = [
     when: (g) => voyages(g) >= 3 && g.crown.lifetimeStanding >= 140 && !g.casa.pact,
     build: (g) => {
       const cut = Math.max(140, Math.round(g.crown.gold * 0.12) + 120);
-      const watched = originDef(g.origin).watched;
+      const watched = isWatched(g);
       return {
         id: 'casa:offer',
         title: 'An arrangement',
@@ -267,7 +267,7 @@ export const CASA_SCENES: CasaScene[] = [
             resolve: (gg) => {
               const weight = gg.crown.lifetimeStanding / 420
                 + (gg.casa.seen.includes('sawTheBook') ? 0.2 : 0)
-                - (originDef(gg.origin).watched ? 0.25 : 0);
+                - (isWatched(gg) ? 0.25 : 0);
               if (gg.rng.next() < clamp(weight, 0.1, 0.9)) {
                 gg.casa.broke = true;
                 gg.crown.standing += 25;

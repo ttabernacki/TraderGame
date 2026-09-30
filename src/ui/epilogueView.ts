@@ -4,6 +4,7 @@ import { officerTitle, traitDef } from '../progression/officers';
 import { rivalEnding } from '../progression/rivalEvents';
 import { BONDS } from '../progression/arcs';
 import { originDef } from '../progression/origins';
+import { originEnding } from '../progression/quests';
 import { casaEnding } from '../progression/casa';
 import { portName } from '../progression/crown';
 import type { Game } from '../game/state';
@@ -180,7 +181,8 @@ export class EpilogueView {
           : null,
 
         // Who he was, which the whole career was an answer to.
-        card(originDef(g.origin).name, el('p', {}, originDef(g.origin).epilogue)),
+        card(originDef(g.origin).name, el('p', {}, originDef(g.origin).epilogue),
+          originEnding(g) ? el('p', { class: 'flavour' }, originEnding(g)!) : null),
 
         // The weather, which is the only thing in the whole career that was
         // never a choice — only what was done about it.

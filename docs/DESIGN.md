@@ -54,6 +54,13 @@ checkpoint between acts.
 - **The Road** (Orders, first tab): every live obligation in road order, with
   distance, so the next leg can be planned.
 
+- **Origins have a thread each** (`quests.ts`, ids `nome`, `ficheiro`, `roteiro`,
+  `escudeiro`): offered at Lisbon, Lagos or Funchal to the matching origin only;
+  second beat on the Guinea coast (or Arguim), last at the far end of the road
+  (the Swahili coast, Cochim, or the bay south of Benguela). Each ends on a
+  choice that changes the epilogue (`originEnding`); The File can close the
+  Casa's watch (`isWatched`).
+
 ## Verdicts
 
 Keep and deepen:

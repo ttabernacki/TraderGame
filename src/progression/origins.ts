@@ -130,3 +130,11 @@ export const ORIGIN_BY_ID = new Map(ORIGINS.map((o) => [o.id, o]));
 export function originDef(id: OriginId): Origin {
   return ORIGIN_BY_ID.get(id) ?? ORIGINS[0];
 }
+
+/**
+ * Whether the Casa still has a file on this captain. An origin starts it; a
+ * thread can close it (see The File).
+ */
+export function isWatched(g: { origin: OriginId; secretsHeard: string[] }): boolean {
+  return originDef(g.origin).watched && !g.secretsHeard.includes('file-closed');
+}
