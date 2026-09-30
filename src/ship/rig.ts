@@ -20,6 +20,13 @@ export interface RigProfile {
   runFactor: number;
   /** Seconds to take in or make sail across the full range. */
   handleTime: number;
+  /**
+   * Extra canvas a rig can spread with the wind abaft the beam — studding
+   * sails, bonnets and drabblers on booms run out from the yards. A square
+   * rig can carry half as much again running before the wind; a lateen has
+   * nowhere to hang any of it.
+   */
+  studding: number;
 }
 
 export const RIG_PROFILES: Record<RigKind, RigProfile> = {
@@ -29,12 +36,15 @@ export const RIG_PROFILES: Record<RigKind, RigProfile> = {
     // Tacking a lateen means dipping the whole enormous yard around the forward
     // side of the mast. It is slow, it needs every hand, and in a seaway it is
     // genuinely dangerous.
-    shiftTime: 105, runFactor: 0.72, handleTime: 45,
+    shiftTime: 105, runFactor: 0.72, handleTime: 45, studding: 0,
   },
   square: {
     minTrim: 58, maxTrim: 90,
-    clMax: 1.15, stallAoA: 30, cd0: 0.12, aspect: 1.5,
-    shiftTime: 38, runFactor: 1.18, handleTime: 60,
+    // Broader and deeper canvas than it was: the courses, topsails and bonnets
+    // of a nau together draw far better off the wind than one flat sail
+    // does, which is the whole case for a rig that cannot point.
+    clMax: 1.7, stallAoA: 34, cd0: 0.08, aspect: 2.4,
+    shiftTime: 38, runFactor: 1.25, handleTime: 60, studding: 0.55,
   },
 };
 
@@ -118,9 +128,11 @@ export function sailForce(
   // itself and rolls. Fold that in as an efficiency on the driving component.
   const aftFactor = lerp(1, p.runFactor, smoothstep(110, 170, absBeta));
 
+  // Studding sails and bonnets, once the wind is well abaft the beam.
+  const spread = 1 + p.studding * smoothstep(78, 125, absBeta);
   const q = 0.5 * AIR_DENSITY * apparentSpeed * apparentSpeed;
-  const lift = q * area * cl;
-  const drag = q * area * cd;
+  const lift = q * area * spread * cl;
+  const drag = q * area * spread * cd;
 
   const sinB = Math.sin(absBeta * DEG);
   const cosB = Math.cos(absBeta * DEG);
@@ -136,7 +148,8 @@ export function sailForce(
     aoa,
     luffing: aoa < 2.5,
     stalled: aoa > p.stallAoA + 8,
-    load: Math.hypot(lift, drag),
+    // The masts do not carry the booms' canvas: their loading is the working sails'.
+    load: Math.hypot(lift, drag) / spread,
   };
 }
 

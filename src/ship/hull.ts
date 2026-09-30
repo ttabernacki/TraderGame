@@ -110,7 +110,7 @@ export const HULL_CLASSES: HullClass[] = [
     ],
     hold: 105, crewMin: 30, crewFull: 55, strength: 0.78, handiness: 0.62,
     cost: 3200, standing: 90,
-    blurb: 'Room for cargo and men, and a hull that will take a beating off the Cape. She will not point, so plan the passage around the wind rather than fighting it.',
+    blurb: 'Room for cargo and men, and a hull that will take a beating off the Cape. She will not point, so plan the passage around the wind rather than fighting it — but with the wind abaft the beam and studding sails set she will run any caravel down.',
   },
   {
     id: 'nau',
@@ -123,7 +123,7 @@ export const HULL_CLASSES: HullClass[] = [
     ],
     hold: 205, crewMin: 45, crewFull: 90, strength: 0.86, handiness: 0.5,
     cost: 6800, standing: 200,
-    blurb: 'The ship of the India run. Slow, enormously strong, and capable of carrying enough pepper home to pay for the entire voyage four times over.',
+    blurb: 'The ship of the India run. Hopeless to windward and a third faster than any caravel before the wind, enormously strong, and capable of carrying enough pepper home to pay for the entire voyage four times over.',
   },
   {
     id: 'nau-da-india',
