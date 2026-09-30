@@ -2915,3 +2915,19 @@ details.card.fold[open] > .fold-body { margin-top: 9px; }
   /* The King's word and the next stop are the two that matter; the rest is in the book. */
   #hud-orders .hud-row:nth-of-type(n + 4) { display: none; }
 }
+
+/* The last coat over the sea: see render/finish.ts. Both sit between the canvas
+   and the interface and never take a pointer. */
+#finish-vignette, #finish-glare { position: absolute; inset: 0; pointer-events: none; }
+#finish-vignette {
+  opacity: 0.26;
+  background: radial-gradient(ellipse 78% 74% at 50% 50%, transparent 52%, rgba(6, 10, 18, 0.9) 100%);
+}
+#finish-glare {
+  opacity: 0;
+  --gx: 50%; --gy: 30%; --gc: 255, 250, 235;
+  mix-blend-mode: screen;
+  background:
+    radial-gradient(circle 46vmax at var(--gx) var(--gy), rgba(var(--gc), 0.55) 0%, rgba(var(--gc), 0.22) 18%, rgba(var(--gc), 0.07) 42%, transparent 70%),
+    radial-gradient(circle 9vmax at var(--gx) var(--gy), rgba(255, 255, 255, 0.75) 0%, transparent 100%);
+}

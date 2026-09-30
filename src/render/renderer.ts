@@ -3,6 +3,7 @@ import { DEG, NM, clamp, cosd, lerp, wrap180, type LatLon } from '../core/math';
 import { Land } from './land';
 import { Settlements } from './settlement';
 import { Ocean } from './ocean';
+import { Finish } from './finish';
 import { Sky, type SkyLighting } from './sky';
 import { ShipMesh } from './shipMesh';
 import { Life } from './life';
@@ -133,6 +134,9 @@ export class Renderer {
   private envTarget = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
   private envCamera = new THREE.CubeCamera(1, 30000, this.envTarget);
   private envFrame = 0;
+  private finish!: Finish;
+  private glareV = new THREE.Vector3();
+  private camDir = new THREE.Vector3();
   land = new Land();
   // Towns stand on the ground as it is drawn, not on the raw height field.
   settlements = new Settlements((lat, lon) => this.land.groundAt(lat, lon));
@@ -234,6 +238,7 @@ export class Renderer {
 
   constructor(canvas: HTMLCanvasElement, hull: HullClass) {
     this.canvas = canvas;
+    this.finish = new Finish(canvas);
     // Antialiasing is a real cost on a phone GPU and the sea is mostly smooth
     // gradients, where it buys least. The pixel ratio does the same work more
     // cheaply.
@@ -751,6 +756,21 @@ export class Renderer {
       this.ambient.intensity += this.life.flash * 2.6;
       this.ambient.color.lerp(FLASH, this.life.flash * 0.7);
     }
+
+    // The last coat: vignette, and a bloom where the sun is in the frame.
+    let sunOnScreen: { x: number; y: number; strength: number; warm: number } | null = null;
+    if (lighting.night < 0.6 && lighting.sunDir.y > -0.02) {
+      this.camera.getWorldDirection(this.camDir);
+      const facing = this.camDir.dot(lighting.sunDir);
+      if (facing > 0.3) {
+        this.glareV.copy(this.camera.position).addScaledVector(lighting.sunDir, 1000).project(this.camera);
+        const low = 1 - clamp(lighting.sunDir.y / 0.55, 0, 1);
+        const strength = clamp((facing - 0.3) / 0.6, 0, 1) ** 1.5 * (0.30 + 0.55 * low)
+          * (1 - lighting.night) * (1 - overcast * 0.85) * clamp(lighting.sunDir.y / 0.04 + 0.5, 0, 1);
+        sunOnScreen = { x: this.glareV.x * 0.5 + 0.5, y: 0.5 - this.glareV.y * 0.5, strength, warm: low };
+      }
+    }
+    this.finish.update(lighting.night, overcast, sunOnScreen, this.photo);
 
     this.renderer.render(this.scene, this.camera);
     this.watchFrameRate(realDt);
