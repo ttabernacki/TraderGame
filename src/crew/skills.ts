@@ -13,17 +13,17 @@ export type SkillId =
  */
 export type PerkId =
   // Seamanship
-  | 'windward' | 'press' | 'crowd' | 'driveAcross' | 'spare' | 'coasting' | 'lieTo' | 'neverLose'
+  | 'windward' | 'press' | 'crowd' | 'driveAcross' | 'spare' | 'coasting' | 'lieTo' | 'neverLose' | 'masterMariner'
   // Navigation
   | 'guards' | 'celestial' | 'lunars' | 'deadReckoning' | 'leadsman' | 'setAndDrift' | 'pilotsInstinct' | 'homeward'
   // Cartography
-  | 'traverse' | 'crownsMan' | 'farSight' | 'cosmographer' | 'sheetTrade' | 'copyist' | 'casaClerks' | 'secretChart'
+  | 'traverse' | 'crownsMan' | 'farSight' | 'cosmographer' | 'sheetTrade' | 'copyist' | 'casaClerks' | 'secretChart' | 'padraoReal'
   // Leadership
-  | 'loved' | 'fairShares' | 'followAnywhere' | 'feared' | 'hardRations' | 'lash' | 'nobodyDares'
+  | 'loved' | 'fairShares' | 'followAnywhere' | 'feared' | 'hardRations' | 'lash' | 'nobodyDares' | 'legend'
   // Diplomacy
-  | 'readCourt' | 'treaty' | 'giftsOfState' | 'keptWord' | 'feitoria' | 'force' | 'gunboat' | 'tribute' | 'viceroy'
+  | 'readCourt' | 'treaty' | 'giftsOfState' | 'keptWord' | 'feitoria' | 'force' | 'gunboat' | 'tribute' | 'viceroy' | 'kingsVoice'
   // Trade
-  | 'factorsEye' | 'patience' | 'brokers' | 'ownAccount' | 'credit' | 'licences' | 'antwerpEarly' | 'kingsPartner';
+  | 'factorsEye' | 'patience' | 'brokers' | 'ownAccount' | 'credit' | 'licences' | 'antwerpEarly' | 'kingsPartner' | 'rua';
 
 export interface SkillDef {
   id: SkillId;
@@ -127,6 +127,8 @@ export const NODES: SkillNode[] = [
     effect: 'In a gale you lie-to under a scrap of canvas, and the seas that would come aboard pass under her.' }),
   node({ id: 'sea-never', tree: 'marinharia', tier: 6, school: 'b', name: 'Never lose a ship', perk: 'neverLose',
     effect: 'Once in a career, the sea that should have had her does not: she is got off, pumped out, and brought home.' }),
+  node({ id: 'sea-master', tree: 'marinharia', tier: 7, name: 'Master of the Carreira', perk: 'masterMariner',
+    effect: 'Thirty years on every point of sail. She makes a sixteenth more of whatever wind there is, and wears at four-fifths the rate.' }),
 
   // --- Navigation ---------------------------------------------------------
   node({ id: 'nav-leeway', tree: 'navegacao', tier: 1, name: 'Allowance for leeway',
@@ -173,6 +175,8 @@ export const NODES: SkillNode[] = [
     effect: 'The Casa’s clerks pay a quarter more for what you sell them, and look the other way.' }),
   node({ id: 'cart-secret', tree: 'cartografia', tier: 6, school: 'b', name: 'The secret chart', perk: 'secretChart',
     effect: 'You sell one chart and keep the true one: the trade in sheets pays twice over.' }),
+  node({ id: 'cart-royal', tree: 'cartografia', tier: 7, name: 'The Padrão Real', perk: 'padraoReal',
+    effect: 'Your sheets are the King’s own pattern. Copies of your charts fetch three-fifths more, and the Casa asks you before it draws a new one.' }),
 
   // --- Leadership ---------------------------------------------------------
   node({ id: 'lead-known', tree: 'lideranca', tier: 1, name: 'Known to the men',
@@ -195,6 +199,8 @@ export const NODES: SkillNode[] = [
     effect: 'Unrest is put down before it becomes anything: grievances take half as long to fade.' }),
   node({ id: 'lead-dares', tree: 'lideranca', tier: 6, school: 'b', name: 'Nobody dares', perk: 'nobodyDares',
     effect: 'No man aboard will be the first to come aft. There is never a mutiny.' }),
+  node({ id: 'lead-legend', tree: 'lideranca', tier: 7, name: 'A name the men would die for', perk: 'legend',
+    effect: 'The fleets tell your story in the taverns before you arrive. Your company’s heart mends of itself, and whatever goes wrong aboard you are not blamed for.' }),
 
   // --- Diplomacy ----------------------------------------------------------
   node({ id: 'dip-courtesy', tree: 'diplomacia', tier: 1, name: 'Courtesy',
@@ -217,6 +223,8 @@ export const NODES: SkillNode[] = [
     effect: 'A town that yields to the guns pays for the privilege, in gold.' }),
   node({ id: 'dip-viceroy', tree: 'diplomacia', tier: 6, school: 'b', name: 'Viceroy', perk: 'viceroy',
     effect: 'At the mouth of a gun you take not only leave to trade but ground for a feitoria and the trade to yourself.' }),
+  node({ id: 'dip-voice', tree: 'diplomacia', tier: 7, name: 'The King’s voice', perk: 'kingsVoice',
+    effect: 'When you speak, it is understood to be the King speaking. Every gain in a court’s trust is a third greater.' }),
 
   // --- Trade --------------------------------------------------------------
   node({ id: 'tra-weights', tree: 'comercio', tier: 1, name: 'Weights and measures',
@@ -239,6 +247,8 @@ export const NODES: SkillNode[] = [
     effect: 'The Casa’s factor in Antwerp sells for you from the first voyage, and the houses pay more on contract.' }),
   node({ id: 'tra-partner', tree: 'comercio', tier: 6, school: 'b', name: 'The King’s partner', perk: 'kingsPartner',
     effect: 'The Casa takes the King’s goods from you at nine-tenths of the market, and the houses offer a third contract.' }),
+  node({ id: 'tra-rua', tree: 'comercio', tier: 7, name: 'Prince of the Rua Nova', perk: 'rua',
+    effect: 'The counting-houses clear your paper before the ink is dry. What your stations send home pays a far smaller toll, and a factor’s commission on what you load is waived.' }),
 ];
 
 export const NODE_BY_ID = new Map(NODES.map((n) => [n.id, n]));

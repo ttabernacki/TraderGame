@@ -97,6 +97,11 @@ checkpoint between acts.
   Aguada de São Brás), `kingsoffer` (Lisbon finale: armada command / lordship / gold / just the
   ship; captain-major raises the heir's inheritance). `lateEndings` feed the epilogue.
 
+- **Late-game upgrades**: every skill tree now has a tier-7 crown (Master of the Carreira,
+  The Padrão Real, A name the men would die for, The King's voice, Prince of the Rua Nova),
+  each wired to a real effect; four yard services for captains of name (Zacuto's astrolabe,
+  Flemish sailcloth, the great cabin, the King's ordnance).
+
 ## Verdicts
 
 Keep and deepen:

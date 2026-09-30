@@ -44,6 +44,8 @@ const MAX_CATCH_UP = 36;
 const MONTH = 30 * 86400;
 /** What the Casa keeps of what it carries. */
 const FREIGHT = 0.36;
+/** What the Casa keeps of a captain who is on first-name terms with the Rua Nova. */
+const FREIGHT_RUA = 0.2;
 /** Coin the chest keeps back to buy with before sending the rest home. */
 const FLOAT = 260;
 
@@ -130,6 +132,7 @@ function tickOne(g: Game, f: Feitoria): void {
 
   // What is over the reserve goes home, dearest by the ton first.
   if (policy.home) {
+    const freight = g.can('rua') ? FREIGHT_RUA : FREIGHT;
     const reserve = capacityOf(f) * 0.25;
     let excess = stockTons(f) - reserve;
     let proceeds = 0;
@@ -146,14 +149,14 @@ function tickOne(g: Game, f: Feitoria): void {
         if (units < 1) continue;
         f.stock[id] -= units;
         excess -= units * gd.bulk;
-        const fetch = units * gd.lisbon * (1 - FREIGHT) * (0.6 + f.honesty * 0.4);
+        const fetch = units * gd.lisbon * (1 - freight) * (0.6 + f.honesty * 0.4);
         if (g.rng.chance(lossChance(f.portId))) lost += fetch; else proceeds += fetch;
       }
     }
     const surplus = f.chest - FLOAT;
     if (surplus > 120) {
       f.chest -= surplus;
-      const coin = surplus * (1 - FREIGHT * 0.3) * (0.7 + f.honesty * 0.3);
+      const coin = surplus * (1 - freight * 0.3) * (0.7 + f.honesty * 0.3);
       if (g.rng.chance(lossChance(f.portId) * 0.6)) lost += coin; else proceeds += coin;
     }
     if (proceeds > 0) {

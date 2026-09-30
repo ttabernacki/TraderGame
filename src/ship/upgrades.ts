@@ -151,6 +151,33 @@ export const UPGRADES: Upgrade[] = [
     effects: { gifts: true },
     blurb: 'Scarlet cloth, brass basins, hawk\u2019s bells and a looking-glass, kept only for the first meeting with a people nobody has met. First impressions are made once.',
   },
+  // The yard's late work: what a captain of name can have made, and nobody else.
+  {
+    id: 'astrolabio-zacuto', name: 'Astrolábio de bronze', english: 'A brass astrolabe of Zacuto\u2019s make', tier: 1, service: true,
+    category: 'service', cost: 1600, standing: 300, days: 3, tons: 0.5,
+    effects: { reckoning: 0.8 },
+    blurb: 'Cast in Lisbon to the pattern of the master’s own, with the declinations engraved and the scale cut to a sixth of a degree. The reckoning goes soft a fifth more slowly, which is a month in a long passage.',
+  },
+  {
+    id: 'velame-flandres', name: 'Velame de Flandres', english: 'Flemish sailcloth', tier: 1, service: true,
+    category: 'service', cost: 1400, standing: 250, days: 6, tons: 1,
+    effects: { sailArea: 1.04, sailRepair: true },
+    blurb: 'Close-woven flax from Flanders, cut by a Flemish sailmaker who has come out to the Ribeira to do nothing else. She draws better, and blown-out canvas is mended at sea.',
+  },
+  {
+    id: 'camara-grande', name: 'Câmara grande', english: 'Great cabin and stern gallery', tier: 1, service: true,
+    category: 'service', cost: 2200, standing: 350, days: 10, tons: 6,
+    effects: { sickness: 0.85, gifts: true, handiness: 0.97 },
+    hulls: ['nau', 'nau-da-india', 'galeao'],
+    blurb: 'A proper cabin aft with a gallery over the stern, light and air for the sick and a room fit to receive a king’s envoy in. She is a little heavier for it, and the fevers take fewer men.',
+  },
+  {
+    id: 'artilharia-real', name: 'Artilharia real', english: 'The King\u2019s own ordnance', tier: 1, service: true,
+    category: 'service', cost: 3000, standing: 450, days: 12, tons: 12,
+    effects: { guns: 8, handiness: 0.94, strength: 1.03 },
+    hulls: ['nau', 'nau-da-india', 'galeao'],
+    blurb: 'Eight pieces cast at the royal foundry, carried out of the arsenal under the Crown’s seal. No corsair on any coast will take her for anything but what she is.',
+  },
 
   // --- Hull ---------------------------------------------------------------
   {

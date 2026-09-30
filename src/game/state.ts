@@ -1180,7 +1180,7 @@ export class Game {
   sellCharts(): number {
     if (!this.can('sheetTrade') && !this.can('cosmographer') && !this.has('theDraughtsman')) return 0;
     const rate = (this.can('cosmographer') ? 2.6 : 1.7)
-      * (this.can('casaClerks') ? 1.25 : 1) * (this.can('secretChart') ? 2 : 1)
+      * (this.can('casaClerks') ? 1.25 : 1) * (this.can('secretChart') ? 2 : 1) * (this.can('padraoReal') ? 1.6 : 1)
       * (this.has('theDraughtsman') ? 1.5 : 1)
       // A new Christian selling the Crown's charts out of the back door is not
       // doing the same thing a fidalgo is doing, and the file says so.
@@ -1983,6 +1983,8 @@ export class Game {
     const def = POLITY_BY_ID.get(id);
     if (!def) return;
     const st = this.polityState(id);
+    // A man who speaks with the King's voice is believed more readily.
+    if (this.can('kingsVoice') && (d.trust ?? 0) > 0) d = { ...d, trust: d.trust! * 1.33 };
     st.trust = clamp(st.trust + (d.trust ?? 0), -1, 1);
     st.respect = clamp(st.respect + (d.respect ?? 0), -1, 1);
     st.interest = clamp(st.interest + (d.interest ?? 0), -1, 1);
@@ -2993,7 +2995,7 @@ export class Game {
 
   /** How much more a master's canvas draws. See the seamanship tree. */
   private get skillSail(): number {
-    return (this.can('crowd') ? 1.05 : 1) * (this.can('driveAcross') ? 1.08 : 1);
+    return (this.can('crowd') ? 1.05 : 1) * (this.can('driveAcross') ? 1.08 : 1) * (this.can('masterMariner') ? 1.06 : 1);
   }
 
   private runPhysics(dt: number): StepResult {
@@ -4017,7 +4019,7 @@ export class Game {
       physic: this.ship.effects.sickness,
       // A chaplain who has made his peace with a larger world is worth more to
       // the men than one who is certain about everything.
-      wardroomMoraleBonus: this.has('cureOfSouls') ? 0.004 : 0,
+      wardroomMoraleBonus: (this.has('cureOfSouls') ? 0.004 : 0) + (this.can('legend') ? 0.008 : 0),
       captainLoved: this.can('loved'),
       captainFeared: this.can('feared'),
       wardroomMorale: w.morale,
@@ -4057,7 +4059,7 @@ export class Game {
     // Water temperature drives fouling: the worm is far worse in the tropics.
     const tempFactor = lerp(1.9, 0.5, clamp(Math.abs(this.ship.state.pos.lat) / 45, 0, 1));
     // A ship worked gently wears at half the rate; one pressed hard wears faster.
-    const usage = this.can('spare') ? 0.5 : this.can('press') ? 1.35 : 1;
+    const usage = (this.can('spare') ? 0.5 : this.can('press') ? 1.35 : 1) * (this.can('masterMariner') ? 0.8 : 1);
     const wear = this.ship.age(days * usage, tempFactor, this.pumpEffort * crewFactor(this.crew, this.ship.baseHull.crewMin));
     if (wear.swamped) {
       if (this.reprieve('She was going down by the head. Every man who could stand was put on the pumps and the rest bailed with buckets, and at the end of the second night she was floating.')) {
@@ -7827,7 +7829,7 @@ export class Game {
       return have < 1 ? 'There is none of that in the shed.' : 'There is no room in her for it.';
     }
     // His commission, which is how a factor was actually paid.
-    const per = (f.paid[goodId] ?? g.lisbon * 0.2) * 1.08;
+    const per = (f.paid[goodId] ?? g.lisbon * 0.2) * (this.can('rua') ? 1 : 1.08);
     const cost = Math.round(per * take);
     const fromChest = Math.min(f.chest, 0);
     void fromChest;
