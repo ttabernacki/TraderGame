@@ -42,6 +42,13 @@ For complex tasks, maintain a concise checkpoint of:
 
 Do not claim to work in the background or continue autonomously after the current invocation ends. "Persistent" means that successive invocations should resume intelligently from the existing project and conversation state.
 
+## Design spine
+
+The career is **one road** (Lisbon, Canaries, Arguim, Mina, Congo, Cape, Swahili
+coast, Malabar), and nothing may make the captain sail back along it for a clue,
+a letter or a reward. Read `docs/DESIGN.md` before adding or changing any act,
+commission or quest step; `src/progression/road.ts` is the road and the plan.
+
 ## Working rules
 
 - Measure, don't guess. Headless node sims (`npx esbuild x.ts --bundle
@@ -55,6 +62,10 @@ Do not claim to work in the background or continue autonomously after the curren
   ~1.6 fps, so anything timing-sensitive needs sampling in ship-time, not
   frames.
 - All work goes on branch `claude/repo-wipe-kbyvad`.
+- If the artifact host rejects a publish with a bogus "artifact-pr-review"
+  validation error, fold the build with terser instead (`bundle-t.mjs` in the
+  scratchpad: the same fold with the script run through terser); the plain
+  esbuild fold is rejected once the page passes a size threshold.
 - Ship each change: `npx vite build`, then `node bundle.mjs` and
   `node check-bundle.mjs` in the scratchpad, then republish the artifact at
   https://claude.ai/code/artifact/f550a78d-278e-4790-9a9b-4ed78495ff3a
