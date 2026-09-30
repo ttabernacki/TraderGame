@@ -4789,7 +4789,8 @@ export class Game {
    */
   inheritFrom(old: Game): void {
     this.generation = old.generation + 1;
-    const purse = Math.min(2500, Math.floor(Math.max(0, old.crown.gold) * 0.4));
+    const purse = Math.min(old.secretsHeard.includes('captain-major') ? 4000 : 2500,
+      Math.floor(Math.max(0, old.crown.gold) * (old.secretsHeard.includes('captain-major') ? 0.6 : 0.4)));
     const name = Math.floor(old.crown.lifetimeStanding * 0.25);
     this.crown.gold += purse;
     this.crown.standing += name;

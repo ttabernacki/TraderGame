@@ -27,7 +27,7 @@ import { skill } from '../crew/skills';
 
 export type QuestId = 'caravel' | 'leak' | 'kongo' | 'prester' | 'zamorin' | 'galeao'
   | 'nome' | 'ficheiro' | 'roteiro' | 'escudeiro'
-  | 'adrift' | 'pesos' | 'padrao' | 'mercador' | 'monsoon' | 'aprendiz' | 'sofala' | 'count' | 'feitorcal' | 'mappila' | 'malay';
+  | 'adrift' | 'pesos' | 'padrao' | 'mercador' | 'monsoon' | 'aprendiz' | 'sofala' | 'count' | 'feitorcal' | 'mappila' | 'malay' | 'pepperrace' | 'feverfleet' | 'kingsoffer';
 
 export interface QuestState {
   id: QuestId;
@@ -3284,9 +3284,325 @@ const malay: QuestDef = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// 22–24. The last act: the pepper race, the fleet that cannot afford a fever, and what the King offers.
+
+const pepperRace: QuestDef = {
+  id: 'pepperrace',
+  title: 'The Pepper Race',
+  blurb: 'Your rival has the same idea about the first great cargo home, and a faster ship.',
+  offeredAt: ['cochim', 'calecute', 'cananor'],
+  available: (g) => g.chronicle.act >= 5,
+  offer: (g) => ({
+    who: `${g.rival.name}’s factor, on the quay`,
+    text: `${g.rival.name}’s ship, the ${g.rival.ship}, has been in the roads for a week and her factor has bought `
+      + 'every quintal of pepper that came down from the hills, at whatever was asked. He would like, he says, to '
+      + 'propose a division of the coast. Nobody has proposed one to you before, and nobody has been so polite.',
+    accept: 'Hear what he is proposing',
+  }),
+  first: 'outbid',
+  steps: {
+    outbid: {
+      goal: () => 'Decide how to meet the rival’s buying, at the pepper ports.',
+      marker: () => portMark('cochim', 'The rival’s factor'),
+      when: (_g, _q, port) => port === 'cochim' || port === 'calecute' || port === 'cananor',
+      scene: (g, q) => scene(q, 'outbid', 'The pepper market',
+        `${g.rival.name}’s man has tied up the market with money: the brokers will sell you pepper, but only what `
+        + 'he has left them, and at a price that makes a hundred quintals a fortnight’s profit. '
+        + 'There is, he says, enough on this coast for two fleets. There is not, in this market, this month.',
+        [
+          {
+            label: 'Outbid him',
+            detail: '500 cruzados to pay up the brokers. You will have the pepper, and he will know how.',
+            resolve: (gg) => {
+              if (gg.crown.gold < 500) return later(q, 'You have not got five hundred cruzados to outbid him with.');
+              gg.crown.gold -= 500;
+              const n = gg.ship.addCargo('pimenta', 60, 0, 0.8);
+              q.flags.outbid = true;
+              gg.rival.standing = Math.max(0, gg.rival.standing - 15);
+              return go(gg, q, 'chase', `Outbid ${gg.rival.name}’s factor and took ${n} quintals of pepper for five hundred cruzados. He bowed, and was not gracious.`);
+            },
+          },
+          {
+            label: 'Divide the coast with him',
+            detail: 'Cochim for him, Calecute for you. A gentleman’s arrangement, and a cheaper one.',
+            resolve: (gg) => {
+              q.flags.divided = true;
+              gg.ship.addCargo('pimenta', 30, 0, 0.75);
+              renown(gg, 20);
+              return go(gg, q, 'chase', `Divided the Malabar coast with ${gg.rival.name}. It was civil, and neither of you believed in it.`);
+            },
+          },
+          {
+            label: 'Delay his ship',
+            detail: 'A word to the harbour-master, a few bribes, and a cable that will not come up. Dishonourable, and effective.',
+            resolve: (gg) => {
+              q.flags.sabotage = true;
+              gg.crown.gold = Math.max(0, gg.crown.gold - 150);
+              renown(gg, -15);
+              gg.ship.addCargo('pimenta', 20, 0, 0.7);
+              return go(gg, q, 'chase', 'Saw to it that the rival’s cable would not come up, and sailed with a head start. He will find out, eventually.');
+            },
+          },
+        ]),
+    },
+    chase: {
+      goal: () => 'Round the Cape homeward. The rival is somewhere behind you, or ahead.',
+      marker: () => ({ lat: -34.4, lon: 18.5, nm: 180, label: 'The Cape, homeward' }),
+      when: (g) => near(g, { lat: -34.4, lon: 18.5 }, 200) && !g.dockedAt,
+      scene: (g, q) => scene(q, 'chase', 'A sail astern',
+        q.flags.sabotage
+          ? 'There is no sail astern. There has been none since Cochim, and the master has begun to notice.'
+          : `A sail has been in your wake since the Cape, always the same distance: the ${g.rival.ship}, carrying every stitch she owns. `
+            + 'She is, the pilot says, the faster ship on this point of sail.',
+        q.flags.sabotage
+          ? [
+            {
+              label: 'Sail on at an easy pace',
+              detail: 'You have the lead. Keep the ship in one piece.',
+              resolve: (gg) => go(gg, q, 'landing', 'Kept an easy pace homeward with a clear lead.'),
+            },
+          ]
+          : [
+            {
+              label: 'Crack on, every stitch',
+              detail: 'Spars and men pay for it. The hull will remember.',
+              resolve: (gg) => {
+                gg.crew.morale = clamp(gg.crew.morale - 0.06, 0, 1);
+                gg.ship.condition.hull = clamp(gg.ship.condition.hull - 0.04, 0, 1);
+                q.flags.pressed = true;
+                return go(gg, q, 'landing', 'Drove her homeward under every stitch she owned. The hands are exhausted, and the sail astern has not gained a yard.');
+              },
+            },
+            {
+              label: 'Hold your course and your nerve',
+              detail: 'A ship you can keep is worth more than a day.',
+              resolve: (gg) => go(gg, q, 'landing', 'Held your course and let the sail astern do as she liked.'),
+            },
+          ]),
+    },
+    landing: {
+      goal: () => 'Into the Tagus, and see who lands first.',
+      marker: () => portMark('lisboa', 'The Ribeira, and the pepper'),
+      when: (_g, _q, port) => port === 'lisboa',
+      scene: (g, q) => {
+        // Who is first is what the voyage has made it, and a little luck.
+        const edge = (q.flags.outbid ? 0.22 : 0) + (q.flags.sabotage ? 0.3 : 0) + (q.flags.pressed ? 0.15 : 0)
+          + (q.flags.divided ? 0.05 : 0) + g.rng.next() * 0.45;
+        const first = edge > 0.5;
+        q.flags.first = first;
+        return scene(q, 'landing', first ? 'First up the Tagus' : 'Second up the Tagus',
+          first
+            ? 'The Ribeira has turned out to watch. You come up with the tide and lie alongside before anyone has '
+              + `seen a sail behind. The ${g.rival.ship} comes in an hour later, and ${g.rival.name} will not look at you.`
+            : `The ${g.rival.ship} is at the Ribeira already, her pepper on the quay and the court’s clerks writing `
+              + `down ${g.rival.name}’s name. You come in at the evening tide, and the pepper is worth exactly as much `
+              + 'as it was in Cochim.',
+          first
+            ? [
+              {
+                label: 'Take the honours',
+                detail: 'The first great pepper cargo. The King will remember whose.',
+                resolve: (gg) => {
+                  renown(gg, 150);
+                  gg.rival.standing = Math.max(0, gg.rival.standing - 40);
+                  gg.rival.eclipsed = true;
+                  return end(gg, q, 'won', `Landed the first great cargo of pepper ahead of ${gg.rival.name}. The court will speak of it for a generation.`);
+                },
+              },
+            ]
+            : [
+              {
+                label: 'Congratulate him',
+                detail: 'Graceful, and it costs nothing you had.',
+                resolve: (gg) => {
+                  renown(gg, 30);
+                  return end(gg, q, 'second', `Came second up the Tagus behind ${gg.rival.name}, and was gracious about it. The King said so.`);
+                },
+              },
+              {
+                label: 'Say what you think of how he did it',
+                detail: 'The court will like it or it will not.',
+                resolve: (gg) => {
+                  renown(gg, -10);
+                  gg.rival.standing = Math.max(0, gg.rival.standing - 15);
+                  return end(gg, q, 'quarrel', `Quarrelled with ${gg.rival.name} on the Ribeira in front of the court. Neither of you was the better for it.`);
+                },
+              },
+            ],
+          first ? 'note' : 'warning');
+      },
+    },
+  },
+};
+
+const feverFleet: QuestDef = {
+  id: 'feverfleet',
+  title: 'The Fever Fleet',
+  blurb: 'A ship of the fleet behind you is dying, and you are the only captain on the coast who can help.',
+  offeredAt: ['mocambique', 'melinde', 'sofala'],
+  available: (g) => g.chronicle.act >= 4,
+  offer: () => ({
+    who: 'A boat from a fleet ship, hailing the quay',
+    text: 'She came in on the morning tide with her flag at half-mast and forty men down with the flux and '
+      + 'the scurvy. Her master wants a surgeon, water, and a place ashore for the sick, and he is '
+      + 'asking every captain in the road.',
+    accept: 'Go aboard and see what is wrong',
+  }),
+  first: 'board',
+  steps: {
+    board: {
+      goal: () => 'Go aboard the fever ship, in the road.',
+      marker: () => portMark('mocambique', 'The fever ship'),
+      when: (_g, _q, port) => port === 'mocambique' || port === 'melinde' || port === 'sofala',
+      scene: (g, q) => scene(q, 'board', 'The São Vicente',
+        'She stinks from the boat. The men lie in rows under the forecastle, and the master, Gonçalo Pires, is '
+        + 'grey and still standing. Forty down, nine dead, and every man who can stand has been sick once. '
+        + (hasOfficer(g, 'cirurgiao') ? `${hasOfficer(g, 'cirurgiao')} looks at the rows and says nothing for a long time.` : 'You have no surgeon to send.'),
+        [
+          {
+            label: 'Lend your surgeon and fresh stores',
+            detail: hasOfficer(g, 'cirurgiao') ? 'He will be gone some days, and so will a share of your fruit and water.' : 'You have none to lend.',
+            resolve: (gg) => {
+              if (!hasOfficer(gg, 'cirurgiao')) return later(q, 'You have no surgeon to send. The master watches you not send one.');
+              gg.crew.provisions.water = Math.max(0, gg.crew.provisions.water - 12);
+              q.flags.lent = true;
+              renown(gg, 20);
+              return go(gg, q, 'shore', 'Sent your surgeon and a share of the stores to the São Vicente. Gonçalo Pires has begun to hope.');
+            },
+          },
+          {
+            label: 'Take the worst of the sick aboard',
+            detail: 'Twenty men in your own waist. It is very likely to spread.',
+            resolve: (gg) => {
+              gg.crew.sickness = clamp(gg.crew.sickness + 0.12, 0, 1);
+              gg.crew.morale = clamp(gg.crew.morale - 0.04, 0, 1);
+              q.flags.aboard = true;
+              renown(gg, 40);
+              return go(gg, q, 'shore', 'Took twenty of the São Vicente’s sick aboard. They are quiet, and grateful, and your own men keep a careful distance.');
+            },
+          },
+          {
+            label: 'Give water and leave them to it',
+            detail: 'A cask, a prayer, and the road.',
+            resolve: (gg) => {
+              gg.crew.provisions.water = Math.max(0, gg.crew.provisions.water - 4);
+              renown(gg, -5);
+              return end(gg, q, 'left', 'Gave the São Vicente water, and left. The master thanked you civilly, and did not ask for more.');
+            },
+          },
+        ], 'warning'),
+    },
+    shore: {
+      goal: () => 'The sick are to be put ashore at the Aguada de São Brás, where the water is sweet.',
+      marker: () => portMark('sao-bras', 'The Aguada de São Brás'),
+      when: (_g, _q, port) => port === 'sao-bras',
+      scene: (_g, q) => scene(q, 'shore', 'The Aguada de São Brás',
+        'Sweet water from a stream behind the beach, fresh meat from the Khoikhoi herdsmen for beads and '
+        + 'iron, and the sick laid out in the shade of a tarpaulin in a line along the sand. They get better '
+        + 'quickly. By the third day the ones who will live are obvious.',
+        [
+          {
+            label: 'Stay and nurse them until they can sail',
+            detail: 'A fortnight. The Khoikhoi will trade cattle for iron, and the men will recover.',
+            resolve: (gg) => {
+              gg.clock.t += 14 * 86400;
+              gg.crew.sickness = clamp(gg.crew.sickness - 0.1, 0, 1);
+              gg.crew.morale = clamp(gg.crew.morale + 0.08, 0, 1);
+              renown(gg, 50);
+              gg.shiftPeopleRegard('khoikhoi', 0.2);
+              return end(gg, q, 'nursed', 'Stayed a fortnight at the Aguada de São Brás and got the São Vicente’s men on their feet. Gonçalo Pires will be telling this '
+                + 'in every tavern on the Tagus.');
+            },
+          },
+          {
+            label: 'Put them ashore and go on',
+            detail: 'The fleet will pick them up. You have a cargo to get home.',
+            resolve: (gg) => {
+              renown(gg, 20);
+              return end(gg, q, 'landed', 'Landed the São Vicente’s sick at the Aguada de São Brás and went on. Somebody else will have to carry them home.');
+            },
+          },
+        ]),
+    },
+  },
+};
+
+const kingsOffer: QuestDef = {
+  id: 'kingsoffer',
+  title: 'What the King Offers',
+  blurb: 'The pepper is home. The King wants to know what you would like.',
+  offeredAt: ['lisboa'],
+  available: (g) => g.chronicle.act >= 5,
+  offer: () => ({
+    who: 'A gentleman of the King’s chamber',
+    text: 'The King has been told about the pepper, and about the road, and about the ship. He would like '
+      + 'to see you privately, and has asked that you come in the evening when the court has gone home. '
+      + 'The gentleman does not say what for. He says it is nothing to worry about, in a tone that '
+      + 'suggests it is.',
+    accept: 'Go, in the evening',
+  }),
+  first: 'audience',
+  steps: {
+    audience: {
+      goal: () => 'Go to the King, privately, at Lisbon.',
+      marker: () => portMark('lisboa', 'The King, in the evening'),
+      when: (g, _q, port) => port === 'lisboa' && (g.chronicle.goalMet || g.ship.quantityOf('pimenta') >= 100),
+      scene: (_g, q) => scene(q, 'audience', 'The King, in the evening',
+        'He is in a small room with a window on the river, in an old coat, and he waves away the usher. '
+        + 'He has a map on the table, the one you made, and he has put his glass on the Indies. "I have been '
+        + 'told," he says, "that a great many men would like to have done what you have done. I find I '
+        + 'would like to know what you want. Nobody ever asks the men who have it."',
+        [
+          {
+            label: 'The command of the next armada',
+            detail: 'A captain-major’s flag, forty ships, and a road that is yours. The Crown’s business from here to the end of your life.',
+            resolve: (gg) => {
+              gg.secretsHeard.push('captain-major');
+              renown(gg, 120);
+              gg.crown.gold += 2000;
+              return end(gg, q, 'armada', 'The King named you captain-major of the next armada to the Indies. The road is yours, and so is whatever the road brings.');
+            },
+          },
+          {
+            label: 'A lordship, and the quiet of the land',
+            detail: 'Senhor de a town with rents and a gallows. The sea is a long way from it.',
+            resolve: (gg) => {
+              gg.estate.holdings.senhorio = 1;
+              gg.estate.lordship = ['Alvito', 'Sortelha', 'Ferreira de Aves', 'Castelo Rodrigo'][Math.floor(gg.rng.next() * 4)];
+              gg.secretsHeard.push('lordship');
+              renown(gg, 90);
+              return end(gg, q, 'lordship', `The King made you Senhor de ${gg.estate.lordship}, with its rents and its gallows. He was kind about it.`);
+            },
+          },
+          {
+            label: 'Gold, and be let alone',
+            detail: 'Five thousand cruzados and the freedom of the quay. No office, and no enemies made at court.',
+            resolve: (gg) => {
+              gg.crown.gold += 5000;
+              gg.secretsHeard.push('retired-rich');
+              renown(gg, 30);
+              return end(gg, q, 'rich', 'Asked the King for gold and to be let alone. He laughed, and paid, and said that was the most honest answer he had had in years.');
+            },
+          },
+          {
+            label: 'Ask for the ship, and nothing else',
+            detail: 'The caravel, the crew, the next voyage. Nothing from the Crown that cannot be taken back.',
+            resolve: (gg) => {
+              gg.crew.morale = clamp(gg.crew.morale + 0.1, 0, 1);
+              gg.secretsHeard.push('ship-only');
+              renown(gg, 70);
+              return end(gg, q, 'ship', 'Asked the King for nothing but the ship and the next voyage. He looked at you for a while, and said that in that case he would have to find something else to give.');
+            },
+          },
+        ]),
+    },
+  },
+};
+
 export const QUESTS: Record<QuestId, QuestDef> = {
   caravel, leak, kongo, prester, zamorin, galeao, nome, ficheiro, roteiro, escudeiro,
-  adrift, pesos, padrao, mercador, monsoon, aprendiz, sofala, count, feitorcal: feitorCalecute, mappila, malay,
+  adrift, pesos, padrao, mercador, monsoon, aprendiz, sofala, count, feitorcal: feitorCalecute, mappila, malay, pepperrace: pepperRace, feverfleet: feverFleet, kingsoffer: kingsOffer,
 };
 
 /** Leave to trade across a whole state, as an audience would give it, and the court's opinion with it. */
@@ -3366,6 +3682,8 @@ const CALLBACKS: { quest: QuestId; outcomes?: string[]; ports: string[]; text: s
   { quest: 'feitorcal', outcomes: ['riot', 'riot-home'], ports: ['cochim', 'calecute'], text: 'Nobody at the water stairs will meet your eye. The black patch on the waterfront, where the factory was, has a fresh flower on it.' },
   { quest: 'mappila', outcomes: ['treaty'], ports: ['cananor', 'calecute'], text: 'A Cananor boatman offers to carry you ashore for nothing. The Kolathiri’s friends are everywhere on the water.' },
   { quest: 'malay', outcomes: ['malacca', 'quay'], ports: ['cochim', 'calecute', 'columbo'], text: 'A pilot in the Cochim roadstead has heard of Malacca and of the ship that went there. He asks whether the cloves are what he has been told.' },
+  { quest: 'pepperrace', outcomes: ['won'], ports: ['lisboa', 'lagos'], text: 'A Ribeira porter touches his cap. The men who lost money on the other ship are not among the ones who look you in the eye.' },
+  { quest: 'feverfleet', outcomes: ['nursed', 'landed'], ports: ['mocambique', 'lisboa', 'lagos'], text: 'A man with a scar at the corner of his mouth recognises the ship and stands to attention on the quay. He was one of the São Vicente’s.' },
   { quest: 'leak', ports: ['lisboa'], text: 'The Rua Nova has a new contador, and a new way of looking at the ships’ books.' },
 ];
 
@@ -3380,6 +3698,25 @@ export function callbackAt(g: Game, portId: string): string | null {
     return cb.text;
   }
   return null;
+}
+
+/** What the late threads say about how the career ended, for the last page. */
+const LATE_ENDINGS: Record<string, string> = {
+  'kingsoffer:armada': 'You commanded the armada, and the road to the Indies was yours for the rest of your life.',
+  'kingsoffer:lordship': 'You took the lordship and the quiet. On a clear day you could see the river from the terrace, and you usually did not look.',
+  'kingsoffer:rich': 'You took the gold and were let alone. It was the most honest thing anyone at court had said in years.',
+  'kingsoffer:ship': 'You asked for nothing but the ship. The King had to find something else to give, and never did.',
+  'pepperrace:won': 'You were first up the Tagus with the pepper, and the court has told it ever since.',
+  'pepperrace:second': 'You came second up the Tagus, and were gracious about it. It is the only thing in the story anyone remembers of you.',
+  'feverfleet:nursed': 'The men of the São Vicente tell the story of the Aguada de São Brás in every tavern on the Tagus.',
+};
+export function lateEndings(g: Game): string[] {
+  const out: string[] = [];
+  for (const q of g.quests) {
+    const line = q.outcome ? LATE_ENDINGS[`${q.id}:${q.outcome}`] : undefined;
+    if (line) out.push(line);
+  }
+  return out;
 }
 
 export function newQuest(id: QuestId, t: number): QuestState {

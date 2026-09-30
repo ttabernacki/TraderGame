@@ -92,6 +92,11 @@ checkpoint between acts.
   lane, the Kolathiri's treaty), `malay` (Cochim → Columbo → Malacca: cinnamon, cloves, the
   strait; the one optional push beyond the road, for renown and the Malacca milestone).
 
+- **Act V** gets its own threads: `pepperrace` (outbid, divide or delay the rival; chase at
+  the Cape; who lands first at the Tagus), `feverfleet` (a dying fleet ship; Mocambique →
+  Aguada de São Brás), `kingsoffer` (Lisbon finale: armada command / lordship / gold / just the
+  ship; captain-major raises the heir's inheritance). `lateEndings` feed the epilogue.
+
 ## Verdicts
 
 Keep and deepen:
