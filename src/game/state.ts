@@ -8207,8 +8207,9 @@ export class Game {
   private waitDaysInner(days: number): void {
     const step = 0.25;
     for (let d = 0; d < days; d += step) {
+      // (updateCrewAndShip adds the elapsed days itself; adding them here as well
+      // ran the stores, the wear and the sickness at twice the clock.)
       this.clock.t += step * 86400;
-      this.accumDays += step;
       this.refreshEnvironment();
       this.updateCrewAndShip(step * 86400);
       // In a harbour she is kept pumped.
@@ -8756,7 +8757,7 @@ export class Game {
    * she is: round the Cape from the Indian Ocean, out by the Azores from
    * anywhere in the trades, and straight in from Portuguese waters.
    */
-  homewardPassage(): { miles: number; days: number } | null {
+  homewardPassage(): { miles: number; days: number; legs: { lat: number; lon: number }[] } | null {
     if (this.dockedAt === 'lisboa') return null;
     const p = this.ship.state.pos;
     const lisboa = portDef('lisboa');
@@ -8778,7 +8779,7 @@ export class Game {
     // About a hundred and ten miles a day made good over a whole passage,
     // calms and all, and the few days' landfall and working in.
     const days = Math.round(miles / 110 + 4);
-    return { miles: Math.round(miles), days };
+    return { miles: Math.round(miles), days, legs };
   }
 
   /**
@@ -8788,18 +8789,25 @@ export class Game {
    * eaten, the men sicken or do not, the season turns, the charters run on —
    * but she is sailed by the proper road and the pilot does not lose her.
    */
-  sailHome(): string {
-    if (!this.can('homeward')) return 'Nobody aboard can take her home without you on deck.';
+  sailHome(): { ok: boolean; text: string } {
+    const no = (text: string) => ({ ok: false, text });
+    if (!this.can('homeward')) return no('Nobody aboard can take her home without you on deck.');
     const road = this.homewardPassage();
-    if (!road) return 'She is home.';
+    if (!road) return { ok: true, text: 'She is home.' };
     const why = this.dockedAt ? this.cannotWeigh() : null;
-    if (why) return why;
+    if (why) return no(why);
     const keeps = enduranceDays(this.crew, this.ration);
     if (keeps < road.days + 5) {
-      return `The road home is ${road.miles} miles and about ${road.days} days. She has `
-        + `${Math.floor(keeps)} days of stores in her. Victual her for the passage first.`;
+      return no(`The road home is ${road.miles} miles and about ${road.days} days. She has `
+        + `${Math.floor(keeps)} days of stores in her. Victual her for the passage first.`);
+    }
+    // A passage nobody is watching is only safe for a company that can stand it.
+    if (this.crew.scurvy > 0.35 || this.crew.unrest > 0.9 || this.crew.morale < 0.15) {
+      return no('The company is in no state for a long passage with nobody on deck to mind them: '
+        + 'sick, sullen, or both. Get fresh food aboard and let them rest first.');
     }
     const from = this.portHere?.name ?? 'sea';
+    const crewMin = this.ship.baseHull.crewMin;
     this.dockedAt = null;
     this.anchored = false;
     this.route = [];
@@ -8807,14 +8815,51 @@ export class Game {
     this.latitudeOrder = null;
     this.coastOrder = null;
     const step = 0.25;
+    let done = 0;
+    let trouble: string | null = null;
     for (let d = 0; d < road.days; d += step) {
+      // (updateCrewAndShip adds the elapsed days itself; adding them here as well
+      // ran the stores, the wear and the sickness at twice the clock.)
       this.clock.t += step * 86400;
-      this.accumDays += step;
       this.refreshEnvironment();
       this.updateCrewAndShip(step * 86400);
+      done = d + step;
       // Sailed by the proper road with a good pilot: she makes it whole.
       this.ship.condition.bilge = 0;
-      if ((this.mode as string) === 'gameover') return 'She did not come home.';
+      // And the road is a chain of watering places — the Cape, the Cape Verdes, the
+      // Azores — at which the pilot touches for water, fruit and fish and lets the men
+      // stretch. Without it a long passage with nobody on deck is a slow way of
+      // killing a company.
+      if (d > 0 && Math.floor(d / 11) !== Math.floor((d - step) / 11)) {
+        this.crew.daysWithoutFresh = 0;
+        this.crew.daysSinceLandfall = 0;
+        this.crew.morale = clamp(this.crew.morale + 0.3, 0, 1);
+        this.crew.scurvy *= 0.55;
+        this.crew.unrest *= 0.6;
+        this.crew.fatigue = Math.max(0, this.crew.fatigue * 0.6);
+      }
+      if ((this.mode as string) === 'gameover') return { ok: false, text: 'She did not come home.' };
+      // A pilot who sees it going wrong does not press on: he heaves to and
+      // sends for the captain, and the passage is the captain's again.
+      if (ableHands(this.crew) < crewMin * 1.3) trouble = 'too many of the hands are down to work her';
+      else if (this.crew.scurvy > 0.6) trouble = 'the scurvy has taken hold';
+      else if (this.crew.unrest > 1.3) trouble = 'the men are close to mutiny';
+      else if (enduranceDays(this.crew, this.ration) < (road.days - done) * 0.6) trouble = 'the stores will not last the rest of the road';
+      if (trouble) break;
+    }
+    if (trouble) {
+      const at = pointAlong(road.legs, done / road.days);
+      this.ship.state.pos = { ...at };
+      this.nav.estimated = { ...at };
+      this.nav.sigmaLat = 25;
+      this.nav.sigmaLon = 25;
+      this.distanceRun += road.miles * (done / road.days);
+      const left = Math.max(1, Math.round(road.days - done));
+      const text = `The pilot hove her to ${Math.round(done)} days out of ${from}: ${trouble}. She lies where the road took her, `
+        + `about ${left} days short of the Tagus, and the passage is yours again.`;
+      this.logEvent('peril', text, true);
+      this.mode = 'sailing';
+      return { ok: false, text };
     }
     const lisboa = portDef('lisboa');
     const at = anchorageOf(lisboa);
@@ -8828,7 +8873,7 @@ export class Game {
       + 'The Rock of Sintra came up on the bow on the morning it was expected, and she worked up the Tagus on the flood.';
     this.logEvent('navigation', text, true);
     this.enterPort(lisboa);
-    return text;
+    return { ok: true, text };
   }
 
   /** The errand this town has for you, if there is one still to do. */
@@ -9582,4 +9627,22 @@ function townLooks(def: PortDef): string {
   if (p.faith === 'catholic') return 'A church tower, and roofs of tile';
   return big ? 'A great many round houses, and smoke going up all along the shore'
     : 'Round houses under thatch, and canoes on the beach';
+}
+
+
+/** The point a fraction of the way along a chain of legs, by miles. */
+function pointAlong(legs: { lat: number; lon: number }[], f: number): { lat: number; lon: number } {
+  if (legs.length < 2) return { ...legs[0] };
+  const lens: number[] = [];
+  let total = 0;
+  for (let i = 1; i < legs.length; i++) { const l = haversine(legs[i - 1], legs[i]); lens.push(l); total += l; }
+  let want = clamp(f, 0, 1) * total;
+  for (let i = 0; i < lens.length; i++) {
+    if (want <= lens[i] || i === lens.length - 1) {
+      const t = lens[i] > 0 ? clamp(want / lens[i], 0, 1) : 0;
+      return { lat: legs[i].lat + (legs[i + 1].lat - legs[i].lat) * t, lon: legs[i].lon + (legs[i + 1].lon - legs[i].lon) * t };
+    }
+    want -= lens[i];
+  }
+  return { ...legs[legs.length - 1] };
 }

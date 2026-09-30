@@ -129,8 +129,10 @@ export class PortView {
           if (!road) return;
           if (!this.homeArmed) { this.homeArmed = true; this.render(); return; }
           this.homeArmed = false;
-          const text = g.sailHome();
-          this.notice = { text, grave: false };
+          const res = g.sailHome();
+          // A refusal is said loudly: a button that seems to do nothing is the worst kind.
+          if (!res.ok) g.pushAlert(res.text, 'warning');
+          this.notice = { text: res.text, grave: !res.ok };
           this.tab = 'town';
           this.render();
         }, { primary: this.homeArmed, title: 'The road home: skip the passage and come into Lisbon in the days it takes' })

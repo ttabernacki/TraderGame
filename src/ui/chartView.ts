@@ -203,7 +203,8 @@ export class ChartView {
           if (!road) return;
           if (!this.homeArmed) { this.homeArmed = true; this.buildTools(); return; }
           this.homeArmed = false;
-          g.pushAlert(g.sailHome(), 'note');
+          const res = g.sailHome();
+          g.pushAlert(res.text, res.ok ? 'note' : 'warning');
           this.buildTools(); this.buildVoyage(); this.draw();
           this.onClose();
         }, { primary: true, title: 'The road home: skip the passage and come into Lisbon in the days it takes' })
