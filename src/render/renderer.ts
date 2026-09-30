@@ -437,28 +437,21 @@ export class Renderer {
   }
 
   /**
-   * The picture's own clock and weather, eased.
+   * The picture's weather, eased.
    *
-   * At the fast rates a day is a dozen seconds and dusk is half of one: the
-   * sky drops from noon to night inside a second, the lamps come up in the
-   * same beat, and a squall arrives as a cut. The clock is right to run that
-   * fast; the picture should not follow it step for step.
-   *
-   * Two things are done. The sun's time is slowed through twilight — the one
-   * part of the day that reads as a transition — and run ahead again through
-   * full day and full night, where nothing is seen to change, so it always
-   * catches up with the clock. And cloud, rain and visibility are eased in
-   * real seconds, by an amount that grows with the clock rate and is nothing
-   * at ordinary speed, so a passing weather system builds and clears instead
-   * of appearing.
+   * The clock runs at whatever rate the player has asked for and the sky is
+   * drawn at the true time, so the sun, the moon and the light on the water are
+   * always where the clock says. What is eased is the weather: cloud, rain and
+   * visibility follow their true values through a filter in real seconds, whose
+   * length grows with the clock rate and is nothing at ordinary speed, so a
+   * passing system builds and clears instead of appearing.
    */
-  private visT = NaN;
   private visCloud = NaN;
   private visRain = 0;
   private visVis = NaN;
 
   /** Forget the eased state: the next frame is drawn at the true time and weather. */
-  resetEase(): void { this.visT = NaN; this.keyInit = false; }
+  resetEase(): void { this.visCloud = NaN; this.keyInit = false; }
 
   // The key light — its direction, colour and strength — eased in real seconds.
   private keyInit = false;
@@ -495,49 +488,17 @@ export class Renderer {
 
   private easeFrame(raw: RenderFrame, realDt: number, simDt: number): RenderFrame {
     const rate = realDt > 1e-5 ? simDt / realDt : 0;
-    const T = raw.simTime;
-    if (Number.isNaN(this.visT) || T < this.visT || T - this.visT > 30 * 3600) {
-      this.visT = T;
-      this.keyInit = false;
+    if (Number.isNaN(this.visCloud)) {
       this.visCloud = raw.cloud; this.visRain = raw.rain; this.visVis = raw.visibilityNm;
+      this.keyInit = false;
     }
-    // --- Sun time --------------------------------------------------------
-    const TWILIGHT_RATE = 900;      // sim seconds per real second: a quarter hour a second
-    const RESYNC_RATE = 3600;       // catching up again, inside twilight
-    const FREE_RATE = 43200;        // catching up in full day or night, unseen
-    const lag = T - this.visT;
-    if (lag > 1e-3 || rate > TWILIGHT_RATE) {
-      const day = Math.floor(this.visT / 86400);
-      const hour = (this.visT % 86400) / 3600;
-      const doy = raw.dayOfYear + (day - raw.dayFromEpoch);
-      const alt = this.sky.sunAltitude(raw.pos.lat, raw.pos.lon, day, hour, doy);
-      const inTwilight = alt > -14 && alt < 10;
-      let advance: number;
-      if (!inTwilight) advance = Math.min(lag + simDt, FREE_RATE * realDt);
-      else if (rate > TWILIGHT_RATE) advance = TWILIGHT_RATE * realDt;
-      else advance = Math.min(lag + simDt, RESYNC_RATE * realDt);
-      this.visT = Math.min(T, this.visT + Math.max(advance, 0));
-    } else {
-      this.visT = T;
-    }
-    // --- Weather ---------------------------------------------------------
     const tau = clamp(rate / 1500, 0, 2.5);
     const k = tau < 0.02 ? 1 : 1 - Math.exp(-realDt / tau);
     this.visCloud += (raw.cloud - this.visCloud) * k;
     this.visRain += (raw.rain - this.visRain) * k;
     this.visVis += (raw.visibilityNm - this.visVis) * k;
-    if (this.visT === T && k === 1) return raw;
-    const day = Math.floor(this.visT / 86400);
-    return {
-      ...raw,
-      cloud: this.visCloud,
-      rain: this.visRain,
-      visibilityNm: this.visVis,
-      simTime: this.visT,
-      dayFromEpoch: day,
-      hourLocal: (this.visT % 86400) / 3600,
-      dayOfYear: raw.dayOfYear + (day - raw.dayFromEpoch),
-    };
+    if (k === 1) return raw;
+    return { ...raw, cloud: this.visCloud, rain: this.visRain, visibilityNm: this.visVis };
   }
 
   render(raw: RenderFrame, realDt: number, simDt: number): void {

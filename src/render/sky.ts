@@ -394,11 +394,6 @@ export class Sky {
     if (Math.abs(off.y) > 4000) off.y = 0;
   }
 
-  /** Where the sun is at a place and time, in degrees above the horizon. */
-  sunAltitude(lat: number, lon: number, dayFromEpoch: number, hourLocal: number, dayOfYear: number): number {
-    return sunPosition(lat, lon, dayFromEpoch, hourLocal, dayOfYear).altitude;
-  }
-
   /**
    * Update the sky for a place and time. Star positions are only recomputed
    * every few simulated minutes, which is far more often than the sky visibly
@@ -537,7 +532,7 @@ export class Sky {
     this.lineMaterial.opacity = starVisibility * 0.32;
 
     const moved = Math.abs(lat - this.lastLat) > 0.35;
-    if (starVisibility > 0.01 && (simTime - this.lastUpdate > 240 || moved)) {
+    if (starVisibility > 0.01 && (simTime - this.lastUpdate > 60 || moved)) {
       this.lastUpdate = simTime;
       this.lastLat = lat;
       this.recomputeStars(lat, lon, dayFromEpoch, hourLocal, year);
