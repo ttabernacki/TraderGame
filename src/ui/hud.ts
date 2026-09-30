@@ -744,6 +744,11 @@ export class Hud {
       }
     }
 
+    if (g.homeRun) {
+      const left = Math.max(0, Math.round(g.homeRun.days - g.homeRun.done));
+      lines.push({ k: 'Homeward', v: `the pilot has her \u2014 ${left} ${left === 1 ? 'day' : 'days'} to the Tagus` });
+    }
+
     const soonest = g.activeVentures
       .slice()
       .sort((a, b) => a.dueBy - b.dueBy)[0];

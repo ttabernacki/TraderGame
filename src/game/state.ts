@@ -3014,6 +3014,8 @@ export class Game {
   update(realDt: number): void {
     if (this.mode === 'title' || this.mode === 'gameover') return;
     this.smoothDisplay(realDt);
+    // The pilot has her, bound for the Tagus: nothing else happens until she is home.
+    if (this.homeRun) { this.advanceHomeRun(realDt); return; }
     // A decision is outstanding: the ship sails on but nothing new happens to
     // her until it is answered, so the player is never handed two at once.
     if (this.pendingEvent) return;
@@ -8807,30 +8809,50 @@ export class Game {
         + 'sick, sullen, or both. Get fresh food aboard and let them rest first.');
     }
     const from = this.portHere?.name ?? 'sea';
-    const crewMin = this.ship.baseHull.crewMin;
     this.dockedAt = null;
     this.anchored = false;
     this.route = [];
     this.helmOrder = null;
     this.latitudeOrder = null;
     this.coastOrder = null;
+    this.shoreHere = null;
+    this.mode = 'sailing';
+    // She is sailed home where the player can see it: the clock runs ahead and the
+    // ship goes along the road, a few seconds of real time to a long passage.
+    this.homeRun = { legs: road.legs, days: road.days, miles: road.miles, done: 0, from, rate: Math.max(2.5, road.days / 11) };
+    const text = `The pilot takes her out from ${from} for the Tagus: ${road.miles} miles by the road the pilots know, `
+      + `about ${road.days} days. The passage is his until she is home or something goes wrong.`;
+    this.logEvent('navigation', text, true);
+    return { ok: true, text };
+  }
+
+  /** The passage home in progress, if the pilot has her. */
+  homeRun: { legs: { lat: number; lon: number }[]; days: number; miles: number; done: number; from: string; rate: number } | null = null;
+
+  /** Carry the passage forward by `realDt` seconds of the player's time. */
+  private advanceHomeRun(realDt: number): void {
+    const run = this.homeRun;
+    if (!run) return;
+    const crewMin = this.ship.baseHull.crewMin;
     const step = 0.25;
-    let done = 0;
+    let want = Math.min(Math.min(realDt, 0.25) * run.rate, run.days - run.done);
     let trouble: string | null = null;
-    for (let d = 0; d < road.days; d += step) {
-      // (updateCrewAndShip adds the elapsed days itself; adding them here as well
-      // ran the stores, the wear and the sickness at twice the clock.)
-      this.clock.t += step * 86400;
+    while (want > 1e-6 && !trouble) {
+      const d = Math.min(step, want);
+      want -= d;
+      const before = run.done;
+      run.done += d;
+      this.clock.t += d * 86400;
+      this.weather.update(d * 86400, this.clock.t, this.ship.state.pos);
       this.refreshEnvironment();
-      this.updateCrewAndShip(step * 86400);
-      done = d + step;
+      this.updateCrewAndShip(d * 86400);
       // Sailed by the proper road with a good pilot: she makes it whole.
       this.ship.condition.bilge = 0;
-      // And the road is a chain of watering places — the Cape, the Cape Verdes, the
-      // Azores — at which the pilot touches for water, fruit and fish and lets the men
-      // stretch. Without it a long passage with nobody on deck is a slow way of
-      // killing a company.
-      if (d > 0 && Math.floor(d / 11) !== Math.floor((d - step) / 11)) {
+      if ((this.mode as string) === 'gameover') { this.homeRun = null; return; }
+      // The road is a chain of watering places — the Cape, the Cape Verdes, the Azores — at
+      // which the pilot touches for water, fruit and fish and lets the men stretch. Without
+      // it a long passage with nobody on deck is a slow way of killing a company.
+      if (run.done > 0 && Math.floor(run.done / 11) !== Math.floor(before / 11)) {
         this.crew.daysWithoutFresh = 0;
         this.crew.daysSinceLandfall = 0;
         this.crew.morale = clamp(this.crew.morale + 0.3, 0, 1);
@@ -8838,42 +8860,55 @@ export class Game {
         this.crew.unrest *= 0.6;
         this.crew.fatigue = Math.max(0, this.crew.fatigue * 0.6);
       }
-      if ((this.mode as string) === 'gameover') return { ok: false, text: 'She did not come home.' };
-      // A pilot who sees it going wrong does not press on: he heaves to and
-      // sends for the captain, and the passage is the captain's again.
+      // A pilot who sees it going wrong does not press on: he heaves to and sends for the
+      // captain, and the passage is the captain's again.
       if (ableHands(this.crew) < crewMin * 1.3) trouble = 'too many of the hands are down to work her';
       else if (this.crew.scurvy > 0.6) trouble = 'the scurvy has taken hold';
       else if (this.crew.unrest > 1.3) trouble = 'the men are close to mutiny';
-      else if (enduranceDays(this.crew, this.ration) < (road.days - done) * 0.6) trouble = 'the stores will not last the rest of the road';
-      if (trouble) break;
+      else if (enduranceDays(this.crew, this.ration) < (run.days - run.done) * 0.6) trouble = 'the stores will not last the rest of the road';
     }
-    if (trouble) {
-      const at = pointAlong(road.legs, done / road.days);
-      this.ship.state.pos = { ...at };
-      this.nav.estimated = { ...at };
-      this.nav.sigmaLat = 25;
-      this.nav.sigmaLon = 25;
-      this.distanceRun += road.miles * (done / road.days);
-      const left = Math.max(1, Math.round(road.days - done));
-      const text = `The pilot hove her to ${Math.round(done)} days out of ${from}: ${trouble}. She lies where the road took her, `
-        + `about ${left} days short of the Tagus, and the passage is yours again.`;
-      this.logEvent('peril', text, true);
-      this.mode = 'sailing';
-      return { ok: false, text };
-    }
-    const lisboa = portDef('lisboa');
-    const at = anchorageOf(lisboa);
+
+    // Where the road has taken her, and which way she is headed along it.
+    const f = run.done / run.days;
+    const at = pointAlong(run.legs, f);
+    const ahead = pointAlong(run.legs, Math.min(1, f + 0.02));
+    const rad = Math.PI / 180;
+    const brg = (Math.atan2((ahead.lon - at.lon) * Math.cos(at.lat * rad), ahead.lat - at.lat) / rad + 360) % 360;
     this.ship.state.pos = { ...at };
     this.nav.estimated = { ...at };
-    this.nav.sigmaLat = 1;
-    this.nav.sigmaLon = 1;
-    this.distanceRun += road.miles;
-    const text = `Home from ${from} by the road the pilots know: ${road.miles} miles in ${road.days} days, `
-      + 'out to the westward with the trades on the beam, round by the islands and in with the westerlies. '
-      + 'The Rock of Sintra came up on the bow on the morning it was expected, and she worked up the Tagus on the flood.';
-    this.logEvent('navigation', text, true);
-    this.enterPort(lisboa);
-    return { ok: true, text };
+    this.nav.sigmaLat = 2;
+    this.nav.sigmaLon = 2;
+    this.ship.state.heading = brg;
+    this.ship.state.surge = 3.2;
+    this.distanceRun += run.miles * (Math.min(realDt, 0.25) * run.rate / run.days);
+
+    if (trouble) {
+      this.homeRun = null;
+      this.nav.sigmaLat = 25;
+      this.nav.sigmaLon = 25;
+      const left = Math.max(1, Math.round(run.days - run.done));
+      const text = `The pilot hove her to ${Math.round(run.done)} days out of ${run.from}: ${trouble}. She lies where the road took her, `
+        + `about ${left} days short of the Tagus, and the passage is yours again.`;
+      this.logEvent('peril', text, true);
+      this.pushAlert(text, 'warning');
+      return;
+    }
+    if (run.done >= run.days - 1e-6) {
+      this.homeRun = null;
+      const lisboa = portDef('lisboa');
+      const home = anchorageOf(lisboa);
+      this.ship.state.pos = { ...home };
+      this.nav.estimated = { ...home };
+      this.nav.sigmaLat = 1;
+      this.nav.sigmaLon = 1;
+      this.ship.state.surge = 0;
+      const text = `Home from ${run.from} by the road the pilots know: ${run.miles} miles in ${run.days} days, `
+        + 'out to the westward with the trades on the beam, round by the islands and in with the westerlies. '
+        + 'The Rock of Sintra came up on the bow on the morning it was expected, and she worked up the Tagus on the flood.';
+      this.logEvent('navigation', text, true);
+      this.enterPort(lisboa);
+      this.pushAlert(text, 'note');
+    }
   }
 
   /** The errand this town has for you, if there is one still to do. */

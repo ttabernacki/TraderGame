@@ -132,7 +132,8 @@ export class PortView {
           const res = g.sailHome();
           // A refusal is said loudly: a button that seems to do nothing is the worst kind.
           if (!res.ok) g.pushAlert(res.text, 'warning');
-          this.notice = { text: res.text, grave: !res.ok };
+          if (res.ok) { this.onClose(); return; }
+          this.notice = { text: res.text, grave: true };
           this.tab = 'town';
           this.render();
         }, { primary: this.homeArmed, title: 'The road home: skip the passage and come into Lisbon in the days it takes' })
