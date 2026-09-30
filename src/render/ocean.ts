@@ -542,6 +542,26 @@ void main() {
   // sheet if it is let run: it is held down hard and narrowed.
   float sheen = pow(sunDot, 24.0) * 0.09;
 
+  // The road. What the eye reads as the sun's or the moon's reflection is not a
+  // spot but a long bright path running from the horizon to the ship: narrow
+  // across the line to the light, and drawn out a long way along it, because
+  // every wave face along that line turns a little of the light toward the eye.
+  // The lobe above is tight in every direction and so is only there when the
+  // light is almost exactly in the mirror direction; this one is narrow in
+  // azimuth and broad in elevation, which is what makes it present across the
+  // whole of the sea between the ship and the light, and widens as the sea gets up.
+  float dEl = reflDir.y - uSunDir.y;
+  float azC = clamp(dot(normalize(reflDir.xz + vec2(1.0e-5)), normalize(uSunDir.xz + vec2(1.0e-5))), -1.0, 1.0);
+  float dAz = acos(azC);
+  float chopK = clamp(uChop, 0.0, 1.0);
+  float roadAz = exp(-(dAz * dAz) / (0.0055 + 0.0160 * chopK + 0.004 * rough));
+  float roadEl = exp(-(dEl * dEl) / (0.020 + 0.090 * chopK + 0.05 * rough));
+  float roadUp = smoothstep(-0.03, 0.05, uSunDir.y);
+  // A little broken up, so it reads as light on moving water and not as a stripe.
+  float roadBreak = 0.72 + 0.28 * glint * sin(vSurface.x * 2.3 + uNoiseTime * 1.9)
+                                       * sin(vSurface.y * 1.9 - uNoiseTime * 1.6);
+  float road = roadAz * roadEl * roadUp * roadBreak;
+
   // Water at a grazing angle is very nearly a mirror, and holding the
   // reflection down to seven tenths everywhere is what made the distance read
   // as a dark band instead of as sky lying on the sea. Over a bright shelf it
@@ -550,8 +570,13 @@ void main() {
   // At night the key light is the moon's (see Sky.update), and its track on
   // the water is the brightest thing in the scene — a broken silver road out
   // to the horizon under it. So the night dimming gives way to the moon.
+  float keyGain = max(1.0 - uNight * 0.82, uMoon * 1.25);
   col += uSunColor * (spec + sheen * (1.0 + uMoon * 1.5))
-       * max(1.0 - uNight * 0.82, uMoon * 1.25) * (1.0 - uOvercast * 0.9);
+       * keyGain * (1.0 - uOvercast * 0.9);
+  // The moon's road is the brightest thing on a night sea, so it gets more of
+  // the road than the sun does of its own: the sun has the whole sky to compete with.
+  col += uSunColor * road * (0.40 + uMoon * 0.55) * max(keyGain, uMoon * 1.6)
+       * (1.0 - uOvercast * 0.85);
 
   // Light carried through the back of a wave, which is what makes a sea look
   // like water rather than like painted metal.

@@ -470,10 +470,11 @@ export class Sky {
     let keyDir = sunDir;
     const moonI = moonlight * 0.34;
     if (moonI > 0.002) {
-      // The share of the light the moon is carrying, held back through the first
-      // part of her rise so the change is spread over it, and handed back to the
-      // sun as the sun's own light returns at dawn.
-      const w = (moonI / (moonI + Math.max(intensity, 0.02))) * smoothstep(0, 0.6, moonUp);
+      // The share of the light the moon is carrying: the sun's own light at dusk and
+      // dawn, and the moon's once it is the brighter of the two — with the sun gone
+      // the moon is the key light outright, so its road on the water is where the
+      // moon is, not between the moon and a sun that is below the sea.
+      const w = smoothstep(0.05, 0.4, moonI / (moonI + Math.max(intensity, 0.05)));
       keyDir = new THREE.Vector3().copy(sunDir).multiplyScalar(1 - w).addScaledVector(moonDir, w);
       if (keyDir.lengthSq() < 1e-4) keyDir.copy(moonDir);
       keyDir.normalize();
