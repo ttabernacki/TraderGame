@@ -6,6 +6,7 @@ import { rivalStanding } from '../progression/rival';
 import { daysLeft, ventureLine } from '../progression/ventures';
 import { roadPlan } from '../progression/road';
 import { MILESTONES } from '../progression/milestones';
+import { policyOf } from '../progression/feitoria';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
 import { officerOpinion } from '../game/officerEvents';
 import type { Game } from '../game/state';
@@ -429,17 +430,39 @@ export class OrdersView {
         kv('The town', regardWordF(f.regard)),
         kv('How it stands', troubleWord(f.trouble),
           f.trouble > 0.55 ? 'bad' : f.trouble > 0.32 ? 'warn' : ''),
-        kv('Since you were there', `${away} days`, away > 500 ? 'bad' : away > 300 ? 'warn' : ''),
+        kv('Since you were there', `${away} days`),
+        kv('Last seen off the place', `${Math.round((g.clock.t - Math.max(f.settled, f.seen ?? 0)) / 86400)} days ago`,
+          (g.clock.t - Math.max(f.settled, f.seen ?? 0)) / 86400 > 700 ? 'bad' : ''),
+        f.ledger && f.ledger.months > 0
+          ? kv('Since then', `${Math.round(f.ledger.sentHome)} cruzados sent home`
+            + (f.ledger.gifts > 0 ? `, ${Math.round(f.ledger.gifts)} to the town` : '')
+            + (f.ledger.built.length ? `, ${f.ledger.built.join(' and ')} built` : '')) : null,
+        el('div', { class: 'row', style: { marginTop: '8px', flexWrap: 'wrap', gap: '6px' } },
+          ...([
+            ['home', 'Sends surplus home', 'Keeps it for you'],
+            ['peace', 'Pays the town to keep the peace', 'Pays nothing unasked'],
+            ['build', 'Builds from its own chest', 'Builds nothing'],
+          ] as const).map(([key, on, off]) => {
+            const v = policyOf(f)[key];
+            return button(v ? on : off, () => {
+              f.policy = { ...policyOf(f), [key]: !v };
+              this.render();
+            }, { ghost: !v, primary: v });
+          })),
         f.trouble > 0.55
-          ? el('p', {}, 'The arithmetic here only gets worse while you are elsewhere. A ship in '
-              + 'the road is most of the answer and it is the only part of it that does not cost '
-              + 'money.')
+          ? el('p', {}, 'A town that has turned does not come round by itself. A ship seen off the '
+              + 'place (you need not put in), a present, or walls: one of the three, and soon.')
           : null,
       ));
     }
     this.body.append(card('What a station is for',
       el('p', { class: 'flavour' },
-        'A ship buying a cargo has to buy it in a fortnight, in front of everybody, at whatever '
+        'Left to itself a station buys all year, pays the town to keep the peace, builds what its '
+        + 'own chest can stand, and sends what it does not need home on the Casa’s ships — the '
+        + 'coin turns up at the next Portuguese port you make, and so do its letters. A cut goes to '
+        + 'the Casa and a few consignments go down at sea. A ship seen off the place keeps it '
+        + 'calm whether or not you put in; putting in gets you the whole of the shed.\n\n'
+        + 'A ship buying a cargo has to buy it in a fortnight, in front of everybody, at whatever '
         + 'the town decides a man in a hurry should pay. A factor buys the same cargo a barrel at '
         + 'a time across a year at what a resident pays, and it is stacked on the floor waiting '
         + 'when you come. That is the whole of it, and the price of it is a man of yours living '

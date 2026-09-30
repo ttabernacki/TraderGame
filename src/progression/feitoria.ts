@@ -1,7 +1,7 @@
-import { clamp } from '../core/math';
+import { NM, clamp, haversine } from '../core/math';
 import type { Rng } from '../core/rng';
 import { GOOD_BY_ID, good } from '../economy/goods';
-import type { PortDef } from '../world/ports';
+import { PORTS, anchorageOf, type PortDef } from '../world/ports';
 
 /**
  * The factory.
@@ -126,6 +126,64 @@ export interface Feitoria {
   /** Lifetime, for the last page. */
   landed: number;
   paidOut: number;
+  /**
+   * What the factor is told to do on his own. Absent on a station founded
+   * before he ran himself: it reads as the defaults.
+   */
+  policy?: FactoryPolicy;
+  /** Last time a Portuguese ship of yours was off the place, whether or not she put in. */
+  seen?: number;
+  /** The last month that has been run, so a station is never run twice for the same days. */
+  ticked?: number;
+  /** What it has done since you were last standing in it, for the books. */
+  ledger?: Ledger;
+}
+
+/**
+ * The standing instructions, in three yes-or-noes.
+ *
+ * A station nobody has to visit needs to be told what to do with what it
+ * makes, how far to go to keep the peace, and whether it may spend its own
+ * money on its own walls — and then it needs to be left alone.
+ */
+export interface FactoryPolicy {
+  /** Send what is over the reserve home on the Casa's ships, for a cut. */
+  home: boolean;
+  /** Pay the town what it asks, out of the chest, before it becomes a demand. */
+  peace: boolean;
+  /** Put the chest's surplus into stockade and warehouse. */
+  build: boolean;
+}
+
+export const DEFAULT_POLICY: FactoryPolicy = { home: true, peace: true, build: true };
+export const policyOf = (f: Feitoria): FactoryPolicy => ({ ...DEFAULT_POLICY, ...(f.policy ?? {}) });
+
+export interface Ledger {
+  months: number;
+  bought: number;
+  earned: number;
+  /** Coin and goods sent home, at what they fetched. */
+  sentHome: number;
+  /** Lost on the way. */
+  lostAtSea: number;
+  gifts: number;
+  built: string[];
+}
+
+export const newLedger = (): Ledger => ({ months: 0, bought: 0, earned: 0, sentHome: 0, lostAtSea: 0, gifts: 0, built: [] });
+
+/**
+ * How often Portuguese ships are seen off a place: the Casa's caravels come and
+ * go at every port on the road, thick near Lisbon and thinning out with the
+ * miles. It is what a standing presence is, and what keeps a station that is
+ * not visited from being forgotten.
+ */
+export function trafficOf(portId: string): number {
+  const def = PORTS.find((p) => p.id === portId);
+  const lisbon = PORTS.find((p) => p.id === 'lisboa');
+  if (!def || !lisbon) return 0.5;
+  const nm = haversine(anchorageOf(def), anchorageOf(lisbon)) / NM;
+  return clamp(1.15 - nm / 9000, 0.2, 1);
 }
 
 /** Room in the shed, in trading units of average bulk. */
@@ -260,6 +318,7 @@ export interface FactoryNews {
  */
 export function runFactory(
   f: Feitoria, def: PortDef, days: number, rng: Rng, portRegard: number,
+  opts: { sinceVisit?: number; traffic?: number } = {},
 ): FactoryNews {
   const news: FactoryNews = {
     days, bought: 0, spent: 0, earned: 0, skimmed: 0, spoiled: 0, troubleAdded: 0,
@@ -348,11 +407,14 @@ export function runFactory(
   // how long since a Portuguese ship was seen off the place, how the town feels
   // about it, and how little there is to discourage anybody who fancies the
   // contents of the shed.
-  const neglect = clamp((days - 200) / 700, 0, 1);
+  // Measured from the last visit, and eased by how often the Casa's ships call:
+  // a station on the Guinea road is seen, one past the Cape is not.
+  const since = opts.sinceVisit ?? days;
+  const traffic = opts.traffic ?? 0.5;
+  const neglect = clamp((since - 360 * (1 + 2 * traffic)) / 1100, 0, 1);
   const disliked = clamp(0.55 - f.regard, 0, 1);
   const weak = 1 - strengthOf(f);
-  const add = clamp(neglect * 0.5 + disliked * 0.7 * (days / 365) + weak * 0.12 * (days / 365),
-    0, 0.85);
+  const add = clamp((neglect * 1.2 + disliked * 0.7 + weak * 0.12) * (days / 365), 0, 0.85);
   f.trouble = clamp(f.trouble + add, 0, 1);
   news.troubleAdded = add;
   void rng;

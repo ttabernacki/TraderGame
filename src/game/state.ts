@@ -14,6 +14,7 @@ import {
   QUESTS, callbackAt, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
   rumoursHeard,
 } from '../progression/quests';
+import { deliverFactoryMail, noteSightings, tickFactories } from '../progression/livingFactory';
 import { barkAt } from '../progression/barks';
 import { MILESTONES, checkMilestones } from '../progression/milestones';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
@@ -118,7 +119,7 @@ import {
 } from '../economy/finance';
 import { rollFinanceScene } from './financeEvents';
 import {
-  WORK_BY_ID, capacityOf, garrisonWanted, runFactory, stockTons,
+  WORK_BY_ID, capacityOf, garrisonWanted, newLedger, stockTons,
   type Feitoria, type WorkId,
 } from '../progression/feitoria';
 import { rollFeitoriaScene } from './feitoriaEvents';
@@ -454,6 +455,11 @@ export class Game {
   /** Milestones reached, by id. */
   milestones: string[] = [];
 
+  /** Money the stations have sent home, on its way. */
+  remittances: { arrives: number; amount: number; from: string }[] = [];
+  /** Letters from the stations, on their way. */
+  factoryLetters: { t: number; arrives: number; text: string; severity: 'note' | 'warning' | 'grave' }[] = [];
+
   /**
    * The small things the road says back: a remark from the wardroom at a place
    * worth remarking on, the world noticing a finished thread, and the captain's
@@ -461,6 +467,9 @@ export class Game {
    */
   private checkWorld(): void {
     if (this.mode === 'gameover' || this.mode === 'title') return;
+    noteSightings(this);
+    tickFactories(this);
+    if (this.dockedAt) deliverFactoryMail(this, this.dockedAt);
     const bark = barkAt(this);
     if (bark) { this.pushAlert(bark, 'note'); this.logEvent('note', bark, false); }
     if (this.dockedAt) {
@@ -7728,21 +7737,29 @@ export class Game {
   private settleFeitoria(def: PortDef): void {
     const f = this.feitorias.find((x) => x.portId === def.id && !x.lost);
     if (!f) return;
+    // The station has been run month by month while she was away; bring it up to
+    // today before the books are read out.
+    tickFactories(this);
+    if (f.lost) return;
     const days = (this.clock.t - f.settled) / 86400;
     f.settled = this.clock.t;
     if (days < 8) return;
-    const news = runFactory(f, def, days, this.rng, this.relationsFor(def.id).regard);
+    const led = f.ledger ?? newLedger();
+    f.ledger = newLedger();
     // Standing in the road is itself the answer to half of it. A station that
     // sees a Portuguese ship is a station nobody is about to try.
     f.trouble = clamp(f.trouble - 0.3, 0, 1);
+    const parts: string[] = [];
+    if (led.bought > 0.05) parts.push(`${led.bought.toFixed(1)} tons bought in`);
+    if (led.earned > 0) parts.push(`${Math.round(led.earned)} taken in trade`);
+    if (led.sentHome > 0) parts.push(`${Math.round(led.sentHome)} cruzados sent home`);
+    if (led.lostAtSea > 40) parts.push(`${Math.round(led.lostAtSea)} lost at sea`);
+    if (led.gifts > 0) parts.push(`${Math.round(led.gifts)} given to the town to keep the peace`);
+    if (led.built.length) parts.push(`a ${led.built.join(' and a ')} built`);
     this.logEvent('trade',
       `${f.factor} has the books ready at ${def.name}. ${Math.round(days)} days: `
-      + `${news.bought.toFixed(1)} tons bought in for ${Math.round(news.spent)} cruzados, `
-      + `${Math.round(news.earned)} taken in trade, ${stockTons(f).toFixed(1)} tons in the shed `
-      + `and ${Math.round(f.chest)} in the chest.`
-      + (news.spoiled > 0.05 ? ` ${news.spoiled.toFixed(1)} tons went bad waiting for a bottom.` : '')
-      + (news.skimmed > 12 ? ' The figures do not quite meet in the middle and he knows you can see it.' : ''),
-      true);
+      + `${parts.length ? parts.join(', ') : 'quiet'}. ${stockTons(f).toFixed(1)} tons in the shed and `
+      + `${Math.round(f.chest)} in the chest.`, true);
     this.pushAlert(`${def.name}: ${stockTons(f).toFixed(1)} tons in the shed.`, 'note');
   }
 
@@ -9057,7 +9074,7 @@ export class Game {
         value: portName(shaky.portId),
         state: shaky.trouble > 0.72 ? 'bad' : 'warn',
         note: `${shaky.factor} has ${stockTons(shaky).toFixed(1)} tons in the shed and a town that `
-          + 'has changed its mind. It only gets worse while you are elsewhere.',
+          + 'has changed its mind. A ship seen off the place, a present, or walls will steady it.',
       });
     }
 
@@ -9214,6 +9231,8 @@ export class Game {
       isles: this.isles,
       secretsHeard: this.secretsHeard,
       milestones: this.milestones,
+      remittances: this.remittances,
+      factoryLetters: this.factoryLetters,
       estate: this.estate,
       designs: this.designs,
       building: this.building,
@@ -9335,6 +9354,8 @@ export class Game {
     g.isles = { ...newIsleState(), ...(d.isles ?? {}) };
     g.secretsHeard = d.secretsHeard ?? [];
     g.milestones = d.milestones ?? [];
+    g.remittances = d.remittances ?? [];
+    g.factoryLetters = d.factoryLetters ?? [];
     g.estate = { ...newEstate(g.clock.t), ...(d.estate ?? {}) };
     // An island raised with its scene still unanswered when the game was saved.
     for (const [id, f] of Object.entries(g.isles.found)) if (!f.name) delete g.isles.found[id];

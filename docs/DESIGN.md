@@ -73,6 +73,14 @@ checkpoint between acts.
   (`barks.ts`); the captain's own milestones and the rival sit under the Road
   (`milestones.ts`); a harbour bell, gulls and a thread cue in `sound.ts`.
 
+- **Factories run themselves** (`livingFactory.ts`): a station is ticked monthly in
+  the background — buys, pays the town, builds stockade/warehouse from its own chest,
+  sends surplus home (36% to the Casa, a few per cent lost at sea). Coin and letters
+  arrive at the next Portuguese port. Policy toggles live on the Orders > Factories tab,
+  so nothing needs a visit; a ship merely passing within 150 nm keeps a station calm.
+  Visiting still gets the whole shed at resident prices. Unattended for years, a
+  station can still burn.
+
 ## Verdicts
 
 Keep and deepen:

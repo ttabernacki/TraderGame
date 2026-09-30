@@ -395,19 +395,7 @@ export function rollFeitoriaScene(g: Game): SeaEvent | null {
     if (here.garrison < garrisonWanted(here.works) * 0.6 && here.garrison > 0) return null;
   }
 
-  // And the post. Only at a place with Portuguese in it, because that is how a
-  // letter travels, and only about a station you are not standing in.
-  const def = g.portHere;
-  if (!def) return null;
-  if (def.people !== 'portuguese' && !def.feitoria) return null;
-  for (const f of g.feitorias) {
-    if (f.lost || f.portId === def.id) continue;
-    const away = (g.clock.t - f.settled) / 86400;
-    if (away < 150) continue;
-    if (g.lettersSeen.includes(`${f.portId}:${Math.floor(g.clock.t / 86400 / 180)}`)) continue;
-    if (!g.rng.chance(0.6)) continue;
-    g.lettersSeen.push(`${f.portId}:${Math.floor(g.clock.t / 86400 / 180)}`);
-    return letterScene(g, f);
-  }
+  // The post is delivered by the stations themselves now (progression/livingFactory): letters and
+  // remittances arrive at any Portuguese port without a card to click through.
   return null;
 }
