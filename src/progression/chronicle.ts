@@ -832,7 +832,10 @@ function dispatch(g: Game, c: ChronicleState): SeaEvent {
   // Prester John, and two men to choose an envoy from. It used to be given
   // only at court, which sent a captain rounding the Cape back to Lisbon to be
   // handed a task whose road lay through the Congo and the Cape again.
-  const prester = c.act === 3 && !g.quests.some((q) => q.id === 'prester') && QUESTS.prester.available(g);
+  // Only while the Kongo coast is still ahead or under her: past Benguela
+  // the first leg of the errand is behind her, and it is offered at court.
+  const prester = c.act === 3 && !g.quests.some((q) => q.id === 'prester') && QUESTS.prester.available(g)
+    && g.ship.state.pos.lat > -14 && g.ship.state.pos.lon < 20;
   if (prester) {
     g.quests.push(newQuest('prester', g.clock.t));
     g.logEvent('crown', `Took up: ${QUESTS.prester.title}. ${QUESTS.prester.blurb}`, true);

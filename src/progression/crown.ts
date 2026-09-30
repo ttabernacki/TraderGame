@@ -286,7 +286,7 @@ const PATENT_TEMPLATES: {
       objectives: [
         { kind: 'reach', description: 'Call at São Jorge da Mina', target: 'mina', progress: 0, complete: false },
         { kind: 'cargo', description: 'Bring home 30 marcos of gold', target: 'ouro', amount: 30, progress: 0, complete: false },
-        { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },
+        { kind: 'return', description: 'Report to the King (his factor at the next quay will do)', target: 'lisboa', progress: 0, complete: false },
       ],
     }),
   },
@@ -342,7 +342,7 @@ const PATENT_TEMPLATES: {
         { kind: 'reach', description: 'Reach the mouth of the Congo', target: 'mpinda', progress: 0, complete: false },
         { kind: 'padrao', description: 'Raise 2 padrões on new headlands', amount: 2, progress: 0, complete: false },
         { kind: 'chart', description: 'Chart 400 miles of unknown coast', amount: 400, progress: 0, complete: false },
-        { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },
+        { kind: 'return', description: 'Report to the King (his factor at the next quay will do)', target: 'lisboa', progress: 0, complete: false },
       ],
     }),
   },
@@ -356,7 +356,7 @@ const PATENT_TEMPLATES: {
       objectives: [
         { kind: 'reach', description: 'Round the Cape of Good Hope', target: 'boa-esperanca', progress: 0, complete: false },
         { kind: 'chart', description: 'Chart 700 miles of unknown coast', amount: 700, progress: 0, complete: false },
-        { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },
+        { kind: 'return', description: 'Report to the King (his factor at the next quay will do)', target: 'lisboa', progress: 0, complete: false },
       ],
     }),
   },
@@ -374,7 +374,7 @@ const PATENT_TEMPLATES: {
         { kind: 'reach', description: 'Reach Calicut', target: 'calecute', progress: 0, complete: false },
         // A sample, not a cargo: the cargo is the next act's. See progression/chronicle.
         { kind: 'cargo', description: 'Bring home 60 quintais of pepper', target: 'pimenta', amount: 60, progress: 0, complete: false },
-        { kind: 'return', description: 'Report at Lisbon', target: 'lisboa', progress: 0, complete: false },
+        { kind: 'return', description: 'Report to the King (his factor at the next quay will do)', target: 'lisboa', progress: 0, complete: false },
       ],
     }),
   },
