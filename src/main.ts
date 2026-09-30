@@ -77,7 +77,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 const ui = new Ui(uiHost, {
-  onNewGame: (difficulty, origin) => startNew(difficulty, origin),
+  onNewGame: (difficulty, origin, heirOf) => startNew(difficulty, origin, heirOf),
   onContinue: () => void continueSaved(),
   onResume: (json) => resumeFrom(json),
   onCycleCamera: () => {
@@ -191,11 +191,12 @@ function startTitleScene(): void {
   settle(demo, 21.5, -22, 17.9, 236, 0.9);
 }
 
-function startNew(difficulty: Difficulty = 'watch', origin: OriginId = 'segundo'): void {
+function startNew(difficulty: Difficulty = 'watch', origin: OriginId = 'segundo', heirOf?: Game): void {
   demo = null;
   game = new Game();
   game.difficulty = difficulty;
   game.setOrigin(origin);
+  if (heirOf) game.inheritFrom(heirOf);
   game.mode = 'sailing';
   ensureRenderer(game);
   ui.attach(game);

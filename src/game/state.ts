@@ -4773,6 +4773,50 @@ export class Game {
     this.logEvent('note', o.detail, true);
   }
 
+  /** Which captain of the line this is; the first is 1. */
+  generation = 1;
+
+  /**
+   * A child takes the ship.
+   *
+   * What passes down is what a family actually keeps: a share of the money, a
+   * name at court, the charts and the book of the sea the old captain made,
+   * and whatever stations are still standing on the coast — each with its
+   * factor and whatever was in the shed, and none of the old man's standing
+   * with the town, which the heir has to earn again. The heir begins in the
+   * same year as everyone does, so the history runs afresh around a captain
+   * who already knows where things are.
+   */
+  inheritFrom(old: Game): void {
+    this.generation = old.generation + 1;
+    const purse = Math.min(2500, Math.floor(Math.max(0, old.crown.gold) * 0.4));
+    const name = Math.floor(old.crown.lifetimeStanding * 0.25);
+    this.crown.gold += purse;
+    this.crown.standing += name;
+    this.crown.lifetimeStanding += name;
+    this.captain.points += Math.min(4, Math.floor(old.crown.lifetimeStanding / 250));
+    this.chart = old.chart;
+    this.rutter = old.rutter;
+    let kept = 0;
+    for (const f of old.liveFactories) {
+      const rel = this.relationsFor(f.portId);
+      rel.met = true; rel.mayTrade = true; rel.factory = true;
+      rel.regard = Math.max(rel.regard, 0.15);
+      this.feitorias.push({
+        ...f, officerId: null, settled: this.clock.t, ticked: this.clock.t, seen: undefined,
+        ledger: undefined, trouble: Math.min(f.trouble, 0.3), regard: Math.max(0.3, f.regard * 0.7),
+        garrison: Math.max(f.garrison, 6), stock: { ...f.stock }, paid: { ...f.paid },
+      });
+      kept++;
+    }
+    this.logEvent('note',
+      `You are the ${['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth'][this.generation] ?? `${this.generation}th`} `
+      + `of your line. Your ${old.generation === 1 ? 'father' : 'predecessor'} left ${purse} cruzados, a name worth ${name} at court, `
+      + `the charts and the book of the sea he made`
+      + `${kept ? `, and ${kept} ${kept === 1 ? 'station' : 'stations'} still standing on the coast` : ''}.`, true);
+    this.refreshEnvironment();
+  }
+
   /** What the court is worth to a man starting from where this one started. */
   get standingScale(): number {
     return originDef(this.origin).standingScale;
@@ -9162,6 +9206,7 @@ export class Game {
       captain: this.captain,
       bonds: [...this.bonds],
       origin: this.origin,
+      generation: this.generation,
       aimOffNm: this.aimOffNm,
       debt: this.crown.debt,
       nav: {
@@ -9306,6 +9351,7 @@ export class Game {
     }
     g.bonds = new Set<BondId>(d.bonds ?? []);
     g.origin = d.origin ?? 'segundo';
+    g.generation = d.generation ?? 1;
     g.aimOffNm = d.aimOffNm ?? 0;
     g.refreshSkillCache();
     g.nav.estimated = d.nav.estimated;

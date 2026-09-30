@@ -34,7 +34,7 @@ import {
 const LEGACY_KEY = 'carreira-da-india:save';
 
 export interface UiCallbacks {
-  onNewGame: (difficulty: Difficulty, origin: OriginId) => void;
+  onNewGame: (difficulty: Difficulty, origin: OriginId, heirOf?: Game) => void;
   onContinue: () => void;
   /** Resume a voyage that has already been decoded to JSON. */
   onResume: (json: string) => void;
@@ -254,7 +254,8 @@ export class Ui {
         this.saves.open(g);
         break;
       case 'epilogue':
-        this.overlay.append(new EpilogueView(g, () => this.cb.onNewGame(g.difficulty, g.origin)).root);
+        this.overlay.append(new EpilogueView(g, () => this.cb.onNewGame(g.difficulty, g.origin),
+          () => this.cb.onNewGame(g.difficulty, g.crown.lifetimeStanding >= 400 ? 'fidalgo' : g.origin, g)).root);
         break;
       case 'gameover':
         this.overlay.append(new GameOverView(

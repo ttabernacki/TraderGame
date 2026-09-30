@@ -25,7 +25,7 @@ import { button, card, el, kv } from './dom';
 export class EpilogueView {
   root = el('div', { class: 'screen' });
 
-  constructor(g: Game, onRestart: () => void) {
+  constructor(g: Game, onRestart: () => void, onHeir?: () => void) {
     const lost = g.crew.deaths;
     const home = g.crew.count;
     const years = ((g.clock.t - g.startT) / 86400 / 365.25);
@@ -181,7 +181,7 @@ export class EpilogueView {
           : null,
 
         // Who he was, which the whole career was an answer to.
-        card(originDef(g.origin).name, el('p', {}, originDef(g.origin).epilogue),
+        card(originDef(g.origin).name + (g.generation > 1 ? ` \u2014 captain ${g.generation} of your line` : ''), el('p', {}, originDef(g.origin).epilogue),
           originEnding(g) ? el('p', { class: 'flavour' }, originEnding(g)!) : null),
 
         // The weather, which is the only thing in the whole career that was
@@ -392,7 +392,8 @@ export class EpilogueView {
       ),
       body,
       el('div', { class: 'screen-foot' },
-        button('Fit out another ship', onRestart, { primary: true }),
+        onHeir ? button('Send your heir to sea', onHeir, { primary: true }) : null,
+        button('Fit out another ship', onRestart, { primary: !onHeir }),
       ),
     );
   }

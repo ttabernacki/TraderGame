@@ -82,6 +82,11 @@ checkpoint between acts.
   Visiting still gets the whole shed at resident prices. Unattended for years, a
   station can still burn.
 
+- **Legacy**: the epilogue offers "Send your heir to sea" (`Game.inheritFrom`): 40%
+  of the purse (cap 2,500), a quarter of lifetime renown, up to +4 skill points,
+  the old captain's chart and rutter, and surviving stations (same factor, stock
+  and chest; town regard reduced). Heir is a fidalgo if the line reached 400 renown.
+
 ## Verdicts
 
 Keep and deepen:
