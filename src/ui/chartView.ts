@@ -1,4 +1,5 @@
 import { markerOf, rumoursHeard } from '../progression/quests';
+import { roadPlan } from '../progression/road';
 import { clamp, compassPoint, cosd, formatLat, formatLon, wrap180 } from '../core/math';
 import { LANDMASSES } from '../world/landmass';
 import { PORTS, portDef } from '../world/ports';
@@ -1234,6 +1235,27 @@ export class ChartView {
 
   /** Where each open mission wants the ship next. */
   private drawQuestMarks(ctx: CanvasRenderingContext2D, g: Game): void {
+    // The King's own asks — the act's goal and the commission's places — in
+    // gold, beside the stories' violet: see progression/road.
+    for (const st of roadPlan(g)) {
+      if (st.along < 0 || !st.tasks.some((t) => t.kind === 'act' || t.kind === 'commission')) continue;
+      const c = this.toScreen(st.at.lat, st.at.lon);
+      const edge = this.toScreen(st.at.lat + 30 / 60, st.at.lon);
+      const r = Math.max(Math.abs(edge.y - c.y), 8);
+      const kind = st.tasks.find((t) => t.kind === 'act') ?? st.tasks.find((t) => t.kind === 'commission')!;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(160, 120, 30, 0.9)';
+      ctx.fillStyle = 'rgba(200, 164, 78, 0.10)';
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([5, 3]);
+      ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(120, 84, 14, 0.95)';
+      ctx.font = `italic ${(11.5 * this.ink).toFixed(1)}px serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText(`\u269C ${kind.kind === 'act' ? kind.tag : 'Commission'}: ${st.where}`, c.x, c.y - r - 5);
+      ctx.restore();
+    }
     const marks = [...g.quests.map((q) => markerOf(g, q)), ...rumoursHeard(g).map((r) => r.mark)];
     for (const m of marks) {
       if (!m) continue;

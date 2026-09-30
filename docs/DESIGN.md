@@ -43,6 +43,10 @@ checkpoint between acts.
   three separate returns to the Congo with 90- and 60-day waits.
 - **The Biscayan's Ship**: the Casa's purse and letter are had from the
   Casa's man at Las Palmas, not by sailing to Lisbon and back.
+- **Prester John's letter** arrives with the Act III dispatch (the two envoys
+  come out with it), instead of being given only at court in Lisbon.
+- **The chart** marks the act's goal and the commission's places in gold, beside
+  the stories' violet.
 - **The Road** (Orders, first tab): every live obligation in road order, with
   distance, so the next leg can be planned.
 

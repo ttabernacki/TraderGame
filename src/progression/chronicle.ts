@@ -2,7 +2,7 @@ import { clamp } from '../core/math';
 import type { SeaChoice, SeaEvent } from '../game/seaEvents';
 import type { Game } from '../game/state';
 import { portDef } from '../world/ports';
-import { writeTheSea } from './quests';
+import { QUESTS, newQuest, writeTheSea } from './quests';
 
 /**
  * The shape of a career.
@@ -828,6 +828,15 @@ function dispatch(g: Game, c: ChronicleState): SeaEvent {
   const charged = next.opening(g, c).choices?.[0]?.resolve(g) ?? '';
   const paid = g.dischargeAtDispatch();
   const title = g.takeChargeByDispatch();
+  // Act III's letter carries the King's other errand with it: the letter to
+  // Prester John, and two men to choose an envoy from. It used to be given
+  // only at court, which sent a captain rounding the Cape back to Lisbon to be
+  // handed a task whose road lay through the Congo and the Cape again.
+  const prester = c.act === 3 && !g.quests.some((q) => q.id === 'prester') && QUESTS.prester.available(g);
+  if (prester) {
+    g.quests.push(newQuest('prester', g.clock.t));
+    g.logEvent('crown', `Took up: ${QUESTS.prester.title}. ${QUESTS.prester.blurb}`, true);
+  }
   const goal = actGoal(g, c.act);
   g.announce('act', `Act ${roman(c.act)}`, next.english, `${next.title} \u00b7 ${next.years}`, goal);
   g.logEvent('crown', `Act ${c.act - 1}, ${done.english}: done, and the King has answered by letter. ${rewards}`, true);
@@ -845,6 +854,7 @@ function dispatch(g: Game, c: ChronicleState): SeaEvent {
       : (g.crown.patent && ACT_CHARGE[c.act] && g.crown.patent.title !== ACT_CHARGE[c.act]
         ? `His commission for it waits at court: finish the one you hold first, "${g.crown.patent.title}".` : ''),
     charged && charged !== rewards ? charged : '',
+    prester ? 'With it, sealed in his own hand, the letter to the Christian king of the Indies, and two men to choose an envoy from.' : '',
   ].filter(Boolean);
   return courtScene(`act${c.act - 1}:dispatch`, `The King\u2019s letter \u2014 Act ${roman(c.act)}: ${next.english}`,
     lines.join('\n\n'),

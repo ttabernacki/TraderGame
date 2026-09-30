@@ -808,9 +808,11 @@ const prester: QuestDef = {
   steps: {
     envoy: {
       goal: () => 'Choose the envoy who will carry the letter.',
-      when: (_g, _q, port) => port === 'lisboa',
+      // At Lisbon, or wherever the King's letter finds the captain: the two men
+      // come out with it.
+      when: (_g, _q, port) => port !== null,
       scene: (_g, q) => scene(q, 'envoy', 'Two envoys',
-        'The King offers you a choice of two men.\n\n'
+        'The King has put two men at your disposal, and leaves the choice to you.\n\n'
         + 'Afonso de Paiva is a converso from Castelo Branco who speaks Arabic like a Moor and '
         + 'has been to Fez. He is clever and nobody quite trusts him.\n\n'
         + 'Frei Lucas is a monk of the Abyssinian church, found in Jerusalem. He speaks the '
