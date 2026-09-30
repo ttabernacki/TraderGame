@@ -2894,3 +2894,10 @@ details.card.fold[open] > .fold-body { margin-top: 9px; }
 .road-tag { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-soft); padding-top: 2px; }
 .road-task.k-act .road-tag { color: var(--accent, #8a3b12); font-weight: 600; }
 @media (max-width: 560px) { .road-task { grid-template-columns: 1fr; gap: 1px; } }
+
+/* The road, as it reads in a port's Town page. */
+.port-road { border: 1px solid rgba(90, 74, 55, 0.3); border-radius: 3px; padding: 10px 13px; margin: 0 0 14px; background: rgba(255, 250, 235, 0.35); }
+.port-road-eyebrow { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 6px; }
+.port-road-row { display: grid; grid-template-columns: 9em 1fr; gap: 10px; font-size: 13.5px; line-height: 1.4; padding: 3px 0; }
+.port-road-row.here b { color: var(--accent, #8a3b12); }
+@media (max-width: 560px) { .port-road-row { grid-template-columns: 1fr; gap: 0; } }

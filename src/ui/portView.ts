@@ -8,7 +8,8 @@ import {
 } from '../economy/trade';
 import { formatDateAt } from '../core/clock';
 import { people } from '../world/peoples';
-import type { PortDef } from '../world/ports';
+import { anchorageOf, type PortDef } from '../world/ports';
+import { along, roadPlan } from '../progression/road';
 import {
   SYSTEMS, UPGRADES, UPGRADE_BY_ID, describeEffects, nodeStatus, systemNodes, tierCap, yardLevel, type Upgrade,
 } from '../ship/upgrades';
@@ -357,6 +358,28 @@ export class PortView {
           }, { primary: true }),
         ),
       ));
+    }
+
+    // What is to be done here, and what comes next along the road: a port call
+    // is when the next leg is planned. See progression/road.
+    {
+      const stops = roadPlan(g).filter((st) => st.along >= 0);
+      const hereAll = stops.find((st) => st.portId === def.id);
+      // An offer waiting here already has its own card, above.
+      const hereTasks = hereAll ? hereAll.tasks.filter((t) => t.kind !== 'offer') : [];
+      const here = hereTasks.length > 0 ? { ...hereAll!, tasks: hereTasks } : undefined;
+      const ahead = stops.filter((st) => st.portId !== def.id && st.along > along(anchorageOf(def)) - 20).slice(0, 3);
+      if (here || ahead.length > 0) {
+        left.append(el('div', { class: 'port-road' },
+          el('div', { class: 'port-road-eyebrow' }, here ? 'On the road: business here, and what comes next' : 'On the road ahead'),
+          ...(here ? [el('div', { class: 'port-road-row here' },
+            el('b', {}, 'Here'),
+            el('span', {}, here.tasks.map((t) => t.text).join(' \u00b7 ')))] : []),
+          ...ahead.map((st) => el('div', { class: 'port-road-row' },
+            el('b', {}, st.where),
+            el('span', {}, `${st.tasks.map((t) => t.text).join(' \u00b7 ')} \u2014 ${st.nm.toLocaleString()} miles`))),
+        ));
+      }
     }
 
     // The place itself: the blurb and what it is known for, as one card.

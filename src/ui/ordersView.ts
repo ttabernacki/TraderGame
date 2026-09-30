@@ -20,7 +20,7 @@ import {
   capacityOf, regardWordF, stockTons, stockValue, troubleWord,
 } from '../progression/feitoria';
 
-type Tab = 'road' | 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 'stations' | 'wardroom' | 'rival';
+type Tab = 'road' | 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 'stations' | 'wardroom';
 
 /**
  * The captain's orders.
@@ -75,11 +75,10 @@ export class OrdersView {
       reports: g.openLeads.length,
       stations: g.liveFactories.length,
       wardroom: g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length,
-      rival: 0,
     };
     const names: Record<Tab, string> = {
       road: 'The Road', chronicle: 'Chronicle', missions: 'Missions', trade: 'Trade', courts: 'Courts', reports: 'Hearsay',
-      stations: 'Factories', wardroom: 'Wardroom', rival: 'Rival',
+      stations: 'Factories', wardroom: 'Wardroom',
     };
 
     const tabs = (Object.keys(names) as Tab[])
@@ -94,7 +93,7 @@ export class OrdersView {
     ));
 
     if (this.tab === 'road') this.renderRoad(g);
-    else if (this.tab === 'chronicle') this.renderChronicle(g);
+    else if (this.tab === 'chronicle') { this.renderChronicle(g); this.renderRival(g); }
     else if (this.tab === 'missions') {
       // Everything the ship is bound to, on one page: the King's commission,
       // the long stories, and the merchants' charters.
@@ -111,8 +110,7 @@ export class OrdersView {
     else if (this.tab === 'courts') this.renderCourts(g);
     else if (this.tab === 'reports') this.renderLeads(g);
     else if (this.tab === 'stations') this.renderStations(g);
-    else if (this.tab === 'wardroom') this.renderWardroom(g);
-    else this.renderRival(g);
+    else this.renderWardroom(g);
   }
 
   // -------------------------------------------------------------------------
@@ -596,7 +594,7 @@ export class OrdersView {
               c.goalMet ? 'Done. The King\u2019s answer will reach you at the next port.' : actGoal(g, a.n))
             : null,
           state === 'now' && a.n >= 2 && ACT_CHARGE[a.n]
-            ? el('div', { class: 'act-changes' }, `The King\u2019s commission for it: \u201c${ACT_CHARGE[a.n]}\u201d${g.crown.completedPatents.includes(ACT_CHARGE[a.n]) ? ' \u2014 discharged' : g.crown.patent?.title === ACT_CHARGE[a.n] ? ' \u2014 yours' : ', at court in Lisbon'}.`)
+            ? el('div', { class: 'act-changes' }, `The King\u2019s commission for it: \u201c${ACT_CHARGE[a.n]}\u201d${g.crown.completedPatents.includes(ACT_CHARGE[a.n]) ? ' \u2014 discharged' : g.crown.patent?.title === ACT_CHARGE[a.n] ? ' \u2014 yours' : ', which comes with the King\u2019s letter (or at court in Lisbon)'}.`)
             : null,
           state === 'past' ? el('div', { class: 'act-changes' }, a.changes) : null,
         );
