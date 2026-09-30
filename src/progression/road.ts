@@ -205,7 +205,7 @@ export function roadPlan(g: Game): RoadStop[] {
     const days = Math.round(daysLeft(v, g.clock.t));
     put(anchorageOf(portDef(v.toPort)), portDef(v.toPort).name, {
       kind: 'charter', tag: 'Charter',
-      text: `${ventureLine(v)} — ${days >= 0 ? `${days} days left` : `${-days} days overdue`}`,
+      text: `${ventureLine(v)} — ${days >= 0 ? `${days} ${days === 1 ? 'day' : 'days'} left` : `${-days} ${days === -1 ? 'day' : 'days'} overdue`}`,
     });
   }
 
