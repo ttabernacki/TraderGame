@@ -27,7 +27,7 @@ import { skill } from '../crew/skills';
 
 export type QuestId = 'caravel' | 'leak' | 'kongo' | 'prester' | 'zamorin' | 'galeao'
   | 'nome' | 'ficheiro' | 'roteiro' | 'escudeiro'
-  | 'adrift' | 'pesos' | 'padrao' | 'mercador' | 'monsoon' | 'aprendiz';
+  | 'adrift' | 'pesos' | 'padrao' | 'mercador' | 'monsoon' | 'aprendiz' | 'sofala' | 'count';
 
 export interface QuestState {
   id: QuestId;
@@ -2672,9 +2672,269 @@ const aprendiz: QuestDef = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// 17–18. The way home: the last act is a cargo carried back, and these two lie
+// along that road in the order a homeward ship meets them.
+
+const sofala: QuestDef = {
+  id: 'sofala',
+  title: 'The Gold of Çofala',
+  blurb: 'The Swahili coast has been bringing gold out of the interior for five hundred years. Find where from.',
+  offeredAt: ['melinde', 'quiloa', 'mocambique', 'mombaca'],
+  available: (g) => g.chronicle.act >= 4,
+  offer: () => ({
+    who: 'A gold-weigher’s clerk, at the water stairs',
+    text: 'Covilhã’s letter said it, and the clerk says it plainer: the gold the dhows carry out of the '
+      + 'south does not come from Kilwa, which only takes the tithe. It comes from a place called '
+      + 'Çofala, a long way down the coast, where a river runs out of the interior and the gold is '
+      + 'bought with cloth. He has never been. He knows a man who has.',
+    accept: 'Ask him to tell you the man’s name',
+  }),
+  first: 'vizier',
+  steps: {
+    vizier: {
+      goal: () => 'Hear what the vizier of Kilwa knows, at Quíloa.',
+      marker: () => portMark('quiloa', 'The vizier of Kilwa'),
+      when: (_g, _q, port) => port === 'quiloa',
+      scene: (_g, q) => scene(q, 'vizier', 'The vizier of Kilwa',
+        'He receives you in a courtyard with a fountain, offers sherbet, and listens for a long time '
+        + 'before he speaks. Kilwa has had the gold trade for three centuries and is not anxious to '
+        + 'share it with a nation it has met twice. He is, however, a practical man, and there is '
+        + 'something he would like: a hundred cruzados of Portuguese cloth, and the King’s word that '
+        + 'the ships will not call at Çofala without calling here first.',
+        [
+          {
+            label: 'Give him the cloth, and the word',
+            detail: '100 cruzados. A promise the King may not thank you for.',
+            resolve: (gg) => {
+              if (gg.crown.gold < 100) return later(q, 'You have not got a hundred cruzados. The vizier is patient, but not indefinitely.');
+              gg.crown.gold -= 100;
+              leaveToTrade(gg, 'kilwa', { trust: 0.3, respect: 0.1 }, 'promised that the ships would call at Kilwa first');
+              q.flags.promise = true;
+              return go(gg, q, 'merchant', 'Gave the vizier of Kilwa a hundred cruzados of cloth and a promise that may not be the '
+                + 'King’s to give. He named a Kilwa merchant at Moçambique who has been to Çofala.');
+            },
+          },
+          {
+            label: 'Give him the cloth, and no promise',
+            detail: '100 cruzados. He will make a cooler note of you.',
+            resolve: (gg) => {
+              if (gg.crown.gold < 100) return later(q, 'You have not got a hundred cruzados. The vizier is patient, but not indefinitely.');
+              gg.crown.gold -= 100;
+              leaveToTrade(gg, 'kilwa', { trust: 0.1 }, 'gave a present at Kilwa');
+              return go(gg, q, 'merchant', 'Gave the vizier of Kilwa cloth and no promise. He named a Kilwa merchant at '
+                + 'Moçambique who has been to Çofala, without warmth.');
+            },
+          },
+        ]),
+    },
+    merchant: {
+      goal: () => 'Find the Kilwa merchant who has been to Çofala, at Moçambique.',
+      marker: () => portMark('mocambique', 'The Kilwa merchant'),
+      when: (_g, _q, port) => port === 'mocambique',
+      scene: (_g, q) => scene(q, 'merchant', 'Yusuf of Kilwa',
+        'He is a spare, hooded man in the lee of a warehouse, and he does not want to be seen '
+        + 'talking to you. He has been to Çofala eleven times. He will say where it is, and what '
+        + 'the Sheikh there charges, and which season the river is passable, for the price of his '
+        + 'passage south.'
+        + (q.flags.promise ? ' He knows about the promise, and is thoughtful about it.' : ''),
+        [
+          {
+            label: 'Carry him to Çofala',
+            detail: 'A few days south and back in the channel. He will pilot.',
+            resolve: (gg) => {
+              q.flags.yusuf = true;
+              const n = writeTheSea(gg, -27, -12, 32, 44);
+              return go(gg, q, 'gold', `Took Yusuf aboard for Çofala. His pilotage of the channel fills ${n} squares of your book.`);
+            },
+          },
+          {
+            label: 'Get the marks from him, and go without him',
+            detail: 'He will tell you for a hundred cruzados. You will pilot yourself.',
+            resolve: (gg) => {
+              if (gg.crown.gold < 100) return later(q, 'He will not give marks for less than a hundred cruzados.');
+              gg.crown.gold -= 100;
+              return go(gg, q, 'gold', 'Paid Yusuf for the marks to Çofala and sailed without him.');
+            },
+          },
+        ]),
+    },
+    gold: {
+      goal: () => 'Put into Çofala, where the gold comes out to the coast.',
+      marker: () => portMark('sofala', 'Çofala'),
+      when: (_g, _q, port) => port === 'sofala',
+      scene: (_g, q) => scene(q, 'gold', 'Çofala',
+        'The Sheikh of Çofala receives you on the beach in a silk robe under an awning of matting, and '
+        + 'has the gold brought down in a bowl. It is in grains, and small bars, and a few things shaped '
+        + 'like beads. It is the gold of Mina under another sun.'
+        + (q.flags.yusuf ? ' Yusuf stands behind you and does not speak, and the Sheikh addresses him as an old friend.' : ''),
+        [
+          {
+            label: 'Buy gold, fairly, for cloth',
+            detail: 'A few marcos now, at the Sheikh’s price. A standing welcome for a Portuguese ship.',
+            resolve: (gg) => {
+              gg.ship.addCargo('ouro', 20, 0, 0.7);
+              leaveToTrade(gg, 'kilwa', { trust: 0.25, respect: 0.1 }, 'traded fairly at Çofala');
+              renown(gg, 40);
+              return end(gg, q, 'fair', 'Traded fairly for Çofala’s gold. The Sheikh has sent word along the coast that the Portuguese pay what they say.');
+            },
+          },
+          {
+            label: 'Take the route, and leave the gold',
+            detail: 'Every reach of the river, for the King’s factors. The Sheikh will not know till they come.',
+            resolve: (gg) => {
+              renown(gg, 80);
+              gg.crown.gold += 400;
+              leaveToTrade(gg, 'kilwa', { trust: -0.3 }, 'noted the road to the gold and took it to the Crown');
+              return end(gg, q, 'route', 'Wrote down the road to Çofala for the Crown. The King’s factors will have it by the next fleet, and the Sheikh will not forgive it.');
+            },
+          },
+        ]),
+    },
+  },
+};
+
+const count: QuestDef = {
+  id: 'count',
+  title: 'The Count',
+  blurb: 'The pepper is weighed at Lisbon against the clerk’s book. What is in the hold and what is written need not agree.',
+  offeredAt: ['cochim', 'calecute', 'cananor', 'melinde'],
+  available: (g) => g.chronicle.act >= 5,
+  offer: () => ({
+    who: 'The King’s factor, in the pepper house',
+    text: 'He is a careful man, and he is having a bad year. "There is always some that does not '
+      + 'come to the weigh-house," he says. "The fleet’s captains take it for granted. I am asking '
+      + 'nothing. I am only saying that if a forty-quintal parcel were to be stowed where the clerk '
+      + 'would not think to look, nobody in Lisbon would be any the wiser."',
+    accept: 'Listen to what he is suggesting',
+  }),
+  first: 'parcel',
+  steps: {
+    parcel: {
+      goal: () => 'Decide about the factor’s parcel, at the pepper port.',
+      marker: () => portMark('cochim', 'The factor’s parcel'),
+      when: (_g, _q, port) => port === 'cochim' || port === 'calecute' || port === 'cananor',
+      scene: (g, q) => scene(q, 'parcel', 'Forty quintals',
+        'It would be a fortune, more than a year’s pay, and a third of it would be the factor’s. '
+        + (hasOfficer(g, 'escrivao')
+          ? `${hasOfficer(g, 'escrivao')}, the clerk, is standing at your shoulder with his book open, very still.`
+          : 'There is no clerk aboard to ask awkward questions.'),
+        [
+          {
+            label: 'Take the parcel',
+            detail: 'Stowed in the lazarette under the spare sails. Not in the book.',
+            resolve: (gg) => {
+              q.flags.parcel = true;
+              renown(gg, -5);
+              return go(gg, q, 'cape', 'Took the factor’s forty quintals aboard unwritten. They are in the lazarette, under the spare canvas.');
+            },
+          },
+          {
+            label: 'Refuse, and have him put it in the book',
+            detail: 'A forty-quintal parcel honestly declared is the King’s, and so is the profit.',
+            resolve: (gg) => {
+              renown(gg, 25);
+              q.flags.honest = true;
+              return go(gg, q, 'cape', 'Refused the factor’s parcel and saw the pepper weighed into the book. He shrugged, and was quietly relieved.');
+            },
+          },
+        ]),
+    },
+    cape: {
+      goal: () => 'Round the Cape homeward. The clerk will want a word.',
+      marker: () => ({ lat: -34.4, lon: 18.5, nm: 180, label: 'The Cape, homeward' }),
+      when: (g) => near(g, { lat: -34.4, lon: 18.5 }, 180) && !g.dockedAt,
+      scene: (g, q) => {
+        const clerk = hasOfficer(g, 'escrivao');
+        return scene(q, 'cape', 'The clerk’s book',
+          q.flags.parcel
+            ? (clerk
+              ? `${clerk} has been counting the sacks on deck, and has come to the number in the book and the number under the sail, and has found they do not agree. He does not raise his voice.`
+              : 'A hand aboard has been at the lazarette, and is thoughtful about what he found there.')
+            : 'The hold is written up honestly, and the clerk is more at ease than he has been since Cochim. He says the weigh-house at Lisbon will take the book without a murmur.',
+          q.flags.parcel
+            ? [
+              {
+                label: 'Have him write it in, and pay the King’s share',
+                detail: 'The forty quintals go in the book. The profit is a third of what it was.',
+                resolve: (gg) => {
+                  q.flags.declared = true;
+                  renown(gg, 10);
+                  return go(gg, q, 'weigh', 'Had the clerk write the factor’s parcel into the book, and the King will have his share.');
+                },
+              },
+              {
+                label: 'Give him a hundred cruzados to forget it',
+                detail: 'He is an honest man, and an honest man can be bought once.',
+                resolve: (gg) => {
+                  gg.crown.gold = Math.max(0, gg.crown.gold - 100);
+                  q.flags.hidden = true;
+                  return go(gg, q, 'weigh', 'Bought the clerk’s silence for a hundred cruzados. He has not looked you in the eye since.');
+                },
+              },
+            ]
+            : [
+              {
+                label: 'Commend him for it',
+                detail: 'He will say so at Lisbon.',
+                resolve: (gg) => {
+                  renown(gg, 10);
+                  gg.crew.morale = clamp(gg.crew.morale + 0.03, 0, 1);
+                  return go(gg, q, 'weigh', 'Commended the clerk for an honest book.');
+                },
+              },
+            ], 'note');
+      },
+    },
+    weigh: {
+      goal: () => 'The weigh-house at Lisbon.',
+      marker: () => portMark('lisboa', 'The weigh-house'),
+      when: (_g, _q, port) => port === 'lisboa',
+      scene: (_g, q) => scene(q, 'weigh', 'The weigh-house',
+        q.flags.hidden
+          ? 'The Casa’s weighers are thorough, and they have a long pole, and a habit of using it on lazarettes. '
+            + 'The contador stands at the head of the stair and does not look at you.'
+          : 'The Casa’s weighers are thorough, and find nothing to add to the clerk’s book. The contador reads it twice '
+            + 'and stamps it with no expression at all.',
+        q.flags.hidden
+          ? [
+            {
+              label: 'Stand on your word',
+              detail: q.flags.hidden ? 'If they find it, it is a hanging matter for somebody, and not the factor.' : '',
+              resolve: (gg) => {
+                if (gg.rng.chance(0.4)) {
+                  gg.crown.gold = Math.max(0, gg.crown.gold - 600);
+                  renown(gg, -60);
+                  return end(gg, q, 'caught', 'The pepper under the spare sails was found, and the Casa fined you six hundred cruzados. The court will remember it.');
+                }
+                gg.crown.gold += 700;
+                return end(gg, q, 'got away', 'The weigh-house missed the parcel. It is worth seven hundred cruzados, and you will never mention it.');
+              },
+            },
+          ]
+          : [
+            {
+              label: 'Let the weigh-house do its work',
+              detail: q.flags.declared ? 'A third of the parcel is yours, honestly.' : 'Nothing to hide, nothing to gain, nothing to fear.',
+              resolve: (gg) => {
+                const gain = q.flags.declared ? 200 : 0;
+                gg.crown.gold += gain;
+                renown(gg, q.flags.declared ? 25 : 45);
+                return end(gg, q, q.flags.declared ? 'declared' : 'honest',
+                  q.flags.declared
+                    ? 'The weigh-house took the factor’s parcel into the book, and the Casa’s cut was paid.'
+                    : 'The weigh-house found the book as written. The contador has said your name to the King as an example.');
+              },
+            },
+          ],
+        q.flags.hidden ? 'warning' : 'note'),
+    },
+  },
+};
+
 export const QUESTS: Record<QuestId, QuestDef> = {
   caravel, leak, kongo, prester, zamorin, galeao, nome, ficheiro, roteiro, escudeiro,
-  adrift, pesos, padrao, mercador, monsoon, aprendiz,
+  adrift, pesos, padrao, mercador, monsoon, aprendiz, sofala, count,
 };
 
 /** Leave to trade across a whole state, as an audience would give it, and the court's opinion with it. */
@@ -2748,6 +3008,8 @@ const CALLBACKS: { quest: QuestId; outcomes?: string[]; ports: string[]; text: s
   { quest: 'aprendiz', outcomes: ['chose'], ports: ['lagos', 'lisboa', 'funchal'], text: 'A fishwife on the quay sells you her whole basket at cost and will not hear a word about it.' },
   { quest: 'nome', outcomes: ['self', 'brother', 'friend'], ports: ['lisboa'], text: 'A letter in Duarte’s hand is waiting at the Casa. It is four lines, and none of them is about money.' },
   { quest: 'escudeiro', outcomes: ['honest'], ports: ['lisboa', 'lagos'], text: 'The men at the Casa stand a little straighter when you pass. A man who tells the King the truth is either feared or trusted.' },
+  { quest: 'sofala', outcomes: ['fair'], ports: ['sofala', 'quiloa', 'mocambique'], text: 'A dhow captain at the water stairs tells you, unasked, that the Portuguese at Çofala paid what they said. He says it like a man reporting a miracle.' },
+  { quest: 'count', outcomes: ['honest', 'declared'], ports: ['lisboa'], text: 'The weigh-house clerks are very civil this morning. The contador has been telling the story of your book.' },
   { quest: 'leak', ports: ['lisboa'], text: 'The Rua Nova has a new contador, and a new way of looking at the ships’ books.' },
 ];
 
