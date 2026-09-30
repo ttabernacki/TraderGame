@@ -22,7 +22,9 @@ import { DeckBar } from './deckBar';
 import { ShoreView } from './shoreView';
 import { SavesView } from './savesView';
 import { PilotPanel } from './pilotPanel';
-import { SaveShelf, describeSave } from '../game/save';
+import {
+  SaveShelf, describeSave, noteQuietWrite, setWithRoom, isCheckpoint, checkpointOf,
+} from '../game/save';
 
 /**
  * The old single save, kept only so a voyage left in a browser by a build
@@ -85,6 +87,9 @@ export class Ui {
     // Ask for the account at once, so the title's Continue and the first
     // autosave both find it. Nothing waits on the answer.
     void this.shelf.connect();
+    // Ask the browser not to evict the voyage under storage pressure. Refused
+    // quietly in plenty of views, which is fine.
+    try { void navigator.storage?.persist?.(); } catch { /* not offered */ }
     this.cb = cb;
     this.touch = new TouchControls({
       setKey: (k, down) => cb.onVirtualKey(k, down),
@@ -134,6 +139,10 @@ export class Ui {
 
   attach(g: Game): void {
     this.game = g;
+    // This window now holds this voyage: whatever is stored under it is ours to
+    // write over, and anything another window writes after this is a rival.
+    this.shelf.claim(autosaveId(g));
+    this.failing = false;
     this.setMode(g.mode);
   }
 
@@ -459,15 +468,34 @@ export class Ui {
    * a document store is not the place for a write on a timer — the account gets
    * the voyage when the player deliberately keeps one.
    */
-  async save(g: Game, announce = true, forceCloud = false): Promise<void> {
+  async save(g: Game, announce = true, forceCloud = false, checkpoint = false): Promise<void> {
     // The account takes the autosave at most once a minute of wall clock, and
     // always on a port, a deliberate save, or the page being put away. The
     // browser takes every one.
     const due = forceCloud || announce || Date.now() - this.shelf.lastCloudAt > 60000;
-    const r = await this.shelf.write(g, autosaveId(g), `${g.ship.name}, the voyage in hand`, due);
+    const r = await this.shelf.write(g, autosaveId(g), `${g.ship.name}, the voyage in hand`, due,
+      { autosave: true, force: announce });
     if (announce) {
       g.pushAlert(r.message, r.ok ? 'note' : 'warning');
     }
+    // A save that lands nowhere must never be silent: a player who thinks the
+    // voyage is being kept and closes the tab has lost it. Said once per
+    // failure, and again when it is mended.
+    if (!r.ok) {
+      if (!this.failing && !announce) {
+        g.pushAlert(`The voyage could not be saved: ${r.message} Keep it as a file from the Book of Voyages (F2).`, 'grave');
+      }
+      this.failing = true;
+    } else if (this.failing) {
+      this.failing = false;
+      if (!announce) g.pushAlert('The voyage is being saved again.', 'note');
+    }
+    if (r.forked && !this.warnedFork) {
+      this.warnedFork = true;
+      g.pushAlert('This voyage is also open in another window, which has been saving over it. '
+        + 'This window now saves to a copy of its own; both are in the Book of Voyages.', 'warning');
+    }
+    if (checkpoint && r.ok) void this.shelf.checkpoint(g, this.shelf.slotFor(autosaveId(g)));
     // Said once a session, when the account is not going to be there.
     if (!this.warnedLocalOnly && due && !r.cloud) {
       const settled = await this.shelf.connect(0);
@@ -477,6 +505,24 @@ export class Ui {
           ?? 'Your account is not reachable from this view: the voyage is kept only in this browser. Keep a file of anything you would hate to lose.', 'warning');
       }
     }
+  }
+
+  private failing = false;
+  private warnedFork = false;
+
+  /**
+   * A voyage has just been taken up. If the autosave for its career is further
+   * along than what was loaded — an earlier slot chosen from the book, a
+   * checkpoint, an old file — it goes into the checkpoint ring before the
+   * first write replaces it.
+   */
+  async takeUp(g: Game, loaded: string): Promise<void> {
+    const slot = autosaveId(g);
+    try {
+      const cur = await this.shelf.local?.read(slot);
+      if (cur && JSON.parse(cur).t > JSON.parse(loaded).t) await this.shelf.preserve(slot);
+    } catch { /* nothing to preserve */ }
+    await this.save(g, false);
   }
 
   private warnedLocalOnly = false;
@@ -502,16 +548,23 @@ export class Ui {
    * is the same format on the way back in, which is all that matters when the
    * alternative is losing the passage.
    */
-  static saveQuietly(g: Game): void {
+  saveQuietly(g: Game): void {
     const id = autosaveId(g);
     try {
       const json = g.serialize();
-      localStorage.setItem(`carreira.save.${id}`, `p${btoaUtf8(json)}`);
+      // Nothing has happened since the last write, or another window owns the
+      // slot now: a tab put away must not overwrite the voyage somebody else has
+      // gone on with.
+      if (this.shelf.unchanged(id, json) || this.shelf.localRival(id)) return;
+      const slot = this.shelf.slotFor(id);
+      noteQuietWrite(slot);
+      setWithRoom(`carreira.save.${slot}`, `p${btoaUtf8(json)}`);
       const raw = localStorage.getItem('carreira.saves');
       const index: any[] = raw ? JSON.parse(raw) : [];
-      const meta = describeSave(g, id, `${g.ship.name}, the voyage in hand`, json.length);
-      localStorage.setItem('carreira.saves',
-        JSON.stringify([...index.filter((m) => m.id !== id), meta]));
+      const meta = describeSave(g, slot, `${g.ship.name}, the voyage in hand`, json.length);
+      setWithRoom('carreira.saves',
+        JSON.stringify([...index.filter((m) => m.id !== slot), meta]));
+      this.shelf.noteWritten(id, json);
     } catch { /* nowhere to put it, and nothing to be done about it here */ }
   }
 
@@ -520,13 +573,23 @@ export class Ui {
     // The account's copy may be the newer one: wait for its answer.
     await this.shelf.connect(15000);
     const slots = await this.shelf.list();
-    return slots.length ? this.shelf.read(slots[0].id) : null;
+    const top = slots.find((s) => !isCheckpoint(s.id));
+    if (!top) return null;
+    const json = await this.shelf.read(top.id);
+    if (json) return json;
+    // The newest will not read: the career's own checkpoints, newest first,
+    // before giving up and sending the player to the book.
+    for (const cp of slots.filter((s) => isCheckpoint(s.id) && checkpointOf(s.id) === top.id)) {
+      const back = await this.shelf.read(cp.id);
+      if (back) return back;
+    }
+    return null;
   }
 
   /** When the newest voyage on the shelf was written, 0 for none. */
   async newestSaveAt(): Promise<number> {
     await this.shelf.connect(15000);
-    const slots = await this.shelf.list();
+    const slots = (await this.shelf.list()).filter((s) => !isCheckpoint(s.id));
     return slots.length ? slots[0].savedAt : 0;
   }
 

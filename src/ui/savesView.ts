@@ -1,6 +1,6 @@
 import type { Game } from '../game/state';
 import {
-  SaveShelf, exportToFile, importFromFile, decodeSave, wrapCode, encodeJson,
+  SaveShelf, isCheckpoint, exportToFile, importFromFile, decodeSave, wrapCode, encodeJson,
   type SlotView,
 } from '../game/save';
 import { button, card, clear, el, kv, plural } from './dom';
@@ -116,11 +116,20 @@ export class SavesView {
         + 'minutes; anything you mean to come back to deserves a name.'));
       return;
     }
-    for (const s of slots) this.list.append(this.slotCard(s));
+    for (const s of slots.filter((x) => !isCheckpoint(x.id))) this.list.append(this.slotCard(s));
+    // The rolling checkpoints, out of the way but there: a port every few weeks
+    // of the voyage, and whatever the autosave was before a step back.
+    const cps = slots.filter((x) => isCheckpoint(x.id));
+    if (cps.length) {
+      const box = el('details', { class: 'voyage-checkpoints' },
+        el('summary', {}, `Checkpoints (${cps.length}) \u2014 earlier ports on the same voyage`));
+      for (const s of cps) box.append(this.slotCard(s));
+      this.list.append(box);
+    }
   }
 
   private slotCard(s: SlotView): HTMLElement {
-    const auto = s.id === 'auto' || s.id.startsWith('voyage-');
+    const auto = s.id === 'auto' || s.id.startsWith('voyage-') || isCheckpoint(s.id);
     const body = el('div', { class: 'voyage-card' },
       el('div', { class: 'voyage-title' },
         el('span', {}, s.id === 'auto' ? 'The voyage in hand' : s.name),

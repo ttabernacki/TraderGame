@@ -57,7 +57,28 @@ export interface SaveMeta {
   years: number;
   /** Bytes of the stored payload, for the storage meter. */
   bytes: number;
+  /** Which window wrote it, so a second window cannot silently overwrite the first. */
+  owner?: string;
+  /** A rolling checkpoint of a career, not a slot the player keeps. */
+  cp?: boolean;
 }
+
+/** This window. A fresh token every page load. */
+export const SESSION = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e9).toString(36)}`;
+
+/** Checkpoints kept per career, oldest replaced first. */
+export const CHECKPOINTS = 6;
+
+export const checkpointId = (careerSlot: string, k: number): string => `cp-${careerSlot}-${k}`;
+export const isCheckpoint = (id: string): boolean => id.startsWith('cp-');
+/** The career slot a checkpoint belongs to (`voyage-x` from `cp-voyage-x-3`). */
+export const checkpointOf = (id: string): string => id.replace(/^cp-/, '').replace(/-\d+$/, '');
+
+// Writes that started before a synchronous page-hide write must not land after
+// it and put an older voyage back over the newer one.
+let seqCounter = 0;
+const quietSeq = new Map<string, number>();
+export function noteQuietWrite(id: string): void { quietSeq.set(id, ++seqCounter); }
 
 // ---------------------------------------------------------------------------
 // The format
@@ -211,6 +232,7 @@ export function wrapCode(payload: string): string {
  * every one of them — which on a page that is also running a 3-D ocean is the
  * difference between the book opening and the book stuttering.
  */
+let startT: number | undefined;
 export function describeSave(g: Game, id: string, name: string, bytes: number): SaveMeta {
   const near = portsNear(g.ship.state.pos, 30)[0];
   const where = g.portHere
@@ -218,7 +240,8 @@ export function describeSave(g: Game, id: string, name: string, bytes: number): 
     : near
       ? `${near.distNm.toFixed(0)} miles off ${near.def.name}`
       : `${formatLat(g.nav.estimated.lat)}, ${formatLon(g.nav.estimated.lon)}`;
-  const start = new Game(1).clock.t;
+  startT ??= new Game(1).clock.t;
+  const start = startT;
   return {
     id,
     name,
@@ -233,6 +256,7 @@ export function describeSave(g: Game, id: string, name: string, bytes: number): 
     crew: `${g.crew.count}/${g.crew.complement}`,
     years: Math.max(0, (g.clock.t - start) / (86400 * 365)),
     bytes,
+    owner: SESSION,
   };
 }
 
@@ -252,6 +276,30 @@ export interface SaveStore {
 
 const LOCAL_PREFIX = 'carreira.save.';
 const LOCAL_INDEX = 'carreira.saves';
+
+/**
+ * `setItem`, and when the quota refuses, the oldest checkpoint goes and it is
+ * tried again: a rolling checkpoint is never worth more than the voyage in hand.
+ */
+export function setWithRoom(key: string, value: string): void {
+  for (let spent = 0; ; spent++) {
+    try { localStorage.setItem(key, value); return; } catch (e) {
+      if (spent >= CHECKPOINTS * 2 || !dropOldestCheckpoint()) throw e;
+    }
+  }
+}
+
+function dropOldestCheckpoint(): boolean {
+  try {
+    const raw = localStorage.getItem(LOCAL_INDEX);
+    const all: SaveMeta[] = raw ? JSON.parse(raw) : [];
+    const cps = all.filter((m) => m.cp).sort((a, b) => a.savedAt - b.savedAt);
+    if (!cps.length) return false;
+    localStorage.removeItem(LOCAL_PREFIX + cps[0].id);
+    localStorage.setItem(LOCAL_INDEX, JSON.stringify(all.filter((m) => m.id !== cps[0].id)));
+    return true;
+  } catch { return false; }
+}
 
 /**
  * The browser's own storage.
@@ -298,8 +346,12 @@ export class LocalStore implements SaveStore {
   }
 
   async write(id: string, meta: SaveMeta, data: string): Promise<void> {
+    const key = LOCAL_PREFIX + id;
     try {
-      localStorage.setItem(LOCAL_PREFIX + id, data);
+      setWithRoom(key, data);
+      // Read it back: a store that accepted the write and holds something else
+      // is worse than one that refused it.
+      if (localStorage.getItem(key) !== data) throw new Error('mismatch');
     } catch (e) {
       // Out of room. Say which, because "could not save" with no reason is the
       // worst message a save system can give.
@@ -311,9 +363,8 @@ export class LocalStore implements SaveStore {
     const index = (await this.list()).filter((m) => m.id !== id);
     index.push(meta);
     try {
-      localStorage.setItem(LOCAL_INDEX, JSON.stringify(index));
+      setWithRoom(LOCAL_INDEX, JSON.stringify(index));
     } catch {
-      localStorage.removeItem(LOCAL_PREFIX + id);
       throw new Error('There is no more room in this browser for another voyage.');
     }
   }
@@ -399,6 +450,16 @@ export class CloudStore implements SaveStore {
     return bits.join('');
   }
 
+  /** The slot's metadata as the account holds it now, or null. */
+  async peek(id: string): Promise<SaveMeta | null> {
+    try {
+      const snap = await this.ref(id).get();
+      return snap.exists ? (snap.data()?.meta ?? null) : null;
+    } catch {
+      return null;
+    }
+  }
+
   async list(): Promise<SaveMeta[]> {
     try {
       const snap = await this.db.doc(`data/users/${this.uid}/voyages`)
@@ -465,17 +526,13 @@ export class CloudStore implements SaveStore {
     }
   }
 
-  /** What the slot's document holds now: the current save, inline or as parts. */
-  private head = new Map<string, any | null>();
-
   private async writeNow(id: string, meta: SaveMeta, data: string): Promise<void> {
     try {
-      if (!this.head.has(id)) {
-        const snap = await this.ref(id).get();
-        const body = snap.exists ? snap.data() : undefined;
-        this.head.set(id, body ? { meta: body.meta, data: body.data, parts: body.parts } : null);
-      }
-      const cur = this.head.get(id);
+      // Read fresh every time: another device may have written since, and the
+      // copy kept behind this one has to be the one actually there.
+      const snap = await this.ref(id).get();
+      const body = snap.exists ? snap.data() : undefined;
+      const cur = body ? { meta: body.meta, data: body.data, parts: body.parts } : null;
       // The copy kept behind this one. Inline copies are dropped once the
       // voyage has grown past one document: two of them no longer fit in it.
       let entry: any;
@@ -498,7 +555,6 @@ export class CloudStore implements SaveStore {
         if (prev && !(prev.parts && entry.parts && prev.parts.gen === entry.parts.gen)) doc.prev = prev;
       }
       await this.ref(id).set(doc);
-      this.head.set(id, entry);
     } catch (e: any) {
       throw new Error(cloudReason(e));
     }
@@ -511,7 +567,6 @@ export class CloudStore implements SaveStore {
         try { await this.part(id, gen, i).delete(); } catch { break; }
       }
     }
-    this.head.delete(id);
   }
 }
 
@@ -637,6 +692,65 @@ export class SaveShelf {
     return first ?? (preferCloud ? this.local!.read(id) : this.cloud!.read(id));
   }
 
+  /** When this window last wrote, or took up, each slot; see `conflicted`. */
+  private claimed = new Map<string, number>();
+  /** The last payload written to each slot, so an unchanged voyage is not rewritten. */
+  private lastJson = new Map<string, string>();
+  /** Slots this window has been moved off of, and where it writes instead. */
+  private forks = new Map<string, string>();
+  /** Writes go one at a time, in the order they were asked for. */
+  private chain: Promise<unknown> = Promise.resolve();
+
+  /** This window has taken up the voyage in `id`: what is stored now is not a rival. */
+  claim(id: string): void {
+    this.claimed.set(id, Date.now());
+    this.forks.delete(id);
+    this.lastJson.delete(id);
+  }
+
+  /** The synchronous half of `conflicted`, for the write made as the page goes away. */
+  localRival(id: string): boolean {
+    const since = this.claimed.get(id);
+    if (since === undefined) return false;
+    try {
+      const raw = localStorage.getItem(LOCAL_INDEX);
+      const m = (raw ? JSON.parse(raw) as SaveMeta[] : []).find((x) => x.id === this.slotFor(id));
+      return !!m && !!m.owner && m.owner !== SESSION && m.savedAt > since;
+    } catch { return false; }
+  }
+
+  /** The payload last written for this slot, to tell whether anything has changed. */
+  unchanged(id: string, json: string): boolean { return this.lastJson.get(this.slotFor(id)) === json; }
+  noteWritten(id: string, json: string): void {
+    this.lastJson.set(this.slotFor(id), json);
+    this.claimed.set(this.slotFor(id), Date.now());
+  }
+
+  /** Where this window's autosave of `id` goes: the slot, or a copy if it lost the slot. */
+  slotFor(id: string): string { return this.forks.get(id) ?? id; }
+
+  /**
+   * A second window saving over the first is how a long session quietly
+   * becomes a short one: a tab left open on a port, or on another machine, wakes
+   * on a timer and writes its old voyage over the newer one. A slot last written
+   * by another window since this one took it up is not ours to overwrite.
+   */
+  private async conflicted(id: string, toCloud: boolean): Promise<boolean> {
+    const since = this.claimed.get(id);
+    if (since === undefined) return false;
+    const rival = (m: SaveMeta | null | undefined): boolean =>
+      !!m && !!m.owner && m.owner !== SESSION && m.savedAt > since;
+    if (rival((await this.local?.list())?.find((m) => m.id === id))) return true;
+    if (toCloud && this.cloud) {
+      const m = await Promise.race([
+        this.cloud.peek(id),
+        new Promise<null>((r) => setTimeout(() => r(null), 4000)),
+      ]);
+      if (rival(m)) return true;
+    }
+    return false;
+  }
+
   /**
    * Write a voyage.
    *
@@ -644,16 +758,47 @@ export class SaveShelf {
    * waiting on a network when the player closes the tab. The account after it,
    * when there is one and the caller asked for it — a failure there is reported
    * and is not a failed save, because the voyage is already down.
+   *
+   * `autosave` slots get the stale-window guard and the unchanged-voyage skip.
    */
-  async write(g: Game, id: string, name: string, toCloud: boolean):
-  Promise<{ ok: boolean; cloud: boolean; message: string }> {
-    const data = await encodeSave(g);
+  write(g: Game, id: string, name: string, toCloud: boolean, opts: { autosave?: boolean; force?: boolean } = {}):
+  Promise<{ ok: boolean; cloud: boolean; message: string; forked?: boolean; skipped?: boolean }> {
+    const seq = ++seqCounter;
+    const run = this.chain.then(() => this.writeNow(g, id, name, toCloud, seq, opts));
+    this.chain = run.catch(() => {});
+    return run;
+  }
+
+  private async writeNow(g: Game, id: string, name: string, toCloud: boolean, seq: number,
+    opts: { autosave?: boolean; force?: boolean }):
+  Promise<{ ok: boolean; cloud: boolean; message: string; forked?: boolean; skipped?: boolean }> {
+    let forked = false;
+    if (opts.autosave) {
+      id = this.slotFor(id);
+      if (await this.conflicted(id, toCloud)) {
+        // Lost the slot to another window: keep writing, but to a copy of our own.
+        id = `${id}-w${SESSION.slice(-4)}`;
+        this.forks.set(id.replace(/-w\w{4}$/, ''), id);
+        name = `${name} (this window)`;
+        forked = true;
+      }
+    }
+    const json = g.serialize();
+    if (opts.autosave && !opts.force && !forked && this.lastJson.get(id) === json) {
+      return { ok: true, cloud: false, message: '', skipped: true };
+    }
+    const data = await deflate(json);
     const meta = describeSave(g, id, name, data.length);
     let localOk = false;
     let message = '';
     if (this.local) {
-      try { await this.local.write(id, meta, data); localOk = true; } catch (e: any) {
-        message = e?.message ?? 'Could not write to this browser.';
+      // A page-hide write made while this one was compressing is newer.
+      if ((quietSeq.get(id) ?? 0) > seq) {
+        localOk = true;
+      } else {
+        try { await this.local.write(id, meta, data); localOk = true; } catch (e: any) {
+          message = e?.message ?? 'Could not write to this browser.';
+        }
       }
     } else {
       message = 'This browser will not keep a save. Keep the voyage as a file.';
@@ -671,14 +816,65 @@ export class SaveShelf {
       }
     }
     if (!localOk && !cloudOk) return { ok: false, cloud: false, message };
-    if (cloudOk && !localOk) return { ok: true, cloud: true, message: 'The voyage is recorded in your account.' };
+    if (opts.autosave && (localOk || cloudOk)) {
+      this.lastJson.set(id, json);
+      this.claimed.set(id, Date.now());
+    }
+    if (cloudOk && !localOk) return { ok: true, cloud: true, message: 'The voyage is recorded in your account.', forked };
     return {
       ok: true,
       cloud: cloudOk,
+      forked,
       message: message
         || (cloudOk ? 'The voyage is recorded, here and in your account.'
           : 'The voyage is recorded in this browser.'),
     };
+  }
+
+  /**
+   * Keep a rolling checkpoint of the career: the oldest of `CHECKPOINTS` is
+   * replaced, so a voyage that goes wrong — a bad sale, a wreck saved a minute
+   * before the loss, a stale window — has somewhere to go back to.
+   */
+  async checkpoint(g: Game, careerSlot: string): Promise<void> {
+    const k = await this.nextCheckpoint(careerSlot);
+    const data = await deflate(g.serialize());
+    const meta = { ...describeSave(g, checkpointId(careerSlot, k), `Checkpoint, ${g.clock.formatDate()}`, data.length), cp: true };
+    await this.putCheckpoint(meta, data);
+  }
+
+  /**
+   * Put the voyage that is about to be written over into the ring, as it is —
+   * the payload copied untouched. Going back to an earlier save makes that
+   * earlier save the voyage in hand, and the newer one, which may be the better,
+   * has to be somewhere when the autosave replaces it.
+   */
+  async preserve(careerSlot: string): Promise<void> {
+    if (!this.local) return;
+    try {
+      const m = (await this.local.list()).find((x) => x.id === careerSlot);
+      const data = localStorage.getItem(LOCAL_PREFIX + careerSlot);
+      if (!m || data === null) return;
+      const k = await this.nextCheckpoint(careerSlot);
+      await this.putCheckpoint({ ...m, id: checkpointId(careerSlot, k), name: `Before you went back, ${m.date}`, cp: true, savedAt: Date.now() }, data);
+    } catch { /* the voyage in hand matters more */ }
+  }
+
+  private async nextCheckpoint(careerSlot: string): Promise<number> {
+    const have = (await this.local?.list() ?? []).filter((m) => m.cp && checkpointOf(m.id) === careerSlot);
+    let k = 0;
+    let oldest = Infinity;
+    for (let i = 0; i < CHECKPOINTS; i++) {
+      const m = have.find((x) => x.id === checkpointId(careerSlot, i));
+      if (!m) return i;
+      if (m.savedAt < oldest) { oldest = m.savedAt; k = i; }
+    }
+    return k;
+  }
+
+  private async putCheckpoint(meta: SaveMeta, data: string): Promise<void> {
+    try { await this.local?.write(meta.id, meta, data); } catch { /* the voyage in hand matters more */ }
+    if (this.cloud) { try { await this.cloud.write(meta.id, meta, data); } catch { /* as above */ } }
   }
 
   async remove(id: string): Promise<void> {

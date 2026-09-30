@@ -206,6 +206,7 @@ function startNew(difficulty: Difficulty = 'watch', origin: OriginId = 'segundo'
   // in Lisbon with a purse, no orders, and nothing telling him where to go.
   if (renderer) renderer.cameraMode = 'chase';
   ui.setMode('court');
+  lastCheckpointT = game.clock.t;
 }
 
 async function continueSaved(): Promise<void> {
@@ -252,7 +253,9 @@ function resumeFrom(json: string): void {
   // left the Book of Voyages empty behind the player — which reads exactly like
   // an import that silently failed — and closing the tab in that window lost
   // the import altogether.
-  void ui.save(game, false);
+  lastCheckpointT = game.clock.t;
+  lastAutoSaveT = game.clock.t;
+  void ui.takeUp(game, json);
 }
 
 function ensureRenderer(g: Game): void {
@@ -429,6 +432,9 @@ function frame(now: number): void {
  */
 const AUTOSAVE_DAYS = 5;
 let lastAutoSaveT = -1e9;
+/** A port is also a rolling checkpoint, at most this often on the ship's calendar. */
+const CHECKPOINT_DAYS = 20;
+let lastCheckpointT = -1e9;
 
 let wasDocked: string | null = null;
 
@@ -438,7 +444,9 @@ function checkAutosave(g: Game): void {
   if (g.dockedAt && g.dockedAt !== wasDocked) {
     wasDocked = g.dockedAt;
     lastAutoSaveT = g.clock.t;
-    void ui.save(g, false, true);
+    const cp = g.clock.t - lastCheckpointT >= CHECKPOINT_DAYS * 86400;
+    if (cp) lastCheckpointT = g.clock.t;
+    void ui.save(g, false, true, cp);
     return;
   }
   if (!g.dockedAt) wasDocked = null;
@@ -533,7 +541,7 @@ setInterval(() => {
  */
 function saveIfPlaying(): void {
   if (!game || game.mode === 'gameover' || game.mode === 'title') return;
-  Ui.saveQuietly(game);
+  ui.saveQuietly(game);
   // And the account, which usually gets there before the page is frozen.
   void ui.save(game, false, true);
 }
