@@ -47,6 +47,10 @@ checkpoint between acts.
   come out with it), instead of being given only at court in Lisbon.
 - **The chart** marks the act's goal and the commission's places in gold, beside
   the stories' violet.
+- **The Lost Caravel** is also offered at Mpinda (a degredado with Soeiro da
+  Costa's letter), and Prester's envoy can go inland from any port of the
+  Kongo/Angola coast, because an act's letter arrives a port or two down the
+  road from where its goal was met.
 - **The Road** (Orders, first tab): every live obligation in road order, with
   distance, so the next leg can be planned.
 

@@ -161,11 +161,21 @@ const caravel: QuestDef = {
   id: 'caravel',
   title: 'The Lost Caravel',
   blurb: 'Find what became of the São Brás, lost south of the Congo three years ago.',
-  offeredAt: ['funchal', 'lagos', 'lisboa'],
+  // And at the Congo itself, on the way south: the quay at Mpinda has heard of
+  // her too, and a captain past Mpinda should not have to sail home to be asked.
+  offeredAt: ['funchal', 'lagos', 'lisboa', 'mpinda'],
   // Lost south of the Congo, so it is heard of once the Congo is: the
   // second act. Offered in the first it sent a new captain past three acts.
   available: (g) => g.chronicle.act >= 2,
-  offer: () => ({
+  offer: (g) => g.dockedAt === 'mpinda' ? {
+    who: 'A degredado who has lived at Mpinda since Cão’s time',
+    text: 'He has a letter, and he has been keeping it for a captain who would look. It is from '
+      + 'Soeiro da Costa, master of the caravel São Brás, who passed here three years ago bound '
+      + 'south and did not come back. His wife is waiting for word in Funchal, or Lagos, or Lisbon. '
+      + '"They say he is dead," the degredado says. "The market at Benguela knows more than '
+      + 'anyone will say to a Portuguese face."',
+    accept: 'Take Soeiro da Costa’s letter, and promise to look',
+  } : ({
     who: 'Isabel da Costa, on the quay',
     text: 'A woman in mourning black has been waiting for any captain bound south. Her husband, '
       + 'Soeiro da Costa, took the caravel São Brás past the Congo three years ago and never came '
@@ -831,13 +841,15 @@ const prester: QuestDef = {
         ]),
     },
     inland: {
-      goal: () => 'At the Kongo river mouth, send the envoy inland to ask the way east.',
-      marker: () => portMark('mpinda', 'Ask the way east'),
-      when: (_g, _q, port) => port === 'mpinda',
+      goal: () => 'On the Kongo and Angola coast, send the envoy inland to ask the way east.',
+      marker: () => portMark('mpinda', 'Ask the way east', 140),
+      // Mpinda first, but the King's letter can find the captain a port or two
+      // down the coast, and the envoy should not have to be carried back north.
+      when: (_g, _q, port) => port === 'mpinda' || port === 'luanda' || port === 'benguela',
       scene: (_g, q) => scene(q, 'inland', 'The road inland',
-        `${q.flags.envoy === 'lucas' ? 'Frei Lucas' : 'Afonso de Paiva'} can go up the river with the `
-        + 'Mani Soyo’s people and ask at the Manikongo’s court. It will take three weeks, '
-        + 'and the ship must wait.',
+        `${q.flags.envoy === 'lucas' ? 'Frei Lucas' : 'Afonso de Paiva'} can go inland with the `
+        + 'coast people and ask at the Manikongo’s court, whose word runs a long way up this coast. '
+        + 'It will take three weeks, and the ship must wait.',
         [
           {
             label: 'Send him, and wait',
