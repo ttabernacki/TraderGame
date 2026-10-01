@@ -8817,14 +8817,17 @@ export class Game {
     this.coastOrder = null;
     this.shoreHere = null;
     this.mode = 'sailing';
-    // She is sailed home where the player can see it: the clock runs ahead and the
-    // ship goes along the road, a few seconds of real time to a long passage.
+    // The capstone: she is simply brought home. The days are real — the stores are eaten,
+    // the men sicken or do not — but nobody has to watch them go by.
     this.homeRun = { legs: road.legs, days: road.days, miles: road.miles, done: 0, from, rate: Math.max(2.5, road.days / 11) };
-    const text = `The pilot takes her out from ${from} for the Tagus: ${road.miles} miles by the road the pilots know, `
-      + `about ${road.days} days. The passage is his until she is home or something goes wrong.`;
-    this.logEvent('navigation', text, true);
-    return { ok: true, text };
+    let guard = 0;
+    while (this.homeRun && guard++ < 5000) this.advanceHomeRun(0.25);
+    const home = this.dockedAt === 'lisboa';
+    return { ok: home, text: this.homeText };
   }
+
+  /** What the last passage home came to, for the screen that asked for it. */
+  private homeText = '';
 
   /** The passage home in progress, if the pilot has her. */
   homeRun: { legs: { lat: number; lon: number }[]; days: number; miles: number; done: number; from: string; rate: number } | null = null;
@@ -8889,6 +8892,7 @@ export class Game {
       const left = Math.max(1, Math.round(run.days - run.done));
       const text = `The pilot hove her to ${Math.round(run.done)} days out of ${run.from}: ${trouble}. She lies where the road took her, `
         + `about ${left} days short of the Tagus, and the passage is yours again.`;
+      this.homeText = text;
       this.logEvent('peril', text, true);
       this.pushAlert(text, 'warning');
       return;
@@ -8905,6 +8909,7 @@ export class Game {
       const text = `Home from ${run.from} by the road the pilots know: ${run.miles} miles in ${run.days} days, `
         + 'out to the westward with the trades on the beam, round by the islands and in with the westerlies. '
         + 'The Rock of Sintra came up on the bow on the morning it was expected, and she worked up the Tagus on the flood.';
+      this.homeText = text;
       this.logEvent('navigation', text, true);
       this.enterPort(lisboa);
       this.pushAlert(text, 'note');
