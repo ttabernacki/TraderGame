@@ -6,6 +6,7 @@ import { rivalStanding } from '../progression/rival';
 import { daysLeft, ventureLine } from '../progression/ventures';
 import { MILESTONES } from '../progression/milestones';
 import { policyOf } from '../progression/feitoria';
+import { enterpriseCards } from './enterpriseView';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
 import { officerOpinion } from '../game/officerEvents';
 import type { Game } from '../game/state';
@@ -21,7 +22,7 @@ import {
   capacityOf, regardWordF, stockTons, stockValue, troubleWord,
 } from '../progression/feitoria';
 
-type Tab = 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 'stations' | 'wardroom';
+type Tab = 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 'stations' | 'enterprises' | 'wardroom';
 
 /**
  * The captain's orders.
@@ -74,15 +75,17 @@ export class OrdersView {
       courts: g.diplomacy.agreements.filter((a) => a.status === 'open').length,
       reports: g.openLeads.length,
       stations: g.liveFactories.length,
+      enterprises: g.enterprises.filter((e) => !e.lost).length,
       wardroom: g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length,
     };
     const names: Record<Tab, string> = {
       chronicle: 'Chronicle', missions: 'Missions', trade: 'Trade', courts: 'Courts', reports: 'Hearsay',
-      stations: 'Factories', wardroom: 'Wardroom',
+      stations: 'Factories', enterprises: 'Businesses', wardroom: 'Wardroom',
     };
 
     const tabs = (Object.keys(names) as Tab[])
-      .filter((t) => t !== 'stations' || g.liveFactories.length > 0);
+      .filter((t) => (t !== 'stations' || g.liveFactories.length > 0) && (t !== 'enterprises' || g.enterprises.length > 0));
+    if (this.tab === 'enterprises' && g.enterprises.length === 0) this.tab = 'missions';
     if (this.tab === 'stations' && g.liveFactories.length === 0) this.tab = 'missions';
 
     this.body.append(el('div', { class: 'tabs' },
@@ -110,6 +113,7 @@ export class OrdersView {
     else if (this.tab === 'courts') this.renderCourts(g);
     else if (this.tab === 'reports') this.renderLeads(g);
     else if (this.tab === 'stations') this.renderStations(g);
+    else if (this.tab === 'enterprises') for (const c of enterpriseCards(g, () => this.render())) this.body.append(c);
     else this.renderWardroom(g);
   }
 

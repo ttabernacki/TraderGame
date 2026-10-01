@@ -14,6 +14,7 @@ import {
   QUESTS, callbackAt, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
   rumoursHeard,
 } from '../progression/quests';
+import { tickEnterprises, type Enterprise } from '../progression/enterprise';
 import { deliverFactoryMail, noteSightings, tickFactories } from '../progression/livingFactory';
 import { barkAt } from '../progression/barks';
 import { MILESTONES, checkMilestones } from '../progression/milestones';
@@ -455,6 +456,10 @@ export class Game {
   /** Milestones reached, by id. */
   milestones: string[] = [];
 
+  /** The businesses the captain owns in the towns of the road. */
+  enterprises: Enterprise[] = [];
+  nextEnterpriseId = 1;
+
   /** Money the stations have sent home, on its way. */
   remittances: { arrives: number; amount: number; from: string }[] = [];
   /** Letters from the stations, on their way. */
@@ -469,6 +474,7 @@ export class Game {
     if (this.mode === 'gameover' || this.mode === 'title') return;
     noteSightings(this);
     tickFactories(this);
+    tickEnterprises(this);
     if (this.dockedAt) deliverFactoryMail(this, this.dockedAt);
     const bark = barkAt(this);
     if (bark) { this.pushAlert(bark, 'note'); this.logEvent('note', bark, false); }
@@ -9365,6 +9371,8 @@ export class Game {
       secretsHeard: this.secretsHeard,
       milestones: this.milestones,
       remittances: this.remittances,
+      enterprises: this.enterprises,
+      nextEnterpriseId: this.nextEnterpriseId,
       factoryLetters: this.factoryLetters,
       estate: this.estate,
       designs: this.designs,
@@ -9489,6 +9497,8 @@ export class Game {
     g.secretsHeard = d.secretsHeard ?? [];
     g.milestones = d.milestones ?? [];
     g.remittances = d.remittances ?? [];
+    g.enterprises = d.enterprises ?? [];
+    g.nextEnterpriseId = d.nextEnterpriseId ?? 1;
     g.factoryLetters = d.factoryLetters ?? [];
     g.estate = { ...newEstate(g.clock.t), ...(d.estate ?? {}) };
     // An island raised with its scene still unanswered when the game was saved.

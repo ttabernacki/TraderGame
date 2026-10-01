@@ -14,6 +14,7 @@ import {
 } from '../ship/upgrades';
 import { hullClass } from '../ship/hull';
 import { shipyardCard } from './shipyard';
+import { businessesHere } from './enterpriseView';
 import { HOLDINGS, ROUTE_BY_ID, lossChance, temperWord } from '../progression/estate';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
 import { OFFICER_ROLES } from '../crew/crew';
@@ -890,6 +891,9 @@ export class PortView {
         'Every one of these is a man\u2019s word, and a man\u2019s word is worth what the man is worth. '
         + 'The chart will show you where they point, which is not the same as where the thing is.'),
     ));
+
+    // And what you own in this town, and what could be bought.
+    for (const c of businessesHere(g, g.portHere!, () => this.render(), (t) => { this.notice = { text: t }; })) right.append(c);
 
     host.append(el('div', { class: 'cols two' }, left, right));
   }

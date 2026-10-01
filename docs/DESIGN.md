@@ -102,6 +102,12 @@ checkpoint between acts.
   each wired to a real effect; four yard services for captains of name (Zacuto's astrolabe,
   Flemish sailcloth, the great cabin, the King's ordnance).
 
+- **Businesses** (`enterprise.ts`, Orders > Businesses, Freight tab at any port): buy a mill,
+  vineyard, tannery… in a town that makes the thing; it fills a warehouse monthly; hire a
+  trading vessel (caravel to Indiaman, by act) to carry it to a named port; sales go through the
+  real market (glut, commission, loss at sea), profits are remitted on the Casa's ships.
+  Cap `3 + 2*act` businesses; payback ~2.5-3 years; fire/blight/seizure risks.
+
 ## Verdicts
 
 Keep and deepen:

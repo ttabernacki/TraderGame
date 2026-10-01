@@ -50,7 +50,7 @@ const FREIGHT_RUA = 0.2;
 const FLOAT = 260;
 
 /** Days a letter or a remittance takes from a place to a Portuguese port, at a caravel's pace. */
-function transitDays(portId: string): number {
+export function transitDays(portId: string): number {
   const lisbon = PORTS.find((p) => p.id === 'lisboa');
   const def = PORTS.find((p) => p.id === portId);
   if (!lisbon || !def) return 90;
@@ -61,6 +61,12 @@ function transitDays(portId: string): number {
 /** The chance a consignment goes down at sea, worse the longer the road. */
 function lossChance(portId: string): number {
   return 0.025 + (1 - trafficOf(portId)) * 0.07;
+}
+
+/** A letter from anywhere the captain has an interest, delivered at the next Portuguese port. */
+export function postLetter(g: Game, portId: string, text: string, severity: 'note' | 'warning' | 'grave' = 'note'): void {
+  g.factoryLetters.push({ t: g.clock.t, arrives: g.clock.t + transitDays(portId) * 86400, text, severity });
+  if (g.factoryLetters.length > 40) g.factoryLetters.splice(0, g.factoryLetters.length - 40);
 }
 
 function letter(g: Game, f: Feitoria, text: string, severity: 'note' | 'warning' | 'grave' = 'note'): void {
