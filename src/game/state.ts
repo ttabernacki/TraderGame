@@ -7577,6 +7577,9 @@ export class Game {
   weighAnchor(): string {
     const refused = this.cannotWeigh();
     if (refused) return refused;
+    // Not a refusal, but nobody should find out at sea: say it as she weighs.
+    const days = Math.floor(enduranceDays(this.crew, this.ration));
+    if (days < 25) this.pushAlert(`Only ${days} days of stores aboard. The nearest port may be further than that.`, 'warning');
     // Out of the Tagus is a new voyage, and a new page in the books.
     if (this.dockedAt === 'lisboa') this.closeVoyageBook();
     // Give the charters back the days she lay alongside. Done here, once, on
@@ -8250,6 +8253,10 @@ export class Game {
     // The same words within two hours are the same alert, even with another
     // one between them: a ship that keeps touching the same shoal says so once.
     if (this.alerts.some((a) => a.text === text && this.clock.t - a.t < 7200)) return;
+    // Recurring chores — no latitude again, the same reminder every watch — are said
+    // once a day and a half at most, not every time the condition is still true.
+    const key = text.slice(0, 28);
+    if (severity !== 'grave' && this.alerts.some((a) => a.text.slice(0, 28) === key && this.clock.t - a.t < 36 * 3600)) return;
     this.alerts.push({
       id: this.nextAlertId++, text, severity, t: this.clock.t, said: nowMs(),
     });
