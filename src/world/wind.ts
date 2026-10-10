@@ -169,6 +169,50 @@ function azoresCirculation(p: LatLon, dayOfYear: number): { from: number; speed:
   return { from, speed, steadiness, weight };
 }
 
+/**
+ * Where the St Helena High sits: the South Atlantic's own anticyclone. A little
+ * north and west in the austral winter, south and east in the summer.
+ */
+export function stHelenaHigh(dayOfYear: number): { lat: number; lon: number } {
+  const s = northernSummer(dayOfYear);
+  return { lat: lerp(-31, -27, s), lon: lerp(-6, -12, s) };
+}
+
+/**
+ * The wind round the St Helena High.
+ *
+ * The South Atlantic is not a set of bands either. It is one anticyclone, and
+ * the air goes round it the other way from the Azores High: south-east trades
+ * along its northern side, northerlies down its western side off Brazil,
+ * westerlies along its southern side, and the cold southerly up the coast of
+ * Africa on its eastern. Drawn as bands, the heart of the high was a belt of
+ * southerly air right across the ocean at thirty degrees, so a ship bound for
+ * the Cape met the wind ahead wherever she crossed it. The real road — the one
+ * every Cape fleet after Dias sailed — is out to the south-west on the trade
+ * until she is off Brazil, south on the northerlies down the western side of
+ * the high, and east on the westerlies at thirty-five or forty to the Cape.
+ */
+function stHelenaCirculation(p: LatLon, dayOfYear: number): { from: number; speed: number; steadiness: number; weight: number } {
+  const hi = stHelenaHigh(dayOfYear);
+  const dLat = p.lat - hi.lat;
+  const dLon = (p.lon - hi.lon) * Math.cos((p.lat * Math.PI) / 180) * 0.62;
+  const distNm = Math.hypot(dLat, dLon) * 60;
+  const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI;
+  // Anticlockwise, and outward: north of the centre the air goes west-north-west,
+  // so it comes from east-south-east; west of it, from the north-north-east.
+  const from = wrap360(bearing + 115);
+  // The westerlies on its southern flank blow harder than the trades on its northern.
+  const south = clamp(-dLat / 10, 0, 1);
+  const peak = 15 + south * 6;
+  const speed = peak * lerp(0.4, 1, smoothstep(30, 420, distNm));
+  const steadiness = lerp(0.25, lerp(0.6, 0.82, clamp(dLat / 12, 0, 1)), smoothstep(60, 520, distNm));
+  // The South Atlantic only, fading into the trades at its northern edge and the
+  // roaring forties at its southern.
+  const weight = (1 - smoothstep(hi.lat + 14, hi.lat + 21, p.lat)) * smoothstep(hi.lat - 16, hi.lat - 10, p.lat)
+    * smoothstep(-55, -44, p.lon) * (1 - smoothstep(16, 22, p.lon));
+  return { from, speed, steadiness, weight };
+}
+
 /** Persistent coastal wind regimes that override the zonal belts near shore. */
 function coastalBias(p: LatLon, dayOfYear: number): { from: number; speed: number; weight: number } | null {
   // The nortada down the Iberian and Moroccan coast. It is the summer's wind —
@@ -333,7 +377,12 @@ export function doldrumSquall(p: LatLon, dayOfYear: number, t: number): SquallSa
  * `t` is simulated seconds, used to wander the wind slowly and believably.
  */
 export function prevailingWind(p: LatLon, dayOfYear: number, t: number): WindSample {
-  const y = p.lat - itczLatitude(dayOfYear);
+  // The southern belts do not follow the thermal equator the whole twelve
+  // degrees it swings: carried that far, the westerlies came up to twenty-five
+  // south every July.
+  const itcz = itczLatitude(dayOfYear);
+  const southern = 4 + (itcz - 4) * 0.35;
+  const y = p.lat - lerp(itcz, southern, smoothstep(0, -12, p.lat));
   const belt = sampleBelts(y);
 
   let from = belt.from;
@@ -378,6 +427,14 @@ export function prevailingWind(p: LatLon, dayOfYear: number, t: number): WindSam
     from = w.from;
     speed = lerp(speed, az.speed, az.weight);
     steadiness = lerp(steadiness, az.steadiness, az.weight);
+  }
+
+  const sh = stHelenaCirculation(p, dayOfYear);
+  if (sh.weight > 0.005) {
+    const w = blendWind(from, speed, sh.from, sh.speed, sh.weight);
+    from = w.from;
+    speed = lerp(speed, sh.speed, sh.weight);
+    steadiness = lerp(steadiness, sh.steadiness, sh.weight);
   }
 
   const coast = coastalBias(p, dayOfYear);
