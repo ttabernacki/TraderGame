@@ -631,7 +631,7 @@ export class Hud {
         const age = (recent.length - 1 - i) / Math.max(recent.length - 1, 1);
         this.alerts.append(el('div', {
           class: `alert ${a.severity}`,
-          style: { opacity: String(1 - age * 0.62) },
+          style: { opacity: String(0.92 - age * 0.6) },
         }, a.text));
       }
     }

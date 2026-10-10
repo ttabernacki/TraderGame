@@ -8,7 +8,7 @@ import {
 } from '../economy/trade';
 import { formatDateAt } from '../core/clock';
 import { people } from '../world/peoples';
-import { type PortDef } from '../world/ports';
+import { portDef, type PortDef } from '../world/ports';
 import {
   SYSTEMS, UPGRADES, UPGRADE_BY_ID, describeEffects, nodeStatus, systemNodes, tierCap, yardLevel, type Upgrade,
 } from '../ship/upgrades';
@@ -16,7 +16,7 @@ import { hullClass } from '../ship/hull';
 import { shipyardCard } from './shipyard';
 import { houseHead, openLineCard, worksBlock } from './networkView';
 import { footingOf, footingWord, postureOf } from '../progression/network';
-import { HOLDINGS, ROUTE_BY_ID, lossChance, temperWord } from '../progression/estate';
+import { HOLDINGS, ROUTE_BY_ID, temperWord } from '../progression/estate';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
 import { OFFICER_ROLES } from '../crew/crew';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
@@ -251,6 +251,13 @@ export class PortView {
           el('div', {}, el('b', {}, o.ship), ` \u2014 ${o.captain}, ${r.name}`),
           el('div', { class: 'estate-sub' }, `${o.stake} cruzados in her \u00b7 ${left > 0 ? `due in about ${left} days` : 'overdue; no word yet'}`));
       }),
+      ...(() => {
+        const shares = g.lines.filter((l) => l.share && !l.lost);
+        return shares.length ? [el('div', { class: 'fit-cat-head' }, 'Ships you have shares in'),
+          ...shares.map((l) => el('div', { class: 'estate-row' },
+            el('div', {}, el('b', {}, l.name), ` — ${l.partner}, to ${portDef(l.to).name}`),
+            el('div', { class: 'estate-sub' }, `${l.trips} voyages, ${Math.round(l.earned)} cruzados to you so far`)))] : [];
+      })(),
       done.length ? el('div', { class: 'fit-cat-head' }, 'Lately') : null,
       ...done.map((o) => el('div', { class: 'estate-row' },
         el('div', {}, el('b', {}, o.ship), ` \u2014 ${ROUTE_BY_ID.get(o.route)!.name}`),
@@ -260,19 +267,17 @@ export class PortView {
 
     if (g.dockedAt === 'lisboa') {
       left.append(card('Voyages wanting backers',
-        el('p', { class: 'fit-blurb' }, 'Owners on the Rua Nova outfitting ships they will never sail in. Take a share of what each wants: the return is yours in proportion, when she comes home, and so is the loss if she does not.'),
+        el('p', { class: 'fit-blurb' }, 'Owners on the Rua Nova selling shares in their ships. She runs her road voyage after voyage, through the same markets as your own, and your part of each voyage is paid at the next Portuguese port. He runs her; you can sell the share back when she is in the river.'),
         ...(st.offers.length ? st.offers.map((o) => {
           const r = ROUTE_BY_ID.get(o.route)!;
-          const risk = lossChance(o);
           return el('div', { class: 'estate-offer' },
-            el('div', {}, el('b', {}, o.ship), ` \u2014 ${r.name}, about ${r.months} months`),
-            el('div', { class: 'estate-sub' }, `${o.captain}, ${temperWord(o.temper)}. About one of these in ${Math.max(2, Math.round(1 / risk))} does not come home; `
-              + `the rest pay ${r.multiple[0].toFixed(1)} to ${r.multiple[1].toFixed(1)} times the stake.`),
+            el('div', {}, el('b', {}, o.ship), ` \u2014 ${r.name}`),
+            el('div', { class: 'estate-sub' }, `${o.captain}, ${temperWord(o.temper)}. A share of a ship on this road, for as long as she swims.`),
             el('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap', marginTop: '6px' } },
-              ...([[0.25, 'A quarter'], [0.5, 'Half'], [1, 'The whole']] as [number, string][]).map(([share, label]) => {
+              ...([[0.25, 'A quarter'], [0.5, 'Half']] as [number, string][]).map(([share, label]) => {
                 const cost = Math.round(o.ask * share);
                 const why = g.outfitBlocked(o.id, share);
-                return button(`${label} \u2014 ${cost}`, () => say(g.outfitVoyage(o.id, share), `Your money sails in the ${o.ship}.`),
+                return button(`${label} \u2014 ${cost}`, () => say(g.outfitVoyage(o.id, share), `A share of the ${o.ship} is yours.`),
                   { disabled: !!why, title: why ?? undefined, ghost: share < 1 });
               })),
           );

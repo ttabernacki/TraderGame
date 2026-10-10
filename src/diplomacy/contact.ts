@@ -2,8 +2,10 @@ import type { People } from '../world/peoples';
 
 /** Standing at one port. The state-level measures live in diplomacy/courts. */
 export interface Relations {
-  /** Regard for you personally, -1 to 1. */
+  /** Regard for you personally, -1 to 1. Under a court, read off the court plus `local`. */
   regard: number;
+  /** What this town itself remembers, either side of its court's opinion. */
+  local?: number;
   /** Whether they have granted permission to trade. */
   mayTrade: boolean;
   exclusive: boolean;

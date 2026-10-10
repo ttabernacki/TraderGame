@@ -319,30 +319,6 @@ export const EVENTS: SeaEventDef[] = [
   // events, both squalls. These are the ones that happen where there is nothing
   // to see, which is where a voyage most needs something to happen.
   {
-    id: 'sargasso',
-    everyDays: 30,
-    gate: (c) => c.shoreNm > 200 && c.absLat > 18 && c.absLat < 38 && day(c),
-    build: () => ({
-      id: 'sargasso', severity: 'note',
-      title: 'Weed as far as the eye carries',
-      text: 'She is sailing through a meadow. Yellow weed in rafts to the horizon, with small '
-        + 'crabs in it and a smell of the shore, and no land within four hundred miles. The hands '
-        + 'have decided it means shallow water and are not to be talked out of it.',
-    }),
-  },
-  {
-    id: 'phosphor',
-    everyDays: 16,
-    gate: (c) => c.night && c.speedKnots > 2.5,
-    build: () => ({
-      id: 'phosphor', severity: 'note',
-      title: 'Fire in the water',
-      text: 'The whole of her wake is burning cold green, and every fish that crosses it leaves a '
-        + 'streak like a falling star. The watch below have come up to look at it. Nobody has any '
-        + 'idea what it is.',
-    }),
-  },
-  {
     id: 'crossing',
     everyDays: 400,
     gate: (c) => c.absLat < 1.2 && c.g.crown.landmarksFound.has('equator'),
@@ -376,61 +352,6 @@ export const EVENTS: SeaEventDef[] = [
           },
         },
       ],
-    }),
-  },
-  {
-    id: 'argument',
-    everyDays: 22,
-    gate: (c) => c.daysOut > 8 && c.shoreNm > 60,
-    build: (c) => ({
-      id: 'argument', severity: 'note',
-      title: 'An argument on the fo\u2019c\u2019sle',
-      text: c.rng.pick([
-        'Two men are betting a week\u2019s wine on how far south she is, and the pilot has been '
-          + 'asked to settle it and has declined. The figures being shouted are three degrees apart.',
-        'The cooper is telling anyone who will listen that the sun is standing higher every noon '
-          + 'and that this means something. He is right, and he cannot say what.',
-        'A dispute about whether the water changes colour at the line. It has been going on since '
-          + 'the forenoon watch and has begun to involve the chaplain.',
-      ]),
-    }),
-  },
-  {
-    id: 'dolphins',
-    everyDays: 9,
-    gate: (c) => day(c) && c.speedKnots > 3,
-    build: () => ({
-      id: 'dolphins', severity: 'note',
-      title: 'Under the bow',
-      text: 'Dolphins on the bow wave, a dozen of them, holding station without appearing to move '
-        + 'and going faster than the ship. Half the watch is forward looking at them and the '
-        + 'boatswain has given up saying anything about it.',
-    }),
-  },
-
-  // --- The sea itself ------------------------------------------------------
-  {
-    id: 'whale',
-    everyDays: 5.5,
-    gate: (c) => day(c),
-    build: (c) => ({
-      id: 'whale', severity: 'note',
-      title: 'The watch on deck',
-      text: c.rng.pick([
-        'Whales blowing to leeward, a dozen of them, going the other way.',
-        'A great fish followed the ship all morning and the hands are uneasy about it.',
-        'Porpoises playing under the bow for an hour, which the old hands say is a good sign.',
-      ]),
-    }),
-  },
-  {
-    id: 'stelmo',
-    everyDays: 20,
-    gate: (c) => c.night && c.windKnots > 22,
-    build: () => ({
-      id: 'stelmo', severity: 'note',
-      title: 'Corpo santo',
-      text: 'St Elmo\'s fire on the mastheads in the middle watch, pale and cold and burning without heat. The whole ship\'s company on deck, and every man of them praying.',
     }),
   },
   {
@@ -703,10 +624,6 @@ function applyBaseEffect(g: Game, id: string): void {
     case 'becalmed':
       g.crew.morale = clamp(g.crew.morale - 0.035, 0, 1);
       g.crew.unrest = clamp(g.crew.unrest + 0.04, 0, 2);
-      break;
-    case 'whale':
-    case 'stelmo':
-      g.crew.morale = clamp(g.crew.morale + 0.02, 0, 1);
       break;
     case 'soldiersWind':
       g.crew.morale = clamp(g.crew.morale + 0.045, 0, 1);

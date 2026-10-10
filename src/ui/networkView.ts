@@ -6,7 +6,7 @@ import { capacityOf, policyOf, stockTons, stockValue, type Feitoria } from '../p
 import {
   POSTURES, amendLine, bestCargo, buildWorks, closeLine, footingOf, footingWord, hullPrice, inSeason, legCost,
   legDays, lineDestinations, lineHulls, openLine, canOpenLine, postureOf, worksChoices, worksCost, worksName,
-  worksOutput, worksUpkeep, type Line, type Posture,
+  worksOutput, worksUpkeep, sellShare, shareWord, type Line, type Posture,
 } from '../progression/network';
 import { button, card, el, kv, meter } from './dom';
 
@@ -88,6 +88,16 @@ function lineStatus(g: Game, l: Line): string {
 }
 
 function lineCard(g: Game, l: Line, rerender: () => void, notify: (t: string) => void): HTMLElement {
+  if (l.share) {
+    return card(`The ${l.name} — a ${shareWord(l.share)} share`,
+      kv('Owner', `${l.partner ?? 'A Rua Nova house'}, who runs her`),
+      kv('Runs', `${portName(l.home)} — ${portName(l.to)}`),
+      kv('Now', lineStatus(g, l)),
+      kv('Your part', `${l.trips} voyages, ${Math.round(l.earned)} cruzados${l.lastNet !== undefined ? `, last ${l.lastNet}` : ''}`,
+        (l.lastNet ?? 0) < 0 ? 'warn' : ''),
+      l.phase === 'home' ? button(`Sell the share — ${Math.round(hullPrice(l.hullId) * l.share * 0.8)}`,
+        () => { notify(sellShare(g, l)); rerender(); }, { ghost: true }) : null);
+  }
   const dests = lineDestinations(g, l.home);
   return card(`The ${l.name}`,
     kv('Runs', `${portName(l.home)} — ${portName(l.nextTo ?? l.to)}`),
@@ -112,7 +122,7 @@ class OpenForm {
 const form = new OpenForm();
 
 export function openLineCard(g: Game, rerender: () => void, notify: (t: string) => void, fixedHome?: string): HTMLElement {
-  const busy = new Set(g.lines.filter((l) => !l.lost).map((l) => l.home));
+  const busy = new Set(g.lines.filter((l) => !l.lost && !l.share).map((l) => l.home));
   const homes = [...new Set([...g.liveFactories.map((f) => f.portId), 'lisboa'])].filter((h) => !busy.has(h));
   if (fixedHome) form.home = fixedHome;
   else if (!homes.includes(form.home)) form.home = homes[0] ?? '';

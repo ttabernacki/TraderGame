@@ -2,7 +2,7 @@ import { Clock, dateFromDays, formatDateAt, monthName } from '../core/clock';
 import { counselFor, type Counsel } from './counsel';
 import { characterOf } from '../world/portCharacter';
 import {
-  crisisFor, newDiplomacy, newPolityState, regardDelta, rulerName, spreadWord,
+  crisisFor, newDiplomacy, newPolityState, rulerName, spreadWord,
   type Agreement, type Deal, type DiplomacyState, type Verdict,
 } from '../diplomacy/courts';
 import { POLITIES, POLITY_BY_ID, polityOfPort, politiesOfPeople, type PolityDef } from '../diplomacy/polities';
@@ -14,7 +14,7 @@ import {
   QUESTS, callbackAt, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
   rumoursHeard,
 } from '../progression/quests';
-import { migrateEnterprises, tickLines, type Letter, type Line } from '../progression/network';
+import { buyShare, migrateEnterprises, tickLines, type Letter, type Line } from '../progression/network';
 import { deliverFactoryMail, noteSightings, postLetter, tickFactories, transitDays } from '../progression/livingFactory';
 import { barkAt } from '../progression/barks';
 import { MILESTONES, checkMilestones } from '../progression/milestones';
@@ -134,7 +134,7 @@ import {
 } from '../ship/design';
 import type { HullClass } from '../ship/hull';
 import {
-  HOLDING_BY_ID, ROUTE_BY_ID, monthOfEstate, newEstate, offerOutfits,
+  HOLDING_BY_ID, monthOfEstate, newEstate, offerOutfits,
   type EstateState, type HoldingId,
 } from '../progression/estate';
 
@@ -208,6 +208,9 @@ export interface Alert {
 
 /** What a boat's crew can be sent in to do. */
 export type ShoreAction = 'water' | 'wood' | 'food' | 'meet';
+
+/** How far a town's own memory of you can stand from its court's opinion. */
+const LOCAL_REGARD = 0.6;
 
 export class Game {
   clock: Clock;
@@ -377,6 +380,8 @@ export class Game {
     const o = this.estate.offers.find((x) => x.id === offerId);
     if (!o) return 'That ship has sailed without you.';
     if (this.dockedAt !== 'lisboa') return 'Voyages are outfitted in Lisbon.';
+    const held = this.lines.filter((l) => l.share && !l.lost).length;
+    if (held >= this.chronicle.act + 1) return `You hold ${held} shares already; the Rua Nova will not sell more to one man until the next act.`;
     const stake = Math.round(o.ask * share);
     if (this.crown.gold < stake) return `Your share is ${stake} cruzados, and the purse will not run to it.`;
     return null;
@@ -388,15 +393,10 @@ export class Game {
     if (why) return why;
     const st = this.estate;
     const o = st.offers.find((x) => x.id === offerId)!;
-    const r = ROUTE_BY_ID.get(o.route)!;
-    o.stake = Math.round(o.ask * share);
-    o.sailedT = this.clock.t;
-    o.dueT = this.clock.t + r.months * 30 * 86400;
-    this.crown.gold -= o.stake;
+    // A share is a Line you do not run: she trades through the real markets and
+    // pays your part of every voyage, at the next Portuguese port, like your own.
+    buyShare(this, o.route, o.ship, o.captain, o.ask, share);
     st.offers = st.offers.filter((x) => x.id !== offerId);
-    st.outfits.push(o);
-    this.logEvent('trade', `Put ${o.stake} cruzados into the ${o.ship}, ${o.captain}, for ${r.name}. `
-      + `She is due home in about ${r.months} months.`, true);
     return null;
   }
 
@@ -1044,6 +1044,7 @@ export class Game {
       const rel = newRelations(pe);
       if (p.people === 'portuguese') { rel.met = true; rel.mayTrade = true; rel.regard = 1; }
       this.relations.set(p.id, rel);
+      this.bindRegard(p.id, rel);
     }
 
     this.dockedAt = 'lisboa';
@@ -1972,12 +1973,47 @@ export class Game {
     return null;
   }
 
+  /** When a touch on the ground was last reported. */
+  private lastTouchSaid = -1e12;
+
   relationsFor(portId: string): Relations {
     let r = this.relations.get(portId);
     if (!r) {
       r = newRelations(people(portDef(portId).people));
       this.relations.set(portId, r);
     }
+    return this.bindRegard(portId, r);
+  }
+
+  /**
+   * A town's regard is its state's opinion of you, plus what you have done in
+   * that town itself. One meter, not two: what the court thinks (trust, respect,
+   * interest) sets it, and the town's own memory moves it a little either side.
+   * Reads and writes of `regard` go through here, so a deed done at the quay is
+   * remembered locally and a treaty with the court is felt in every one of its ports.
+   */
+  private bindRegard(portId: string, r: Relations): Relations {
+    if (Object.prototype.hasOwnProperty.call(r, '__bound')) return r;
+    const pol = polityOfPort(portId);
+    if (!pol) {
+      Object.defineProperty(r, '__bound', { value: true, enumerable: false });
+      return r;
+    }
+    const court = () => {
+      const st = this.polityState(pol.id);
+      return 0.5 * st.trust + 0.2 * st.respect + 0.3 * st.interest;
+    };
+    let local = clamp(r.local ?? (r.regard - court()), -LOCAL_REGARD, LOCAL_REGARD);
+    delete (r as Partial<Relations>).regard;
+    Object.defineProperty(r, 'local', {
+      enumerable: true, configurable: true, get: () => local, set: (v: number) => { local = clamp(v, -LOCAL_REGARD, LOCAL_REGARD); },
+    });
+    Object.defineProperty(r, 'regard', {
+      enumerable: true, configurable: true,
+      get: () => clamp(court() + local, -1, 1),
+      set: (v: number) => { local = clamp(local + (v - clamp(court() + local, -1, 1)), -LOCAL_REGARD, LOCAL_REGARD); },
+    });
+    Object.defineProperty(r, '__bound', { value: true, enumerable: false });
     return r;
   }
 
@@ -1993,8 +2029,9 @@ export class Game {
    * than a windfall.
    */
   shiftPeopleRegard(peopleId: string, delta: number): void {
+    // Ports under a court feel it through the court; the rest directly.
     for (const p of PORTS) {
-      if (p.people !== peopleId) continue;
+      if (p.people !== peopleId || polityOfPort(p.id)) continue;
       const r = this.relationsFor(p.id);
       r.regard = clamp(r.regard + delta, -1, 1);
     }
@@ -2032,13 +2069,7 @@ export class Game {
     st.trust = clamp(st.trust + (d.trust ?? 0), -1, 1);
     st.respect = clamp(st.respect + (d.respect ?? 0), -1, 1);
     st.interest = clamp(st.interest + (d.interest ?? 0), -1, 1);
-    const rd = regardDelta(d);
-    if (rd !== 0) {
-      for (const port of def.ports) {
-        const r = this.relationsFor(port);
-        r.regard = clamp(r.regard + rd, -1, 1);
-      }
-    }
+    // Every one of its ports feels it: a port's regard is read off its court.
     if (why) {
       this.logEvent('contact', `${def.name}: ${why}.`);
       st.news = [...(st.news ?? []), { t: this.clock.t, text: why }].slice(-5);
@@ -2427,6 +2458,7 @@ export class Game {
         this.enter('contract', `Contract with ${c.houseName} broken`, -penalty);
         this.logEvent('trade', `The contract with ${c.houseName} has run out undelivered. They have taken back the advance and half as much again, ${penalty} cruzados, and they will remember.`, true);
         this.pushAlert(`Contract broken: ${c.houseName} (${penalty} cruzados).`, 'grave');
+        this.crown.standing = Math.max(0, this.crown.standing - Math.round(penalty * 0.1));
       }
     }
     this.trade.contracts = this.trade.contracts.filter((c) => c.status !== 'offered');
@@ -3795,7 +3827,6 @@ export class Game {
     this.logEvent('navigation',
       `Noon. ${nm.toFixed(0)} miles made good in ${period}, `
       + `latitude ${formatLat(lat)} by the reckoning.${verdict}${remaining}`);
-    this.pushAlert(`Noon — ${nm.toFixed(0)} ${Math.round(nm) === 1 ? 'mile' : 'miles'} run.${remaining}`, 'note');
 
     // And the other half of noon: the sun is on the meridian, which is the one
     // moment in the day the latitude can be had. The pilot asks for it, because
@@ -3832,6 +3863,8 @@ export class Game {
 
     if (usable.length === 0) {
       if (!grave) return;
+      // Nothing to be done about it today either, so once in five days is plenty.
+      if (this.clock.t - this.lastSightWord < 5 * 86400) return;
       this.lastSightWord = this.clock.t;
       // Short, and about the thing he can do something about.
       //
@@ -3841,7 +3874,6 @@ export class Game {
       // Regimento do Norte is a rule for the pole star and has no solar
       // declination in it, the alert became a paragraph in the corner of the
       // screen with a lower-case R.
-      const sun = opps.find((o) => o.body === 'sun');
       const pole = opps.find((o) => o.body === 'polaris');
       const noTables = this.nav.almanac.solarError === null;
       const poleGone = pole ? /below the horizon/i.test(pole.reason ?? '') : false;
@@ -3855,10 +3887,6 @@ export class Game {
           'No latitude again today. The sun is no use without solar tables — the Regimento do '
           + 'Astrolábio, 220 cruzados under Fitting out in port — so it wants a clear night and the '
           + 'pole star.', 'warning');
-      } else {
-        const why = (sun?.reason ?? 'nothing to be had').replace(/\.$/, '');
-        this.pushAlert(`No latitude again today — ${why.charAt(0).toLowerCase()}${why.slice(1)}.`,
-          'warning');
       }
       return;
     }
@@ -3889,7 +3917,8 @@ export class Game {
     //
     // And now not at all: the clock is the captain's, and a sight is offered
     // in the corner and left to him. He can take it or let it go by.
-    void grave;
+    // Said only when the reckoning wants it; a good noon with a fresh fix is silence.
+    if (!grave && days < 3) return;
     this.pushAlert(
       `${best.label} may be had. `
       + `${days > 2 ? `Nothing observed for ${days.toFixed(0)} days. ` : ''}Press N.`,
@@ -4596,7 +4625,9 @@ export class Game {
       this.pendingEvent = event;
       return;
     }
-    this.pushAlert(event.text, event.severity);
+    // Something that simply happened goes in the log, not across the screen;
+    // only a man lost or the like is worth a line on deck.
+    if (event.severity === 'grave') this.pushAlert(event.text, event.severity);
     this.logEvent(event.severity === 'note' ? 'note' : 'peril', event.text, event.severity !== 'note');
   }
 
@@ -5063,7 +5094,7 @@ export class Game {
   refreshPortBusiness(def: PortDef): void {
     const known = new Set(this.chart.ports.keys());
     this.ventureOffers = offerVentures(
-      def, this.clock.t, this.rng, known, () => `v${this.nextVentureId++}`,
+      def, this.clock.t, this.rng, known, () => `v${this.nextVentureId++}`, this.markets,
     );
 
     // A port gives up one rumour per visit at most, and only when there is
@@ -5641,6 +5672,8 @@ export class Game {
     }
     v.taken = true;
     v.loaded = true;
+    // The merchant's goods come off this quay, so the town has that much less of them.
+    this.markets.buy(v.fromPort, v.goodId, v.quantity);
     this.crown.gold += v.advance;
     this.ventures.push(v);
     this.ventureOffers = this.ventureOffers.filter((x) => x.id !== id);
@@ -5657,12 +5690,16 @@ export class Game {
       if (this.ship.quantityOf(v.goodId) < v.quantity - 0.01) {
         v.failed = true;
         this.crown.gold -= v.penalty;
+        // A merchant's word of you is your name, not a book of its own.
+        this.crown.standing = Math.max(0, this.crown.standing - v.penalty * 0.1);
         this.logEvent('trade',
           `${v.patron}\u2019s factor here asked for his ${good(v.goodId).name} and it was not `
           + 'aboard. The matter will be raised in Lisbon.', true);
         continue;
       }
       this.ship.removeCargo(v.goodId, v.quantity);
+      // And land on this one, where they are sold like anybody else's.
+      this.markets.sell(def.id, v.goodId, v.quantity);
       v.delivered = true;
       v.loaded = false;
       this.crown.gold += v.fee;
@@ -6342,11 +6379,15 @@ export class Game {
       // has to be put back into it, or she touches again on the next step and
       // the "gently, with no harm in it" message becomes a stream of them.
       this.floatHerOff();
-      this.pushAlert(
-        'She touched, and the flood lifted her off again. The watch have handed the sail and '
-        + 'her head is off the land.', 'warning');
-      this.logEvent('note',
-        'Ran her in until she would go no further and touched. ' + outlook.text);
+      // Once in a watch is news; every step she grinds on the same bank is not.
+      if (this.clock.t - this.lastTouchSaid > 6 * 3600) {
+        this.pushAlert(
+          'She touched, and the flood lifted her off again. The watch have handed the sail and '
+          + 'her head is off the land.', 'warning');
+        this.logEvent('note',
+          'Ran her in until she would go no further and touched. ' + outlook.text);
+      }
+      this.lastTouchSaid = this.clock.t;
       return;
     }
     this.pendingScenes.push(this.aground(outlook));
@@ -8321,7 +8362,7 @@ export class Game {
     // twice that, because they are the ones he may want to read twice.
     const now = nowMs();
     this.alerts = this.alerts.filter(
-      (a) => now - a.said < (a.severity === 'grave' ? 30000 : 14000),
+      (a) => now - a.said < (a.severity === 'grave' ? 22000 : a.severity === 'warning' ? 12000 : 8000),
     );
   }
 
@@ -9494,6 +9535,7 @@ export class Game {
     g.crown.chartedSincePatent = d.crown.chartedSincePatent ?? 0;
     g.markets.restore(d.markets);
     g.relations = new Map(d.relations);
+    // Bound once the courts are back, below: a port's regard is read off its court.
     g.visitedPorts = new Set(d.visited);
     g.log.entries = d.log ?? [];
     g.dockedAt = d.dockedAt;
@@ -9572,6 +9614,7 @@ export class Game {
         st.knowledge = clamp(0.15 * rels.length, 0, 0.6);
       }
     }
+    for (const [id, r] of g.relations) g.bindRegard(id, r);
     g.chronicle = d.chronicle ?? chronicleFromProgress(g);
     refreshQuestPrices(g);
     g.passageRecord = { ...newPassageRecord(), ...(d.passageRecord ?? {}) };

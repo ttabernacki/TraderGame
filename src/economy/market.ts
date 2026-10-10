@@ -197,6 +197,21 @@ export class Markets {
     return Math.round(hunger * scale * bulkiness * 38 * (0.4 + def.wealth) * craving);
   }
 
+  /** Units on the quay now, and that against what the town usually holds (1 = normal). */
+  supply(portId: string, goodId: string): { stock: number; ratio: number } {
+    const def = portDef(portId);
+    const abundance = def.produces[goodId] ?? 0;
+    if (abundance <= 0) return { stock: 0, ratio: 0 };
+    const base = this.baseStock(def, good(goodId), abundance);
+    const stock = this.stateFor(portId).stock[goodId] ?? base;
+    return { stock, ratio: base > 0 ? stock / base : 0 };
+  }
+
+  /** How sated a town is with a good: 0 hungry, 3 drowning in it. */
+  glutOf(portId: string, goodId: string): number {
+    return this.stateFor(portId).glut[goodId] ?? 0;
+  }
+
   /** Refresh stocks and let gluts decay. Called when the player arrives. */
   refresh(portId: string, t: number): void {
     const s = this.stateFor(portId);

@@ -146,6 +146,9 @@ export interface Line {
   forced?: boolean;
   history: { t: number; net: number }[];
   lost?: boolean;
+  /** A share in another owner's ship: the fraction of each voyage that is yours. She is his to run. */
+  share?: number;
+  partner?: string;
 }
 
 const SHIP_NAMES = ['São Brás', 'Santa Clara', 'Boa Ventura', 'São Cristóvão', 'Nossa Senhora do Cabo',
@@ -269,7 +272,7 @@ function bringNews(g: Game, port: string): void {
 export function canOpenLine(g: Game, home: string, to: string, hullId: string): string | null {
   if (!g.feitorias.some((f) => f.portId === home && !f.lost) && home !== 'lisboa') return 'A Line runs from one of your Houses.';
   if (home === to) return 'She has to go somewhere.';
-  if (g.lines.some((l) => !l.lost && l.home === home)) {
+  if (g.lines.some((l) => !l.lost && !l.share && l.home === home)) {
     return `${portDef(home).name} already keeps a Line. One ship to a House: a factor cannot load two.`;
   }
   const def = portDef(to);
@@ -416,7 +419,9 @@ function step(g: Game, l: Line): void {
   const gain = Math.max(0, purse - costs);
   const shares = gain * 0.3;
   const casa = gain * (g.can('rua') ? 0.08 : 0.15);
-  const net = Math.round(purse - costs - shares - casa);
+  const whole = purse - costs - shares - casa;
+  // A part-owner gets his part, of the profit and of the loss.
+  const net = Math.round(whole * (l.share ?? 1));
   l.trips++;
   l.earned += net;
   l.lastNet = net;
@@ -426,7 +431,8 @@ function step(g: Game, l: Line): void {
     g.remittances.push({
       arrives: g.clock.t + (portDef(l.home).people === 'portuguese' ? 0 : g.transitDays(l.home) * 86400),
       amount: net, from: l.name,
-      voyage: `The ${l.name}: ${l.voyageText}. Costs ${costs}, the men’s shares ${Math.round(shares)}, the Casa ${Math.round(casa)}. Net ${net}.`,
+      voyage: `The ${l.name}: ${l.voyageText}. Costs ${costs}, the men’s shares ${Math.round(shares)}, the Casa ${Math.round(casa)}. `
+        + (l.share ? `Your ${shareWord(l.share)} share: ${net}.` : `Net ${net}.`),
     });
   }
   l.cargo = null;
@@ -524,4 +530,46 @@ export function migrateEnterprises(g: Game, list: any[]): void {
 export function lineDestinations(g: Game, home: string): string[] {
   return PORTS.filter((p) => p.id !== home && (p.people === 'portuguese' || g.relationsFor(p.id).mayTrade)
     && (g.visitedPorts.has(p.id) || p.known)).map((p) => p.id);
+}
+
+export function shareWord(f: number): string {
+  return f <= 0.26 ? 'quarter' : f <= 0.34 ? 'third' : f <= 0.51 ? 'half' : 'whole';
+}
+
+/** Where a Rua Nova owner sends his ship, by the route he is raising money for. */
+const SHARE_ROUTE: Record<string, { to: string; hullId: string }> = {
+  madeira: { to: 'funchal', hullId: 'caravela-latina' },
+  guinea: { to: 'serra-leoa', hullId: 'caravela-latina' },
+  mina: { to: 'mina', hullId: 'caravela-redonda' },
+  congo: { to: 'mpinda', hullId: 'nau-pequena' },
+  india: { to: 'calecute', hullId: 'nau' },
+};
+
+/**
+ * Take a share in a Rua Nova owner's ship. She runs from Lisbon as any Line does,
+ * through the same markets, and you are paid your part of every voyage. He decides
+ * where she goes and in what; you decide only whether to be in her.
+ */
+export function buyShare(g: Game, route: string, ship: string, owner: string, ask: number, share: number): string {
+  const r = SHARE_ROUTE[route];
+  if (!r) return 'That ship has sailed without you.';
+  const cost = Math.round(ask * share);
+  if (cost > g.crown.gold) return `Your share is ${cost} cruzados, and the purse will not run to it.`;
+  g.crown.gold -= cost;
+  const id = g.nextLineId++;
+  g.lines.push({
+    id, name: ship, hullId: r.hullId, home: 'lisboa', to: r.to, phase: 'home', at: g.clock.t, cargo: null, purse: 0,
+    voyageText: '', trips: 0, earned: 0, history: [], share, partner: owner,
+  });
+  g.logEvent('trade', `Bought a ${shareWord(share)} share in the ${ship}, ${owner}'s ship on the ${portDef(r.to).name} run, for ${cost} cruzados.`, true);
+  return `A ${shareWord(share)} of the ${ship} is yours.`;
+}
+
+/** Sell a share back on the Rua Nova, at what the hull is worth. */
+export function sellShare(g: Game, l: Line): string {
+  if (l.phase !== 'home') return `The ${l.name} is at sea. A share is sold when she is in the river.`;
+  const back = Math.round(hullPrice(l.hullId) * (l.share ?? 1) * 0.8);
+  g.crown.gold += back;
+  l.lost = true;
+  return `Sold your share in the ${l.name} for ${back} cruzados.`;
 }

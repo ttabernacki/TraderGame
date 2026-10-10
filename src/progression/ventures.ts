@@ -1,5 +1,6 @@
 import { NM, clamp, haversine } from '../core/math';
 import type { Rng } from '../core/rng';
+import type { Markets } from '../economy/market';
 import { GOODS, good } from '../economy/goods';
 import { PORTS, portDef, type PortDef } from '../world/ports';
 
@@ -51,11 +52,14 @@ const PATRONS = [
  * who lies at anchor for a month finds different business waiting.
  */
 export function offerVentures(
-  at: PortDef, t: number, rng: Rng, known: Set<string>, nextId: () => string,
+  at: PortDef, t: number, rng: Rng, known: Set<string>, nextId: () => string, markets: Markets,
 ): Venture[] {
   const out: Venture[] = [];
-  // What this place actually produces is what a merchant here wants shipped.
-  const produce = Object.keys(at.produces).filter((id) => GOODS.some((g) => g.id === id));
+  // What this place actually produces, and has lying on the quay, is what a
+  // merchant here wants shipped: a glut here is a charter out of here.
+  markets.refresh(at.id, t);
+  const produce = Object.keys(at.produces)
+    .filter((id) => GOODS.some((g) => g.id === id) && markets.supply(at.id, id).stock >= 4);
   if (produce.length === 0) return out;
 
   // Somewhere they trade with, that the player has heard of. A merchant does not
@@ -71,21 +75,23 @@ export function offerVentures(
   const count = at.size === 'city' ? 3 : at.size === 'town' ? 2 : 1;
   const used = new Set<string>();
   for (let i = 0; i < count * 3 && out.length < count; i++) {
-    const goodId = rng.pick(produce);
+    const goodId = weighted(rng, produce, (id) => 0.3 + markets.supply(at.id, id).ratio ** 2);
     const g = good(goodId);
 
     // A merchant charters a ship to somewhere that actually wants what he has.
     // Freight to a port with no appetite for the cargo is not a contract, it is
     // a donation, and offering it produced charters worth forty cruzados that
     // no captain would ever look at twice.
-    const wanting = destinations.filter((p) => (p.wants[goodId] ?? 0) > 0.2);
+    // And he sends it where it is short; a town already sated is passed over.
+    const wanting = destinations.filter((p) => (p.wants[goodId] ?? 0) > 0.2 && markets.glutOf(p.id, goodId) < 1);
     if (wanting.length === 0) continue;
-    const to = rng.pick(wanting);
+    const to = weighted(rng, wanting, (p) => (p.wants[goodId] ?? 0) / (1 + markets.glutOf(p.id, goodId) * 2));
     if (used.has(`${goodId}:${to.id}`)) continue;
     used.add(`${goodId}:${to.id}`);
 
     const distNm = haversine({ lat: at.lat, lon: at.lon }, { lat: to.lat, lon: to.lon }) / NM;
-    const hunger = to.wants[goodId] ?? 0.25;
+    // A town that is short pays more to be sent it.
+    const hunger = (to.wants[goodId] ?? 0.25) / (1 + markets.glutOf(to.id, goodId));
 
     // Sized by what it *stows*, not by a count: a caravel's hold is forty-odd
     // tons, and forty units of pepper and forty head of horses are not remotely
@@ -94,7 +100,9 @@ export function offerVentures(
     // actually name. Four thousand arráteis of coral stows in nine tons and
     // still reads like a clerical error.
     const tons = rng.range(5, 15) * (0.5 + at.wealth);
-    const quantity = Math.round(clamp(tons / Math.max(g.bulk, 0.002), 4, 240));
+    const onQuay = markets.supply(at.id, goodId).stock;
+    const quantity = Math.round(clamp(Math.min(tons / Math.max(g.bulk, 0.002), onQuay * 0.6), 4, 240));
+    if (quantity > onQuay) continue;
 
     // Freight was paid by the ton and the league, with a premium for how badly
     // the far end wanted it — plus a flat handling charge, which is what keeps a
@@ -185,4 +193,11 @@ function unitPlural(unit: string, n: number): string {
 /** How long is left, in days, or negative when it is already overdue. */
 export function daysLeft(v: Venture, t: number): number {
   return (v.dueBy - t) / 86400;
+}
+
+function weighted<T>(rng: Rng, items: T[], w: (x: T) => number): T {
+  const ws = items.map((x) => Math.max(0, w(x)));
+  let r = rng.next() * ws.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < items.length; i++) { r -= ws[i]; if (r <= 0) return items[i]; }
+  return items[items.length - 1];
 }

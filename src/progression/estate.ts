@@ -141,7 +141,8 @@ export function offerOutfits(st: EstateState, act: number, rng: Rng, t: number):
   st.offers = Array.from({ length: 3 }, () => {
     const r = rng.pick(routes);
     const temper = rng.pick([0.8, 1, 1, 1.15, 1.3]);
-    const base = { madeira: 800, guinea: 1600, mina: 2400, congo: 3200, india: 6000 }[r.id];
+    // A share in a ship that trades for years, not one voyage's stake.
+    const base = { madeira: 1600, guinea: 3000, mina: 4600, congo: 6400, india: 12000 }[r.id];
     return {
       id: `o${st.nextId++}`,
       captain: rng.pick(CAPTAINS),

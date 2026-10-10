@@ -114,6 +114,15 @@ checkpoint between acts.
   Lines. Act V `pepperhouse` at Lisbon: Casa contract (fixed 26) or corner the market (×1.4).
   Never require sailing back: every House and Line is managed from the Orders book.
 
+- **One economy, fewer meters.** Charters buy their cargo off the origin's quay and land it
+  on the destination's market; offers follow gluts out and shortages in. The estate's
+  "outfit a voyage" is now a quarter or half share in a Rua Nova owner's Line from Lisbon
+  (paid per voyage, owner runs her; act+1 shares at most). A port's regard is its court's
+  opinion (0.5 trust + 0.2 respect + 0.3 interest) plus the town's own memory (±0.6,
+  `Relations.local`); merchant standing is renown. Sea events are 15; those without a
+  choice go to the log only (grave ones excepted). Noon and routine sight prompts no longer
+  alert.
+
 ## Verdicts
 
 Keep and deepen:
