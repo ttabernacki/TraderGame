@@ -104,7 +104,7 @@ import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
 import { featureNear, type CoastFeature } from '../world/features';
 import { charterDays, daysLeft, offerVentures, ventureLine, type Venture } from '../progression/ventures';
-import { advanceRival, newRival, rivalGossip, type RivalState } from '../progression/rival';
+import { advanceRival, newRival, rivalGossip, rivalTrade, rivalWasHere, type RivalState } from '../progression/rival';
 import { rollRivalMeeting } from '../progression/rivalEvents';
 import { beyondScene, featureScene, landmarkScene } from './discovery';
 import { castLead, landfallScene, type LeadCast } from './soundings';
@@ -6024,6 +6024,11 @@ export class Game {
 
   /** The other captain works his way down the coast whether you sail or not. */
   private advanceRival(days: number): void {
+    const cargo = rivalTrade(this.rival, this);
+    if (cargo && this.dockedAt === 'lisboa') {
+      const gd = good(cargo.goodId);
+      this.logEvent('trade', `${this.rival.name}'s caravel came up the Tagus from ${portDef(cargo.port).name} with ${cargo.qty} ${gd.unit}s of ${gd.english.toLowerCase()}. The price of it on the quay went down the same afternoon.`, true);
+    }
     const news = advanceRival(
       this.rival, days, this.ship.state.pos.lat, this.crown.lifetimeStanding, this.rng,
     );
@@ -8162,6 +8167,8 @@ export class Game {
     this.visitPolity(def);
     this.markets.refresh(def.id, this.clock.t);
     this.visitMarket(def);
+    const rival = rivalWasHere(this.rival, def.id, this.clock.t);
+    if (rival) { this.pushAlert(rival, 'note'); this.logEvent('trade', rival, true); }
     this.refreshPortBusiness(def);
     this.deliverVentures(def);
     this.reclaimBrokenCharters();

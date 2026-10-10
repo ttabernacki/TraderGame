@@ -1,4 +1,5 @@
-import { NM, clamp, haversine } from '../core/math';
+import { NM, clamp, haversine, wrap180 } from '../core/math';
+import { GOOD_BY_ID } from '../economy/goods';
 import { shiftAll } from '../crew/hands';
 import { hullClass } from '../ship/hull';
 import { NATION_NAME, NATION_PEOPLE, type Stranger } from './encounter';
@@ -76,7 +77,12 @@ function takeHer(g: Game, s: Stranger, lawful: boolean): string {
 
   const purse = prizeValue(g, s);
   g.seaRecord.prizes++;
-  g.crown.gold += purse;
+  // Most of what a ship is worth is what she carries, and that comes across
+  // into your hold, to be sold like any other cargo — gluts and all. The rest
+  // is the master's strongbox.
+  const hold = takeHerCargo(g, s, purse * 0.7);
+  const coin = Math.round(purse * 0.3 + hold.leftValue * 0.15);
+  g.crown.gold += coin;
   if (lawful) {
     g.crown.standing += 14;
     g.crown.lifetimeStanding += 14;
@@ -87,7 +93,7 @@ function takeHer(g: Game, s: Stranger, lawful: boolean): string {
   return `${s.name} was carried in about four minutes. ${lost === 0
     ? 'Nobody was killed, on either side; her master looked at the numbers on our rail and put up his hands.'
     : `${lost === 1 ? 'One of ours' : `${lost} of ours`} killed, and more of hers.`} `
-    + `${purse} cruzados out of her, and ${lawful
+    + `${coin} cruzados out of her strongbox${hold.text}, and ${lawful
       ? 'a deposition for the Casa that will be read by somebody who was not there.'
       : 'nothing whatever to say for it, because she was under the same flag as you are.'}`;
 }
@@ -373,12 +379,14 @@ const BUILDERS: Record<string, Build> = {
             if (won) {
               const purse = prizeValue(gg, s);
               gg.seaRecord.prizes++;
-              gg.crown.gold += purse;
+              const hold = takeHerCargo(gg, s, purse * 0.7);
+              const coin = Math.round(purse * 0.3 + hold.leftValue * 0.15);
+              gg.crown.gold += coin;
               gg.crown.standing += 10;
               gg.crown.lifetimeStanding += 10;
               return `They came over the quarter and were held on the gangway for a quarter of `
                 + `an hour, and then they were not there any more. ${lost === 1 ? 'One man' : `${lost} men`} `
-                + `killed. ${purse} cruzados out of her, and a ship's company who will tell this `
+                + `killed. ${coin} cruzados out of her${hold.text}, and a ship's company who will tell this `
                 + 'story in every wine shop in Belém for the rest of their lives.';
             }
             const taken = Math.round(gg.crown.gold * 0.5);
@@ -541,4 +549,36 @@ export function hailScene(g: Game, s: Stranger): SeaEvent {
   if (s.nation === 'genoese' && s.business === 'trader') return GENOESE(g, s);
   const build = BUILDERS[s.business] ?? BUILDERS.trader;
   return build(g, s);
+}
+
+/** What she has under hatches, by where she is and what she is about. */
+function manifest(s: Stranger): string[] {
+  const east = wrap180(s.pos.lon) > 30;
+  if (east) return ['pimenta', 'calico', 'gengibre', 'canela'];
+  switch (s.business) {
+    case 'guineaman': return ['ouro', 'malagueta', 'marfim'];
+    case 'interloper': return ['malagueta', 'marfim', 'ouro'];
+    case 'corsair': return ['panos', 'couros', 'ouro'];
+    default: return s.nation === 'moorish' ? ['couros', 'panos', 'acucar'] : ['vinho', 'la', 'acucar', 'trigo'];
+  }
+}
+
+/** Swing her cargo across, as much as the hold will take. */
+function takeHerCargo(g: Game, s: Stranger, value: number): { text: string; leftValue: number } {
+  const goods = manifest(s).filter((id) => GOOD_BY_ID.has(id));
+  const first = goods[Math.floor(g.rng.next() * Math.min(2, goods.length))];
+  const second = goods.find((id) => id !== first);
+  const parts: [string, number][] = second ? [[first, 0.65], [second, 0.35]] : [[first, 1]];
+  const got: string[] = [];
+  let left = 0;
+  for (const [id, share] of parts) {
+    const gd = GOOD_BY_ID.get(id)!;
+    const want = Math.max(1, Math.round((value * share) / gd.lisbon));
+    const took = g.ship.addCargo(id, want, 0, 0.45);
+    if (took > 0) got.push(`${took} ${gd.unit}s of ${gd.english.toLowerCase()}`);
+    left += (want - took) * gd.lisbon;
+  }
+  const text = (got.length ? `, ${got.join(' and ')} swung across into the hold` : '')
+    + (left > 30 ? `, and about ${Math.round(left)} cruzados of goods left in her for want of room` : '');
+  return { text, leftValue: left };
 }

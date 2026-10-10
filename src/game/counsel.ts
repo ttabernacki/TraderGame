@@ -98,6 +98,9 @@ const COAST = /^Keep in with the coast/;
 const STRAIGHT = /^Stand on as she is/;
 const WIDE = /^Stand south into the westerlies/;
 const CLOSE = /^Round close/;
+const V_WIDE = /^The wide volta/;
+const V_SHORT = /^A short volta/;
+const V_COAST = /^Work up inshore/;
 const DIVERT = /^Bear away for/;
 const SHORT = /^Put the company on short water/;
 const RAIN = /^Stand on and trust to the rain/;
@@ -473,6 +476,29 @@ const RULES: Record<string, Rule> = {
         piloto: 'The coast, sir, if the wind is wrong. A calm in the middle of the ocean has no land behind it.',
         mestre: 'The coast, sir. At least we can put in if it turns.',
         lingua: 'The coast, sir. The Arabs there know the road, and will tell us for a price.',
+      }],
+    ],
+  },
+
+  'passage:volta': {
+    voices: ['piloto', 'mestre', 'cirurgiao'],
+    right: (_g, e) => ((e.facts?.water ?? 60) >= 40 ? V_WIDE : (e.facts?.water ?? 60) >= 22 ? V_SHORT : V_COAST),
+    bias: { piloto: V_WIDE, mestre: V_SHORT, cirurgiao: V_COAST },
+    args: [
+      [V_WIDE, {
+        piloto: 'Out by the Azores, sir. The westerlies are always there at that latitude. Every Mina pilot who cut it short has a story about it.',
+        mestre: 'Wide, if the casks will stand it. It is the long road and the sure one.',
+        cirurgiao: 'If the water holds, the long road. A fortnight beating to windward is worse for the men than a week more at sea.',
+      }],
+      [V_SHORT, {
+        piloto: 'Short, by the Canaries, this month. The trade lies far enough south.',
+        mestre: 'The short volta, sir. The Azores leagues are water we have not got.',
+        cirurgiao: 'Short, sir. The sooner we are home the fewer I bury.',
+      }],
+      [V_COAST, {
+        piloto: 'In with the land only if we must have water, sir. It is slow beyond believing.',
+        mestre: 'Inshore. There is water every few days and I would rather that than empty casks off the Azores.',
+        cirurgiao: 'Inshore, sir. Greens and water are what the men want, and the coast has both.',
       }],
     ],
   },

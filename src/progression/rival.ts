@@ -1,3 +1,5 @@
+import type { Game } from '../game/state';
+import { GOOD_BY_ID } from '../economy/goods';
 import { NM, clamp, haversine, wrap360 } from '../core/math';
 import type { Rng } from '../core/rng';
 import { PORTS, portDef } from '../world/ports';
@@ -44,6 +46,9 @@ export interface RivalState {
   compact?: boolean;
   /** You destroyed him with his own letter. */
   ruined?: boolean;
+  /** His ships' trading: when the last one was decided, and the last few cargoes. */
+  tradeT?: number;
+  cargoes?: { t: number; port: string; goodId: string; qty: number }[];
 }
 
 const RIVALS = [
@@ -208,3 +213,53 @@ export function rivalStanding(r: RivalState, playerStanding: number): string {
 }
 
 export { wrap360, haversine, NM };
+
+/**
+ * His ships trade, not just explore.
+ *
+ * Every month or so one of his caravels loads at a market on his part of the
+ * road and lands it at Lisbon, through the same markets as yours: the quay he
+ * has loaded at is short of that good for a season, and the Tagus price for it
+ * sags. A rival you can feel in the prices before you ever see his topsails.
+ */
+export function rivalTrade(r: RivalState, g: Game): { port: string; goodId: string; qty: number } | null {
+  if (r.eclipsed || r.ruined) return null;
+  const t = g.clock.t;
+  r.tradeT ??= t;
+  if (t - r.tradeT < 30 * 86400) return null;
+  r.tradeT = t;
+  if (!g.rng.chance(r.compact ? 0.3 : 0.55)) return null;
+  const ports = PORTS.filter((p) => p.id !== 'lisboa' && p.lon < 25 && p.lon > -45
+    && p.lat >= r.frontierLat && Object.keys(p.produces).length > 0
+    && (p.known || r.claimed.includes(p.id)));
+  if (ports.length === 0) return null;
+  const at = ports[Math.floor(g.rng.next() * ports.length)];
+  g.markets.refresh(at.id, t);
+  let best: { goodId: string; value: number; stock: number } | null = null;
+  for (const id of Object.keys(at.produces)) {
+    const gd = GOOD_BY_ID.get(id);
+    if (!gd) continue;
+    const { stock } = g.markets.supply(at.id, id);
+    const value = stock * gd.lisbon;
+    if (stock >= 4 && (!best || value > best.value)) best = { goodId: id, value, stock };
+  }
+  if (!best) return null;
+  const gd = GOOD_BY_ID.get(best.goodId)!;
+  const qty = Math.floor(Math.min(best.stock * 0.45, 40 / Math.max(gd.bulk, 0.001)));
+  if (qty < 1) return null;
+  g.markets.buy(at.id, best.goodId, qty);
+  g.markets.refresh('lisboa', t);
+  g.markets.sell('lisboa', best.goodId, qty);
+  r.cargoes = [...(r.cargoes ?? []), { t, port: at.id, goodId: best.goodId, qty }].slice(-6);
+  return { port: at.id, goodId: best.goodId, qty };
+}
+
+/** If his ship has lately cleared this quay, what the factor says about it. */
+export function rivalWasHere(r: RivalState, portId: string, t: number): string | null {
+  const c = (r.cargoes ?? []).filter((x) => x.port === portId && t - x.t < 75 * 86400).pop();
+  if (!c) return null;
+  const gd = GOOD_BY_ID.get(c.goodId);
+  if (!gd) return null;
+  const days = Math.max(1, Math.round((t - c.t) / 86400));
+  return `${r.name}'s caravel was here ${days === 1 ? 'yesterday' : `${days} days ago`} and took ${c.qty} ${gd.unit}s of ${gd.english.toLowerCase()} off the quay. There is less of it about.`;
+}

@@ -418,7 +418,7 @@ function step(g: Game, l: Line): void {
   // The master and the men sail for a share, as every ship on the Carreira did, and the Casa takes its own.
   const gain = Math.max(0, purse - costs);
   const shares = gain * 0.3;
-  const casa = gain * (g.can('rua') ? 0.08 : 0.15);
+  const casa = gain * (g.casa.linesRate ?? (g.can('rua') ? 0.08 : 0.15));
   const whole = purse - costs - shares - casa;
   // A part-owner gets his part, of the profit and of the loss.
   const net = Math.round(whole * (l.share ?? 1));

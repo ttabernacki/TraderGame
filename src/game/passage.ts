@@ -26,6 +26,7 @@ export interface PassageRecord {
   barbaryT?: number;
   tomeT?: number;
   arabianT?: number;
+  voltaT?: number;
 }
 
 export function newPassageRecord(): PassageRecord {
@@ -400,6 +401,65 @@ export function waterScene(g: Game): SeaEvent | null {
 }
 
 /**
+ * The volta: how far out to stand before turning for home.
+ *
+ * Asked northbound off Guinea with home ahead of her. Nobody beats up the
+ * Saharan coast against the trades for long; the question every Mina pilot
+ * argued was how wide to go — out past the Azores, where the westerlies are
+ * sure, or a shorter loop that may leave her fighting the trade for a fortnight.
+ */
+export function voltaScene(g: Game): SeaEvent | null {
+  const dest = g.destination;
+  if (!dest || dest.lat < 30 || dest.lon < -32) return null;
+  const pos = g.nav.estimated;
+  if (pos.lat < 6 || pos.lat > 21) return null;
+  if (pos.lon < -30 || pos.lon > -10) return null;
+
+  const wide = seaMark(36.5, -31);
+  const short = seaMark(31, -24);
+  const coast = seaMark(27.5, -15.5);
+  const days = g.crew.provisions.water;
+  return {
+    id: 'passage:volta',
+    council: true,
+    title: 'The volta',
+    severity: 'note',
+    text: `Home is to the north and the trade blows out of the north-east, steady as a wall. `
+      + `She will not lie up the coast against it; every ship home from Guinea goes out into the `
+      + `ocean first and comes round on the westerlies. How far out is the argument in the great cabin.\n\n`
+      + `${Math.round(days)} days of water aboard.`,
+    facts: { water: Math.round(days) },
+    choices: [
+      {
+        label: 'The wide volta, out by the Azores',
+        detail: 'The longest road on the chart and the surest: the westerlies are always there at 37°. '
+          + 'Wants water for six weeks or more.',
+        resolve: (g2) => {
+          g2.insertWaypointAhead('Out by the Azores', wide.lat, wide.lon);
+          return 'Stood away to the north-west on the starboard tack, for the latitude of the Azores and the westerlies beyond.';
+        },
+      },
+      {
+        label: 'A short volta, by the Canaries',
+        detail: 'Fewer leagues. If the trade comes north this month she may be beating against it for a fortnight.',
+        resolve: (g2) => {
+          g2.insertWaypointAhead('The short volta', short.lat, short.lon);
+          return 'Laid her off to the north-west, meaning to come round short and save the Azores leagues.';
+        },
+      },
+      {
+        label: 'Work up inshore',
+        detail: 'Land breezes at night, water and a landfall every few days — and the trade in her teeth all the way.',
+        resolve: (g2) => {
+          g2.insertWaypointAhead('Inshore, off the Barbary coast', coast.lat, coast.lon);
+          return 'Kept her in with the land, to work up on the night breezes. The men who have done it before looked at each other.';
+        },
+      },
+    ],
+  };
+}
+
+/**
  * Called from the passage loop. Returns at most one scene, at most once per
  * question per stretch of sea.
  */
@@ -424,6 +484,10 @@ export function passageQuestion(g: Game, rec: PassageRecord): SeaEvent | null {
   if (t - (rec.tomeT ?? -1e12) > 40 * DAY) {
     const s = tomeScene(g);
     if (s) { rec.tomeT = t; return s; }
+  }
+  if (t - (rec.voltaT ?? -1e12) > 40 * DAY) {
+    const s = voltaScene(g);
+    if (s) { rec.voltaT = t; return s; }
   }
   if (t - (rec.arabianT ?? -1e12) > 60 * DAY) {
     const s = arabianScene(g);

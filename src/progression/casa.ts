@@ -42,6 +42,8 @@ export interface CasaState {
   broke?: boolean;
   /** He has decided you are worth protecting. */
   patron?: boolean;
+  /** What the Casa takes of a Line's voyage, once he has looked at them. */
+  linesRate?: number;
 }
 
 export function newCasa(): CasaState {
@@ -396,6 +398,60 @@ export const CASA_SCENES: CasaScene[] = [
                   + 'book exactly as he entered the first one, and go to lunch.',
               },
             ],
+      };
+    },
+  },
+  // -------------------------------------------------------------------------
+  {
+    id: 'lines',
+    when: (g) => g.lines.filter((l) => !l.share).reduce((sum, l) => sum + l.earned, 0) >= 2000,
+    build: (g) => {
+      const earned = Math.round(g.lines.filter((l) => !l.share).reduce((sum, l) => sum + l.earned, 0));
+      const fee = Math.round(Math.max(250, earned * 0.12));
+      return {
+        id: 'casa:lines',
+        title: 'Your ships, in his ledger',
+        severity: 'note',
+        text:
+          'Tinoco has a second ledger open today, and it is yours. Every voyage your Lines have '
+          + `made is in it — ${earned} cruzados net, by his reckoning, and he has reckoned it to the real.\n\n`
+          + '"The Casa takes its share of what comes up the river in your ships, captain. What I have '
+          + 'to decide is what share. There is a figure in the regimento, and there is a figure for '
+          + 'men the Casa can trust, and there is a figure for men it cannot."',
+        choices: [
+          {
+            label: 'Open every book to him',
+            detail: 'Bills of lading, factors\u2019 letters, the lot. He will know your trade as well as you do.',
+            resolve: (gg) => {
+              move(gg, 0.3);
+              return 'You send the books over that afternoon. He keeps them a week and sends them back with one '
+                + 'figure corrected in your favour. The share stays where the regimento puts it, and he '
+                + 'thinks better of you than he did.';
+            },
+          },
+          {
+            label: `A consideration — ${fee} cruzados`,
+            detail: 'Paid to the Casa, for a dispensation. The Casa\u2019s share of your Lines halves from now on.',
+            resolve: (gg) => {
+              gg.crown.gold = Math.max(0, gg.crown.gold - fee);
+              gg.casa.linesRate = gg.can('rua') ? 0.04 : 0.075;
+              move(gg, -0.05);
+              return `${fee} cruzados, against a receipt with the Casa\u2019s seal on it. The dispensation is real. `
+                + 'So is the note in his other ledger about how readily you paid.';
+            },
+          },
+          {
+            label: 'Tell him they are your ships',
+            detail: 'Built with your money and sailed at your risk. The Casa can whistle.',
+            resolve: (gg) => {
+              gg.casa.linesRate = 0.22;
+              move(gg, -0.3);
+              return 'He hears you out, and writes, and when the next fleet clears the bar the Casa\u2019s share of '
+                + 'your Lines is twenty-two in the hundred, which is a figure that does exist in the regimento '
+                + 'if you know where to look. He did.';
+            },
+          },
+        ],
       };
     },
   },
