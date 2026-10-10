@@ -2,7 +2,7 @@ import { HULL_BY_ID } from '../ship/hull';
 import { GOOD_BY_ID } from '../economy/goods';
 import { PORTS, type PortDef } from '../world/ports';
 import {
-  canFound, destinationsFor, dismiss, estimate, found, forSale, hire, hireable, kindOf, legDays,
+  canFound, changeVessel, destinationsFor, dismiss, estimate, found, forSale, hire, hireable, kindOf, legDays,
   maxBusinesses, monthlyValue, outputUnits, priceOf, redirect, sell, upkeepOf, upgrade, upgradeCost,
   voyageFee, warehouseCap, type Enterprise,
 } from '../progression/enterprise';
@@ -63,6 +63,16 @@ function enterpriseCard(g: Game, e: Enterprise, rerender: () => void, say: (t: s
     body.push(el('p', { style: { marginTop: '8px' } }, el('b', {}, 'Hire a trading vessel: '), pick));
     body.push(routes(g, e, hullId, (to) => say(hire(g, e, hullId, to)), rerender));
   } else {
+    const t = e.trader;
+    const swap = el('select', {
+      'aria-label': 'Change vessel', class: 'trade-select',
+      onchange: (ev: Event) => { say(changeVessel(g, e, (ev.target as HTMLSelectElement).value)); rerender(); },
+    }, ...hireable(g).map((id) => {
+      const h = HULL_BY_ID.get(id)!;
+      return el('option', { value: id, selected: id === (t.nextHull ?? t.hullId) }, `${h.english} — ${h.hold} tons`);
+    }));
+    body.push(el('p', { style: { marginTop: '8px' } }, el('b', {}, 'Vessel: '), swap,
+      t.nextHull ? el('em', {}, ' (changes when she is home)') : null));
     body.push(el('p', { style: { marginTop: '8px' } }, el('b', {}, 'Send her next to:')));
     body.push(routes(g, e, e.trader.hullId, (to) => say(redirect(g, e, to)), rerender));
     body.push(el('div', { class: 'row' }, button('Pay her off', () => { say(dismiss(g, e)); rerender(); }, { ghost: true })));

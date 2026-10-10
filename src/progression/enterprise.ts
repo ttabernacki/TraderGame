@@ -43,6 +43,8 @@ export interface Trader {
   lost: number;
   /** What the last completed voyage netted, freight paid. */
   lastNet?: number;
+  /** A different hull ordered for the next voyage, once this one is home. */
+  nextHull?: string;
   /** Why she is lying idle, if she is. */
   idleNote?: string;
 }
@@ -297,6 +299,17 @@ export function dismiss(_g: Game, e: Enterprise): string {
   return `${name} is paid off.`;
 }
 
+/** Swap the vessel for a bigger or smaller one. At once if she is idle, otherwise when she is home. */
+export function changeVessel(_g: Game, e: Enterprise, hullId: string): string {
+  const t = e.trader;
+  if (!t) return 'There is no vessel on contract.';
+  if (!HULL_BY_ID.has(hullId) || hullId === t.hullId) { t.nextHull = undefined; return 'She stays as she is.'; }
+  const h = HULL_BY_ID.get(hullId)!;
+  if (t.phase === 'idle') { t.hullId = hullId; t.nextHull = undefined; return `A ${h.english.toLowerCase()} is taken on in her place.`; }
+  t.nextHull = hullId;
+  return `A ${h.english.toLowerCase()} is to replace her when she is home.`;
+}
+
 export function redirect(g: Game, e: Enterprise, toPort: string): string {
   if (!e.trader) return 'There is no vessel on contract.';
   if (!estimate(g, e, toPort, e.trader.hullId)) return 'Nobody there will take it.';
@@ -378,6 +391,7 @@ function tickOne(g: Game, e: Enterprise): void {
       t.proceeds = 0;
       t.phase = 'idle';
     }
+    if (t.phase === 'idle' && t.nextHull) { t.hullId = t.nextHull; t.nextHull = undefined; }
     if (t.phase === 'idle') {
       // She sails when there is a load worth the freight, and not otherwise.
       const lim = loadLimit(e, t.hullId);

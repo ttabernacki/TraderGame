@@ -3,7 +3,7 @@ import { GOOD_BY_ID } from '../economy/goods';
 import { PORTS, anchorageOf, portDef } from '../world/ports';
 import type { Game } from '../game/state';
 import {
-  WORK_BY_ID, capacityOf, newLedger, policyOf, runFactory, stockTons, stockValue, strengthOf,
+  WORK_BY_ID, capacityOf, garrisonWanted, newLedger, policyOf, runFactory, stockTons, stockValue, strengthOf,
   trafficOf, type Feitoria, type WorkId,
 } from './feitoria';
 
@@ -122,18 +122,23 @@ function tickOne(g: Game, f: Feitoria): void {
   led.bought += news.bought;
   led.earned += news.earned;
 
-  // Building what his own money can stand.
+  // Building what his own money can stand, in the order a sensible man would, hiring the
+  // hands locally for the works that want them. A station left to itself grows into a keep.
   if (policy.build) {
-    const next: WorkId | null = !f.works.includes('palicada') ? 'palicada'
-      : !f.works.includes('armazem') ? 'armazem' : null;
+    const order: WorkId[] = ['palicada', 'armazem', 'capela', 'batel', 'torre', 'bombardas'];
+    const next = order.find((id) => !f.works.includes(id)) ?? null;
     const w = next ? WORK_BY_ID.get(next) : null;
     if (w && f.chest >= w.cost + FLOAT) {
       f.chest -= w.cost;
       f.works.push(w.id);
+      f.garrison += w.hands;
       f.trouble = clamp(f.trouble - 0.1, 0, 1);
       led.built.push(w.english.toLowerCase());
       letter(g, f, `${def.name}: ${f.factor} has built a ${w.english.toLowerCase()} out of the chest.`);
     }
+    // And fills out the garrison from the town while there is money to pay it.
+    const want = garrisonWanted(f.works);
+    if (f.garrison < want && f.chest > FLOAT * 0.6) { f.garrison++; f.chest -= 25; }
   }
 
   // What is over the reserve goes home, dearest by the ton first.
@@ -159,7 +164,12 @@ function tickOne(g: Game, f: Feitoria): void {
         if (g.rng.chance(lossChance(f.portId))) lost += fetch; else proceeds += fetch;
       }
     }
-    const surplus = f.chest - FLOAT;
+    // While there are works still to raise, the factor keeps what he needs to raise them.
+    const nextWork = policy.build ? (['palicada', 'armazem', 'capela', 'batel', 'torre', 'bombardas'] as WorkId[])
+      .find((id) => !f.works.includes(id)) : undefined;
+    const keep = nextWork ? FLOAT + (WORK_BY_ID.get(nextWork)?.cost ?? 0) : FLOAT;
+    if (nextWork && proceeds > 0) { const own = proceeds * 0.6; f.chest += own; proceeds -= own; }
+    const surplus = f.chest - keep;
     if (surplus > 120) {
       f.chest -= surplus;
       const coin = surplus * (1 - freight * 0.3) * (0.7 + f.honesty * 0.3);
@@ -180,7 +190,9 @@ function tickOne(g: Game, f: Feitoria): void {
   }
 
   // A town that has had enough, with nobody to see it done.
-  if (f.trouble >= 0.92 && g.rng.chance(0.3 * (1 - strengthOf(f)))) { burn(g, f); return; }
+  // Only a neglected, ill-defended station burns; a well-found one never does.
+  const sx = strengthOf(f);
+  if (sx < 0.7 && f.trouble >= 0.97 && g.rng.chance(0.15 * (1 - sx) * (1 - sx))) { burn(g, f); return; }
 
   // A word, now and then, so a station is never just silence: every quarter
   // at least, sooner if it is going badly.

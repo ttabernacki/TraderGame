@@ -3407,7 +3407,7 @@ export class Game {
       // Weather that takes the canvas off her is weather worth being awake
       // for: a gale at a watch a second arrives and is over before the player
       // has read what happened.
-      if (prudent < 0.45) this.easeTheClock(3);
+      if (prudent < 0.45) this.easeTheClock(3, true);
       this.pushAlert(
         prudent <= 0
           ? 'The watch have taken everything off her and she lies to it under bare poles.'
@@ -3476,7 +3476,7 @@ export class Game {
       + `and I would rather lie in a harbour and wait than bury the people."`;
     this.pushAlert(said, 'warning');
     this.logEvent('note', said, true);
-    this.easeTheClock(3);
+    this.easeTheClock(3, true);
   }
 
   /**
@@ -3900,7 +3900,10 @@ export class Game {
    * below what it is told to — if the player is already at four times or slower
    * he is left alone.
    */
-  private easeTheClock(toIndex: number): void {
+  private easeTheClock(toIndex: number, hard = false): void {
+    // Sightings, tacks, chases and scenes no longer knock the player out of the
+    // fast rates: only real danger does. Everything else is left to the player.
+    if (!hard) return;
     if (this.clock.scaleIndex <= toIndex) return;
     this.clock.scaleIndex = toIndex;
   }
@@ -4327,7 +4330,7 @@ export class Game {
         // Standing straight at a coast is the other case where the clock has to
         // come down: two hours of sea room at a watch a second is gone between
         // one frame and the next.
-        this.easeTheClock(hours < 2 ? 1 : 2);
+        if (hours < 2) this.easeTheClock(1, true);
         this.pushAlert(
           `Land ho — ${formatBearing(bearing)}, ${this.sounding.shoreDistNm.toFixed(0)} miles, `
           + `and she is standing at it. ${hours < 2 ? 'Under two hours.' : `About ${hours.toFixed(0)} hours.`}`,
@@ -8260,7 +8263,7 @@ export class Game {
     // and knocking the player out of fast time for each of them would make the
     // fast rates unusable. A grave alert is land under two hours away, the lead
     // shoaling, or the company dying, and those are worth stopping for.
-    if (severity === 'grave' && this.clock.scaleIndex > 4) this.clock.scaleIndex = 4;
+    
   }
 
   private expireAlerts(): void {
@@ -8344,41 +8347,9 @@ export class Game {
     const distNm = bestD / NM;
     this.lookCue = { bearing, id: ++this.lookCueId };
     this.pushAlert(`Land! ${compassPoint(bearing)}, and nobody has drawn it.`, 'grave');
+    // A note in the log and the glass swung round to it: nothing stops, and nothing is asked.
     const deg = Math.abs(this.nav.estimated.lat).toFixed(0);
-    const hemi = this.nav.estimated.lat >= 0 ? 'north' : 'south';
-    this.pendingScenes.push({
-      id: 'newcoast',
-      title: 'Land nobody has charted',
-      severity: 'warning',
-      text: `"Terra!" from the masthead, and then a long silence while the man up there makes `
-        + `sure. Land on the ${compassPoint(bearing).toLowerCase()} bow, ${distNm.toFixed(0)} `
-        + `miles off by the look of it, and there is nothing on the chart for it at all. The `
-        + `Casa\u2019s sheet ends a long way north of here.\n\n`
-        + `Every man who can get a foot on the rail is at it. The escrivão has the sheet out and `
-        + `a pen cut. Somewhere about ${deg}° ${hemi}, by the reckoning, which is the only thing `
-        + 'anybody aboard is sure of.',
-      choices: [
-        {
-          label: 'Stand in and run it close',
-          detail: 'Close enough to see the rivers and the surf, which is how a coast is drawn '
-            + 'properly. Close enough for the ground to come up, too.',
-          resolve: (g: Game) => {
-            g.helmOrder = bearing;
-            return 'Put her head in toward it with the lead going and a man in each top. By the '
-              + 'change of the watch there were trees on it, and a line of surf, and the escrivão '
-              + 'had not looked up from the sheet in an hour.';
-          },
-        },
-        {
-          label: 'Keep your offing',
-          detail: 'Draw what can be seen from here and keep sea room. Less of it goes down, '
-            + 'and none of it is ground under her.',
-          resolve: () => 'Kept her head where it was and let the land lie along the horizon. The '
-            + 'escrivão drew what he could make out and wrote "seen from the offing" against all '
-            + 'of it, which is a pilot\u2019s way of saying he would not stake a ship on it.',
-        },
-      ],
-    });
+    this.logEvent('note', `Land ${compassPoint(bearing).toLowerCase()}, ${distNm.toFixed(0)} miles, on nobody's chart, about ${deg}\u00b0 ${this.nav.estimated.lat >= 0 ? 'north' : 'south'}. The escriv\u00e3o has it down as seen from the offing.`, true);
   }
 
   /**

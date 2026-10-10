@@ -528,54 +528,6 @@ export const EVENTS: SeaEventDef[] = [
     }),
   },
   {
-    id: 'pilotdoubt',
-    everyDays: 9,
-    // The pilot says the reckoning has gone wrong, and he is sometimes right.
-    gate: (c) => c.doubtNm > 16 && c.daysOut > 5 && c.shoreNm > 60,
-    build: (c) => {
-      const out = c.rng.range(0.4, 1.6) * (c.rng.chance(0.5) ? 1 : -1);
-      return {
-        id: 'pilotdoubt', severity: 'warning',
-        title: 'The pilot is not happy',
-        text: 'The pilot has been over the traverse board twice and says the reckoning is out. '
-          + `He wants to shift her ${Math.abs(out * 60).toFixed(0)} miles to the `
-          + `${out > 0 ? 'north' : 'south'} on the strength of the way she has been carrying her helm. `
-          + 'He may be right. He has been wrong before.',
-        choices: [
-          {
-            label: 'Amend the reckoning as he says',
-            detail: 'Trust the man who has been watching her all passage.',
-            resolve: (g) => {
-              // He is right about as often as a good pilot was: most of the
-              // time, and the rest of the time he has made it worse.
-              const right = g.rng.chance(0.62);
-              g.nav.estimated.lat += right ? out : -out * 0.8;
-              // The doubt barely moves either way, because nothing has been
-              // *observed*: an amended reckoning is still a reckoning, and if
-              // this bought back confidence the way a sight does it would be a
-              // quadrant that needs no clear sky and no tables.
-              g.nav.sigmaLat = Math.max(4, g.nav.sigmaLat * (right ? 0.88 : 1.25));
-              return right
-                ? 'Shifted her as he asked. Pricked off fresh from the new position and the whole '
-                  + 'board sits better for it.'
-                : 'Shifted her as he asked, and something in the set of his mouth afterwards says '
-                  + 'he is no longer certain either.';
-            },
-          },
-          {
-            label: 'Hold the reckoning as it stands',
-            detail: 'The board is the board. Take a sight and settle it properly.',
-            resolve: (g) => {
-              g.crew.morale = clamp(g.crew.morale - 0.03, 0, 1);
-              return 'Told him the board stands until something better than a feeling comes along. '
-                + 'He said nothing, which is what he does instead of arguing.';
-            },
-          },
-        ],
-      };
-    },
-  },
-  {
     id: 'nightloom',
     everyDays: 7,
     // Something ahead in the dark. The oldest decision at sea.
@@ -691,7 +643,7 @@ export function rollSeaEvent(g: Game, days: number): SeaEvent | null {
   // of those first once it has been long enough. Nine days was the first
   // setting and it is far too slack: a player asked for a judgement once a week
   // and a half is watching a passage, not sailing one.
-  if (g.daysSinceDecision > 4.5) {
+  if (g.daysSinceDecision > 10) {
     // Not the rarities. A once-a-voyage find like the ambergris is worth
     // something because it is rare; having the floor reach for it four times in
     // three months turns a windfall into a chore.
@@ -708,7 +660,7 @@ export function rollSeaEvent(g: Game, days: number): SeaEvent | null {
     }
   }
 
-  if (g.daysSinceEvent > 1.8) {
+  if (g.daysSinceEvent > 3.5) {
     const quiet = open.filter((e) => e.everyDays < 60);
     if (quiet.length > 0) {
       const def = g.rng.pick(quiet);

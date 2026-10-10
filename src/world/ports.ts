@@ -466,6 +466,50 @@ export const PORTS: PortDef[] = [
   },
 ];
 
+/**
+ * Broader demand.
+ *
+ * The hand-written tables left most of the everyday goods with nobody to sell
+ * them to: forty-odd goods, a third of them wanted by nobody or by one town. This
+ * adds a deterministic second layer, the same every game: each good gets a
+ * target number of towns that want it, chosen by a stable hash of the pair and
+ * weighted by the town's size and wealth (luxuries) or its size (basics), and
+ * never in a town that already makes the thing itself.
+ */
+const SPREAD: [string, number, boolean][] = [
+  // [good, towns that should want it, a luxury that follows wealth]
+  ['gengibre', 9, true], ['canela', 9, true], ['cravo', 8, true], ['noz', 8, true], ['maca', 7, true],
+  ['malagueta', 8, false], ['cardamomo', 7, true], ['pedras', 7, true], ['perolas', 7, true], ['ambar', 6, true],
+  ['marfim', 8, true], ['goma', 9, false], ['couros', 11, false], ['cera', 10, false], ['incenso', 8, true],
+  ['anil', 8, true], ['cola', 6, false], ['canfora', 5, true], ['seda', 8, true], ['panos', 11, false],
+  ['linho', 11, false], ['espelhos', 9, false], ['porcelana', 7, true], ['vinho', 12, false], ['azeite', 11, false],
+  ['trigo', 11, false], ['sal', 12, false], ['acucar', 11, false], ['arroz', 9, false], ['tamaras', 8, false],
+  ['cobre', 10, false], ['bacias', 10, false], ['contas', 10, false], ['calico', 12, false],
+];
+
+function pairHash(a: string, b: string): number {
+  let h = 2166136261;
+  const t = `${a}|${b}`;
+  for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return ((h >>> 0) % 10000) / 10000;
+}
+
+(function spreadDemand(): void {
+  const size = { anchorage: 0.35, village: 0.55, town: 0.85, city: 1.1, emporium: 1.3 } as const;
+  for (const [good, target, luxury] of SPREAD) {
+    const have = PORTS.filter((p) => (p.wants[good] ?? 0) > 0).length;
+    const need = target - have;
+    if (need <= 0) continue;
+    const scored = PORTS
+      .filter((p) => (p.wants[good] ?? 0) <= 0 && (p.produces[good] ?? 0) <= 0)
+      .map((p) => ({ p, k: pairHash(p.id, good) * (luxury ? 0.5 + p.wealth : 0.6 + size[p.size] * 0.5) }))
+      .sort((a, b) => b.k - a.k);
+    for (const { p, k } of scored.slice(0, need)) {
+      p.wants[good] = Math.round((0.35 + 0.55 * Math.min(1, k)) * 100) / 100;
+    }
+  }
+})();
+
 export const PORT_BY_ID = new Map(PORTS.map((p) => [p.id, p]));
 
 export function portDef(id: string): PortDef {

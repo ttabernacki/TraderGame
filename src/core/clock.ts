@@ -24,9 +24,9 @@ const WATCHES = [
  * setting at which the ship simply feels like she is sailing briskly, which is
  * where a player wants to spend most of the voyage.
  */
-export const TIME_SCALES = [0, 1, 4, 15, 60, 300, 1800, 7200] as const;
+export const TIME_SCALES = [0, 1, 4, 15, 60, 300, 1800, 7200, 14400] as const;
 export const TIME_SCALE_LABELS = [
-  'Hove to', 'Real time', 'x4', 'x15', 'x60', 'x300', 'Watch', 'Half-day',
+  'Hove to', 'Real time', 'x4', 'x15', 'x60', 'x300', 'Watch', 'Half-day', 'Full day',
 ] as const;
 
 /**

@@ -414,7 +414,13 @@ export function runFactory(
   const neglect = clamp((since - 360 * (1 + 2 * traffic)) / 1100, 0, 1);
   const disliked = clamp(0.55 - f.regard, 0, 1);
   const weak = 1 - strengthOf(f);
-  const add = clamp((neglect * 1.2 + disliked * 0.7 + weak * 0.12) * (days / 365), 0, 0.85);
+  // A strong station is a hard thing to move against: walls, men and a chapel take the edge
+  // off every pressure, and a well-found one settles back by itself.
+  const str = strengthOf(f);
+  const steady = 1 - 0.8 * str;
+  const raw = (neglect * 1.0 + disliked * 0.5 + weak * 0.1) * (days / 365) * steady;
+  const settle = (0.05 + str * 0.25) * (days / 365) * (f.regard > 0.3 ? 1.4 : 1);
+  const add = clamp(raw - settle, -0.3, 0.6);
   f.trouble = clamp(f.trouble + add, 0, 1);
   news.troubleAdded = add;
   void rng;
