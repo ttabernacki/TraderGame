@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DEG, NM, clamp, cosd, lerp, smoothstep, wrap180, type LatLon } from '../core/math';
+import { DEG, NM, clamp, cosd, lerp, smoothstep, wrap180, wrap360, type LatLon } from '../core/math';
 import { Land } from './land';
 import { Settlements } from './settlement';
 import { Ocean } from './ocean';
@@ -226,6 +226,9 @@ export class Renderer {
    * is a strobe.
    */
   private riggingClock = 0;
+  /** The other ship as drawn, eased toward where she is. */
+  private otherPose = { x: 0, z: 0, heading: 0, ok: false };
+  private lastRealDt = 1 / 60;
   /**
    * The heading and heel she is *drawn* at, which lag the simulated ones
    * through a short real-time filter.
@@ -361,6 +364,7 @@ export class Renderer {
     const heldId = this.strangerHullId;
     if (!s) {
       if (held) held.group.visible = false;
+      this.otherPose.ok = false;
       return;
     }
     let mesh = held;
@@ -380,13 +384,24 @@ export class Renderer {
 
     const mPerDegLat = NM * 60;
     const mPerDegLon = mPerDegLat * Math.max(cosd(f.pos.lat), 1e-6);
-    mesh.group.position.set(
-      wrap180(s.pos.lon - f.pos.lon) * mPerDegLon,
-      0,
-      -(s.pos.lat - f.pos.lat) * mPerDegLat,
-    );
+    const tx = wrap180(s.pos.lon - f.pos.lon) * mPerDegLon;
+    const tz = -(s.pos.lat - f.pos.lat) * mPerDegLat;
+    // Drawn where she is, eased over a fraction of a real second, and turned
+    // no faster than a ship can be seen to turn. At the fast clock rates the
+    // simulation moves her in jumps and swings her head between steps; drawn
+    // raw, that was a ship flicking about the horizon.
+    const o = this.otherPose;
+    const fresh = !o.ok || Math.hypot(tx - o.x, tz - o.z) > 4000;
+    const k = fresh ? 1 : 1 - Math.exp(-this.lastRealDt / 0.35);
+    o.x += (tx - o.x) * k;
+    o.z += (tz - o.z) * k;
+    const turn = wrap180(s.heading - o.heading);
+    const maxTurn = 30 * this.lastRealDt;
+    o.heading = fresh ? s.heading : wrap360(o.heading + clamp(turn, -maxTurn, maxTurn));
+    o.ok = true;
+    mesh.group.position.set(o.x, 0, o.z);
     mesh.group.rotation.order = 'YXZ';
-    mesh.group.rotation.y = Math.PI - s.heading * DEG;
+    mesh.group.rotation.y = Math.PI - o.heading * DEG;
 
     // What she would be carrying, close-hauled or squared away.
     const hull = hullClass(s.hullId);
@@ -535,6 +550,7 @@ export class Renderer {
     const visualDt = Math.min(simDt, realDt * shown);
     this.drawnRate = realDt > 1e-5 ? clamp(visualDt / realDt, 0.05, WATER_GAIN + 1) : 1;
     this.riggingClock += realDt;
+    this.lastRealDt = Math.min(realDt, 0.25);
     // f.heading and f.heel are already the filtered, shown values: the game
     // smooths them once, on real seconds, so the 3D view and the compass never
     // disagree about which way her head is.

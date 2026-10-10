@@ -328,6 +328,19 @@ export function sailStranger(g: Game, s: Stranger, dt: number): void {
   const toMe = bearingTo(s.pos, me);
   const away = wrap360(toMe + 180);
 
+  // Once she has closed you she keeps station alongside, at your course and
+  // speed, instead of sailing on through you and coming round for another
+  // pass — which at the fast clock rates looked like a ship orbiting you.
+  const rangeNm = haversine(s.pos, me) / NM;
+  if ((s.intent === 'close' || s.intent === 'hunt') && rangeNm < 0.3) {
+    const mine = g.ship.state.heading;
+    s.heading = turnToward(s.heading, mine, dt, s.hullId);
+    s.speedKnots = Math.max(0, g.physics.speedKnots);
+    const along = rhumbStep(s.pos, mine, s.speedKnots * NM * (dt / 3600));
+    if (!isLand(along)) s.pos = along;
+    return;
+  }
+
   let want: number;
   switch (s.intent) {
     case 'close':
@@ -358,7 +371,10 @@ export function sailStranger(g: Game, s: Stranger, dt: number): void {
 
   // She keeps off the beach, like anybody would. Without this a ship holding
   // her course past a headland sails up it and is drawn standing in a field.
-  const next = rhumbStep(s.pos, s.heading, s.speedKnots * NM * (dt / 3600));
+  // A long step must not carry a closing ship straight past you.
+  let stepNm = s.speedKnots * (dt / 3600);
+  if (s.intent === 'close' || s.intent === 'hunt') stepNm = Math.min(stepNm, Math.max(0, rangeNm - 0.25));
+  const next = rhumbStep(s.pos, s.heading, stepNm * NM);
   if (isLand(next)) {
     s.heading = wrap360(s.heading + 35);
     return;
