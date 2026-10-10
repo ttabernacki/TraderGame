@@ -17,7 +17,7 @@ has win / half-win / fail-forward; saves round-trip.
   `start(ctx)`, serialisable state, `step(input)`, `resolve()` -> marks/effects/closing line.
   Replaces the one-click gift/audience; regard still flows through `Game.bindRegard`.
   *Check:* a stub piece writes a mark; a later scene reads it; save/load keeps it; ledger shows it.
-- [ ] **A2 UI shell.** One modal for any piece (phone width first), voice cards, ledger tab for
+- [x] **A2 UI shell.** One modal for any piece (phone width first), voice cards, ledger tab for
   marks and the Book. *Check:* screenshots at 400px and 1200px, no overflow.
 - [ ] **A3 First six** (the cut-down set): Silent Trade, Gift Table, The Case, The Go-Between,
   Envoy Aboard, Informer. Port the two toys from the design page onto the real engine.
@@ -46,4 +46,4 @@ has win / half-win / fail-forward; saves round-trip.
 
 ## Checkpoint
 
-Objective: Track A. Completed: A1 (marks, Book, piece engine, Table; scripts/pieces.ts passes). Next: A2.
+Objective: Track A. Completed: A1, A2 (marks, Book, piece engine, Table; scripts/pieces.ts passes). Next: A3 (Silent Trade first).

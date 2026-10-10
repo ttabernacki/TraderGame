@@ -6,12 +6,15 @@ import {
   ASK_LABEL, evaluate, expectedGift, measureWord, offerLabel, rulerName, standingWord,
   type Ask, type Deal, type Offer, type PolityState, type Verdict,
 } from '../diplomacy/courts';
+import { startPiece } from '../diplomacy/table';
+import type { PieceRun } from '../diplomacy/piece';
+import { pieceCard } from './pieceView';
 import { echoFor } from '../diplomacy/marks';
 import { TEMPER_WORD, polityOfPort, type PolityDef } from '../diplomacy/polities';
 import type { Game } from '../game/state';
 import { button, card, clear, el, kv, meter } from './dom';
 
-type Phase = 'protocol' | 'gifts' | 'terms' | 'verdict' | 'done';
+type Phase = 'piece' | 'protocol' | 'gifts' | 'terms' | 'verdict' | 'done';
 
 /**
  * An audience: a negotiation with a ruler and his court.
@@ -38,6 +41,7 @@ export class AudienceView {
   private deal: Deal = this.blankDeal();
   private verdict: Verdict | null = null;
   private pressed = false;
+  private run: PieceRun | null = null;
   private result = '';
 
   constructor(private onClose: () => void) {
@@ -56,7 +60,9 @@ export class AudienceView {
     if (!this.pol) { this.onClose(); return; }
     const st = g.polityState(this.pol.id);
     st.met = true;
-    this.phase = 'protocol';
+    this.phase = 'piece';
+    this.run = startPiece(g, 'bow', this.pol.id, def.id);
+    if (!this.run) this.phase = 'protocol';
     this.deal = this.blankDeal();
     this.deal.comprehension = this.comprehension(g);
     this.giftPicks.clear();
@@ -122,7 +128,11 @@ export class AudienceView {
       ...this.log.map((l) => el('div', { class: `audience-line ${l.who}` }, l.text)))));
 
     const right = el('div', {});
-    if (this.phase === 'protocol') right.append(this.protocolPanel(g, pol, st));
+    if (this.phase === 'piece' && this.run) {
+      right.append(pieceCard(g, this.run, () => this.render(),
+        (who, text) => this.log.push({ who, text }),
+        () => { this.phase = 'protocol'; this.render(); }));
+    } else if (this.phase === 'protocol') right.append(this.protocolPanel(g, pol, st));
     else if (this.phase === 'gifts') right.append(this.giftPanel(g, pol));
     else if (this.phase === 'terms') right.append(this.termsPanel(g, pol, st));
     else if (this.phase === 'verdict') right.append(this.verdictPanel(g, pol));

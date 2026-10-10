@@ -1,3 +1,4 @@
+import { rulerName } from '../courts';
 import type { Piece } from '../piece';
 
 /**
@@ -14,7 +15,7 @@ export const bow: Piece<S> = {
   start: () => ({ step: 0 }),
   view: (ctx) => ({
     title: 'The greeting',
-    lines: [{ who: 'narrator', text: `The usher waits to see how you will greet ${ctx.polity.title.toLowerCase()}.` }],
+    lines: [{ who: 'narrator', text: `The usher waits to see how you will greet ${rulerName(ctx.polity, ctx.g.polityState(ctx.polity.id))}.` }],
     choices: [
       { id: 'bow', label: 'Bow as your own court would', hint: 'Plain, and known.' },
       { id: 'ask', label: 'Ask the usher what is done here' },
