@@ -146,6 +146,8 @@ export interface Line {
   /** Sent out of season on the captain's word, once. */
   forced?: boolean;
   history: { t: number; net: number }[];
+  /** What the outward cargo cost, paid back to whoever laid it out when she is home. */
+  outlay?: number;
   lost?: boolean;
   /** A share in another owner's ship: the fraction of each voyage that is yours. She is his to run. */
   share?: number;
@@ -177,7 +179,8 @@ export function legDays(from: string, to: string, hullId: string): number {
 /** Wages, victuals and port dues for one leg. */
 export function legCost(from: string, to: string, hullId: string): number {
   const h = HULL_BY_ID.get(hullId);
-  return Math.round(20 + legDays(from, to, hullId) * (h?.crewMin ?? 18) * 0.45);
+  // A great ship is cheaper by the ton to run than a small one: that is why they were built.
+  return Math.round(20 + legDays(from, to, hullId) * (h?.crewMin ?? 18) ** 0.8 * 0.6);
 }
 
 const isIndia = (id: string) => portDef(id).lon > 60;
@@ -203,7 +206,7 @@ function saleUnit(g: Game, port: string, goodId: string, qty: number): number {
   const l = g.markets.listings(port, g.clock.t, g.relationsFor(port).regard, 0.3, [goodId]).find((x) => x.goodId === goodId);
   if (!l) return 0;
   // A master selling on commission does not get what a captain standing on the quay gets.
-  let unit = (l.bid / Markets.slippage(qty, l.appetite)) * 0.85;
+  let unit = (l.bid / Markets.slippage(qty, l.appetite)) * 0.75;
   if (port === 'lisboa' && MONOPOLY.includes(goodId) && !g.hasLicence(goodId)) {
     if (goodId === 'pimenta' && g.secretsHeard.includes('pepper-contract')) unit = 26;
     else unit *= CASA_SHARE;
@@ -358,7 +361,7 @@ function step(g: Game, l: Line): void {
     const cash = Math.max(0, (house?.chest ?? 0) - 150 - (house ? 2 * worksUpkeep(house) : 0)) + (l.home === 'lisboa' ? 600 : 0);
     const pick = bestCargo(g, l.home, l.to, l.hullId, cash);
     const cost = legCost(l.home, l.to, l.hullId) * 2;
-    if (!pick || pick.margin < cost * 0.6) {
+    if (!pick || pick.margin < cost * 1.1) {
       if (l.waiting !== 'cargo') {
         letterFrom(g, l.home, `${homeName}: nothing here would pay the ${l.name}’s way to ${toName}. She lies idle until something does, or until you send her somewhere else.`);
       }
@@ -377,6 +380,7 @@ function step(g: Game, l: Line): void {
     }
     const paid = load(g, l.home, pick);
     if (!pick.store && house) house.chest -= paid;
+    l.outlay = paid;
     l.cargo = { goodId: pick.goodId, qty: pick.qty, cost: paid };
     l.phase = 'out';
     l.waiting = undefined;
@@ -418,10 +422,16 @@ function step(g: Game, l: Line): void {
     l.voyageText += `; home with ${Math.round(l.cargo.qty)} ${gd.unit}s of ${gd.english.toLowerCase()} for ${Math.round(fetched)}`;
   }
   bringNews(g, l.home);
+  // The outward cargo is paid for out of the voyage: back into the House's chest
+  // that bought it, or, from Lisbon, out of your own account.
+  const outlay = Math.round(l.outlay ?? 0);
+  l.outlay = 0;
+  if (house) house.chest += outlay;
+  purse -= outlay;
   const costs = legCost(l.home, l.to, l.hullId) + legCost(l.to, l.home, l.hullId);
   // The master and the men sail for a share, as every ship on the Carreira did, and the Casa takes its own.
   const gain = Math.max(0, purse - costs);
-  const shares = gain * 0.3;
+  const shares = gain * 0.35;
   const casa = gain * (g.casa.linesRate ?? (g.can('rua') ? 0.08 : 0.15));
   const whole = purse - costs - shares - casa;
   // A part-owner gets his part, of the profit and of the loss.
@@ -435,7 +445,7 @@ function step(g: Game, l: Line): void {
     g.remittances.push({
       arrives: g.clock.t + (portDef(l.home).people === 'portuguese' ? 0 : g.transitDays(l.home) * 86400),
       amount: net, from: l.name,
-      voyage: `The ${l.name}: ${l.voyageText}. Costs ${costs}, the men’s shares ${Math.round(shares)}, the Casa ${Math.round(casa)}. `
+      voyage: `The ${l.name}: ${l.voyageText}. Outward cargo ${outlay}, costs ${costs}, the men’s shares ${Math.round(shares)}, the Casa ${Math.round(casa)}. `
         + (l.share ? `Your ${shareWord(l.share)} share: ${net}.` : `Net ${net}.`),
     });
   }

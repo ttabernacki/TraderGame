@@ -326,7 +326,7 @@ export class PortView {
       def.people === 'portuguese' ? null : chip('Regard', regardWord(rel.regard), rel.regard > 0.2 ? 'good' : rel.regard < -0.2 ? 'bad' : ''),
       def.people === 'portuguese' ? null : chip('Trade', rel.mayTrade ? 'leave granted' : 'no leave yet', rel.mayTrade ? 'good' : 'bad'),
       rel.exclusive ? chip('', 'exclusive terms', 'good') : null,
-      rel.factory ? chip('', 'your factory', 'good') : null,
+      rel.factory ? chip('', 'ground for a House', 'good') : null,
       chip('Shelter', qualityWord(def.anchorage)),
       chip('Victuals', qualityWord(def.refit)),
       chip('', { anchorage: 'a bare roadstead', village: 'a village', town: 'a town', city: 'a city', emporium: 'a great emporium' }[def.size]),
@@ -1128,7 +1128,7 @@ export class PortView {
           el('p', { style: { fontSize: '13px' } },
             'He comes off the muster and out of his berth for years, and she will work worse '
             + 'without him from the moment the boat pulls back. What he is decides what the '
-            + 'station is: an able man fills the shed, a loyal one hands you the books, and '
+            + 'House is: an able man fills the shed, a loyal one hands you the books, and '
             + 'those are not the same virtue.'),
           ...men.map((o) => el('div', {
             style: {

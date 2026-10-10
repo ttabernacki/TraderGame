@@ -159,7 +159,7 @@ export interface Deal {
 
 export const ASK_LABEL: Record<Ask, string> = {
   trade: 'Leave to trade',
-  factory: 'Ground for a feitoria',
+  factory: 'Ground for a House',
   exclusive: 'Trade with Portugal alone',
   padrao: 'Leave to set a padrão',
   pilot: 'A pilot and his soundings',

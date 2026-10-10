@@ -88,10 +88,10 @@ function burn(g: Game, f: Feitoria): void {
   g.relationsFor(f.portId).factory = false;
   g.relationsFor(f.portId).regard = clamp(g.relationsFor(f.portId).regard - 0.2, -1, 1);
   g.refreshEnvironment();
-  letter(g, f, `${def.name}: the factory has been burned. The town had been uneasy for a long time, and `
+  letter(g, f, `${def.name}: the House has been burned. The town had been uneasy for a long time, and `
     + `nobody came. ${f.factor} and the men are dead or gone; about ${value} cruzados of goods went with it. `
     + 'The ground is still yours on paper. It wants a man, men, and money, and none of it is aboard.', 'grave');
-  g.logEvent('crown', `The factory at ${def.name} was burned while you were away.`, true);
+  g.logEvent('crown', `The House at ${def.name} was burned while you were away.`, true);
 }
 
 /** One month of one station. */
@@ -241,7 +241,7 @@ function tickOne(g: Game, f: Feitoria): void {
       hopeful
         ? `${def.name}: ${f.factor} writes that the shed holds ${stockTons(f).toFixed(0)} tons and the chest ${Math.round(f.chest)} cruzados. `
           + `${led.sentHome > 0 ? `${Math.round(led.sentHome)} cruzados have gone home on the Casa’s ships. ` : ''}The town is ${f.regard > 0.55 ? 'quiet' : 'watching'}.`
-        : `${def.name}: ${f.factor} writes carefully. The town has changed its mind about the station`
+        : `${def.name}: ${f.factor} writes carefully. The town has changed its mind about the House`
           + `${policy.peace && led.gifts > 0 ? ', and he has been paying it to keep the peace' : ''}. He would like a ship to be seen off the place.`,
       hopeful ? 'note' : 'warning',
       !hopeful && footingOf(f) < 0.45 ? { kind: 'gift', ref: f.portId } : undefined);

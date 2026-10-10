@@ -2230,7 +2230,7 @@ export class Game {
       if (this.can('viceroy')) {
         rel.factory = true;
         for (const port of pol?.ports ?? [def.id]) this.relationsFor(port).exclusive = true;
-        extra.push('ground for a feitoria and the trade to yourself');
+        extra.push('ground for a House and the trade to yourself');
       }
       return `Leave to trade, given at the mouth of a gun${extra.length ? `, with ${extra.join(' and ')}` : ''}. It will be remembered.`;
     }
@@ -2241,7 +2241,7 @@ export class Game {
     const now = this.clock.t;
     for (const ask of deal.asks) {
       if (ask === 'trade') { for (const port of pol?.ports ?? [def.id]) this.relationsFor(port).mayTrade = true; lines.push('leave to trade'); }
-      if (ask === 'factory') { rel.factory = true; rel.mayTrade = true; this.crown.record('port', `Feitoria at ${def.name}`, this.nav.estimated, 45, now); lines.push('ground for a feitoria'); }
+      if (ask === 'factory') { rel.factory = true; rel.mayTrade = true; this.crown.record('port', `Feitoria at ${def.name}`, this.nav.estimated, 45, now); lines.push('ground for a House'); }
       if (ask === 'exclusive') { for (const port of pol?.ports ?? [def.id]) this.relationsFor(port).exclusive = true; lines.push('exclusive terms'); }
       if (ask === 'pilot') {
         const a = anchorageOf(def);
@@ -2943,7 +2943,7 @@ export class Game {
       const man = live[Math.floor(this.rng.next() * live.length)];
       if (!man.aboard) continue;
       man.aboard = false;
-      man.fate = `Left in the factory at ${where}.`;
+      man.fate = `Left in the House at ${where}.`;
       man.fateT = this.clock.t;
       names.push(man.name);
     }
@@ -7810,7 +7810,7 @@ export class Game {
     if (this.feitorias.some((f) => f.portId === def.id && !f.lost)) return 'There is one here already.';
     const men = this.crew.count - this.ship.baseHull.crewMin;
     if (men < 6) {
-      return `A station wants six men left in it and she cannot sail without ${this.ship.baseHull.crewMin}. `
+      return `A House wants six men left in it and she cannot sail without ${this.ship.baseHull.crewMin}. `
         + `You have ${Math.max(0, men)} to spare.`;
     }
     if (this.foundingCost() > this.crown.gold + this.creditFree) {
@@ -7881,11 +7881,11 @@ export class Game {
     this.crown.standing += 12;
     this.refreshEnvironment();
     this.logEvent('crown',
-      `Founded a feitoria at ${def.name}. ${o.name} is left in it with six men, ninety cruzados `
+      `Opened a House at ${def.name}. ${o.name} is left in it with six men, ninety cruzados `
       + 'in the chest and the King\u2019s commission, and he will be here when you come back or he '
       + 'will not. The berth aft is empty from today.', true);
     return `${o.name} has the shed and six men. She is that much shorter-handed and you have a `
-      + 'station on this coast.';
+      + 'House on this coast.';
   }
 
   /**
@@ -7936,7 +7936,7 @@ export class Game {
    */
   loadFromShed(goodId: string, units: number): string {
     const f = this.factoryHere;
-    if (!f) return 'There is no factory of yours here.';
+    if (!f) return 'There is no House of yours here.';
     const have = f.stock[goodId] ?? 0;
     const g = good(goodId);
     const take = Math.min(have, Math.max(0, units), this.ship.holdFree / Math.max(g.bulk, 1e-6));
@@ -7969,7 +7969,7 @@ export class Game {
   /** Put coin in the chest, which is the only thing that lets him buy. */
   fundChest(amount: number): string {
     const f = this.factoryHere;
-    if (!f) return 'There is no factory of yours here.';
+    if (!f) return 'There is no House of yours here.';
     const sum = Math.round(clamp(amount, 1, this.crown.gold + this.creditFree));
     if (sum < 1) return 'There is nothing to put in it.';
     if (this.crown.gold < sum) this.drawCredit(sum);
@@ -7981,7 +7981,7 @@ export class Game {
   /** Take the takings. */
   drawChest(): string {
     const f = this.factoryHere;
-    if (!f) return 'There is no factory of yours here.';
+    if (!f) return 'There is no House of yours here.';
     const sum = Math.floor(f.chest);
     if (sum < 1) return 'The chest is empty, which he will explain at length.';
     // Leave him something to work with unless you empty it on purpose: a factor
@@ -8000,7 +8000,7 @@ export class Game {
   /** What he is to buy while you are away. */
   setStandingOrder(goodIds: string[]): string {
     const f = this.factoryHere;
-    if (!f) return 'There is no factory of yours here.';
+    if (!f) return 'There is no House of yours here.';
     f.buying = goodIds.slice(0, 3);
     return f.buying.length === 0
       ? 'He is to buy whatever the place offers, which is safe and never brilliant.'
@@ -8010,7 +8010,7 @@ export class Game {
   /** Build something. */
   buildWork(id: WorkId): string {
     const f = this.factoryHere;
-    if (!f) return 'There is no factory of yours here.';
+    if (!f) return 'There is no House of yours here.';
     const w = WORK_BY_ID.get(id);
     if (!w) return 'No such work.';
     if (f.works.includes(id)) return 'That is built already.';
@@ -8036,7 +8036,7 @@ export class Game {
   /** Put more men in it. */
   reinforceFactory(n: number): string {
     const f = this.factoryHere;
-    if (!f) return 'There is no factory of yours here.';
+    if (!f) return 'There is no House of yours here.';
     const spare = this.crew.count - this.ship.baseHull.crewMin;
     const men = Math.min(Math.max(0, Math.round(n)), spare);
     if (men < 1) return 'She has no men to spare and still be able to sail.';
@@ -8044,7 +8044,7 @@ export class Game {
     f.garrison += men;
     f.trouble = clamp(f.trouble - men * 0.02, 0, 1);
     this.refreshEnvironment();
-    return `${men} left ashore. ${f.garrison} in the station now, and she is that much shorter.`;
+    return `${men} left ashore. ${f.garrison} in the House now, and she is that much shorter.`;
   }
 
   /** Bring everybody and everything away, and give the position up. */
@@ -8074,7 +8074,7 @@ export class Game {
     this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
     this.refreshEnvironment();
     this.logEvent('crown',
-      `The station at ${portName(f.portId)} is given up. ${why} `
+      `The House at ${portName(f.portId)} is given up. ${why} `
       + (carried > 0.05 ? `${carried.toFixed(1)} tons came aboard with the men.` : 'Nothing came aboard.'),
       true);
     return `${portName(f.portId)} is shut. The men are aboard and the ground is somebody else\u2019s again.`;
@@ -8124,7 +8124,7 @@ export class Game {
       if (!h.alive || h.aboard) continue;
       if (!h.fate?.includes(where)) continue;
       h.alive = false;
-      h.fate = `Killed when the factory at ${where} was burned.`;
+      h.fate = `Killed when the House at ${where} was burned.`;
       h.fateT = this.clock.t;
       gone++;
     }
@@ -9289,7 +9289,7 @@ export class Game {
       .sort((a, b) => b.trouble - a.trouble)[0];
     if (shaky) {
       out.push({
-        label: 'A factory in trouble',
+        label: 'A House in trouble',
         value: portName(shaky.portId),
         state: shaky.trouble > 0.72 ? 'bad' : 'warn',
         note: `${shaky.factor} has ${stockTons(shaky).toFixed(1)} tons in the shed and a town that `

@@ -42,7 +42,7 @@ export function demandScene(g: Game, f: Feitoria): SeaEvent {
     title: `A demand from the ${pe.name} at ${def.name}`,
     severity: 'warning',
     text: `${f.factor} has been waiting for a ship to tell this to. The men who own the ground the `
-      + `factory stands on have been round three times since the rains, and the message has got `
+      + `House stands on have been round three times since the rains, and the message has got `
       + `shorter each time: the arrangement made when the shed was built was made with a ship in `
       + `the road and there has not been one since.\n\nThey want ${ask} cruzados' worth, in goods `
       + `or in coin, and they have not said what happens if they do not get it, which is the part `
@@ -50,7 +50,7 @@ export function demandScene(g: Game, f: Feitoria): SeaEvent {
     choices: [
       {
         label: `Pay it — ${ask} cruzados`,
-        detail: 'Out of the purse or the factory’s own chest. It buys the place another year.',
+        detail: 'Out of the purse or the House’s own chest. It buys the place another year.',
         resolve: (game) => {
           const fromChest = Math.min(f.chest, ask);
           f.chest -= fromChest;
@@ -63,7 +63,7 @@ export function demandScene(g: Game, f: Feitoria): SeaEvent {
           f.regard = clamp(f.regard + 0.16, 0, 1);
           f.trouble = clamp(f.trouble - 0.4, 0, 1);
           return `Paid, and the whole town watched it counted out, which is most of what it was `
-            + 'for. The factory stands where it stands because they let it, and everybody there '
+            + 'for. The House stands where it stands because they let it, and everybody there '
             + 'has been reminded of that including you.';
         },
       },
@@ -88,7 +88,7 @@ export function demandScene(g: Game, f: Feitoria): SeaEvent {
       },
       {
         label: 'Refuse, and tell him to shut the gate',
-        detail: 'Nothing paid. Whether that is courage or the end of the station depends on the walls.',
+        detail: 'Nothing paid. Whether that is courage or the end of the House depends on the walls.',
         resolve: (game) => {
           f.regard = clamp(f.regard - 0.22, 0, 1);
           f.trouble = clamp(f.trouble + 0.3, 0, 1);
@@ -144,7 +144,7 @@ export function factorScene(g: Game, f: Feitoria): SeaEvent {
             f.ability = 0;
             f.honesty = 0;
             return `Hanged at low water in front of the shed. The Casa will record it as proper. `
-              + 'The station has no factor now and everybody in it watched you do that, which is '
+              + 'The House has no factor now and everybody in it watched you do that, which is '
               + 'a thing they will think about when the next ship is late.';
           },
         },
@@ -164,7 +164,7 @@ export function factorScene(g: Game, f: Feitoria): SeaEvent {
         },
         {
           label: 'Put him in irons and carry him home',
-          detail: 'The station loses its factor. The Casa gets its man and you get the credit.',
+          detail: 'The House loses its factor. The Casa gets its man and you get the credit.',
           resolve: (game) => {
             f.chest = Math.max(0, f.chest - taken * 0.2);
             game.factorLeaves(f, 'aboard');
@@ -193,7 +193,7 @@ export function factorScene(g: Game, f: Feitoria): SeaEvent {
         + `careful to make it an asking — to be left where he is.`,
       choices: [
         {
-          label: 'Leave him. He is the station now',
+          label: 'Leave him. He is the House now',
           detail: 'He stops being your clerk and starts being your man in this country.',
           resolve: (game) => {
             f.regard = clamp(f.regard + 0.3, 0, 1);
@@ -217,7 +217,7 @@ export function factorScene(g: Game, f: Feitoria): SeaEvent {
             f.ability = 0;
             game.crew.morale = clamp(game.crew.morale - 0.08, 0, 1);
             return 'Aboard, with his sea chest, and the whole town on the beach watching it '
-              + 'happen. He has not spoken since. The station has nobody in it who is trusted '
+              + 'happen. He has not spoken since. The House has nobody in it who is trusted '
               + 'here and everyone here knows why.';
           },
         },
@@ -236,7 +236,7 @@ export function factorScene(g: Game, f: Feitoria): SeaEvent {
     choices: [
       {
         label: 'Leave the man in charge formally',
-        detail: 'He is willing, loyal, and not much good at it. The station keeps going.',
+        detail: 'He is willing, loyal, and not much good at it. The House keeps going.',
         resolve: (game) => {
           game.factorLeaves(f, 'dead');
           f.factor = `the senior man at ${def.name}`;
@@ -266,7 +266,7 @@ export function sackScene(g: Game, f: Feitoria): SeaEvent {
 
   return {
     id: `feit:sack:${f.portId}:${Math.floor(g.clock.t / 86400)}`,
-    title: `The factory at ${def.name} has been burned`,
+    title: `The House at ${def.name} has been burned`,
     severity: 'grave',
     text: rival
       ? `You raise the point expecting the shed and there is nothing on it but the stone floor `
@@ -358,7 +358,7 @@ export function letterScene(g: Game, f: Feitoria): SeaEvent {
       ? `It came up in a caravel out of the south and has been four months on the way. `
         + `${f.factor} writes carefully, because he knows the letter may be read by others, and `
         + `underneath the care he is asking for a ship.\n\nThe town has changed its mind about the `
-        + `station. He does not say he is frightened. He says that he has moved the best of the `
+        + `House. He does not say he is frightened. He says that he has moved the best of the `
         + `goods inside at night, which is the same thing.`
       : `Four months old, and short, which from a factor is good news. The shed is full, the `
         + `chest is not empty, and ${f.factor} would like to know when a bottom is coming for `
@@ -366,7 +366,7 @@ export function letterScene(g: Game, f: Feitoria): SeaEvent {
     choices: [
       {
         label: 'Note it',
-        detail: 'The station is on the orders screen. What you do about it is a course.',
+        detail: 'The House is on the orders screen. What you do about it is a course.',
         resolve: () => (bad
           ? `Filed. It is four months old and whatever it describes has had four months to get `
             + 'worse.'
