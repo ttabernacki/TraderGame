@@ -15,7 +15,7 @@ import {
 import { hullClass } from '../ship/hull';
 import { shipyardCard } from './shipyard';
 import { houseHead, openLineCard, worksBlock } from './networkView';
-import { footingOf, footingWord, postureOf } from '../progression/network';
+import { footingOf, footingWord, hullPrice, postureOf } from '../progression/network';
 import { HOLDINGS, ROUTE_BY_ID, temperWord } from '../progression/estate';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
 import { OFFICER_ROLES } from '../crew/crew';
@@ -898,7 +898,9 @@ export class PortView {
     ));
 
     // And what you own in this town, and what could be bought.
-    if (g.factoryHere || g.portHere!.id === 'lisboa') {
+    // Shown once a Line is a thing she could afford, or already has.
+    const couldBuy = g.crown.gold + g.creditFree >= hullPrice('caravela-latina') * 0.8 || g.lines.some((l) => !l.lost);
+    if ((g.factoryHere || g.portHere!.id === 'lisboa') && couldBuy) {
       right.append(openLineCard(g, () => this.render(), (t) => { this.notice = { text: t }; }, g.portHere!.id));
     }
 

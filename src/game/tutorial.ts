@@ -66,8 +66,8 @@ export const TUTORIAL: TutorialStep[] = [
   {
     id: 'sail',
     from: 'Brás de Sousa, master',
-    task: 'Get her under way — W to make sail',
-    says: 'She will not go anywhere with her canvas in the buntlines. W sets more sail and S '
+    task: 'Go aboard and get her under way — W to make sail',
+    says: 'Go aboard when you are done ashore and weigh from the quay. She will not go anywhere with her canvas in the buntlines. W sets more sail and S '
       + 'takes it in, and she carries all of it in this weather. You will feel her come alive '
       + 'under you when the courses fill; that is the only instrument on this ship that never '
       + 'lies to you.',

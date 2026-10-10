@@ -130,9 +130,18 @@ export function openLineCard(g: Game, rerender: () => void, notify: (t: string) 
     return card('Open a Line', el('p', { class: 'gift-sub' }, 'Every House you have, and Lisbon, already keeps a Line. One ship to a House: open another House for another Line.'));
   }
   const dests = lineDestinations(g, form.home);
-  if (!dests.includes(form.to)) form.to = dests[0] ?? '';
   const hulls = lineHulls(g);
   if (!hulls.includes(form.hull)) form.hull = hulls[0] ?? '';
+  // Start on the run that pays best today, not the first name in the list.
+  if (!dests.includes(form.to)) {
+    const cash = Math.max(0, g.liveFactories.find((f) => f.portId === form.home)?.chest ?? 0) + (form.home === 'lisboa' ? 600 : 0);
+    let best = -Infinity;
+    form.to = dests[0] ?? '';
+    for (const d of dests) {
+      const m = (bestCargo(g, form.home, d, form.hull, cash)?.margin ?? -1) - legCost(form.home, d, form.hull) * 2;
+      if (m > best) { best = m; form.to = d; }
+    }
+  }
   const why = form.to ? canOpenLine(g, form.home, form.to, form.hull) : 'Nowhere to send her yet.';
   const house = g.liveFactories.find((f) => f.portId === form.home);
   const pick = form.to ? bestCargo(g, form.home, form.to, form.hull, Math.max(0, house?.chest ?? 0) + (form.home === 'lisboa' ? 600 : 0)) : null;

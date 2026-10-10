@@ -7802,6 +7802,7 @@ export class Game {
    * one — nobody ever runs out of the first two twice.
    */
   canFoundFactory(def: PortDef): string | null {
+    if (def.id === 'lisboa') return 'Lisbon is home. Your Lines run from here without a House.';
     const rel = this.relationsFor(def.id);
     if (def.people !== 'portuguese' && !rel.mayTrade && !rel.factory) {
       return 'Nobody here will deal with a House of yours until you have leave to trade.';

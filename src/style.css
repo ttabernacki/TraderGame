@@ -2957,3 +2957,15 @@ details.card.fold[open] > .fold-body { margin-top: 9px; }
 
 /* Three lines of commentary at most on any screen; the rest is in the log. */
 #hud-alerts .alert:nth-last-child(n + 4) { display: none; }
+
+/* Ashore the pilot is a line in the corner, not a paragraph across the tables:
+   the task says what to do, and the screens themselves are the explanation. */
+.pilot.ashore {
+  left: auto;
+  right: calc(16px + var(--safe-r, 0px));
+  transform: none;
+  width: min(360px, calc(100vw - 32px));
+  background: rgba(20, 17, 13, 0.8);
+}
+.pilot.ashore .pilot-body { display: none; }
+body:has(.pilot.ashore) .screen-body { padding-bottom: 90px; }
