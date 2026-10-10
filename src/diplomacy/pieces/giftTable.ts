@@ -102,14 +102,14 @@ export const giftTable: Piece<S> = {
     const lines: PieceView['lines'] = [{
       who: 'narrator',
       text: s.tray.length === 0
-        ? `Before you go in, your tray is to be set. The first place is the place of honour. ${pol.title} will see it first.`
+        ? `Before you go in, your tray is to be set. The first place is the place of honour. The ${pol.title.toLowerCase()} will see it first.`
         : `On the tray: ${s.tray.map((id, i) => `${['the place of honour', 'second', 'third'][i]}: ${good(id).english.toLowerCase()}`).join('; ')}.`,
     }];
     for (const id of Object.keys(s.stock)) {
       const bits: string[] = [];
       if (s.known.includes(`ruler:${id}`)) {
         const t = s.ruler[id];
-        bits.push(`${pol.title}: ${t > 0.8 ? 'wants it' : t > 0 ? 'would like it' : t < 0 ? 'would take it ill' : 'indifferent'}`);
+        bits.push(`The ${pol.title.toLowerCase()}: ${t > 0.8 ? 'wants it' : t > 0 ? 'would like it' : t < 0 ? 'would take it ill' : 'indifferent'}`);
       }
       for (const f of pol.factions) {
         if (s.known.includes(`${f.id}:${id}`)) bits.push(`${f.name.replace(/^The /, 'the ')}: ${word(s.react[f.id][id])}`);

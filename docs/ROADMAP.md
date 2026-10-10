@@ -19,7 +19,7 @@ has win / half-win / fail-forward; saves round-trip.
   *Check:* a stub piece writes a mark; a later scene reads it; save/load keeps it; ledger shows it.
 - [x] **A2 UI shell.** One modal for any piece (phone width first), voice cards, ledger tab for
   marks and the Book. *Check:* screenshots at 400px and 1200px, no overflow.
-- [ ] **A3 First six** (done: Silent Trade, Gift Table) (the cut-down set): Silent Trade, Gift Table, The Case, The Go-Between,
+- [ ] **A3 First six** (done: Silent Trade, Gift Table, The Case) (the cut-down set): Silent Trade, Gift Table, The Case, The Go-Between,
   Envoy Aboard, Informer. Port the two toys from the design page onto the real engine.
   *Check:* bots (perfect / reader / random) win ~100% / 70-80% / ~33%; no ruling right for
   >50% of generated cases; straight split fails the tension issue.
@@ -46,4 +46,4 @@ has win / half-win / fail-forward; saves round-trip.
 
 ## Checkpoint
 
-Objective: Track A. Completed: A1, A2, A3 Silent Trade + Gift Table (scripts/silent.ts, gifts.ts bots ok; marks, Book, piece engine, Table; scripts/pieces.ts passes). Next: A3 The Case.
+Objective: Track A. Completed: A1, A2, A3 Silent Trade, Gift Table, The Case (scripts/silent.ts, gifts.ts, case.ts bots ok; marks, Book, piece engine, Table; scripts/pieces.ts passes). Next: A3 Go-Between.

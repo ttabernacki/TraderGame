@@ -69,6 +69,13 @@ function resolve(g: Game, run: PieceRun, o: Outcome): void {
   for (const m of o.marks) writeMark(g.diplomacy.marks, run.polity, m, now);
   if (o.measures) g.adjustPolity(run.polity, o.measures, o.line);
   for (const b of o.book ?? []) learn(g.diplomacy.book, run.polity, b, now);
+  if (o.factions) {
+    const st = g.polityState(run.polity);
+    for (const f of POLITY_BY_ID.get(run.polity)?.factions ?? []) {
+      const d = o.factions[f.cares];
+      if (d) st.factions[f.id] = Math.max(-1, Math.min(1, (st.factions[f.id] ?? 0) + d));
+    }
+  }
   if (o.gold) g.crown.gold += o.gold;
   run.outcome = { grade: o.grade, line: o.line, t: now };
   // The ledger keeps the last twenty-four runs and the open ones.

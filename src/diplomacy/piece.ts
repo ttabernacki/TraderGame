@@ -31,6 +31,8 @@ export interface Outcome {
   book?: Omit<BookEntry, 'id' | 'polity' | 't'>[];
   /** Cash gained or spent, in cruzados. */
   gold?: number;
+  /** Moves in the court's own voices, by what each cares about (trade, faith, war, custom). */
+  factions?: Partial<Record<'trade' | 'faith' | 'war' | 'custom', number>>;
   /** For an audience: how the presents were taken. */
   gift?: { value: number; loved: boolean; scorned: boolean };
 }
