@@ -1,5 +1,6 @@
 import { markerOf, rumoursHeard } from '../progression/quests';
-import { roadPlan } from '../progression/road';
+import { roadBetween, roadPlan } from '../progression/road';
+import { legDays } from '../progression/network';
 import { clamp, compassPoint, cosd, formatLat, formatLon, wrap180 } from '../core/math';
 import { LANDMASSES } from '../world/landmass';
 import { PORTS, portDef } from '../world/ports';
@@ -810,6 +811,7 @@ export class ChartView {
     if (this.showTrack) this.drawTrack(ctx, g);
     this.drawQuestMarks(ctx, g);
     if (this.showRegard) this.drawCourtLines(ctx, g);
+    this.drawLines(ctx, g);
     this.drawPorts(ctx, g);
     this.regardPanel(g);
     if (this.showPlaces) this.drawPlaces(ctx, g);
@@ -1283,6 +1285,44 @@ export class ChartView {
    * The politics of the coast, between the seats of the states you know: old
    * friendships in green, feuds in red, and your own alliances in gold.
    */
+  /** Your Lines, along the road between the ends as you have them charted, each ship where she should be. */
+  private drawLines(ctx: CanvasRenderingContext2D, g: Game): void {
+    const lines = g.lines.filter((l) => !l.lost);
+    if (!lines.length) return;
+    const at = (id: string) => {
+      const c = g.chart.ports.get(id);
+      const d = portDef(id);
+      return c ? { lat: c.lat, lon: c.lon } : { lat: d.lat, lon: d.lon };
+    };
+    ctx.save();
+    for (const l of lines) {
+      const pts = roadBetween(at(l.home), at(l.to)).map((p) => this.toScreen(p.lat, p.lon));
+      ctx.beginPath();
+      pts.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+      ctx.strokeStyle = 'rgba(122, 82, 40, 0.55)'; ctx.lineWidth = 1.6; ctx.setLineDash([7, 4]); ctx.stroke();
+      // Where she is: along the leg by the days gone, from home outward or back.
+      let frac = 0;
+      if (l.phase !== 'home') {
+        const leg = legDays(l.phase === 'out' ? l.home : l.to, l.phase === 'out' ? l.to : l.home, l.hullId) * 86400;
+        const f = clamp(1 - (l.at - g.clock.t) / leg, 0, 1);
+        frac = l.phase === 'out' ? f : 1 - f;
+      }
+      const seg: number[] = [0];
+      for (let i = 1; i < pts.length; i++) seg.push(seg[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+      const want = frac * seg[seg.length - 1];
+      let k = 1;
+      while (k < pts.length - 1 && seg[k] < want) k++;
+      const u = seg[k] - seg[k - 1] > 0 ? (want - seg[k - 1]) / (seg[k] - seg[k - 1]) : 0;
+      const x = pts[k - 1].x + (pts[k].x - pts[k - 1].x) * u, y = pts[k - 1].y + (pts[k].y - pts[k - 1].y) * u;
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(122, 82, 40, 0.95)'; ctx.fill();
+      ctx.font = 'italic 11px Georgia, serif'; ctx.fillStyle = 'rgba(80, 52, 24, 0.9)';
+      ctx.fillText(l.name, x + 6, y - 5);
+    }
+    ctx.restore();
+  }
+
   private drawCourtLines(ctx: CanvasRenderingContext2D, g: Game): void {
     const known = g.knownPolities;
     const ids = new Set(known.map((p) => p.id));

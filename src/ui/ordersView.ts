@@ -5,8 +5,7 @@ import { OFFICER_ROLES } from '../crew/crew';
 import { rivalStanding } from '../progression/rival';
 import { daysLeft, ventureLine } from '../progression/ventures';
 import { MILESTONES } from '../progression/milestones';
-import { policyOf } from '../progression/feitoria';
-import { enterpriseCards } from './enterpriseView';
+import { networkCards } from './networkView';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
 import { officerOpinion } from '../game/officerEvents';
 import type { Game } from '../game/state';
@@ -18,11 +17,8 @@ import { POLITY_BY_ID, TEMPER_WORD } from '../diplomacy/polities';
 import { measureWord, rulerName, standingWord } from '../diplomacy/courts';
 import { house, kindName } from '../economy/finance';
 import { portDef } from '../world/ports';
-import {
-  capacityOf, regardWordF, stockTons, stockValue, troubleWord,
-} from '../progression/feitoria';
 
-type Tab = 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 'stations' | 'enterprises' | 'wardroom';
+type Tab = 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 'network' | 'wardroom';
 
 /**
  * The captain's orders.
@@ -74,19 +70,17 @@ export class OrdersView {
       trade: g.trade.contracts.filter((c) => c.status === 'open').length,
       courts: g.diplomacy.agreements.filter((a) => a.status === 'open').length,
       reports: g.openLeads.length,
-      stations: g.liveFactories.length,
-      enterprises: g.enterprises.filter((e) => !e.lost).length,
+      network: g.liveFactories.length + g.lines.filter((l) => !l.lost).length,
       wardroom: g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length,
     };
     const names: Record<Tab, string> = {
       chronicle: 'Chronicle', missions: 'Missions', trade: 'Trade', courts: 'Courts', reports: 'Hearsay',
-      stations: 'Factories', enterprises: 'Businesses', wardroom: 'Wardroom',
+      network: 'Houses & Lines', wardroom: 'Wardroom',
     };
 
     const tabs = (Object.keys(names) as Tab[])
-      .filter((t) => (t !== 'stations' || g.liveFactories.length > 0) && (t !== 'enterprises' || g.enterprises.length > 0));
-    if (this.tab === 'enterprises' && g.enterprises.length === 0) this.tab = 'missions';
-    if (this.tab === 'stations' && g.liveFactories.length === 0) this.tab = 'missions';
+      .filter((t) => t !== 'network' || g.liveFactories.length > 0 || g.lines.length > 0 || g.crown.gold > 800);
+    if (!tabs.includes(this.tab)) this.tab = 'missions';
 
     this.body.append(el('div', { class: 'tabs' },
       ...tabs.map((t) => el('button', {
@@ -112,8 +106,7 @@ export class OrdersView {
     else if (this.tab === 'trade') this.renderTrade(g);
     else if (this.tab === 'courts') this.renderCourts(g);
     else if (this.tab === 'reports') this.renderLeads(g);
-    else if (this.tab === 'stations') this.renderStations(g);
-    else if (this.tab === 'enterprises') for (const c of enterpriseCards(g, () => this.render())) this.body.append(c);
+    else if (this.tab === 'network') for (const c of networkCards(g, () => this.render(), (t) => g.pushAlert(t, 'note'))) this.body.append(c);
     else this.renderWardroom(g);
   }
 
@@ -375,68 +368,6 @@ export class OrdersView {
         g.recallTutorial();
         this.render();
       }));
-  }
-
-  /**
-   * The stations, from a thousand miles away.
-   *
-   * The only screen in the game about places the ship is not. It exists
-   * because `trouble` is the one number a player must be able to watch without
-   * being there — a factory that can only be inspected by sailing to it is a
-   * factory that gets burned while you are doing something else, and the
-   * decision it is supposed to create (is it worth breaking the voyage to go
-   * and show the flag?) cannot be made blind.
-   */
-  private renderStations(g: Game): void {
-    for (const f of g.liveFactories) {
-      const def = portDef(f.portId);
-      const away = Math.round((g.clock.t - f.settled) / 86400);
-      this.body.append(card(`${def.name} — ${f.factor}`,
-        kv('In the shed', `${stockTons(f).toFixed(1)} of ${capacityOf(f).toFixed(0)} tons`),
-        kv('Worth at Lisbon', `${stockValue(f)} cruzados`),
-        kv('In the chest', `${Math.round(f.chest)} cruzados`, f.chest < 40 ? 'warn' : ''),
-        kv('Men in it', `${f.garrison}`),
-        kv('The town', regardWordF(f.regard)),
-        kv('How it stands', troubleWord(f.trouble),
-          f.trouble > 0.55 ? 'bad' : f.trouble > 0.32 ? 'warn' : ''),
-        kv('Since you were there', `${away} days`),
-        kv('Last seen off the place', `${Math.round((g.clock.t - Math.max(f.settled, f.seen ?? 0)) / 86400)} days ago`,
-          (g.clock.t - Math.max(f.settled, f.seen ?? 0)) / 86400 > 700 ? 'bad' : ''),
-        f.ledger && f.ledger.months > 0
-          ? kv('Since then', `${Math.round(f.ledger.sentHome)} cruzados sent home`
-            + (f.ledger.gifts > 0 ? `, ${Math.round(f.ledger.gifts)} to the town` : '')
-            + (f.ledger.built.length ? `, ${f.ledger.built.join(' and ')} built` : '')) : null,
-        el('div', { class: 'row', style: { marginTop: '8px', flexWrap: 'wrap', gap: '6px' } },
-          ...([
-            ['home', 'Sends surplus home', 'Keeps it for you'],
-            ['peace', 'Pays the town to keep the peace', 'Pays nothing unasked'],
-            ['build', 'Builds from its own chest', 'Builds nothing'],
-          ] as const).map(([key, on, off]) => {
-            const v = policyOf(f)[key];
-            return button(v ? on : off, () => {
-              f.policy = { ...policyOf(f), [key]: !v };
-              this.render();
-            }, { ghost: !v, primary: v });
-          })),
-        f.trouble > 0.55
-          ? el('p', {}, 'A town that has turned does not come round by itself. A ship seen off the '
-              + 'place (you need not put in), a present, or walls: one of the three, and soon.')
-          : null,
-      ));
-    }
-    this.body.append(card('What a station is for',
-      el('p', { class: 'flavour' },
-        'Left to itself a station buys all year, pays the town to keep the peace, builds what its '
-        + 'own chest can stand, and sends what it does not need home on the Casa’s ships — the '
-        + 'coin turns up at the next Portuguese port you make, and so do its letters. A cut goes to '
-        + 'the Casa and a few consignments go down at sea. A ship seen off the place keeps it '
-        + 'calm whether or not you put in; putting in gets you the whole of the shed.\n\n'
-        + 'A ship buying a cargo has to buy it in a fortnight, in front of everybody, at whatever '
-        + 'the town decides a man in a hurry should pay. A factor buys the same cargo a barrel at '
-        + 'a time across a year at what a resident pays, and it is stacked on the floor waiting '
-        + 'when you come. That is the whole of it, and the price of it is a man of yours living '
-        + 'on that beach.'),
-    ));
   }
 
   /**

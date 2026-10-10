@@ -137,6 +137,11 @@ export interface Feitoria {
   ticked?: number;
   /** What it has done since you were last standing in it, for the books. */
   ledger?: Ledger;
+  /** What the House is set to: buy and hold, keep stores, or work. */
+  posture?: 'buy' | 'stores' | 'work';
+  /** The good its Works turn out, if it has any. */
+  make?: string;
+  makeLevel?: number;
 }
 
 /**
@@ -318,7 +323,7 @@ export interface FactoryNews {
  */
 export function runFactory(
   f: Feitoria, def: PortDef, days: number, rng: Rng, portRegard: number,
-  opts: { sinceVisit?: number; traffic?: number } = {},
+  opts: { sinceVisit?: number; traffic?: number; noBuy?: boolean } = {},
 ): FactoryNews {
   const news: FactoryNews = {
     days, bought: 0, spent: 0, earned: 0, skimmed: 0, spoiled: 0, troubleAdded: 0,
@@ -372,10 +377,12 @@ export function runFactory(
     news.spent += cost;
   };
 
-  order.forEach((id, i) => take(id, budget * (weights[i] / total), tonsLeft));
-  // And again with what is left over, because a good that ran out of room or
-  // out of coin should not take the year's trade down with it.
-  for (const id of order) take(id, valueLeft, tonsLeft);
+  if (!opts.noBuy) {
+    order.forEach((id, i) => take(id, budget * (weights[i] / total), tonsLeft));
+    // And again with what is left over, because a good that ran out of room or
+    // out of coin should not take the year's trade down with it.
+    for (const id of order) take(id, valueLeft, tonsLeft);
+  }
 
   // The station's own dealing: he sells the European stuff, he takes a cut of
   // what passes through, and in a good place that is real money.

@@ -102,11 +102,17 @@ checkpoint between acts.
   each wired to a real effect; four yard services for captains of name (Zacuto's astrolabe,
   Flemish sailcloth, the great cabin, the King's ordnance).
 
-- **Businesses** (`enterprise.ts`, Orders > Businesses, Freight tab at any port): buy a mill,
-  vineyard, tannery… in a town that makes the thing; it fills a warehouse monthly; hire a
-  trading vessel (caravel to Indiaman, by act) to carry it to a named port; sales go through the
-  real market (glut, commission, loss at sea), profits are remitted on the Casa's ships.
-  Cap `3 + 2*act` businesses; payback ~2.5-3 years; fire/blight/seizure risks.
+- **Houses and Lines** (`network.ts`, Orders > Houses & Lines, the House tab in port). A
+  House (stored as a `Feitoria`) is a node: it buys the town's goods out of the real market,
+  holds them, may have Works that make one town good monthly, and is set to one posture (buy
+  and hold / keep stores: half-price victuals / work: doubled Works, no buying). Its one meter
+  is footing. A Line is an edge: a bought hull that runs a House (or Lisbon) to a market and
+  back, picks the best cargo each way, sells into the real market, waits for the monsoon past
+  the Cape, and pays out once per voyage (Casa 15%, 8% with Rua Nova) as a single payday card
+  at the next Portuguese port. Lines carry fresh price sheets home. Letters that need an answer
+  (send out of season; gift/stockade) come as scenes. Old businesses migrate into Works +
+  Lines. Act V `pepperhouse` at Lisbon: Casa contract (fixed 26) or corner the market (×1.4).
+  Never require sailing back: every House and Line is managed from the Orders book.
 
 ## Verdicts
 

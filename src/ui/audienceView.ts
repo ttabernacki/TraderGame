@@ -253,7 +253,7 @@ export class AudienceView {
     const complex = this.deal.comprehension >= 0.5;
     const asks: [Ask, boolean, string | null][] = [
       ['trade', !rel.mayTrade, null],
-      ['factory', !rel.factory && g.can('feitoria'), complex ? null : 'Needs an interpreter'],
+      ['factory', !rel.factory, complex ? null : 'Needs an interpreter'],
       ['exclusive', !rel.exclusive, complex ? null : 'Needs an interpreter'],
       ['padrao', !rel.padrao, null],
       ['pilot', true, null],

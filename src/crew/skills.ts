@@ -21,7 +21,7 @@ export type PerkId =
   // Leadership
   | 'loved' | 'fairShares' | 'followAnywhere' | 'feared' | 'hardRations' | 'lash' | 'nobodyDares' | 'legend'
   // Diplomacy
-  | 'readCourt' | 'treaty' | 'giftsOfState' | 'keptWord' | 'feitoria' | 'force' | 'gunboat' | 'tribute' | 'viceroy' | 'kingsVoice'
+  | 'readCourt' | 'treaty' | 'giftsOfState' | 'keptWord' | 'ambassador' | 'force' | 'gunboat' | 'tribute' | 'viceroy' | 'kingsVoice'
   // Trade
   | 'factorsEye' | 'patience' | 'brokers' | 'ownAccount' | 'credit' | 'licences' | 'antwerpEarly' | 'kingsPartner' | 'rua';
 
@@ -213,8 +213,8 @@ export const NODES: SkillNode[] = [
     effect: 'A well-chosen present counts for half as much again.' }),
   node({ id: 'dip-word', tree: 'diplomacia', tier: 5, school: 'a', name: 'A man of his word', perk: 'keptWord',
     effect: 'Promises kept are worth half again in trust, and the coast hears of them twice as loudly.' }),
-  node({ id: 'dip-feitoria', tree: 'diplomacia', tier: 6, school: 'a', name: 'Ambassador', perk: 'feitoria',
-    effect: 'Leave a factor ashore and come back to a feitoria that has been trading without you.' }),
+  node({ id: 'dip-feitoria', tree: 'diplomacia', tier: 6, school: 'a', name: 'Ambassador', perk: 'ambassador',
+    effect: 'Wherever you have leave to trade you have ground for a House without asking, and every House of yours keeps its footing as if a ship were in the road.' }),
   node({ id: 'dip-force', tree: 'diplomacia', tier: 3, school: 'b', name: 'A show of force', perk: 'force',
     effect: 'You may run out the guns instead of asking. It is quicker, and that coast never forgets it.' }),
   node({ id: 'dip-gunboat', tree: 'diplomacia', tier: 4, school: 'b', name: 'Gunboat manners', perk: 'gunboat',
@@ -222,7 +222,7 @@ export const NODES: SkillNode[] = [
   node({ id: 'dip-tribute', tree: 'diplomacia', tier: 5, school: 'b', name: 'Tribute', perk: 'tribute',
     effect: 'A town that yields to the guns pays for the privilege, in gold.' }),
   node({ id: 'dip-viceroy', tree: 'diplomacia', tier: 6, school: 'b', name: 'Viceroy', perk: 'viceroy',
-    effect: 'At the mouth of a gun you take not only leave to trade but ground for a feitoria and the trade to yourself.' }),
+    effect: 'At the mouth of a gun you take not only leave to trade but ground for a House and the trade to yourself.' }),
   node({ id: 'dip-voice', tree: 'diplomacia', tier: 7, name: 'The King’s voice', perk: 'kingsVoice',
     effect: 'When you speak, it is understood to be the King speaking. Every gain in a court’s trust is a third greater.' }),
 
@@ -232,7 +232,7 @@ export const NODES: SkillNode[] = [
   node({ id: 'tra-bargain', tree: 'comercio', tier: 2, name: 'Bargaining',
     effect: 'Noticeably better prices in every market on the coast.' }),
   node({ id: 'tra-eye', tree: 'comercio', tier: 3, school: 'a', name: 'The factor’s eye', perk: 'factorsEye',
-    effect: 'Your correspondents write from every factory on the coast: their prices are in your book.' }),
+    effect: 'Your correspondents write from every royal factory on the coast: their prices are in your book.' }),
   node({ id: 'tra-patience', tree: 'comercio', tier: 4, school: 'a', name: 'Patience at the table', perk: 'patience',
     effect: 'The merchant tires of you last, and you read his face far better across the cloth.' }),
   node({ id: 'tra-brokers', tree: 'comercio', tier: 5, school: 'a', name: 'Brokers you can trust', perk: 'brokers',
@@ -248,7 +248,7 @@ export const NODES: SkillNode[] = [
   node({ id: 'tra-partner', tree: 'comercio', tier: 6, school: 'b', name: 'The King’s partner', perk: 'kingsPartner',
     effect: 'The Casa takes the King’s goods from you at nine-tenths of the market, and the houses offer a third contract.' }),
   node({ id: 'tra-rua', tree: 'comercio', tier: 7, name: 'Prince of the Rua Nova', perk: 'rua',
-    effect: 'The counting-houses clear your paper before the ink is dry. What your stations send home pays a far smaller toll, and a factor’s commission on what you load is waived.' }),
+    effect: 'The counting-houses clear your paper before the ink is dry. The Casa takes half its usual share of what your Houses and Lines send home, and a factor’s commission on what you load is waived.' }),
 ];
 
 export const NODE_BY_ID = new Map(NODES.map((n) => [n.id, n]));

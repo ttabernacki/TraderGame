@@ -27,7 +27,7 @@ import { skill } from '../crew/skills';
 
 export type QuestId = 'caravel' | 'leak' | 'kongo' | 'prester' | 'zamorin' | 'galeao'
   | 'nome' | 'ficheiro' | 'roteiro' | 'escudeiro'
-  | 'adrift' | 'pesos' | 'padrao' | 'mercador' | 'monsoon' | 'aprendiz' | 'sofala' | 'count' | 'feitorcal' | 'mappila' | 'malay' | 'pepperrace' | 'feverfleet' | 'kingsoffer';
+  | 'adrift' | 'pesos' | 'padrao' | 'mercador' | 'monsoon' | 'aprendiz' | 'sofala' | 'count' | 'feitorcal' | 'mappila' | 'malay' | 'pepperrace' | 'feverfleet' | 'kingsoffer' | 'pepperhouse';
 
 export interface QuestState {
   id: QuestId;
@@ -3604,9 +3604,66 @@ const kingsOffer: QuestDef = {
   },
 };
 
+/** Houses past the Cape, or a Line that carries pepper: a captain the Rua Nova has to reckon with. */
+function pepperNetwork(g: Game): boolean {
+  const india = g.feitorias.filter((f) => !f.lost && portDef(f.portId).lon > 60).length;
+  const line = g.lines.some((l) => !l.lost && (portDef(l.home).lon > 60 || portDef(l.to).lon > 60) && l.trips > 0);
+  return india >= 2 || line;
+}
+
+const pepperHouse: QuestDef = {
+  id: 'pepperhouse',
+  title: 'The Pepper of Your Houses',
+  blurb: 'The Casa has noticed how much pepper your Lines bring in, and so have the men of the Rua Nova.',
+  offeredAt: ['lisboa'],
+  available: (g) => g.chronicle.act >= 5 && pepperNetwork(g),
+  offer: () => ({
+    who: 'A clerk of the Casa da Índia',
+    text: 'Your ships have been landing pepper at Lisbon under the Casa’s share for a year, and somebody at '
+      + 'the Casa has done the sums. So has somebody in the Rua Nova. Both of them would like a word with '
+      + 'you before the next fleet sails, and neither of them wants the other to know.',
+    accept: 'Hear them both',
+  }),
+  first: 'choose',
+  steps: {
+    choose: {
+      goal: () => 'Settle the pepper of your Houses, at Lisbon.',
+      marker: () => portMark('lisboa', 'The Casa, and the Rua Nova'),
+      when: (_g, _q, port) => port === 'lisboa',
+      scene: (_g, q) => scene(q, 'choose', 'Two offers for the pepper',
+        'The Casa’s factor offers a contract: every quintal your Lines land at Lisbon taken at a fixed price, '
+        + 'no share, no haggling, for as long as the King lives. A merchant of the Rua Nova offers something '
+        + 'else: hold your pepper off the quay, let the Casa’s own run short, and sell into the hole at whatever '
+        + 'the town will pay. He says it with his voice down.',
+        [
+          {
+            label: 'Sign the Casa’s contract',
+            detail: 'Pepper your Lines land at Lisbon fetches a fixed 26 the quintal. Safe, and the Crown is grateful.',
+            resolve: (gg) => {
+              gg.secretsHeard.push('pepper-contract');
+              renown(gg, 60);
+              gg.crown.standing += 30;
+              return end(gg, q, 'contract', 'Signed the Casa’s pepper contract. Your Lines sell at a fixed price, and the Crown counts you among its own.');
+            },
+          },
+          {
+            label: 'Corner the market',
+            detail: 'Your Lines sell pepper at Lisbon for two-fifths over the market. The Casa will not forget it.',
+            resolve: (gg) => {
+              gg.secretsHeard.push('pepper-corner');
+              renown(gg, 40);
+              gg.crown.standing = Math.max(0, gg.crown.standing - 40);
+              return end(gg, q, 'corner', 'Held your pepper off the quay and sold into the shortage. The Rua Nova drank your health; the Casa did not.');
+            },
+          },
+        ]),
+    },
+  },
+};
+
 export const QUESTS: Record<QuestId, QuestDef> = {
   caravel, leak, kongo, prester, zamorin, galeao, nome, ficheiro, roteiro, escudeiro,
-  adrift, pesos, padrao, mercador, monsoon, aprendiz, sofala, count, feitorcal: feitorCalecute, mappila, malay, pepperrace: pepperRace, feverfleet: feverFleet, kingsoffer: kingsOffer,
+  adrift, pesos, padrao, mercador, monsoon, aprendiz, sofala, count, feitorcal: feitorCalecute, mappila, malay, pepperrace: pepperRace, feverfleet: feverFleet, kingsoffer: kingsOffer, pepperhouse: pepperHouse,
 };
 
 /** Leave to trade across a whole state, as an audience would give it, and the court's opinion with it. */

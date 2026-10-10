@@ -14,7 +14,8 @@ import {
 } from '../ship/upgrades';
 import { hullClass } from '../ship/hull';
 import { shipyardCard } from './shipyard';
-import { businessesHere } from './enterpriseView';
+import { houseHead, openLineCard, worksBlock } from './networkView';
+import { footingOf, footingWord, postureOf } from '../progression/network';
 import { HOLDINGS, ROUTE_BY_ID, lossChance, temperWord } from '../progression/estate';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
 import { OFFICER_ROLES } from '../crew/crew';
@@ -31,8 +32,7 @@ import {
 } from '../economy/finance';
 import { portName } from '../progression/crown';
 import {
-  WORKS, buyable, capacityOf, regardWordF, residentPrice, stockTons, stockValue,
-  troubleWord, type Feitoria,
+  WORKS, buyable, capacityOf, residentPrice, stockTons, stockValue, type Feitoria,
 } from '../progression/feitoria';
 import type { Game, TradeListing } from '../game/state';
 import { append, button, card, clear, el, fold, foldCard, kv, plural } from './dom';
@@ -164,7 +164,7 @@ export class PortView {
     if (g.factoryHere || g.canFoundFactory(def) === null) {
       const f = g.factoryHere;
       tabs.splice(4, 0, ['station',
-        f ? `Feitoria (${stockTons(f).toFixed(1)}t)` : 'Found a feitoria']);
+        f ? `House (${stockTons(f).toFixed(1)}t)` : 'Open a House']);
     }
     this.body.append(el('div', { class: 'tabs' },
       ...tabs.map(([t, label]) => el('button', {
@@ -893,7 +893,9 @@ export class PortView {
     ));
 
     // And what you own in this town, and what could be bought.
-    for (const c of businessesHere(g, g.portHere!, () => this.render(), (t) => { this.notice = { text: t }; })) right.append(c);
+    if (g.factoryHere || g.portHere!.id === 'lisboa') {
+      right.append(openLineCard(g, () => this.render(), (t) => { this.notice = { text: t }; }, g.portHere!.id));
+    }
 
     host.append(el('div', { class: 'cols two' }, left, right));
   }
@@ -1102,13 +1104,14 @@ export class PortView {
       const why = g.canFoundFactory(def);
       const spare = g.crew.count - g.ship.baseHull.crewMin;
       const men = g.crew.officers.filter((o) => o.alive && !o.ashoreAt);
-      left.append(card('Ground for a factory',
+      left.append(card('A House here',
         el('p', { class: 'flavour' },
           'A walled shed, a clerk, six men and an agreement with whoever owns the beach. It is '
           + 'not a colony and it is not a conquest; it is a man of yours who is here all year '
           + 'buying at the price a resident pays, so that when you come back the cargo is '
           + 'already on the floor.'),
-        kv('It will cost', `${g.foundingCost()} cruzados and six men`),
+        kv('It will cost', `${g.foundingCost(def)} cruzados and six men`),
+        g.foundingCost(def) > 320 ? el('p', { class: 'gift-sub' }, 'Ground granted at an audience halves the price.') : null,
         kv('Men she can spare', `${Math.max(0, spare)}`, spare < 6 ? 'bad' : ''),
         why ? el('p', { class: 'notice grave' }, why) : null,
       ));
@@ -1156,9 +1159,7 @@ export class PortView {
       kv('Worth at Lisbon', `${stockValue(f)} cruzados`),
       kv('In the chest', `${Math.round(f.chest)} cruzados`, f.chest < 40 ? 'bad' : ''),
       kv('Men in it', `${f.garrison} of ${wanted} the works want`, f.garrison < wanted ? 'bad' : ''),
-      kv('The town', regardWordF(f.regard)),
-      kv('How it stands', troubleWord(f.trouble),
-        f.trouble > 0.55 ? 'bad' : f.trouble > 0.32 ? 'warn' : ''),
+      kv('Footing', footingWord(footingOf(f)), footingOf(f) < 0.4 ? 'bad' : footingOf(f) < 0.55 ? 'warn' : ''),
       f.chest < 40
         ? el('p', { class: 'notice' },
             'He has nothing to buy with. A factor with an empty chest is a man sitting in a shed '
@@ -1203,7 +1204,9 @@ export class PortView {
         + 'lives here.'),
     ));
 
-    right.append(this.orderCard(g, def, f));
+    right.append(card('What the House does', ...houseHead(f, () => this.render())));
+    right.append(card('Works', worksBlock(g, f, () => this.render(), (t) => { this.notice = { text: t }; })));
+    if (postureOf(f) === 'buy') right.append(this.orderCard(g, def, f));
 
     right.append(card('The chest',
       el('div', { class: 'row' },
@@ -1313,7 +1316,8 @@ export class PortView {
           ? 'Water can be had, though it is a labour to get it aboard, and there is not much else.'
           : 'Little enough to be had here. Take what you can and do not count on it.'),
       ...options.map((d) => {
-        const cost = provisioningCost(def, d, g.crew.count);
+        const house = g.factoryHere;
+        const cost = Math.round(provisioningCost(def, d, g.crew.count) * (house && postureOf(house) === 'stores' ? 0.5 : 1));
         return el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' } },
           el('span', {}, `${d} days for ${g.crew.count} men`),
           button(`${cost} cruzados`, () => {

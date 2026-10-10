@@ -2941,3 +2941,10 @@ details.card.fold[open] > .fold-body { margin-top: 9px; }
 .voyage-checkpoints > summary { cursor: pointer; opacity: 0.75; padding: 6px 0; }
 .voyage-checkpoints[open] > summary { margin-bottom: 8px; }
 .milestone { margin: 4px 0; }
+
+/* Houses & Lines */
+.net-field { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--ink-soft); margin: 4px 0; }
+.net-field select { max-width: 220px; }
+.net-footing { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.net-works { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+.net-works button { align-self: flex-start; }

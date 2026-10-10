@@ -220,3 +220,32 @@ export function roadPlan(g: Game): RoadStop[] {
 
   return [...stops.values()].sort((a, b) => a.along - b.along);
 }
+
+/**
+ * The way a ship actually goes from one place on the road to another: out to the
+ * trunk, along it (round the Cape, not through Africa), and in again. Used to
+ * draw the Lines on the chart and to reckon their passages.
+ */
+export function roadBetween(a: LatLon, b: LatLon): LatLon[] {
+  const nearest = (p: LatLon): number => {
+    let best = 0;
+    let bd = Infinity;
+    TRUNK_POINTS.forEach((q, i) => {
+      const d = haversine(p, q);
+      if (d < bd) { bd = d; best = i; }
+    });
+    return best;
+  };
+  const i = nearest(a);
+  const j = nearest(b);
+  const mid = i <= j ? TRUNK_POINTS.slice(i, j + 1) : TRUNK_POINTS.slice(j, i + 1).reverse();
+  return [a, ...mid, b];
+}
+
+/** Miles along `roadBetween`. */
+export function roadMiles(a: LatLon, b: LatLon): number {
+  const pts = roadBetween(a, b);
+  let nm = 0;
+  for (let k = 1; k < pts.length; k++) nm += haversine(pts[k - 1], pts[k]) / NM;
+  return nm;
+}

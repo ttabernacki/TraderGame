@@ -14,8 +14,8 @@ import {
   QUESTS, callbackAt, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
   rumoursHeard,
 } from '../progression/quests';
-import { tickEnterprises, type Enterprise } from '../progression/enterprise';
-import { deliverFactoryMail, noteSightings, tickFactories } from '../progression/livingFactory';
+import { migrateEnterprises, tickLines, type Letter, type Line } from '../progression/network';
+import { deliverFactoryMail, noteSightings, postLetter, tickFactories, transitDays } from '../progression/livingFactory';
 import { barkAt } from '../progression/barks';
 import { MILESTONES, checkMilestones } from '../progression/milestones';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
@@ -456,14 +456,52 @@ export class Game {
   /** Milestones reached, by id. */
   milestones: string[] = [];
 
-  /** The businesses the captain owns in the towns of the road. */
-  enterprises: Enterprise[] = [];
-  nextEnterpriseId = 1;
+  /** The ships the captain keeps running between his Houses and the markets. */
+  lines: Line[] = [];
+  nextLineId = 1;
 
-  /** Money the stations have sent home, on its way. */
-  remittances: { arrives: number; amount: number; from: string }[] = [];
-  /** Letters from the stations, on their way. */
-  factoryLetters: { t: number; arrives: number; text: string; severity: 'note' | 'warning' | 'grave' }[] = [];
+  /** Money the Houses and Lines have sent home, on its way. */
+  remittances: { arrives: number; amount: number; from: string; voyage?: string }[] = [];
+  /** Letters from the Houses and Lines, on their way. */
+  factoryLetters: Letter[] = [];
+
+  /** News of a port, as fresh as the ship that just left it. */
+  hearFrom(portId: string): void {
+    const quotes: Record<string, Quote> = {};
+    for (const l of this.marketHere(portId)) {
+      quotes[l.goodId] = { ask: l.ask, bid: l.bid, stock: l.stock, wanted: l.wanted, local: l.local };
+    }
+    const prev = this.trade.sheets[portId];
+    if (prev && prev.source === 'seen' && prev.t >= this.clock.t) return;
+    this.trade.sheets[portId] = { t: this.clock.t, source: 'letter', quotes };
+  }
+
+  postLetter(portId: string, text: string, severity: Letter['severity'] = 'note', act?: Letter['act']): void {
+    postLetter(this, portId, text, severity, act);
+  }
+
+  transitDays(portId: string): number {
+    return transitDays(portId);
+  }
+
+  /** Put a scene in front of the captain, now if nothing else is, else in turn. */
+  queueScene(s: SeaEvent): void {
+    if (this.pendingEvent?.id === s.id || this.pendingScenes.some((x) => x.id === s.id)) return;
+    if (!this.pendingEvent) this.pendingEvent = s;
+    else this.pendingScenes.push(s);
+  }
+
+  /** A House with nobody aboard to spare for it: a man of the town keeps it. */
+  newHouse(portId: string, factor: string, officerId: string | null): Feitoria {
+    const f: Feitoria = {
+      portId, factor, officerId, ability: 0.5, honesty: 0.7, founded: this.clock.t, settled: this.clock.t,
+      works: [], garrison: 4, stock: {}, paid: {}, chest: 90, buying: [],
+      regard: clamp(this.relationsFor(portId).regard * 0.8 + 0.1, 0, 1), trouble: 0.05, lost: false,
+      landed: 0, paidOut: 0,
+    };
+    this.feitorias.push(f);
+    return f;
+  }
 
   /**
    * The small things the road says back: a remark from the wardroom at a place
@@ -474,7 +512,7 @@ export class Game {
     if (this.mode === 'gameover' || this.mode === 'title') return;
     noteSightings(this);
     tickFactories(this);
-    tickEnterprises(this);
+    tickLines(this);
     if (this.dockedAt) deliverFactoryMail(this, this.dockedAt);
     const bark = barkAt(this);
     if (bark) { this.pushAlert(bark, 'note'); this.logEvent('note', bark, false); }
@@ -4823,6 +4861,9 @@ export class Game {
       });
       kept++;
     }
+    // The Lines go on running for the heir, from whatever home they had.
+    this.lines = old.lines.filter((l) => !l.lost).map((l) => ({ ...l, phase: 'home' as const, at: this.clock.t, cargo: null, purse: 0, history: [] }));
+    this.nextLineId = old.nextLineId;
     this.logEvent('note',
       `You are the ${['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth'][this.generation] ?? `${this.generation}th`} `
       + `of your line. Your ${old.generation === 1 ? 'father' : 'predecessor'} left ${purse} cruzados, a name worth ${name} at court, `
@@ -7703,14 +7744,9 @@ export class Game {
    * one — nobody ever runs out of the first two twice.
    */
   canFoundFactory(def: PortDef): string | null {
-    if (!this.can('feitoria')) {
-      return 'Nothing in your commission lets you leave the King\u2019s men on a foreign shore. '
-        + 'That is the Ambassador\u2019s article, and it is bought in the book.';
-    }
     const rel = this.relationsFor(def.id);
-    if (!rel.factory) {
-      return 'You have no ground here. Ground for a factory is asked for at an audience and '
-        + 'granted or not by whoever owns this beach.';
+    if (def.people !== 'portuguese' && !rel.mayTrade && !rel.factory) {
+      return 'Nobody here will deal with a House of yours until you have leave to trade.';
     }
     if (this.feitorias.some((f) => f.portId === def.id && !f.lost)) return 'There is one here already.';
     const men = this.crew.count - this.ship.baseHull.crewMin;
@@ -7725,8 +7761,9 @@ export class Game {
   }
 
   /** Timber, tools, trade goods to start the chest, and a year's victuals for the men. */
-  foundingCost(): number {
-    return 320;
+  foundingCost(def: PortDef | null = this.portHere): number {
+    // Ground granted at an audience is most of the price of a House.
+    return def && (def.people === 'portuguese' || this.can('ambassador') || this.relationsFor(def.id).factory) ? 320 : 640;
   }
 
   /**
@@ -9354,8 +9391,8 @@ export class Game {
       secretsHeard: this.secretsHeard,
       milestones: this.milestones,
       remittances: this.remittances,
-      enterprises: this.enterprises,
-      nextEnterpriseId: this.nextEnterpriseId,
+      lines: this.lines,
+      nextLineId: this.nextLineId,
       factoryLetters: this.factoryLetters,
       estate: this.estate,
       designs: this.designs,
@@ -9480,8 +9517,8 @@ export class Game {
     g.secretsHeard = d.secretsHeard ?? [];
     g.milestones = d.milestones ?? [];
     g.remittances = d.remittances ?? [];
-    g.enterprises = d.enterprises ?? [];
-    g.nextEnterpriseId = d.nextEnterpriseId ?? 1;
+    g.lines = d.lines ?? [];
+    g.nextLineId = d.nextLineId ?? 1;
     g.factoryLetters = d.factoryLetters ?? [];
     g.estate = { ...newEstate(g.clock.t), ...(d.estate ?? {}) };
     // An island raised with its scene still unanswered when the game was saved.
@@ -9490,6 +9527,8 @@ export class Game {
     g.finance = Ledger.deserialize(d.finance);
     g.propositionsSeen = d.propositionsSeen ?? [];
     g.feitorias = d.feitorias ?? [];
+    // A voyage from before Houses and Lines: its businesses become Works and Lines.
+    if (d.enterprises?.length && !d.lines) migrateEnterprises(g, d.enterprises);
     g.lettersSeen = d.lettersSeen ?? [];
     // A voyage begun before the pilot existed is a voyage whose captain has
     // plainly worked it out for himself, so he is not started on lesson one.

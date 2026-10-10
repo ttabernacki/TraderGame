@@ -2,6 +2,7 @@ import { NM, clamp, haversine } from '../core/math';
 import { GOOD_BY_ID } from '../economy/goods';
 import { PORTS, anchorageOf, portDef } from '../world/ports';
 import type { Game } from '../game/state';
+import { footingOf, letterScene, paydayScene, postureOf, worksName, worksOutput, worksUpkeep, type Letter } from './network';
 import {
   WORK_BY_ID, capacityOf, garrisonWanted, newLedger, policyOf, runFactory, stockTons, stockValue, strengthOf,
   trafficOf, type Feitoria, type WorkId,
@@ -64,16 +65,13 @@ function lossChance(portId: string): number {
 }
 
 /** A letter from anywhere the captain has an interest, delivered at the next Portuguese port. */
-export function postLetter(g: Game, portId: string, text: string, severity: 'note' | 'warning' | 'grave' = 'note'): void {
-  g.factoryLetters.push({ t: g.clock.t, arrives: g.clock.t + transitDays(portId) * 86400, text, severity });
+export function postLetter(g: Game, portId: string, text: string, severity: Letter['severity'] = 'note', act?: Letter['act']): void {
+  g.factoryLetters.push({ t: g.clock.t, arrives: g.clock.t + transitDays(portId) * 86400, text, severity, act });
   if (g.factoryLetters.length > 40) g.factoryLetters.splice(0, g.factoryLetters.length - 40);
 }
 
-function letter(g: Game, f: Feitoria, text: string, severity: 'note' | 'warning' | 'grave' = 'note'): void {
-  g.factoryLetters.push({
-    t: g.clock.t, arrives: g.clock.t + transitDays(f.portId) * 86400, text, severity,
-  });
-  if (g.factoryLetters.length > 40) g.factoryLetters.splice(0, g.factoryLetters.length - 40);
+function letter(g: Game, f: Feitoria, text: string, severity: Letter['severity'] = 'note', act?: Letter['act']): void {
+  postLetter(g, f.portId, text, severity, act);
 }
 
 /** Burned, while nobody was there. */
@@ -117,7 +115,43 @@ function tickOne(g: Game, f: Feitoria): void {
     }
   }
 
-  const news = runFactory(f, def, 30, g.rng, rel.regard, { sinceVisit: since, traffic });
+  // What the House buys it buys out of the town's own market, so a House that
+  // fills its store leaves less on the quay for everybody else, the captain included.
+  const posture = postureOf(f);
+  const before = { ...f.stock };
+  const news = runFactory(f, def, 30, g.rng, rel.regard, { sinceVisit: since, traffic, noBuy: posture !== 'buy' });
+  if (posture === 'buy') {
+    g.markets.refresh(f.portId, g.clock.t);
+    for (const [id, q] of Object.entries(f.stock)) {
+      const d = Math.floor(q - (before[id] ?? 0));
+      if (d >= 1) g.markets.buy(f.portId, id, d);
+    }
+  }
+
+  // The Works: wages out of the chest, goods into the store, while there is room and money.
+  if (f.make && GOOD_BY_ID.has(f.make)) {
+    const wage = worksUpkeep(f);
+    if (f.chest >= wage) {
+      f.chest -= wage;
+      const gd = GOOD_BY_ID.get(f.make)!;
+      const room = Math.max(0, capacityOf(f) - stockTons(f));
+      const units = Math.min(worksOutput(f), room / Math.max(gd.bulk, 1e-6));
+      if (units > 0) {
+        const held = f.stock[f.make] ?? 0;
+        const per = wage / Math.max(units, 1);
+        f.paid[f.make] = ((f.paid[f.make] ?? per) * held + wage) / (held + units);
+        f.stock[f.make] = held + units;
+      }
+    } else if (led.months % 3 === 0) {
+      letter(g, f, `${def.name}: the ${worksName(f.make).toLowerCase()} stands idle; the chest will not run to the wages.`, 'warning');
+    }
+  }
+
+  // An ambassador's House is treated as his embassy.
+  if (g.can('ambassador')) f.trouble = clamp(f.trouble - 0.08, 0, 1);
+
+  // The town's prices, every month, in the factor's hand.
+  g.hearFrom(f.portId);
   led.months += 1;
   led.bought += news.bought;
   led.earned += news.earned;
@@ -145,7 +179,8 @@ function tickOne(g: Game, f: Feitoria): void {
   if (policy.home) {
     const freight = g.can('rua') ? FREIGHT_RUA : FREIGHT;
     const reserve = capacityOf(f) * 0.25;
-    let excess = stockTons(f) - reserve;
+    // Goods stay in the store for the captain's ship and his Lines; only coin goes home.
+    let excess = Math.min(0, stockTons(f) - reserve);
     let proceeds = 0;
     let lost = 0;
     if (excess > 0.5) {
@@ -204,7 +239,8 @@ function tickOne(g: Game, f: Feitoria): void {
           + `${led.sentHome > 0 ? `${Math.round(led.sentHome)} cruzados have gone home on the Casa’s ships. ` : ''}The town is ${f.regard > 0.55 ? 'quiet' : 'watching'}.`
         : `${def.name}: ${f.factor} writes carefully. The town has changed its mind about the station`
           + `${policy.peace && led.gifts > 0 ? ', and he has been paying it to keep the peace' : ''}. He would like a ship to be seen off the place.`,
-      hopeful ? 'note' : 'warning');
+      hopeful ? 'note' : 'warning',
+      !hopeful && footingOf(f) < 0.45 ? { kind: 'gift', ref: f.portId } : undefined);
   }
 }
 
@@ -246,12 +282,21 @@ export function deliverFactoryMail(g: Game, portId: string): void {
   const due = g.remittances.filter((r) => r.arrives <= t);
   if (due.length) {
     g.remittances = g.remittances.filter((r) => r.arrives > t);
-    const sum = due.reduce((s, r) => s + r.amount, 0);
+    // The Lines' voyages, one card for all of them.
+    const voyages = due.filter((r) => r.voyage);
+    if (voyages.length) {
+      const total = voyages.reduce((s, r) => s + r.amount, 0);
+      g.crown.gold = Math.max(0, g.crown.gold + total);
+      g.logEvent('trade', `The Lines paid ${total} cruzados.`, true);
+      g.queueScene(paydayScene(voyages.map((r) => r.voyage!), total));
+    }
+    const coin = due.filter((r) => !r.voyage);
+    const sum = coin.reduce((s, r) => s + r.amount, 0);
     if (sum > 0) {
       g.crown.gold += sum;
       const shared = g.takeShares(sum);
-      const from = [...new Set(due.map((r) => r.from))].join(', ');
-      const line = `The Casa’s ships have brought ${sum} cruzados from your stations (${from})`
+      const from = [...new Set(coin.map((r) => r.from))].join(', ');
+      const line = `The Casa’s ships have brought ${sum} cruzados from your Houses (${from})`
         + `${shared > 0.5 ? `, of which ${Math.round(shared)} went to the men holding sixteenths` : ''}.`;
       g.pushAlert(line, 'note');
       g.logEvent('trade', line, true);
@@ -264,10 +309,15 @@ export function deliverFactoryMail(g: Game, portId: string): void {
     // Worst first, and no more than three read out; the rest are summed up.
     const rank = { grave: 0, warning: 1, note: 2 } as const;
     mail.sort((a, b) => rank[a.severity] - rank[b.severity] || b.t - a.t);
-    for (const l of mail.slice(0, 3)) {
+    // A letter that wants an answer is put as a scene, the rest are read out.
+    for (const l of mail.filter((x) => x.act)) {
+      const sc = letterScene(g, l);
+      if (sc) g.queueScene(sc);
+    }
+    for (const l of mail.filter((x) => !x.act).slice(0, 3)) {
       g.pushAlert(l.text, l.severity);
       g.logEvent(l.severity === 'note' ? 'trade' : 'peril', l.text, l.severity !== 'note');
     }
-    if (mail.length > 3) g.logEvent('trade', `${mail.length - 3} older letters from the stations were read and filed.`);
+    if (mail.length > 3) g.logEvent('trade', `${mail.length - 3} older letters from the Houses were read and filed.`);
   }
 }
