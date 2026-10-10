@@ -6,7 +6,7 @@ import {
   ASK_LABEL, evaluate, expectedGift, measureWord, offerLabel, rulerName, standingWord,
   type Ask, type Deal, type Offer, type PolityState, type Verdict,
 } from '../diplomacy/courts';
-import { startPiece } from '../diplomacy/table';
+import { offered, startPiece } from '../diplomacy/table';
 import type { PieceRun } from '../diplomacy/piece';
 import { pieceCard } from './pieceView';
 import { echoFor } from '../diplomacy/marks';
@@ -61,7 +61,9 @@ export class AudienceView {
     const st = g.polityState(this.pol.id);
     st.met = true;
     this.phase = 'piece';
-    this.run = startPiece(g, 'bow', this.pol.id, def.id);
+    // A people with a piece of their own meet you with that; the rest, with the greeting.
+    const own = offered(g, this.pol.id).find((p) => p.id !== 'bow');
+    this.run = startPiece(g, own?.id ?? 'bow', this.pol.id, def.id);
     if (!this.run) this.phase = 'protocol';
     this.deal = this.blankDeal();
     this.deal.comprehension = this.comprehension(g);
