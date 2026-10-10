@@ -99,6 +99,7 @@ import {
 } from '../progression/inland';
 import { polarAt } from '../ship/polars';
 import { newTutorial, stepTutorial, type TutorialState, type TutorialStep } from './tutorial';
+import { campaignDef, type CampaignId } from './campaign';
 import { rollOfficerEvent } from './officerEvents';
 import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty';
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
@@ -213,6 +214,9 @@ export type ShoreAction = 'water' | 'wood' | 'food' | 'meet';
 const LOCAL_REGARD = 0.6;
 
 export class Game {
+  /** Which campaign this voyage belongs to. See game/campaign. */
+  campaign: CampaignId = 'carreira';
+
   clock: Clock;
   rng: Rng;
   seed: number;
@@ -1014,15 +1018,17 @@ export class Game {
    */
   careerId = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
 
-  constructor(seed = Math.floor(Math.random() * 1e9)) {
+  constructor(seed = Math.floor(Math.random() * 1e9), campaign: CampaignId = 'carreira') {
     this.seed = seed;
     this.rng = new Rng(seed);
-    this.clock = new Clock({ year: 1482, month: 7, day: 12 });
+    this.campaign = campaign;
+    const cd = campaignDef(campaign);
+    this.clock = new Clock(cd.start);
 
-    const start = anchorageOf(portDef('lisboa'));
+    const start = anchorageOf(portDef(cd.port));
     this.weather = new Weather(seed);
-    this.ship = new Ship('São Cristóvão', 'caravela-latina', start, 200);
-    this.crew = newCrew(hullClass('caravela-latina').crewFull, this.rng);
+    this.ship = new Ship(cd.shipName, cd.hullId, start, 200);
+    this.crew = newCrew(hullClass(cd.hullId).crewFull, this.rng);
     this.nav = new Navigator(start, seed);
     this.wireNavigator();
     this.chart = new Chart();
@@ -1047,23 +1053,33 @@ export class Game {
       this.bindRegard(p.id, rel);
     }
 
-    this.dockedAt = 'lisboa';
+    this.dockedAt = cd.port;
     this.anchored = true;
-    this.visitedPorts.add('lisboa');
+    this.visitedPorts.add(cd.port);
+    // Home ports are on the chart from the first day.
+    if (cd.port !== 'lisboa') {
+      const home = portDef(cd.port);
+      const rel = this.relationsFor(cd.port);
+      rel.met = true; rel.mayTrade = true; rel.regard = 1;
+      this.chart.chartPort(home, anchorageOf(home), anchorageOf(home), this.clock.t, true);
+      // Not the Portuguese captain's first voyage, and not his rival either.
+      this.tutorial = { on: false, at: 0, finished: true };
+      this.rival.eclipsed = true;
+    }
     this.crown.padraoStock = Math.max(this.crown.padraoStock, 3);
     this.lastLat = start.lat;
     this.displayHeading = this.ship.state.heading;
     // She lies in the Tagus with her position known to the yard of the quay, so
     // the reckoning starts fresh rather than nineteen thousand days stale.
     this.nav.lastFixT = this.clock.t;
-    this.refreshPortBusiness(portDef('lisboa'));
+    this.refreshPortBusiness(portDef(cd.port));
     this.startT = this.clock.t;
 
     this.refreshEnvironment();
     this.log.add({
       t: this.clock.t, date: this.clock.formatDate(), time: this.clock.formatTime(),
       kind: 'note', important: true,
-      text: 'The São Cristóvão lies in the Tagus, stored and watered. Whatever happens after this is written in this book.',
+      text: cd.opening,
     });
   }
 
