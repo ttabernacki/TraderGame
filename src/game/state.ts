@@ -6252,7 +6252,12 @@ export class Game {
     if (this.dockedAt && !this.pendingEvent) {
       const i = this.pendingScenes.findIndex((x) => x.id.startsWith('quest:') || x.id.startsWith('chronicle:'));
       if (i >= 0) this.pendingEvent = this.pendingScenes.splice(i, 1)[0];
-      else this.checkStory();
+      else {
+        this.checkStory();
+        // Anything else queued behind it is put now too: in port the clock is stopped, and
+        // a scene left waiting would turn up at sea, out of its place, a week later.
+        if (!this.pendingEvent && this.pendingScenes.length > 0) this.pendingEvent = this.pendingScenes.shift()!;
+      }
     }
   }
 
