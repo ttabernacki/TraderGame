@@ -69,6 +69,10 @@ function resolve(g: Game, run: PieceRun, o: Outcome): void {
   for (const m of o.marks) writeMark(g.diplomacy.marks, run.polity, m, now);
   if (o.measures) g.adjustPolity(run.polity, o.measures, o.line);
   for (const b of o.book ?? []) learn(g.diplomacy.book, run.polity, b, now);
+  for (const a of o.also ?? []) {
+    for (const m of a.marks) writeMark(g.diplomacy.marks, a.polity, m, now);
+    if (a.measures) g.adjustPolity(a.polity, a.measures);
+  }
   if (o.factions) {
     const st = g.polityState(run.polity);
     for (const f of POLITY_BY_ID.get(run.polity)?.factions ?? []) {

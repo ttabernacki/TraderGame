@@ -33,6 +33,8 @@ export interface Outcome {
   gold?: number;
   /** Moves in the court's own voices, by what each cares about (trade, faith, war, custom). */
   factions?: Partial<Record<'trade' | 'faith' | 'war' | 'custom', number>>;
+  /** Other courts the outcome touches (a go-between answers to both). */
+  also?: { polity: string; marks: NewMark[]; measures?: { trust?: number; respect?: number; interest?: number } }[];
   /** For an audience: how the presents were taken. */
   gift?: { value: number; loved: boolean; scorned: boolean };
 }

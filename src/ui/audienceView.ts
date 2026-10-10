@@ -10,7 +10,7 @@ import { offered, startPiece } from '../diplomacy/table';
 import type { Outcome, PieceRun } from '../diplomacy/piece';
 import { pieceCard } from './pieceView';
 import { echoFor } from '../diplomacy/marks';
-import { TEMPER_WORD, polityOfPort, type PolityDef } from '../diplomacy/polities';
+import { POLITY_BY_ID, TEMPER_WORD, polityOfPort, type PolityDef } from '../diplomacy/polities';
 import type { Game } from '../game/state';
 import { button, card, clear, el, kv, meter } from './dom';
 
@@ -42,7 +42,8 @@ export class AudienceView {
   private verdict: Verdict | null = null;
   private pressed = false;
   private run: PieceRun | null = null;
-  private invited = false;
+  private invited = new Set<string>();
+  private pending = '';
   private result = '';
 
   constructor(private onClose: () => void) {
@@ -61,7 +62,7 @@ export class AudienceView {
     if (!this.pol) { this.onClose(); return; }
     const st = g.polityState(this.pol.id);
     st.met = true;
-    this.invited = false;
+    this.invited.clear();
     this.phase = 'piece';
     // A people with a piece of their own meet you with that; the rest, with the greeting.
     const own = offered(g, this.pol.id).find((p) => p.id === 'silent');
@@ -205,7 +206,7 @@ export class AudienceView {
 
   /** What follows a piece: the greeting and the mat lead to the custom of the court; the tray, to terms. */
   private afterPiece(o: Outcome): void {
-    if (this.run?.pieceId === 'case') {
+    if (this.run?.pieceId === 'case' || this.run?.pieceId === 'between') {
       this.run = null;
       this.toGifts();
       return;
@@ -226,12 +227,15 @@ export class AudienceView {
   /** The presents: the tray piece when the hold has anything fit to give, else the old table. */
   private toGifts(): void {
     const g = this.game!;
-    // A court with a matter before it asks the stranger to sit, once, before the presents.
-    if (!this.invited && offered(g, this.pol!.id).some((p) => p.id === 'case')) {
-      this.invited = true;
-      this.phase = 'invite';
-      this.render();
-      return;
+    // A court with a matter before it asks the stranger first, once each, before the presents.
+    for (const id of ['case', 'between']) {
+      if (!this.invited.has(id) && offered(g, this.pol!.id).some((p) => p.id === id)) {
+        this.invited.add(id);
+        this.pending = id;
+        this.phase = 'invite';
+        this.render();
+        return;
+      }
     }
     const tray = offered(g, this.pol!.id).find((p) => p.id === 'gifts');
     const run = tray ? startPiece(g, 'gifts', this.pol!.id, g.portHere!.id) : null;
@@ -241,19 +245,26 @@ export class AudienceView {
 
   private invitePanel(g: Game): HTMLElement {
     const pol = this.pol!;
-    return card('A matter before the court',
-      el('p', {}, `The court has a dispute to hear this morning, and ${rulerName(pol, this.st)} asks the stranger to sit with him and say what he thinks. Everyone knows which party is the more powerful.`),
+    const id = this.pending;
+    const other = POLITY_BY_ID.get(pol.feuds[0])?.name ?? 'their old enemy';
+    const t = id === 'between'
+      ? { head: 'An old quarrel', text: `${rulerName(pol, this.st)} will not speak to ${other}, and ${other} will not speak to him. Both would speak to a stranger, if the stranger would carry their words.`,
+        yes: 'Offer to carry their words', hint: 'Days pass, and gifts are spent.', no: 'Stay out of it', say: 'You offer to carry their words.', nosay: 'You say it is not your place.' }
+      : { head: 'A matter before the court', text: `The court has a dispute to hear this morning, and ${rulerName(pol, this.st)} asks the stranger to sit with him and say what he thinks. Everyone knows which party is the more powerful.`,
+        yes: 'Sit with him', hint: 'You may be asked to judge in front of everyone.', no: 'Decline with thanks', say: 'You sit with him.', nosay: 'You thank him, and decline: you are a stranger here.' };
+    return card(t.head,
+      el('p', {}, t.text),
       el('div', { class: 'shore-actions' },
         el('button', { class: 'shore-action', type: 'button', onclick: () => {
-          this.run = startPiece(g, 'case', pol.id, g.portHere!.id);
-          this.log.push({ who: 'you', text: 'You sit with him.' });
-          this.phase = 'piece';
+          this.run = startPiece(g, id, pol.id, g.portHere!.id);
+          this.log.push({ who: 'you', text: t.say });
+          this.phase = this.run ? 'piece' : 'gifts';
           this.render();
-        } }, el('b', {}, 'Sit with him'), el('span', {}, 'You may be asked to judge in front of everyone.')),
+        } }, el('b', {}, t.yes), el('span', {}, t.hint)),
         el('button', { class: 'shore-action', type: 'button', onclick: () => {
-          this.log.push({ who: 'you', text: 'You thank him, and decline: you are a stranger here.' });
+          this.log.push({ who: 'you', text: t.nosay });
           this.toGifts();
-        } }, el('b', {}, 'Decline with thanks'))));
+        } }, el('b', {}, t.no))));
   }
 
   private giftPanel(g: Game, pol: PolityDef): HTMLElement {
