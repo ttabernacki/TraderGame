@@ -7,7 +7,7 @@ import {
   type Ask, type Deal, type Offer, type PolityState, type Verdict,
 } from '../diplomacy/courts';
 import { offered, startPiece } from '../diplomacy/table';
-import type { PieceRun } from '../diplomacy/piece';
+import type { Outcome, PieceRun } from '../diplomacy/piece';
 import { pieceCard } from './pieceView';
 import { echoFor } from '../diplomacy/marks';
 import { TEMPER_WORD, polityOfPort, type PolityDef } from '../diplomacy/polities';
@@ -62,7 +62,7 @@ export class AudienceView {
     st.met = true;
     this.phase = 'piece';
     // A people with a piece of their own meet you with that; the rest, with the greeting.
-    const own = offered(g, this.pol.id).find((p) => p.id !== 'bow');
+    const own = offered(g, this.pol.id).find((p) => p.id === 'silent');
     this.run = startPiece(g, own?.id ?? 'bow', this.pol.id, def.id);
     if (!this.run) this.phase = 'protocol';
     this.deal = this.blankDeal();
@@ -133,7 +133,7 @@ export class AudienceView {
     if (this.phase === 'piece' && this.run) {
       right.append(pieceCard(g, this.run, () => this.render(),
         (who, text) => this.log.push({ who, text }),
-        () => { this.phase = 'protocol'; this.render(); }));
+        (o) => this.afterPiece(o)));
     } else if (this.phase === 'protocol') right.append(this.protocolPanel(g, pol, st));
     else if (this.phase === 'gifts') right.append(this.giftPanel(g, pol));
     else if (this.phase === 'terms') right.append(this.termsPanel(g, pol, st));
@@ -193,12 +193,35 @@ export class AudienceView {
             this.log.push({ who: 'you', text: o });
             this.log.push({ who: 'narrator', text: right ? 'It is noticed, and it is approved of.' : 'There is a silence that goes on slightly too long.' });
             if (!right) g.adjustPolity(pol.id, { respect: -0.03 });
-            this.phase = 'gifts';
-            this.render();
+            this.toGifts();
           },
         }, el('b', {}, o))),
       ),
     );
+  }
+
+  /** What follows a piece: the greeting and the mat lead to the custom of the court; the tray, to terms. */
+  private afterPiece(o: Outcome): void {
+    if (this.run?.pieceId === 'gifts') {
+      const gift = o.gift ?? { value: 0, loved: false, scorned: false };
+      this.deal.giftValue = gift.value;
+      this.deal.giftLoved = gift.loved;
+      this.deal.giftScorned = gift.scorned;
+      this.phase = 'terms';
+    } else {
+      this.phase = 'protocol';
+    }
+    this.run = null;
+    this.render();
+  }
+
+  /** The presents: the tray piece when the hold has anything fit to give, else the old table. */
+  private toGifts(): void {
+    const g = this.game!;
+    const tray = offered(g, this.pol!.id).find((p) => p.id === 'gifts');
+    const run = tray ? startPiece(g, 'gifts', this.pol!.id, g.portHere!.id) : null;
+    if (run) { this.run = run; this.phase = 'piece'; } else this.phase = 'gifts';
+    this.render();
   }
 
   private giftPanel(g: Game, pol: PolityDef): HTMLElement {

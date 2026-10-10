@@ -31,6 +31,8 @@ export interface Outcome {
   book?: Omit<BookEntry, 'id' | 'polity' | 't'>[];
   /** Cash gained or spent, in cruzados. */
   gold?: number;
+  /** For an audience: how the presents were taken. */
+  gift?: { value: number; loved: boolean; scorned: boolean };
 }
 
 export interface PieceCtx {
