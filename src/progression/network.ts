@@ -9,6 +9,7 @@ import type { Game } from '../game/state';
 import { hullAllowed } from './chronicle';
 import type { Feitoria } from './feitoria';
 import { roadMiles } from './road';
+import { polityOfPort } from '../diplomacy/polities';
 
 /**
  * Houses and Lines.
@@ -261,6 +262,9 @@ function load(g: Game, port: string, p: Pick): number {
 function sell(g: Game, port: string, goodId: string, qty: number): number {
   const v = saleUnit(g, port, goodId, qty) * qty;
   g.markets.sell(port, goodId, qty);
+  // A ship that brings a town what it wants, year after year, is worth the court's while.
+  const pol = polityOfPort(port);
+  if (pol) g.adjustPolity(pol.id, { interest: 0.012 });
   return v;
 }
 

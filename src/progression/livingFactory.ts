@@ -2,6 +2,7 @@ import { NM, clamp, haversine } from '../core/math';
 import { GOOD_BY_ID } from '../economy/goods';
 import { PORTS, anchorageOf, portDef } from '../world/ports';
 import type { Game } from '../game/state';
+import { polityOfPort } from '../diplomacy/polities';
 import { footingOf, letterScene, paydayScene, postureOf, worksName, worksOutput, worksUpkeep, type Letter } from './network';
 import {
   WORK_BY_ID, capacityOf, garrisonWanted, newLedger, policyOf, runFactory, stockTons, stockValue, strengthOf,
@@ -120,6 +121,9 @@ function tickOne(g: Game, f: Feitoria): void {
   const posture = postureOf(f);
   const before = { ...f.stock };
   const news = runFactory(f, def, 30, g.rng, rel.regard, { sinceVisit: since, traffic, noBuy: posture !== 'buy' });
+  // A House trading all year is the town's business with you, and the court notices.
+  const pol = polityOfPort(f.portId);
+  if (pol) g.adjustPolity(pol.id, { interest: 0.004 });
   if (posture === 'buy') {
     g.markets.refresh(f.portId, g.clock.t);
     for (const [id, q] of Object.entries(f.stock)) {

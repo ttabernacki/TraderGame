@@ -1,3 +1,4 @@
+import { isPostPort, transitDays } from './livingFactory';
 import { NM, clamp, haversine } from '../core/math';
 import { PORTS, portDef, type PortDef } from '../world/ports';
 import { people } from '../world/peoples';
@@ -31,7 +32,7 @@ import type { Game } from '../game/state';
  * and what you do with what he saw is sail there.
  */
 
-export type ErrandId = 'gold' | 'prester' | 'passage' | 'road';
+export type ErrandId = 'gold' | 'prester' | 'passage' | 'road' | 'spice' | 'monomotapa';
 
 export interface Errand {
   id: ErrandId;
@@ -95,6 +96,30 @@ export const ERRANDS: Errand[] = [
     from: ['wolof', 'mandinka', 'akan', 'edo', 'kongo', 'swahili'],
     years: 1.6,
     peril: 0.22,
+  },
+  {
+    id: 'spice',
+    name: 'Where the cloves grow',
+    brief: 'Take passage east in a Gujarati ship, as far as the cloves and the nutmeg go back to, '
+      + 'and come back able to say where they grow and who sells them.',
+    hope: 'Every clove in Calecut has come three thousand miles in other men’s ships, and the '
+      + 'price doubles at every port it touches. Nobody on this coast will say where the first '
+      + 'port is, which is the best evidence there is that it is worth knowing.',
+    from: ['malabar', 'gujarati', 'tamil', 'sinhalese'],
+    years: 2.6,
+    peril: 0.38,
+  },
+  {
+    id: 'monomotapa',
+    name: 'The gold of Monomotapa',
+    brief: 'Go up the Zambezi to the king the Sofala merchants call Monomotapa, and come back with '
+      + 'his leave to trade at the fairs.',
+    hope: 'The gold at Sofala comes down from a kingdom of stone towns in the hills. The Arab '
+      + 'merchants on the coast have been the only buyers for two hundred years and would like it '
+      + 'to stay that way.',
+    from: ['swahili'],
+    years: 2.0,
+    peril: 0.32,
   },
 ];
 
@@ -221,6 +246,8 @@ function outcomes(g: Game, j: Journey, def: PortDef, o: Officer | null): Journey
         + `${e.id === 'prester' ? 'There is a Christian king, everybody says so, and everybody points a different way.'
           : e.id === 'gold' ? 'The gold changes hands four times before it reaches the sea and every man in the chain lies about where he got it, which is how he stays alive.'
             : e.id === 'passage' ? 'Nobody he reached had seen another sea. That is not the same as there not being one, and he is careful to say so.'
+              : e.id === 'spice' ? 'He got as far as a port where the cloves were already a second-hand cargo, and the Gujarati master would not go further with a Christian aboard.'
+              : e.id === 'monomotapa' ? 'The Sofala merchants made very sure their guides lost him in the hills.'
               : 'The inland king would not see him, and the coast king made sure of it, which tells you what the coast king is protecting.'} `
         + `He has the language now, which he did not have, and which is worth more than the '
         + 'errand was.`,
@@ -297,6 +324,41 @@ function outcomes(g: Game, j: Journey, def: PortDef, o: Officer | null): Journey
           + `already running on it that is older than the one we are trying to reach.`,
       };
     }
+    case 'spice': {
+      g.crown.standing += 45;
+      g.crown.lifetimeStanding += 45;
+      g.crown.record('people', 'Where the cloves grow', { lat: def.lat, lon: def.lon }, 45, g.clock.t);
+      for (const id of ['malaca', 'columbo']) {
+        const p = PORTS.find((x) => x.id === id);
+        if (p && !g.chart.ports.has(id)) g.hearFromInland(p, def);
+        if (p) g.hearFrom(id);
+      }
+      return {
+        title: 'He has seen the cloves on the tree',
+        severity: 'note',
+        text: `${name} has been to Malacca, which is a city larger than Lisbon on a strait at the end `
+          + `of the world, and past it to men who had been to the islands themselves.\n\nThe cloves `
+          + `grow on five small islands a month beyond Malacca and nowhere else on earth. The nutmeg `
+          + `grows on a few more. Everything between here and there is middlemen, and he has their `
+          + `prices written in the back of his breviary.\n\n${drawn}`,
+      };
+    }
+    case 'monomotapa': {
+      g.crown.standing += 35;
+      g.crown.lifetimeStanding += 35;
+      g.crown.record('people', 'The kingdom of Monomotapa', { lat: def.lat, lon: def.lon }, 35, g.clock.t);
+      g.relationsFor(def.id).mayTrade = true;
+      g.openTheRoad(def.id);
+      return {
+        title: 'The fairs are open',
+        severity: 'note',
+        text: `${name} came down the Zambezi in a dugout with a gold bracelet on his arm that the `
+          + `king gave him, which he will not take off.\n\nThere are stone towns in the hills, walls `
+          + `without mortar higher than a church, and a king who holds fairs where the gold is weighed `
+          + `in quills. A Portuguese factor may come to the fairs. The Sofala merchants have not been `
+          + `told.\n\n${drawn}`,
+      };
+    }
     default: {
       g.crown.standing += 22;
       g.crown.lifetimeStanding += 22;
@@ -324,20 +386,33 @@ function outcomes(g: Game, j: Journey, def: PortDef, o: Officer | null): Journey
  *
  * He comes out at the coast where he went in, or near it, because a man on foot
  * with no money goes back the way he knows. So the errand is collected by
- * returning — which is the point, and is why sending a man inland is a promise
- * to come back for him.
+ * returning there, or, a season later, at any Portuguese port or House he can
+ * reach by the Casa's ships: the road never runs backwards for him.
  */
 export function collectJourney(g: Game, def: PortDef): JourneyResult | null {
   for (const j of g.journeys) {
     if (j.done) continue;
     if (g.clock.t < j.dueT) continue;
     const from = portDef(j.fromPortId);
-    if (haversine({ lat: def.lat, lon: def.lon }, { lat: from.lat, lon: from.lon }) / NM > 220) {
-      continue;
+    const near = haversine({ lat: def.lat, lon: def.lon }, { lat: from.lat, lon: from.lon }) / NM <= 220;
+    // Nobody has to sail back for him. If the ship is not off the coast he went
+    // in from, he comes down to it anyway and takes passage on the first Casa
+    // caravel, and finds the ship at a Portuguese port or one of her Houses —
+    // later, by however long the letters take.
+    if (!near) {
+      if (!isPostPort(g, def.id)) continue;
+      if (g.clock.t < j.dueT + transitDays(from.id) * 86400) continue;
     }
     j.done = true;
     const o = g.crew.officers.find((x) => x.id === j.officerId) ?? null;
-    return outcomes(g, j, def, o);
+    const r = outcomes(g, j, from, o);
+    if (!near) {
+      r.text = (r.severity === 'grave'
+        ? `A letter from the factor at ${from.name}, ${transitDays(from.id)} days on the road. `
+        : `${j.officerName} came down to ${from.name} and took passage in a Casa caravel, and he has found the ship here. `)
+        + r.text;
+    }
+    return r;
   }
   return null;
 }
@@ -386,7 +461,7 @@ export function journeyWord(g: Game, j: Journey): string {
       + 'says a Christian was seen a long way up, which is a thing traders say.';
   }
   if (years < due * 1.6) {
-    return `${j.officerName} is due. Put into ${from.name} and he may be on the beach.`;
+    return `${j.officerName} is due. He may be on the beach at ${from.name}; if not, he will come to you by the Casa’s ships.`;
   }
   return `${j.officerName} is ${(years - due).toFixed(1)} years overdue. Nobody aboard says he is `
     + 'dead and nobody aboard believes he is not.';

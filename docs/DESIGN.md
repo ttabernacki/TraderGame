@@ -123,6 +123,14 @@ checkpoint between acts.
   choice go to the log only (grave ones excepted). Noon and routine sight prompts no longer
   alert.
 
+- **Joins.** Prizes bring their cargo into the hold (by sea and business). The volta home
+  from Guinea is a passage question. The rival's caravels load on his stretch of the road and
+  land at Lisbon (`rivalTrade`), so he shows in prices and factors mention him. Tinoco reviews
+  the Lines once (`casa:lines` → `casa.linesRate`). Lines and Houses raise their court's
+  interest, and so the ports' regard. True hearsay pays its kind (water, a price sheet).
+  Inland men no longer need fetching: past due + letter time they find the ship at any
+  Portuguese port or House. Errands: + Where the cloves grow, + Monomotapa.
+
 ## Verdicts
 
 Keep and deepen:

@@ -5298,6 +5298,7 @@ export class Game {
       // man, who is on the same coast and is now a little further down it than
       // he would have got on his own.
       this.rival.standing += Math.round(worth.crown * 0.3);
+      this.rival.frontierLat -= 0.25;
       this.logEvent('crown',
         `Laid the page on ${e.title} before the Casa. ${worth.crown} renown, and a clerk `
         + 'was copying it before I was out of the building. Every pilot on the Guinea run '
@@ -5987,6 +5988,17 @@ export class Game {
           `Ran down the report we had from ${lead.source}, and it was where he said it was, `
           + 'or near enough that a seaman would call it the same place.', true);
         this.crew.morale = clamp(this.crew.morale + 0.06, 0, 1);
+        // And what the man said was there is there to be had.
+        if (lead.kind === 'water') {
+          const p = this.crew.provisions;
+          p.water += 12;
+          p.fresh += 4;
+          this.crew.daysWithoutFresh = Math.max(0, this.crew.daysWithoutFresh - 4);
+          this.logEvent('note', 'Filled the casks where he said the water ran, and cut greenstuff while the boats were in.', true);
+        } else if (lead.kind === 'goods' && lead.targetPort) {
+          this.hearFrom(lead.targetPort);
+          this.logEvent('trade', `What ${portDef(lead.targetPort).name} buys and sells is in the book now, the way he told it.`, true);
+        }
       } else {
         lead.false = true;
         this.crew.morale = clamp(this.crew.morale - 0.05, 0, 1);
