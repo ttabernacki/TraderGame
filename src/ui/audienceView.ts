@@ -206,7 +206,7 @@ export class AudienceView {
 
   /** What follows a piece: the greeting and the mat lead to the custom of the court; the tray, to terms. */
   private afterPiece(o: Outcome): void {
-    if (this.run?.pieceId === 'case' || this.run?.pieceId === 'between') {
+    if (['case', 'between', 'informer'].includes(this.run?.pieceId ?? '')) {
       this.run = null;
       this.toGifts();
       return;
@@ -228,7 +228,7 @@ export class AudienceView {
   private toGifts(): void {
     const g = this.game!;
     // A court with a matter before it asks the stranger first, once each, before the presents.
-    for (const id of ['case', 'between']) {
+    for (const id of ['case', 'between', 'informer']) {
       if (!this.invited.has(id) && offered(g, this.pol!.id).some((p) => p.id === id)) {
         this.invited.add(id);
         this.pending = id;
@@ -247,7 +247,10 @@ export class AudienceView {
     const pol = this.pol!;
     const id = this.pending;
     const other = POLITY_BY_ID.get(pol.feuds[0])?.name ?? 'their old enemy';
-    const t = id === 'between'
+    const t = id === 'informer'
+      ? { head: 'A word in the dark', text: 'A clerk of the court finds you after the audience. For a price he will say that the Portuguese are not the only foreigners here with friends in the palace.',
+        yes: 'Hear him, and watch', hint: 'Four nights. Naming the wrong man ruins him.', no: 'Send him away', say: 'You hear him out.', nosay: 'You send him away. You are not here to spy on a court that has received you.' }
+      : id === 'between'
       ? { head: 'An old quarrel', text: `${rulerName(pol, this.st)} will not speak to ${other}, and ${other} will not speak to him. Both would speak to a stranger, if the stranger would carry their words.`,
         yes: 'Offer to carry their words', hint: 'Days pass, and gifts are spent.', no: 'Stay out of it', say: 'You offer to carry their words.', nosay: 'You say it is not your place.' }
       : { head: 'A matter before the court', text: `The court has a dispute to hear this morning, and ${rulerName(pol, this.st)} asks the stranger to sit with him and say what he thinks. Everyone knows which party is the more powerful.`,

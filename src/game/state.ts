@@ -73,6 +73,7 @@ import { Crown, commissionPoints, portName, type Patent } from '../progression/c
 import { ARCS, ARC_BY_ID, BONDS, dueBeat, type BondId } from '../progression/arcs';
 import { newRelations, type Relations } from '../diplomacy/contact';
 import { newMarks } from '../diplomacy/marks';
+import { startPiece, tickPieces } from '../diplomacy/table';
 import { newBook } from '../diplomacy/book';
 import { newPieces } from '../diplomacy/piece';
 import {
@@ -2215,6 +2216,7 @@ export class Game {
       }
       if (a.due !== undefined && now > a.due) this.breakAgreement(a, 'the time ran out');
     }
+    tickPieces(this, 0);
   }
 
   /**
@@ -2293,7 +2295,10 @@ export class Game {
           this.diplomacy.agreements.push({ id, polity: pol.id, kind: 'ally', against: pol.feuds[0], text: `Stand with ${pol.name} against ${POLITY_BY_ID.get(pol.feuds[0])?.name}`, made: now, status: 'open' });
           this.adjustPolity(pol.feuds[0], { trust: -0.25 }, `allied with their enemy, ${pol.name}`);
         }
-        if (off === 'envoy') this.diplomacy.agreements.push({ id, polity: pol.id, kind: 'envoy', text: `Carry ${pol.name}\u2019s envoy to Lisbon`, made: now, due: now + 365 * 86400, status: 'open' });
+        if (off === 'envoy') {
+          this.diplomacy.agreements.push({ id, polity: pol.id, kind: 'envoy', text: `Carry ${pol.name}\u2019s envoy to Lisbon`, made: now, due: now + 365 * 86400, status: 'open' });
+          startPiece(this, 'envoy', pol.id, def.id);
+        }
         if (off === 'tribute') { this.crown.gold = Math.max(0, this.crown.gold - 150); }
       }
       this.adjustPolity(pol.id, { trust: 0.12, interest: 0.12 + deal.offers.length * 0.04, respect: 0.03 }, 'a treaty agreed');
@@ -4622,6 +4627,7 @@ export class Game {
     this.checkFinance(days);
     this.tickEstate();
     this.advanceRival(days);
+    tickPieces(this, days);
 
     // A beat of somebody's story outranks everything: these are the moments the
     // voyage is actually about, they are written rather than rolled, and each

@@ -39,6 +39,12 @@ export interface Outcome {
   gift?: { value: number; loved: boolean; scorned: boolean };
 }
 
+export interface PieceScene {
+  title: string;
+  text: string;
+  choices: { id: string; label: string; detail: string }[];
+}
+
 export interface PieceCtx {
   g: Game;
   polity: PolityDef;
@@ -53,6 +59,12 @@ export interface Piece<S = any> {
   available(g: Game, polity: PolityDef): boolean;
   start(ctx: PieceCtx): S;
   view(ctx: PieceCtx, state: S): PieceView;
+  /**
+   * Passages only: called as the days pass. May return a scene to put to the
+   * captain; its choices come back through `step` as `c.id`. Return null for
+   * "nothing yet". A passage also ends here if the world has moved on.
+   */
+  beat?(ctx: PieceCtx, state: S, days: number): { state: S; scene?: PieceScene; outcome?: Outcome } | null;
   /** Returns the new state and, when the piece is over, its outcome. */
   step(ctx: PieceCtx, state: S, choice: string): { state: S; outcome?: Outcome };
 }

@@ -93,3 +93,38 @@ function resolve(g: Game, run: PieceRun, o: Outcome): void {
 export function openRuns(g: Game, polityId?: string): PieceRun[] {
   return g.diplomacy.pieces.runs.filter((r) => !r.outcome && (!polityId || r.polity === polityId));
 }
+
+/**
+ * Passages move with the clock. Called as days pass; a beat that has a scene
+ * is put to the captain, and his answer comes back as a step on the run. A
+ * passage that is not at sea or has nothing to say simply waits.
+ */
+export function tickPieces(g: Game, days: number): void {
+  for (const run of g.diplomacy.pieces.runs) {
+    if (run.outcome) continue;
+    const piece = pieceById(run.pieceId);
+    if (!piece?.beat) continue;
+    const ctx = ctxOf(g, run);
+    if (!ctx) continue;
+    const b = piece.beat(ctx, run.state, days);
+    if (!b) continue;
+    run.state = b.state;
+    if (b.outcome) { resolve(g, run, b.outcome); g.logEvent('contact', b.outcome.line + '.'); continue; }
+    const scene = b.scene;
+    if (!scene) continue;
+    g.queueScene({
+      id: `piece-${run.id}-${scene.title}`,
+      title: scene.title,
+      text: scene.text,
+      severity: 'note',
+      choices: scene.choices.map((c) => ({
+        label: c.label,
+        detail: c.detail,
+        resolve: (gg: Game) => {
+          const o = stepPiece(gg, run, c.id);
+          return o ? o.line + '.' : c.label + '.';
+        },
+      })),
+    });
+  }
+}

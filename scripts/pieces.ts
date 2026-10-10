@@ -4,7 +4,7 @@
  * Run: npx esbuild scripts/pieces.ts --bundle --platform=node --format=cjs --outfile=/tmp/pieces.cjs && node /tmp/pieces.cjs
  */
 import { Game } from '../src/game/state';
-import { startPiece, stepPiece, runView, offered } from '../src/diplomacy/table';
+import { startPiece, stepPiece, runView, offered, tickPieces } from '../src/diplomacy/table';
 import { echoFor, hasMark } from '../src/diplomacy/marks';
 import { knows } from '../src/diplomacy/book';
 
@@ -47,5 +47,32 @@ const old = JSON.parse(g.serialize());
 delete old.diplomacy.marks; delete old.diplomacy.book; delete old.diplomacy.pieces;
 const g4 = Game.deserialize(JSON.stringify(old));
 check('old save loads', g4.diplomacy.marks.marks.length === 0 && g4.diplomacy.pieces.runs.length === 0);
+
+// The envoy aboard: four beats over the passage, answered, then Lisbon.
+{
+  const e = new Game(11);
+  e.diplomacy.agreements.push({ id: 99, polity: 'malindi', kind: 'envoy', text: 'envoy', made: e.clock.t, due: e.clock.t + 365 * 86400, status: 'open' });
+  const run = startPiece(e, 'envoy', 'malindi', 'melinde')!;
+  let scenes = 0;
+  for (let i = 0; i < 6; i++) {
+    tickPieces(e, 13);
+    const ev = e.pendingEvent;
+    if (ev && ev.choices) { scenes++; ev.choices[0].resolve(e); e.pendingEvent = null; }
+  }
+  check('envoy gave four scenes, one at a time', scenes === 4, `(${scenes})`);
+  check('no scene while one is unanswered', (() => {
+    const e2 = new Game(12);
+    e2.diplomacy.agreements.push({ id: 98, polity: 'malindi', kind: 'envoy', text: 'envoy', made: e2.clock.t, due: e2.clock.t + 365 * 86400, status: 'open' });
+    startPiece(e2, 'envoy', 'malindi', 'melinde');
+    tickPieces(e2, 13); const first = e2.pendingEvent; e2.pendingEvent = null;
+    tickPieces(e2, 13);
+    return !!first && !e2.pendingEvent;
+  })());
+  e.diplomacy.agreements[0].status = 'kept';
+  tickPieces(e, 1);
+  check('envoy resolves at Lisbon with a mark', run.outcome?.grade === 'win' && hasMark(e.diplomacy.marks, 'malindi', 'envoy', e.clock.t), JSON.stringify(run.outcome?.grade));
+  const e3 = Game.deserialize(e.serialize());
+  check('envoy outcome survives a save', e3.diplomacy.pieces.runs.some((r) => r.pieceId === 'envoy' && r.outcome));
+}
 
 process.exit(fails ? 1 : 0);
