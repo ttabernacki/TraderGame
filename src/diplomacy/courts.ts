@@ -5,6 +5,9 @@ import { good } from '../economy/goods';
 import { people } from '../world/peoples';
 import { portDef } from '../world/ports';
 import { POLITIES, POLITY_BY_ID, polityOfPort, type Cares, type PolityDef, type Temper } from './polities';
+import { newMarks, type MarksState } from './marks';
+import { newBook, type BookState } from './book';
+import { newPieces, type PiecesState } from './piece';
 
 /**
  * Where you stand with each state, and what you owe it.
@@ -69,12 +72,18 @@ export interface DiplomacyState {
   agreements: Agreement[];
   word: WordItem[];
   nextId: number;
+  /** What the courts have marked you for. See diplomacy/marks. */
+  marks: MarksState;
+  /** The Book of Courtesies. See diplomacy/book. */
+  book: BookState;
+  /** Set pieces played and in play. See diplomacy/table. */
+  pieces: PiecesState;
 }
 
 export function newDiplomacy(): DiplomacyState {
   const polities: Record<string, PolityState> = {};
   for (const p of POLITIES) polities[p.id] = newPolityState(p);
-  return { polities, agreements: [], word: [], nextId: 1 };
+  return { polities, agreements: [], word: [], nextId: 1, marks: newMarks(), book: newBook(), pieces: newPieces() };
 }
 
 export function newPolityState(p: PolityDef): PolityState {

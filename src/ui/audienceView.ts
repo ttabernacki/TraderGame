@@ -6,6 +6,7 @@ import {
   ASK_LABEL, evaluate, expectedGift, measureWord, offerLabel, rulerName, standingWord,
   type Ask, type Deal, type Offer, type PolityState, type Verdict,
 } from '../diplomacy/courts';
+import { echoFor } from '../diplomacy/marks';
 import { TEMPER_WORD, polityOfPort, type PolityDef } from '../diplomacy/polities';
 import type { Game } from '../game/state';
 import { button, card, clear, el, kv, meter } from './dom';
@@ -72,6 +73,9 @@ export class AudienceView {
           ? 'Nobody aboard has their tongue, and whatever passes will pass by signs.'
           : this.deal.comprehension < 0.6 ? 'There is a language in common, of a sort.' : 'Your interpreter stands at your shoulder.'),
     }];
+    // What the court has marked you for is the first thing it says.
+    const echo = echoFor(g.diplomacy.marks, this.pol.id, g.clock.t);
+    if (echo) this.log.push({ who: 'narrator', text: echo });
     this.render();
   }
 

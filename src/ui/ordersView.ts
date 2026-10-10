@@ -1,3 +1,5 @@
+import { marksOf } from '../diplomacy/marks';
+import { entriesOf } from '../diplomacy/book';
 import { ACTS, ACT_CHARGE, HISTORY, actGoal, roman } from '../progression/chronicle';
 import { QUESTS, goalOf, markerOf, rumoursHeard } from '../progression/quests';
 import { NM, compassPoint, formatLat, formatLon, haversine } from '../core/math';
@@ -517,6 +519,10 @@ export class OrdersView {
         kept + broken > 0 ? kv('Your word', `${kept} kept, ${broken} broken`, broken > kept ? 'bad' : '') : null,
         (st.news ?? []).length > 0 ? el('div', { class: 'terms-head' }, 'Lately') : null,
         ...(st.news ?? []).slice().reverse().map((n) => el('div', { class: 'court-news' }, n.text)),
+        marksOf(g.diplomacy.marks, p.id, now).length > 0 ? el('div', { class: 'terms-head' }, 'What they hold against you, or for you') : null,
+        ...marksOf(g.diplomacy.marks, p.id, now).map((m) => el('div', { class: `court-news mark ${m.tone < 0 ? 'against' : m.tone > 0 ? 'for' : ''}` }, m.text)),
+        entriesOf(g.diplomacy.book, p.id).length > 0 ? el('div', { class: 'terms-head' }, 'In your Book of Courtesies') : null,
+        ...entriesOf(g.diplomacy.book, p.id).map((e) => el('div', { class: 'court-news' }, `${e.text} (${e.how})`)),
         coming > 0 ? el('div', { class: 'court-news' }, `Word of your doings is on the road to them (${coming}).`) : null,
       ));
     }

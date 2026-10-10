@@ -11,7 +11,7 @@ has win / half-win / fail-forward; saves round-trip.
 
 ## Track A — Diplomacy (do first)
 
-- [ ] **A1 Frame.** `src/diplomacy/table.ts` (days at court, moves, session), `marks.ts`
+- [x] **A1 Frame.** `src/diplomacy/table.ts` (days at court, moves, session), `marks.ts`
   (named marks with callbacks, serialised), `book.ts` (Book of Courtesies, learned-how
   provenance, tradeable). Court form picked from the court's polity. Piece interface:
   `start(ctx)`, serialisable state, `step(input)`, `resolve()` -> marks/effects/closing line.
@@ -46,5 +46,4 @@ has win / half-win / fail-forward; saves round-trip.
 
 ## Checkpoint
 
-Objective: Track A. Completed: design pages, campaign groundwork (97aabaf). Current: none started.
-Next: A1.
+Objective: Track A. Completed: A1 (marks, Book, piece engine, Table; scripts/pieces.ts passes). Next: A2.

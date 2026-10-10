@@ -72,6 +72,9 @@ export interface TradeListing extends Listing {
 import { Crown, commissionPoints, portName, type Patent } from '../progression/crown';
 import { ARCS, ARC_BY_ID, BONDS, dueBeat, type BondId } from '../progression/arcs';
 import { newRelations, type Relations } from '../diplomacy/contact';
+import { newMarks } from '../diplomacy/marks';
+import { newBook } from '../diplomacy/book';
+import { newPieces } from '../diplomacy/piece';
 import {
   foragingParty, meetingParty, shorePlaceAt, waterParty, woodParty,
   type Hearsay, type LandingResult, type ShorePlace,
@@ -9633,6 +9636,10 @@ export class Game {
     g.soundedGround = d.soundedGround ?? [];
     g.quests = d.quests ?? [];
     g.diplomacy = d.diplomacy ?? newDiplomacy();
+    // Careers from before the set pieces have no marks, Book or runs yet.
+    g.diplomacy.marks ??= newMarks();
+    g.diplomacy.book ??= newBook();
+    g.diplomacy.pieces ??= newPieces();
     g.trade = { ...newTrade(g.clock.t), ...(d.trade ?? {}) };
     g.ship.reservedTons = g.trade.quintaladas
       ? g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length * CHEST_TONS : 0;
