@@ -146,9 +146,13 @@ export function capeScene(g: Game): SeaEvent | null {
     text: `The Cape lies somewhere to the south and east — Dias called it the Cape of `
       + `Storms before the King renamed it, and he had reasons. It is ${winter ? 'winter' : 'summer'} `
       + `down here.\n\n`
-      + `Close under the land is the short road, with the Agulhas current against her and `
-      + `a lee shore under her if it blows from the west. Wide is a week longer, down in `
-      + `the westerlies where there is nothing to hit and a great deal of sea.`,
+      + (winter
+        ? `In the winter the westerlies come right up to the land, so close under it is the short road `
+          + `and a fair wind — until a south-westerly gale makes the whole coast a lee shore. Wide, down `
+          + `at forty, is longer and colder and has nothing in it to hit.`
+        : `In the summer the south-easter blows along that coast, straight in her teeth, with the `
+          + `Agulhas current setting against her under it. Wide, down at forty, she finds the westerlies `
+          + `and runs round the Cape with them on the quarter.`),
     facts: { winter: winter ? 1 : 0 },
     choices: [
       {
@@ -162,8 +166,8 @@ export function capeScene(g: Game): SeaEvent | null {
       },
       {
         label: 'Round close under the land',
-        detail: 'The shortest way round. Fine in a summer easterly; a death trap in a '
-          + 'winter gale from the west.',
+        detail: 'The shortest way round. A fair wind in winter until a south-westerly gale; '
+          + 'a beat against the south-easter and the Agulhas in summer.',
         resolve: (g2) => {
           g2.insertWaypointAhead('Off Cabo das Agulhas', close.lat, close.lon);
           return 'Laid her for the Cape itself, to round it close and save the week.';

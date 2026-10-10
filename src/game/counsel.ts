@@ -505,7 +505,7 @@ const RULES: Record<string, Rule> = {
 
   'passage:cape': {
     voices: ['piloto', 'mestre', 'contramestre'],
-    right: (g, e) => (e.facts?.winter || g.ship.condition.hull < 0.75 ? WIDE : CLOSE),
+    right: (g, e) => (!e.facts?.winter || g.ship.condition.hull < 0.75 ? WIDE : CLOSE),
     bias: { piloto: WIDE, mestre: CLOSE, contramestre: WIDE },
     args: [
       [WIDE, {
@@ -515,8 +515,8 @@ const RULES: Record<string, Rule> = {
         contramestre: 'Stand off from it, sir. The men have heard the stories.',
       }],
       [CLOSE, {
-        piloto: 'Close in, this season. The wind is easterly off the land and she will be round '
-          + 'before anything changes.',
+        piloto: 'Close in, this season. The westerlies are right up to the land and she will be round '
+          + 'before the next gale comes through.',
         mestre: 'Round it close. She is sound and I do not want a week in the high latitudes with '
           + 'this crew and these stores.',
         contramestre: 'Close in, sir, and get it over with.',

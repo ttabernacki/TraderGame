@@ -148,3 +148,14 @@ Cut or fold (candidates, in order):
 - Orders tabs: Rival folded into Chronicle (a rival is a story, not a page).
 - Anything that asks for the same errand twice (a commission objective and a
   story step that want the same place should be one step).
+
+## Winds and currents: the roads
+
+`scripts/routes.ts` measures the key roads (days, made good, share within 55° of the wind) by
+season and hull. The oceans are drawn round their highs: Azores (clockwise), St Helena and
+Mascarene (anticlockwise), plus coastal regimes: Portuguese nortada, Saharan NNE trade (strong,
+with an inshore Canary set), Guinea-coast and Gulf-of-Guinea south-westerlies, Benguela
+southerly, and the Cape's summer south-easter. Intended shape: the volta and the Brazil swing are
+the fast roads; up the Saharan coast, down the Angolan coast, and Melinde→India in the NE monsoon
+are slogs; outward round the Cape is easy in the austral winter and hard in summer (wide is
+better), homeward round it easy in Feb–Apr with the Natal north-easter and the Agulhas.

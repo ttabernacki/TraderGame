@@ -213,6 +213,38 @@ function stHelenaCirculation(p: LatLon, dayOfYear: number): { from: number; spee
   return { from, speed, steadiness, weight };
 }
 
+/** The Mascarene High, the southern Indian Ocean's anticyclone. */
+export function mascareneHigh(dayOfYear: number): { lat: number; lon: number } {
+  const s = northernSummer(dayOfYear);
+  return { lat: lerp(-33, -28, s), lon: lerp(78, 68, s) };
+}
+
+/**
+ * The wind round the Mascarene High, south of the trades only.
+ *
+ * Its western side is what carries a homeward ship south down the Natal coast
+ * on a north-easter, with the Agulhas under her, toward the Cape. North of it
+ * the Mozambique Channel is left to the trades and the monsoon.
+ */
+function mascareneCirculation(p: LatLon, dayOfYear: number): { from: number; speed: number; steadiness: number; weight: number } {
+  const hi = mascareneHigh(dayOfYear);
+  const dLat = p.lat - hi.lat;
+  const dLon = (p.lon - hi.lon) * Math.cos((p.lat * Math.PI) / 180) * 0.62;
+  const distNm = Math.hypot(dLat, dLon) * 60;
+  const bearing = (Math.atan2(dLon, dLat) * 180) / Math.PI;
+  const from = wrap360(bearing + 115);
+  const south = clamp(-dLat / 10, 0, 1);
+  const speed = (15 + south * 7) * lerp(0.4, 1, smoothstep(30, 420, distNm));
+  const steadiness = lerp(0.25, 0.7, smoothstep(60, 520, distNm));
+  const weight = smoothstep(hi.lat - 16, hi.lat - 10, p.lat) * (1 - smoothstep(hi.lat + 4, hi.lat + 9, p.lat))
+    * smoothstep(26, 32, p.lon) * (1 - smoothstep(95, 110, p.lon))
+    // In the austral winter the cold fronts come through off the Southern Ocean
+    // and the westerlies have the Natal coast more days than the high does:
+    // the season an outward fleet works up to Moçambique.
+    * lerp(1, 0.35, northernSummer(dayOfYear));
+  return { from, speed, steadiness, weight };
+}
+
 /** Persistent coastal wind regimes that override the zonal belts near shore. */
 function coastalBias(p: LatLon, dayOfYear: number): { from: number; speed: number; weight: number } | null {
   // The nortada down the Iberian and Moroccan coast. It is the summer's wind —
@@ -224,18 +256,39 @@ function coastalBias(p: LatLon, dayOfYear: number): { from: number; speed: numbe
   }
   // The Canaries and the Saharan coast: the trade is drawn round to the
   // north-north-east by the heat over the desert, all the year round.
-  if (p.lat > 20 && p.lat < 32 && p.lon > -21 && p.lon < -9) {
-    const edge = smoothstep(20, 22.5, p.lat) * (1 - smoothstep(30, 32, p.lat))
+  if (p.lat > 12 && p.lat < 32 && p.lon > -21 && p.lon < -9) {
+    const edge = smoothstep(12, 15, p.lat) * (1 - smoothstep(30, 32, p.lat))
       * smoothstep(-21, -18, p.lon);
-    return { from: 22, speed: 16, weight: 0.5 * edge };
+    // Strong enough, and steady enough, that working up this coast is the slog
+    // that made the volta worth its thousand extra leagues.
+    return { from: 24, speed: 18, weight: 0.75 * edge };
   }
   // Benguela: relentless south-easterly along the desert coast of Namibia.
   if (p.lat > -30 && p.lat < -12 && p.lon > 8 && p.lon < 17) {
     return { from: 168, speed: 16, weight: 0.6 };
   }
-  // The Guinea coast sits under the monsoonal south-westerly off the Atlantic.
-  if (p.lat > 2 && p.lat < 9 && p.lon > -8 && p.lon < 10) {
-    return { from: 215, speed: 9, weight: 0.5 };
+  // The Guinea coast sits under the monsoonal south-westerly off the Atlantic,
+  // from Cabo Mesurado to the Bight and all the year round: the wind that, with
+  // the Guinea Current under it, carried every ship east along the coast to Mina.
+  // South of the line the trade is drawn round the same way, to the south-south-
+  // west, by the heat over the continent: São Tomé to the Congo is a long board
+  // on the starboard tack, slow against the Benguela water but sailable.
+  if (p.lat > -12 && p.lat < 9.5 && p.lon > -15 && p.lon < 14) {
+    const west = smoothstep(-1, 2, p.lat);
+    const lonEdge = lerp(smoothstep(2, 4.5, p.lon), smoothstep(-15, -13, p.lon), west)
+      * (1 - smoothstep(12.5, 14, p.lon));
+    const edge = smoothstep(-12, -10, p.lat) * (1 - smoothstep(8, 9.5, p.lat)) * lonEdge;
+    const from = lerp(208, 222, smoothstep(-2, 3, p.lat));
+    return { from, speed: 11, weight: 0.85 * edge };
+  }
+  // The south coast of Africa in the austral summer: the south-easter, which a
+  // ship homeward from India rounds the Cape on, and an outward one meets in
+  // her teeth unless she stands south into the westerlies.
+  if (p.lat > -38 && p.lat < -31 && p.lon > 15 && p.lon < 31) {
+    const austral = 1 - northernSummer(dayOfYear);
+    const edge = smoothstep(-38, -36, p.lat) * (1 - smoothstep(-33, -31, p.lat))
+      * smoothstep(15, 17, p.lon) * (1 - smoothstep(29, 31, p.lon));
+    return { from: 118, speed: 17, weight: 0.85 * edge * smoothstep(0.3, 0.7, austral) };
   }
   return null;
 }
@@ -435,6 +488,14 @@ export function prevailingWind(p: LatLon, dayOfYear: number, t: number): WindSam
     from = w.from;
     speed = lerp(speed, sh.speed, sh.weight);
     steadiness = lerp(steadiness, sh.steadiness, sh.weight);
+  }
+
+  const ma = mascareneCirculation(p, dayOfYear);
+  if (ma.weight > 0.005) {
+    const w = blendWind(from, speed, ma.from, ma.speed, ma.weight);
+    from = w.from;
+    speed = lerp(speed, ma.speed, ma.weight);
+    steadiness = lerp(steadiness, ma.steadiness, ma.weight);
   }
 
   const coast = coastalBias(p, dayOfYear);

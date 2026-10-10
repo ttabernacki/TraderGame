@@ -40,6 +40,9 @@ interface Band {
 const BANDS: Band[] = [
   // North Atlantic gyre, clockwise.
   { name: 'Canary Current', latMin: 12, latMax: 33, lonMin: -22, lonMax: -8, toward: 200, knots: 0.45, feather: 3 },
+  // Inshore along the Saharan coast the set is stronger, and it is against
+  // every ship working north: the other half of why the coast road home is hard.
+  { name: 'Canary Current', latMin: 14, latMax: 30, lonMin: -19, lonMax: -14, toward: 205, knots: 0.35, feather: 1.5 },
   { name: 'North Equatorial Current', latMin: 8, latMax: 20, lonMin: -60, lonMax: -18, toward: 278, knots: 0.5, feather: 3 },
   // The counter-current runs east under the doldrums, strongest from July to
   // November and all but gone from the eastern Atlantic in the spring.
