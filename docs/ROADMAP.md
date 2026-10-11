@@ -33,9 +33,9 @@ has win / half-win / fail-forward; saves round-trip.
 
 ## Track B — Fleet sailing
 
-- [ ] **B1 Formation.** Followers hold slots off the flagship, speed-matched, eased pose,
+- [x] **B1 Formation** (engine `src/fleet/formation.ts`, `scripts/fleet.ts`: every ship within a cable at dt 1/60 to 60 s, relative speed <= 1.5 m/s, tack ripples in 53 s, 40 ships cost 60 us). Followers hold slots off the flagship, speed-matched, eased pose,
   no orbiting. *Check:* sim shows no follower exceeds 1.15x flagship speed and turn rate <=30 deg/s.
-- [ ] **B2 Orders.** Close up / spread / line ahead; ships shorten to the slowest hull.
+- [x] **B2 Orders (engine side: shape, spacing, keep-together cap).** In-game commands and drawing wait for the campaign's fleet (C2). Close up / spread / line ahead; ships shorten to the slowest hull.
 
 ## Track C — Zheng He campaign ("Down the Western Ocean")
 

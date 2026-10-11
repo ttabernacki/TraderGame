@@ -192,3 +192,14 @@ merchants were hostile; accounts differ on whether they were mocked, so the
 Gift Table says "received without comment" and "laughed at" only as outcomes
 of play. The Tupi do not herd cattle: the silent trade there is baskets of
 fruit, feathers and dye-wood.
+
+## Sailing a fleet (engine)
+
+`src/fleet/formation.ts`: slots in the flagship's frame (column, line, crescent;
+close or open; at most sixteen to a row so a big fleet is deep, not wide); each
+consort steers parallel to the signalled heading, bow turned at most 8 degrees
+toward its place; corrections relax exponentially so the same code holds at a
+frame and at a day's step; orders reach ships by signal, nearest first (3 s
+plus 12 ms a metre); each hull class has a speed share and a turn rate, so a
+slow class falls astern unless the flagship's master holds her to 95% of the
+slowest (`keepTogether`). Nothing here is drawn yet: that is the campaign's job.
