@@ -206,7 +206,7 @@ export class AudienceView {
 
   /** What follows a piece: the greeting and the mat lead to the custom of the court; the tray, to terms. */
   private afterPiece(o: Outcome): void {
-    if (['meal', 'case', 'between', 'informer'].includes(this.run?.pieceId ?? '')) {
+    if (['meal', 'linguist', 'case', 'between', 'informer'].includes(this.run?.pieceId ?? '')) {
       this.run = null;
       this.toGifts();
       return;
@@ -228,7 +228,7 @@ export class AudienceView {
   private toGifts(): void {
     const g = this.game!;
     // A court with a matter before it asks the stranger first, once each, before the presents.
-    for (const id of ['meal', 'case', 'between', 'informer']) {
+    for (const id of ['meal', 'linguist', 'case', 'between', 'informer']) {
       if (!this.invited.has(id) && offered(g, this.pol!.id).some((p) => p.id === id)) {
         this.invited.add(id);
         this.pending = id;
@@ -247,7 +247,10 @@ export class AudienceView {
     const pol = this.pol!;
     const id = this.pending;
     const other = POLITY_BY_ID.get(pol.feuds[0])?.name ?? 'their old enemy';
-    const t = id === 'meal'
+    const t = id === 'linguist'
+      ? { head: 'You will not see the king', text: `You are not brought before ${rulerName(pol, this.st)}. A gatekeeper takes your words to a linguist, who carries them to an elder, who carries them to the king, and each of them has his own way of doing it.`,
+        yes: 'Compose your message', hint: 'Four days. You will not see what arrives.', no: 'Wait for another time', say: 'You compose your message.', nosay: 'You say you will wait for a better day.' }
+      : id === 'meal'
       ? { head: 'A meal is laid', text: `Before business, ${rulerName(pol, this.st)} has a meal laid, as the custom is. Dates and water are brought before a word is said.`,
         yes: 'Sit down to it', hint: 'Watch what he does, and do the same.', no: 'Excuse yourself', say: 'You sit down.', nosay: 'You excuse yourself: there is business first.' }
       : id === 'informer'
