@@ -2,8 +2,9 @@ import type { Piece, PieceView } from '../piece';
 
 /**
  * The refusal. An envoy asks for what you cannot give: soldiers for a war,
- * guns, a promise of marriage. In 1493 the Mansa's envoy proposed an alliance
- * against the Fulas and Portugal stayed out; here you do the staying out. You
+ * guns, a promise of marriage. In the early 1490s the Mansa asked João II for an alliance
+ * and guns against the Fula (the sources differ on the year) and Portugal stayed
+ * out; here you do the staying out. You
  * compose the reply from three parts, a reason, a consolation and a door, and
  * each court has a hidden face rule: some need the reason to be about you,
  * some about the world, some need a gift and some a smaller help, some need

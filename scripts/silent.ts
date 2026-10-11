@@ -22,7 +22,7 @@ const perfect: Bot = (_g, run) => {
 /** Sees only the view: choices and the voices' last words. */
 const reader: Bot = (g, run, _rng, mem) => {
   const v = runView(g, run)!;
-  const beasts = Number((v.lines[v.lines.length - 1].text.match(/^(\d+) on the mat/) ?? [])[1] ?? 0);
+  const beasts = Number((v.lines[v.lines.length - 1].text.match(/^(\d+) \w+ on the mat/) ?? [])[1] ?? 0);
   if (beasts >= 3) return 'go';
   const said = v.lines.filter((l) => l.who === 'them').slice(-1)[0]?.text ?? '';
   if (mem.last) {

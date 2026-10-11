@@ -29,7 +29,7 @@ has win / half-win / fail-forward; saves round-trip.
 - [x] **A5 Arcs (marks felt: regard, House price, gating, epilogue).** Per-court chains (Melinde first) with cast, marks, callbacks, epilogues,
   wired to Casa, houses and Lines (marks change prices, footing, who will host a House).
   *Check:* every arc plays in road order; each mark alters at least one later scene.
-- [ ] **A6 Source pass.** Verify † dates and customs; mark honest inventions in the text.
+- [x] **A6 Source pass.** Verify † dates and customs; mark honest inventions in the text.
 
 ## Track B — Fleet sailing
 
@@ -46,4 +46,4 @@ has win / half-win / fail-forward; saves round-trip.
 
 ## Checkpoint
 
-Objective: Track A. Completed: A1, A2, A3 Silent Trade, Gift Table, The Case, Go-Between, Envoy, Informer (scripts/silent.ts, gifts.ts, case.ts, between.ts bots ok; marks, Book, piece engine, Table; scripts/pieces.ts passes). Next: A6 source pass; then ask the user whether to continue to Track B (fleet) or C.
+Objective: Track A. Completed: A1, A2, A3 Silent Trade, Gift Table, The Case, Go-Between, Envoy, Informer (scripts/silent.ts, gifts.ts, case.ts, between.ts bots ok; marks, Book, piece engine, Table; scripts/pieces.ts passes). A6 source pass done (see docs/DESIGN.md sources). Next: ask the user whether to continue to Track B (fleet) or C.

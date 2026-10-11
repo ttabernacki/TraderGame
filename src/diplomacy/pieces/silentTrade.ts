@@ -51,9 +51,13 @@ function worth(s: S, id: string): number {
 
 const beasts = (s: S): number => Math.floor(s.value + 1e-9);
 
-function gesture(ratio: number): string {
-  if (ratio >= 0.9) return 'A beast is led forward at once.';
-  if (ratio >= 0.5) return 'They confer, and one of them adds a beast to the mat’s edge, not quite pushing it forward.';
+/** What is laid on the other side of the mat: the Cape herdsmen trade cattle; the Tupi, baskets of fruit, feathers and dye-wood. */
+const unit = (polity: string, n: number): string => (polity === 'tupi' ? (n === 1 ? 'basket' : 'baskets') : (n === 1 ? 'beast' : 'beasts'));
+
+function gesture(ratio: number, polity: string): string {
+  const tupi = polity === 'tupi';
+  if (ratio >= 0.9) return tupi ? 'A basket is pushed forward at once.' : 'A beast is led forward at once.';
+  if (ratio >= 0.5) return `They confer, and one of them sets a ${tupi ? 'basket' : 'beast'} at the mat\u2019s edge, not quite pushing it forward.`;
   if (ratio >= 0.25) return 'They look at it for a long time, and do not move.';
   return 'One of them pushes it back with a foot.';
 }
@@ -89,7 +93,7 @@ export const silentTrade: Piece<S> = {
         : 'Herdsmen watch from the rise, their cattle behind them. Nobody has a word in common. You spread a mat on the ground.' });
     }
     for (const t of s.said.slice(-4)) lines.push({ who: 'them', text: t });
-    lines.push({ who: 'narrator', text: `${beasts(s)} on the mat · patience ${s.patience} · unease ${s.unease}/${MAX_UNEASE}` });
+    lines.push({ who: 'narrator', text: `${beasts(s)} ${unit(ctx.polity.id, beasts(s))} on the mat · patience ${s.patience} · unease ${s.unease}/${MAX_UNEASE}` });
     const choices: PieceView['choices'] = Object.entries(s.stock).map(([id, n]) => ({
       id: `lay:${id}`,
       label: `Lay ${good(id).english.toLowerCase()}`,
@@ -100,7 +104,7 @@ export const silentTrade: Piece<S> = {
     if (Object.values(s.laid).some((n) => n > 0)) {
       choices.push({ id: 'take', label: 'Take back what you laid', hint: 'Seen as a slight.' });
     }
-    choices.push({ id: 'go', label: beasts(s) > 0 ? 'Take the beasts and go' : 'Go away', });
+    choices.push({ id: 'go', label: beasts(s) > 0 ? `Take the ${unit(ctx.polity.id, 2)} and go` : 'Go away', });
     return { title: 'The mat', lines, choices };
   },
   step: (ctx, s0, choice) => {
@@ -128,14 +132,14 @@ export const silentTrade: Piece<S> = {
       }
       if (n >= 3 && s.unease <= 3) {
         return { state: s, outcome: {
-          grade: 'win' as const, line: extra + `${n} beasts, and the herdsmen go back easy`,
+          grade: 'win' as const, line: extra + `${n} ${unit(ctx.polity.id, n)}, and they go back easy`,
           marks: [{ key: 'silent', text: 'You dealt fairly on the mat.', echo: 'A good name goes along the coast ahead of you.', tone: 0.7 }],
           measures: { trust: 0.12, interest: 0.05 }, book: signs,
         } };
       }
       return { state: s, outcome: {
         grade: n > 0 ? 'half' as const : 'half' as const,
-        line: extra + (n > 0 ? `${n} ${n === 1 ? 'beast' : 'beasts'}, and neither side pleased` : 'Nothing is traded, and nothing is lost'),
+        line: extra + (n > 0 ? `${n} ${unit(ctx.polity.id, n)}, and neither side pleased` : 'Nothing is traded, and nothing is lost'),
         marks: [{ key: 'silent', text: n > 0 ? 'A small trade on the mat.' : 'You came and went with nothing.', echo: '', tone: 0 }],
         measures: { trust: n > 0 ? 0.03 : 0 }, book: signs,
       } };
@@ -153,7 +157,7 @@ export const silentTrade: Piece<S> = {
       const w = worth(s, id);
       s.value += w;
       s.patience -= 1;
-      const bits: string[] = [gesture(w * (0.45 + ctx.rng.next() * 1.1))];
+      const bits: string[] = [gesture(w * (0.45 + ctx.rng.next() * 1.1), ctx.polity.id)];
       if (v.old < 0) { s.unease += 1; bits.push('The old men mutter and look at the sea.'); }
       else if (v.old > 0) bits.push('An old man nods slowly.');
       if (v.young > 0) bits.push('The young men crowd forward.');

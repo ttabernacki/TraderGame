@@ -182,3 +182,13 @@ learned (told, seen, bought, taught, or blundered), and the epilogue prints
 what the courts said of you. Solver bots in `scripts/*.ts` hold each piece to
 its targets: a perfect bot always wins, one that reads only the view wins most,
 a random one rarely, and no single policy dominates.
+
+Sources checked for the pieces (A6). The Mali request: Mansa Mahmud II asked
+João II for an alliance and guns against the Fula, and Portugal stayed out; the
+sources differ on the year (c. 1490-95), so no scene states one. The Calicut
+audience of 1498: da Gama's gifts (striped cloth, hoods, hats, coral, basins,
+sugar, oil, honey) were judged poor by local standards and the Muslim
+merchants were hostile; accounts differ on whether they were mocked, so the
+Gift Table says "received without comment" and "laughed at" only as outcomes
+of play. The Tupi do not herd cattle: the silent trade there is baskets of
+fruit, feathers and dye-wood.
