@@ -5,7 +5,7 @@ import { Settlements } from './settlement';
 import { Ocean } from './ocean';
 import { Finish } from './finish';
 import { Sky, type SkyLighting } from './sky';
-import { ShipMesh } from './shipMesh';
+import { makeHullModel, type HullModel } from './junkMesh';
 import { Life } from './life';
 import { QUALITY, loadAutoLevel, loadSetting, saveAutoLevel, saveSetting, stepDown, type QualityLevel, type QualitySetting } from './quality';
 import { Spray } from './spray';
@@ -68,7 +68,7 @@ function spring(
 }
 
 interface OtherSlot {
-  mesh: ShipMesh | null;
+  mesh: HullModel | null;
   hullId: string | null;
   pose: { x: number; z: number; heading: number; ok: boolean };
 }
@@ -165,9 +165,9 @@ export class Renderer {
   private landCheckAt = -1e9;
   /** Photo mode: the controls hidden and the camera orbiting slowly. */
   photo = false;
-  ship: ShipMesh;
+  ship: HullModel;
   /** The strange sail's hull, built the first time one is raised. */
-  private stranger: ShipMesh | null = null;
+  private stranger: HullModel | null = null;
   /** The ships of the player's fleet, drawn as full models while they are near. */
   private fleetSlots: OtherSlot[] = [];
   private shipLight = { night: 0, overcast: 0 };
@@ -299,7 +299,7 @@ export class Renderer {
     this.camera.position.set(0, 22, -55);
 
     this.hullClass = hull;
-    this.ship = new ShipMesh(hull, { lamp: true });
+    this.ship = makeHullModel(hull, { lamp: true });
 
     this.scene.fog = this.fog;
     this.scene.add(this.sky.group);
@@ -419,7 +419,7 @@ export class Renderer {
         this.scene.remove(held.group);
         held.dispose();
       }
-      mesh = new ShipMesh(hullClass(s.hullId));
+      mesh = makeHullModel(hullClass(s.hullId));
       this.scene.add(mesh.group);
       slot.mesh = mesh;
       slot.hullId = s.hullId;
@@ -480,7 +480,7 @@ export class Renderer {
     this.scene.remove(this.ship.group);
     this.ship.dispose();
     this.hullClass = hull;
-    this.ship = new ShipMesh(hull, { lamp: true });
+    this.ship = makeHullModel(hull, { lamp: true });
     this.scene.add(this.ship.group);
   }
 
