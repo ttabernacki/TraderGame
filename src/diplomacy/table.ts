@@ -80,7 +80,7 @@ function resolve(g: Game, run: PieceRun, o: Outcome): void {
       if (d) st.factions[f.id] = Math.max(-1, Math.min(1, (st.factions[f.id] ?? 0) + d));
     }
   }
-  if (o.gold) g.crown.gold += o.gold;
+  if (o.gold) g.crown.gold = Math.max(0, g.crown.gold + o.gold);
   run.outcome = { grade: o.grade, line: o.line, t: now };
   // The ledger keeps the last twenty-four runs and the open ones.
   const done = g.diplomacy.pieces.runs.filter((r) => r.outcome);
@@ -104,6 +104,8 @@ export function tickPieces(g: Game, days: number): void {
     if (run.outcome) continue;
     const piece = pieceById(run.pieceId);
     if (!piece?.beat) continue;
+    // Each tick draws from its own stretch of the stream.
+    run.seed = (Math.imul(run.seed, 1664525) + 1013904223) >>> 0;
     const ctx = ctxOf(g, run);
     if (!ctx) continue;
     const b = piece.beat(ctx, run.state, days);

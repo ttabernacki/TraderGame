@@ -228,7 +228,7 @@ export class AudienceView {
   private toGifts(): void {
     const g = this.game!;
     // A court with a matter before it asks the stranger first, once each, before the presents.
-    for (const id of ['meal', 'hall', 'linguist', 'case', 'between', 'informer', 'refusal']) {
+    for (const id of ['meal', 'hall', 'linguist', 'case', 'between', 'informer', 'refusal', 'pilot', 'hostage']) {
       if (!this.invited.has(id) && offered(g, this.pol!.id).some((p) => p.id === id)) {
         this.invited.add(id);
         this.pending = id;
@@ -247,7 +247,13 @@ export class AudienceView {
     const pol = this.pol!;
     const id = this.pending;
     const other = POLITY_BY_ID.get(pol.feuds[0])?.name ?? 'their old enemy';
-    const t = id === 'refusal'
+    const t = id === 'hostage'
+      ? { head: 'A surety', text: `${rulerName(pol, this.st)} offers his son to live among your people as surety for your good faith. The boy will be housed and fed at your charge. News of him will come by letter, and it will be old when it comes.`,
+        yes: 'Take the boy as surety', hint: 'Four letters over the months. You decide from stale news.', no: 'Decline: you are not set up to keep a child', say: 'You take the boy as surety.', nosay: 'You decline, with thanks, and say you cannot be answerable for a child.' }
+      : id === 'pilot'
+      ? { head: 'A pilot offers himself', text: `A man of ${g.portHere!.name} who knows the monsoon crossing offers to take your ship to India. He speaks well. Whether he knows what he says is another matter, and you will find out at sea.`,
+        yes: 'Take him aboard', hint: 'Over two or three days you judge his word: follow, check, or refuse.', no: 'Sail without him', say: 'You take him aboard.', nosay: 'You thank him, and say you will find your own way.' }
+      : id === 'refusal'
       ? { head: 'A friend asks too much', text: `${rulerName(pol, this.st)} has come to trust you, and asks a thing of you that you cannot give. A refusal can end a friendship, or deepen it.`,
         yes: 'Compose your answer', hint: 'A reason, a consolation, and a door.', no: 'Put him off with a smile', say: 'You compose your answer.', nosay: 'You put him off with a smile, and a promise to think on it.' }
       : id === 'hall'
@@ -273,6 +279,8 @@ export class AudienceView {
         el('button', { class: 'shore-action', type: 'button', onclick: () => {
           this.run = startPiece(g, id, pol.id, g.portHere!.id);
           this.log.push({ who: 'you', text: t.say });
+          // A passage plays at sea, through the days; nothing to show here.
+          if (id === 'pilot' || id === 'hostage') { this.run = null; this.toGifts(); return; }
           this.phase = this.run ? 'piece' : 'gifts';
           this.render();
         } }, el('b', {}, t.yes), el('span', {}, t.hint)),
