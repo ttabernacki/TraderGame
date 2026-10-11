@@ -32,6 +32,9 @@ export interface PortDef {
   blurb: string;
 }
 
+import { IS_XIYANG } from '../campaigns/active';
+import { XIYANG_PORTS } from '../campaigns/xiyang/places';
+
 export const PORTS: PortDef[] = [
   // --- Portugal ------------------------------------------------------------
   {
@@ -465,6 +468,8 @@ export const PORTS: PortDef[] = [
     blurb: 'The strait through which the clove islands send everything they grow. Whoever holds Malacca has his hand on the throat of Venice.',
   },
 ];
+
+if (IS_XIYANG) PORTS.push(...XIYANG_PORTS);
 
 /**
  * Broader demand.

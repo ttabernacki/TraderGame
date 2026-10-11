@@ -161,7 +161,7 @@ export class LogbookView {
     let total = 0;
     for (const r of rows) {
       total += r.distance;
-      const hours = Math.floor((r.t % 86400) / 3600);
+      const hours = Math.floor((((r.t % 86400) + 86400) % 86400) / 3600);
       tbody.append(el('tr', {},
         el('td', {}, `${String(hours).padStart(2, '0')}h00`),
         el('td', {}, `${r.course.toFixed(0)}° ${compassPoint(r.course)}`),

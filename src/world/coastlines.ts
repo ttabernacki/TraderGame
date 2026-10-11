@@ -7,6 +7,9 @@
  * without carrying a full shapefile.
  */
 
+import { IS_XIYANG } from '../campaigns/active';
+import { SOUTH_CHINA_SEA_COAST, XIYANG_LANDMASSES } from '../campaigns/xiyang/coast';
+
 export interface Landmass {
   id: string;
   name: string;
@@ -85,7 +88,7 @@ const NW_AFRICA_TO_GUINEA: number[] = [
 ];
 
 // Arabia and the Gulf, plus the Indian subcontinent, as one Eurasian ring.
-const ARABIA_INDIA: number[] = [
+export const ARABIA_INDIA: number[] = [
   12.80, 45.03, 13.30, 46.20, 14.00, 48.20, 14.50, 49.10, 15.00, 50.60,
   15.50, 52.20, 16.20, 53.20, 17.00, 54.50, 17.90, 55.60, 19.00, 57.70,
   20.60, 58.80, 22.00, 59.80, 22.60, 59.50, 23.60, 58.60, 24.40, 57.20,
@@ -246,14 +249,31 @@ function ringFromIsle(spec: IsleSpec): number[] {
   return ring;
 }
 
+/**
+ * The Xiyang world swaps the crude Chinese coast of the base ring for the
+ * real one and adds the great islands; the Carreira world is as it always was.
+ */
+function eurasiaRing(): number[] {
+  if (!IS_XIYANG) return ARABIA_INDIA;
+  const r = ARABIA_INDIA;
+  const find = (lat: number, lon: number): number => {
+    for (let i = 0; i < r.length; i += 2) if (r[i] === lat && r[i + 1] === lon) return i;
+    return -1;
+  };
+  const a = find(10.5, 99.2), b = find(39.0, 122.0);
+  if (a < 0 || b < a) throw new Error('the Eurasian ring is not the one the Xiyang coast was cut for');
+  return [...r.slice(0, a + 2), ...SOUTH_CHINA_SEA_COAST, ...r.slice(b)];
+}
+
 export const LANDMASSES: Landmass[] = [
   { id: 'iberia', name: 'Ibéria', ring: IBERIA, relief: 2400 },
   { id: 'africa', name: 'África', ring: NW_AFRICA_TO_GUINEA, relief: 2200 },
-  { id: 'eurasia', name: 'Ásia', ring: ARABIA_INDIA, relief: 2600 },
+  { id: 'eurasia', name: 'Ásia', ring: eurasiaRing(), relief: 2600 },
   { id: 'madagascar', name: 'Ilha de São Lourenço', ring: MADAGASCAR, relief: 2000 },
   { id: 'ceylon', name: 'Ceilão', ring: CEYLON, relief: 2200 },
   { id: 'britain', name: 'Inglaterra', ring: GREAT_BRITAIN, relief: 1300 },
   { id: 'ireland', name: 'Irlanda', ring: IRELAND, relief: 1000 },
   { id: 'brasil', name: 'Terra de Santa Cruz', ring: BRAZIL, relief: 2000 },
   ...ISLES.map((s) => ({ id: s.id, name: s.name, ring: ringFromIsle(s), relief: s.relief })),
+  ...(IS_XIYANG ? XIYANG_LANDMASSES : []),
 ];

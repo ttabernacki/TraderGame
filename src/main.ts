@@ -1,3 +1,4 @@
+import { ACTIVE_CAMPAIGN } from './campaigns/active';
 import { DiscoveryBanner } from './ui/discoveryBanner';
 import './style.css';
 
@@ -199,7 +200,7 @@ function startTitleScene(): void {
 
 function startNew(difficulty: Difficulty = 'watch', origin: OriginId = 'segundo', heirOf?: Game): void {
   demo = null;
-  game = new Game();
+  game = new Game(undefined, ACTIVE_CAMPAIGN);
   game.difficulty = difficulty;
   game.setOrigin(origin);
   if (heirOf) game.inheritFrom(heirOf);
@@ -212,7 +213,8 @@ function startNew(difficulty: Difficulty = 'watch', origin: OriginId = 'segundo'
   // decision of the game. Opening on the market instead left a player at anchor
   // in Lisbon with a purse, no orders, and nothing telling him where to go.
   if (renderer) renderer.cameraMode = 'chase';
-  ui.setMode('court');
+  // The Carreira opens at the King's court; the Ming fleet opens at the quay of its own port.
+  ui.setMode(ACTIVE_CAMPAIGN === 'xiyang' ? 'port' : 'court');
   lastThreads = -1; lastMilestones = -1; lastDock = undefined;
   lastCheckpointT = game.clock.t;
 }

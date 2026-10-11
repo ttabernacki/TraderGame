@@ -330,6 +330,14 @@ export const POLITIES: PolityDef[] = [
   },
 ];
 
+import { IS_XIYANG } from '../campaigns/active';
+import { XIYANG_EXTRA_PORTS, XIYANG_POLITIES } from '../campaigns/xiyang/places';
+
+if (IS_XIYANG) {
+  POLITIES.push(...XIYANG_POLITIES);
+  for (const [id, ports] of Object.entries(XIYANG_EXTRA_PORTS)) POLITIES.find((p) => p.id === id)?.ports.push(...ports);
+}
+
 export const POLITY_BY_ID = new Map(POLITIES.map((p) => [p.id, p]));
 const BY_PORT = new Map<string, PolityDef>();
 for (const p of POLITIES) for (const port of p.ports) BY_PORT.set(port, p);

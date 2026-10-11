@@ -2,6 +2,8 @@ import { formatLat, formatLon } from '../core/math';
 import type { Game } from '../game/state';
 import { DIFFICULTIES, difficultyDef, type Difficulty } from '../game/difficulty';
 import { ORIGINS, originDef, type OriginId } from '../progression/origins';
+import { ACTIVE_CAMPAIGN, keepCampaign } from '../campaigns/active';
+import { CAMPAIGNS, campaignDef } from '../game/campaign';
 import { button, card, clear, el, kv } from './dom';
 
 export class TitleView {
@@ -45,17 +47,26 @@ export class TitleView {
     // sailed straight through the paragraph.
     const panel = el('div', { class: 'title-panel' });
     this.root.append(panel);
+    const cd = campaignDef(ACTIVE_CAMPAIGN);
+    const xiyang = ACTIVE_CAMPAIGN === 'xiyang';
     panel.append(
-      el('h1', {}, 'Carreira da Índia'),
-      el('div', { class: 'tagline' }, 'Portugal, 1482'),
-      el('div', { class: 'blurb' },
-        'Eighty years of caravels have worked their way a headland at a time down the western side of Africa, and nobody yet knows whether it has an end. ' +
-        'You have a lateen caravel, a crew who have heard what happens south of the line, a quadrant, and a set of tables that do not run past the equator. ' +
-        'The wind belts will carry you south whether you like it or not, and will not carry you back the way you came. ' +
-        'Your latitude you can find from the sun and the pole star. Your longitude nobody on earth can find, and will not for another two hundred and sixty years.'),
-      el('div', { class: 'difficulty-head' }, 'Who are you?'),
-      this.origins,
-      this.originBlurb,
+      el('h1', {}, cd.title),
+      el('div', { class: 'tagline' }, cd.tagline),
+      el('div', { class: 'blurb' }, cd.blurb),
+      // Another campaign is another world, which is read once at load: choosing one reloads the page.
+      el('div', { class: 'difficulty-head' }, 'Which voyage?'),
+      el('div', { class: 'difficulty' }, ...CAMPAIGNS.map((c) => el('button', {
+        class: `difficulty-btn${c.id === ACTIVE_CAMPAIGN ? ' active' : ''}`,
+        onclick: () => {
+          if (c.id === ACTIVE_CAMPAIGN) return;
+          keepCampaign(c.id);
+          const u = new URL(globalThis.location.href);
+          u.searchParams.set('campaign', c.id);
+          globalThis.location.href = u.toString();
+        },
+      }, el('span', { class: 'difficulty-name' }, c.title),
+        el('span', { class: 'difficulty-english' }, c.inDevelopment ? `${c.tagline} \u00b7 preview` : c.tagline)))),
+      ...(xiyang ? [] : [el('div', { class: 'difficulty-head' }, 'Who are you?'), this.origins, this.originBlurb]),
       el('div', { class: 'difficulty-head' }, 'How is she to be worked?'),
       this.choices,
       this.blurb,

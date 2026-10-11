@@ -95,7 +95,7 @@ function sampleBelts(y: number): { from: number; speed: number; steadiness: numb
 
 /** Region mask for the monsoon-dominated Indian Ocean. */
 function monsoonMask(p: LatLon): number {
-  const lonMask = smoothstep(34, 48, p.lon) * (1 - smoothstep(96, 112, p.lon));
+  const lonMask = smoothstep(34, 48, p.lon) * (1 - smoothstep(118, 132, p.lon));
   const latMask = smoothstep(-24, -10, p.lat) * (1 - smoothstep(24, 32, p.lat));
   return lonMask * latMask;
 }

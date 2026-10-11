@@ -319,7 +319,7 @@ export class PortView {
     // The facts of the place, in one line: who they are, how they take you,
     // and what the harbour is. These were two tables of their own at the side
     // of the page, every visit.
-    const faith = { catholic: 'Catholic', muslim: 'Muslim', hindu: 'Hindu', traditional: 'their own gods', buddhist: 'Buddhist' }[pe.faith];
+    const faith = { catholic: 'Catholic', muslim: 'Muslim', hindu: 'Hindu', traditional: 'their own gods', buddhist: 'Buddhist', confucian: 'of the Ming order' }[pe.faith];
     const chip = (k: string, v: string, cls = '') => el('span', { class: cls }, el('b', {}, k), v);
     host.append(el('div', { class: 'port-strip' },
       chip('', `${pe.name} · ${pe.language} · ${faith}`),
@@ -1933,6 +1933,7 @@ function firstContactLine(pe: ReturnType<typeof people>): string {
     muslim: 'They are Muslims, and have been for six hundred years.',
     hindu: 'Their faith has no name in any book in Lisbon.',
     buddhist: 'Their faith has no name in any book in Lisbon.',
+    confucian: 'They keep the rites of the Son of Heaven.',
     traditional: 'They keep their own gods.',
   }[pe.faith];
   const world = pe.sophistication > 0.7

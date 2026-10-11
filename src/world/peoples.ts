@@ -1,4 +1,4 @@
-export type Faith = 'catholic' | 'muslim' | 'hindu' | 'traditional' | 'buddhist';
+export type Faith = 'catholic' | 'muslim' | 'hindu' | 'traditional' | 'buddhist' | 'confucian';
 
 export interface People {
   id: string;
@@ -144,6 +144,11 @@ export const PEOPLES: People[] = [
     blurb: 'Malacca sits astride the strait where the cloves come through. Whoever holds it holds the eastern half of the trade.',
   },
 ];
+
+import { IS_XIYANG } from '../campaigns/active';
+import { XIYANG_PEOPLES } from '../campaigns/xiyang/places';
+
+if (IS_XIYANG) PEOPLES.push(...XIYANG_PEOPLES);
 
 export const PEOPLE_BY_ID = new Map(PEOPLES.map((p) => [p.id, p]));
 

@@ -100,7 +100,7 @@ export class Weather {
     // The depressions go round the Azores High, not through it: in summer
     // their track lies up past forty-five north and the islands see a gale a
     // month at most; in winter the high sinks south and they come down on it.
-    const hi = azoresHigh(day % 365);
+    const hi = azoresHigh(((day % 365) + 365) % 365);
     const underHigh = lat > 0 && lon > -70 && lon < -2 && lat < hi.lat + 5;
     if (absLat > 34 && absLat < 62 && !underHigh) {
       // Extratropical depressions marching through the westerlies.

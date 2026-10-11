@@ -71,7 +71,7 @@ export class Clock {
 
   /** Hour of day as a float in [0, 24). */
   get hour(): number {
-    return (this.t % 86400) / 3600;
+    return (((this.t % 86400) + 86400) % 86400) / 3600;
   }
 
   get date(): { year: number; month: number; day: number } {
@@ -120,10 +120,17 @@ export class Clock {
 
 const EPOCH_YEAR = 1430;
 
-/** Days from 1 Jan 1430 to the given proleptic Gregorian date. */
+/**
+ * Days from 1 Jan 1430 to the given proleptic Gregorian date. Negative before
+ * the epoch: the Xiyang campaign starts in 1405.
+ */
 export function daysFromEpoch(year: number, month: number, day: number): number {
   let days = 0;
-  for (let y = EPOCH_YEAR; y < year; y++) days += isLeap(y) ? 366 : 365;
+  if (year >= EPOCH_YEAR) {
+    for (let y = EPOCH_YEAR; y < year; y++) days += isLeap(y) ? 366 : 365;
+  } else {
+    for (let y = year; y < EPOCH_YEAR; y++) days -= isLeap(y) ? 366 : 365;
+  }
   for (let m = 1; m < month; m++) days += daysInMonth(year, m);
   return days + day - 1;
 }
@@ -131,6 +138,7 @@ export function daysFromEpoch(year: number, month: number, day: number): number 
 export function dateFromDays(days: number): { year: number; month: number; day: number } {
   let y = EPOCH_YEAR;
   let d = days;
+  while (d < 0) { y--; d += isLeap(y) ? 366 : 365; }
   for (;;) {
     const len = isLeap(y) ? 366 : 365;
     if (d < len) break;
