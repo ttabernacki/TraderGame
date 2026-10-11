@@ -40,6 +40,7 @@ export class SavesView {
     private shelf: SaveShelf,
     private onBack: () => void,
     private onResume: (json: string) => void,
+    private onQuit: () => void = () => {},
   ) {}
 
   /** `g` is null when this is opened from the title screen. */
@@ -69,7 +70,10 @@ export class SavesView {
           + 'another.'),
       ),
       el('div', { class: 'screen-body' }, body),
-      el('div', { class: 'screen-foot' }, button('Back', this.onBack)),
+      el('div', { class: 'screen-foot' },
+        button('Back', this.onBack),
+        // The voyage in hand is written down first; the title is where a new one is begun.
+        g ? button('Quit to main menu', this.onQuit, { ghost: true }) : null),
     );
 
     this.refresh();

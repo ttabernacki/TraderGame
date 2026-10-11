@@ -113,6 +113,7 @@ export class TouchControls {
       { label: 'Photo mode', key: 'z', hint: 'Controls away; tap to come back' },
       { label: 'Graphics quality', key: 'f8', hint: 'Auto, high, medium, low' },
       { label: 'Save or load', key: 'f2', hint: 'The Book of Voyages' },
+      { label: 'Quit to main menu', key: 'f10', hint: 'The voyage is saved first' },
     ] as Spec[]) {
       const b = this.button({ ...s, wide: true });
       b.addEventListener('pointerup', () => this.more.classList.remove('on'));

@@ -80,6 +80,12 @@ const ui = new Ui(uiHost, {
   onNewGame: (difficulty, origin, heirOf) => startNew(difficulty, origin, heirOf),
   onContinue: () => void continueSaved(),
   onResume: (json) => resumeFrom(json),
+  onQuit: () => {
+    if (game && game.mode !== 'gameover') { ui.saveQuietly(game); void ui.save(game, false, true); }
+    game = null;
+    demo = null;
+    ui.showTitle();
+  },
   onCycleCamera: () => {
     if (!renderer || !game) return;
     const mode = renderer.cycleCamera();

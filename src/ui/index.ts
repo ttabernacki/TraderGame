@@ -38,6 +38,8 @@ export interface UiCallbacks {
   onContinue: () => void;
   /** Resume a voyage that has already been decoded to JSON. */
   onResume: (json: string) => void;
+  /** Put the voyage away (it is saved first) and go back to the title screen. */
+  onQuit: () => void;
   onCycleCamera: () => void;
   /** Hold or release a virtual key, for the on-screen controls. */
   onVirtualKey: (key: string, down: boolean) => void;
@@ -126,6 +128,7 @@ export class Ui {
       this.shelf,
       () => (this.game ? this.setMode('sailing') : this.showTitle()),
       (json) => this.cb.onResume(json),
+      () => this.cb.onQuit(),
     );
     this.pilot = new PilotPanel(() => {
       this.game?.dismissTutorial();
@@ -354,6 +357,7 @@ export class Ui {
     // routing below. A player who wants to keep the game does not first want to
     // work out which screen he is allowed to want that from.
     if (k === 'f8') { this.cb.onQuality(); return true; }
+    if (k === 'f10') { this.cb.onQuit(); return true; }
     if (k === 'f2') {
       this.setMode((g.mode as GameMode) === 'voyages' ? 'sailing' : 'voyages');
       return true;
