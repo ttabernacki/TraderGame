@@ -17,6 +17,8 @@ import { OrdersView } from './ordersView';
 import { PortView } from './portView';
 import { SightView } from './sightView';
 import { GameOverView, TitleView } from './titleView';
+import { AdmiralView } from './admiralView';
+import { ACTIVE_CAMPAIGN } from '../campaigns/active';
 import { TouchControls } from './touch';
 import { DeckBar } from './deckBar';
 import { ShoreView } from './shoreView';
@@ -74,6 +76,7 @@ export class Ui {
   private shore: ShoreView;
   private orders: OrdersView;
   private saves: SavesView;
+  private admiral: AdmiralView;
   private pilot: PilotPanel;
   /** Where voyages are kept: the browser, and the account when there is one. */
   private shelf = new SaveShelf();
@@ -122,6 +125,7 @@ export class Ui {
     this.port = new PortView(back, () => this.setMode('audience'), () => this.setMode('court'));
     this.audience = new AudienceView(() => this.setMode('port'));
     this.court = new CourtView(() => this.setMode('port'));
+    this.admiral = new AdmiralView(() => this.setMode('port'));
     this.shore = new ShoreView(back, () => this.setMode('chart'));
     this.orders = new OrdersView(back, () => this.setMode('chart'));
     this.saves = new SavesView(
@@ -246,8 +250,13 @@ export class Ui {
         this.shore.open(g);
         break;
       case 'court':
-        this.overlay.append(this.court.root);
-        this.court.open(g);
+        if (ACTIVE_CAMPAIGN === 'xiyang') {
+          this.overlay.append(this.admiral.root);
+          this.admiral.open(g);
+        } else {
+          this.overlay.append(this.court.root);
+          this.court.open(g);
+        }
         break;
       case 'orders':
         this.openBook(mode, this.orders.root, () => this.orders.open(g));

@@ -111,6 +111,7 @@ export class PortView {
       el('div', { style: { marginRight: 'auto', fontSize: '13.5px' } },
         `${g.crown.gold.toFixed(0)} cruzados · ${g.crown.title.name} · ${g.crown.lifetimeStanding} renown`),
       def.id === 'lisboa' ? button('To court', () => this.onCourt()) : null,
+      def.people === 'han' ? button('To the Admiral', () => this.onCourt()) : null,
       button('Seek an audience', () => this.onAudience(), {
         disabled: def.people === 'portuguese',
         title: def.people === 'portuguese' ? 'These are your own people.' : undefined,

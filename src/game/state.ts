@@ -106,6 +106,7 @@ import { newTutorial, stepTutorial, type TutorialState, type TutorialStep } from
 import { campaignDef, type CampaignId } from './campaign';
 import { PlayerFleet, type FleetSave } from './fleet';
 import { XIYANG_FLEET } from '../campaigns/xiyang/places';
+import { evaluateImperial, imperialArrival, newImperial, type ImperialState } from '../campaigns/xiyang/imperial';
 import { rollOfficerEvent } from './officerEvents';
 import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty';
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
@@ -1036,7 +1037,10 @@ export class Game {
     this.ship = new Ship(cd.shipName, cd.hullId, start, 200);
     this.crew = newCrew(hullClass(cd.hullId).crewFull, this.rng);
     this.nav = new Navigator(start, seed);
-    if (campaign === 'xiyang') this.fleet = new PlayerFleet(XIYANG_FLEET.map((f, i) => ({ id: i + 1, ...f })));
+    if (campaign === 'xiyang') {
+      this.fleet = new PlayerFleet(XIYANG_FLEET.map((f, i) => ({ id: i + 1, ...f })));
+      this.imperial = newImperial();
+    }
     this.wireNavigator();
     this.chart = new Chart();
     this.crown = new Crown(seed);
@@ -2075,6 +2079,9 @@ export class Game {
 
   /** The ships that sail with the flagship; only the Xiyang campaign has one. See game/fleet. */
   fleet: PlayerFleet | null = null;
+
+  /** The Emperor's orders, in the Xiyang campaign. See campaigns/xiyang/imperial. */
+  imperial: ImperialState | null = null;
 
   polityState(id: string) {
     let st = this.diplomacy.polities[id];
@@ -3160,6 +3167,7 @@ export class Game {
     this.checkForSails(simDt / 86400);
     this.updateEncounter(simDt);
     this.fleet?.step(this, simDt);
+    if (this.imperial) evaluateImperial(this);
     this.rollIncidents(simDt);
     this.expireAlerts();
   }
@@ -8240,6 +8248,7 @@ export class Game {
     this.chart.settleAround(anchorageOf(def), this.clock.t);
 
     this.crown.progressObjective('reach', def.id);
+    if (this.imperial) imperialArrival(this, def.id);
 
     // Letters and money from home, at any Portuguese port; new voyages wanting
     // backers at Lisbon.
@@ -9519,6 +9528,7 @@ export class Game {
       route: this.route,
       diplomacy: this.diplomacy,
       fleet: this.fleet?.serialize() ?? null,
+      imperial: this.imperial,
       trade: this.trade,
       chronicle: this.chronicle,
       quests: this.quests,
@@ -9660,6 +9670,7 @@ export class Game {
     g.quests = d.quests ?? [];
     g.diplomacy = d.diplomacy ?? newDiplomacy();
     g.fleet = d.fleet ? PlayerFleet.deserialize(d.fleet as FleetSave) : null;
+    g.imperial = (d.imperial as ImperialState | null) ?? null;
     // Careers from before the set pieces have no marks, Book or runs yet.
     g.diplomacy.marks ??= newMarks();
     g.diplomacy.book ??= newBook();
