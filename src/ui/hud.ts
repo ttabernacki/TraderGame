@@ -331,6 +331,14 @@ export class Hud {
           style: { color: endurance < 20 || g.crew.morale < 0.3 ? '#e0b96a' : undefined },
         }, `${r.ableHands}/${g.crew.count} able · ${moraleWord(g.crew.morale)} · `
           + `${endurance.toFixed(0)} days`)),
+      // The fleet, when there is one: how it is drawn up, and whether the master is holding her to the slowest.
+      g.fleet
+        ? el('div', { class: 'hud-row aside' },
+          el('span', { class: 'k' }, 'Fleet'),
+          el('span', { class: 'v' },
+            `${g.fleet.ships.length} sail \u00b7 ${g.fleet.shape}, ${g.fleet.spacing}`
+            + (Number.isFinite(g.fleet.limitMs) ? ` \u00b7 held to ${(g.fleet.limitMs / 0.514444).toFixed(1)} kn` : ' \u00b7 not waiting')))
+        : null,
       // The pump, which is the thing that quietly sinks ships.
       //
       // She makes water after any damage, the slider that decides whether the

@@ -1,3 +1,4 @@
+import { ACTIVE_CAMPAIGN } from '../campaigns/active';
 import { el } from './dom';
 
 /**
@@ -113,6 +114,9 @@ export class TouchControls {
       { label: 'Photo mode', key: 'z', hint: 'Controls away; tap to come back' },
       { label: 'Graphics quality', key: 'f8', hint: 'Auto, high, medium, low' },
       { label: 'Save or load', key: 'f2', hint: 'The Book of Voyages' },
+      ...(ACTIVE_CAMPAIGN === 'xiyang' ? [{ label: 'Fleet: keep together', key: 'q', hint: 'The master waits for the slowest ship' },
+      { label: 'Fleet: formation', key: 'u', hint: 'Crescent, line abreast, column' },
+      { label: 'Fleet: spacing', key: 'e', hint: 'Close or open order' }] : []),
       { label: 'Quit to main menu', key: 'f10', hint: 'The voyage is saved first' },
     ] as Spec[]) {
       const b = this.button({ ...s, wide: true });

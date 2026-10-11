@@ -453,6 +453,10 @@ export class Ui {
       case 'f': if (g.encounter) { g.orderChase('close'); return true; } return false;
       case 'r': if (g.encounter) { g.orderChase('avoid'); return true; } return false;
       case 'i': if (g.encounter) { g.orderChase('hold'); return true; } return false;
+      // The fleet, in the campaigns that have one: how it is drawn up, how close, and whether the master waits for the slowest.
+      case 'u': if (g.fleet) { g.pushAlert(g.fleetOrder('shape'), 'note'); return true; } return false;
+      case 'e': if (g.fleet) { g.pushAlert(g.fleetOrder('spacing'), 'note'); return true; } return false;
+      case 'q': if (g.fleet) { g.pushAlert(g.fleetOrder('together'), 'note'); return true; } return false;
       case 'y': g.autoTrim = !g.autoTrim;
         g.pushAlert(g.autoTrim ? 'The watch will keep her trimmed.' : 'You have the sheets yourself.', 'note');
         return true;

@@ -49,6 +49,78 @@ export const VOYAGES: VoyageDef[] = [
     renown: 80, silver: 600,
     closing: 'The fleet comes home to Nanjing with the envoys of the kings, and the pirate in irons. The Emperor receives them in the Hall of Heavenly Grace, and the next voyage is ordered.',
   },
+  {
+    n: 2, title: 'The second voyage', years: '1407\u20131409',
+    orders: 'The Emperor has the Zamorin of Calicut to invest and a stele to set up, and wants the harbours of Siam and Java kept sweet. You will sail again on the north-east monsoon, call at Siam and Java, and carry the Emperor\u2019s patents to Cochin and Calicut. Come home with the south-west monsoon.',
+    objectives: [
+      { id: 'siam', kind: 'accept', target: 'ayutthaya', text: 'Ayutthaya receives the Emperor\u2019s envoy' },
+      { id: 'java', kind: 'accept', target: 'majapahit', text: 'Java is kept in the Emperor\u2019s peace' },
+      { id: 'cochin', kind: 'accept', target: 'cochin', text: 'The Raja of Cochin receives his patent' },
+      { id: 'calicut', kind: 'accept', target: 'calicut', text: 'The Zamorin of Calicut receives his patent and a stele' },
+    ],
+    renown: 90, silver: 700,
+    closing: 'The fleet returns with the envoys of Siam and Calicut. The Emperor sends gifts back with them.',
+  },
+  {
+    n: 3, title: 'The third voyage', years: '1409\u20131411',
+    orders: 'Malacca is to be given the Emperor\u2019s seal and a place to store the fleet\u2019s goods. The king of the cinnamon island has been robbing Chinese envoys, and is to be made to answer for it. Then Quilon, Cochin and Calicut as before.',
+    objectives: [
+      { id: 'malacca', kind: 'accept', target: 'malacca', text: 'Malacca receives the Emperor\u2019s seal' },
+      { id: 'alakeshvara', kind: 'deed', target: 'alakeshvara', text: 'The king of Ceylon is called to account' },
+      { id: 'cochin', kind: 'accept', target: 'cochin', text: 'Cochin is visited' },
+      { id: 'calicut', kind: 'accept', target: 'calicut', text: 'Calicut is visited' },
+    ],
+    renown: 110, silver: 800,
+    closing: 'The fleet brings the king of Ceylon to Nanjing as a prisoner, and the Emperor is minded to forgive him.',
+  },
+  {
+    n: 4, title: 'The fourth voyage', years: '1413\u20131415',
+    orders: 'The fleet is to go farther than it has: Hormuz, at the head of the Gulf, and on the way a usurper in Sumatra who has taken the throne of Samudera from its king. The envoys of thirty courts are to be carried home.',
+    objectives: [
+      { id: 'pasai', kind: 'accept', target: 'pasai', text: 'Samudera receives the Emperor\u2019s envoy' },
+      { id: 'sekandar', kind: 'deed', target: 'sekandar', text: 'The usurper of Samudera is dealt with' },
+      { id: 'calicut', kind: 'accept', target: 'calicut', text: 'Calicut is visited' },
+      { id: 'hormuz', kind: 'accept', target: 'hormuz', text: 'Hormuz receives the Emperor\u2019s envoy' },
+    ],
+    renown: 130, silver: 1000,
+    closing: 'The fleet returns with the envoys of thirty courts, and a usurper in irons.',
+  },
+  {
+    n: 5, title: 'The fifth voyage', years: '1417\u20131419',
+    orders: 'The envoys of Hormuz, Aden and the coast of Africa are to be carried home, and the courts of the Swahili coast and Arabia visited. The Emperor would like to see the animals those courts breed, and has been told of one that looks like the qilin of the old books.',
+    objectives: [
+      { id: 'aden', kind: 'accept', target: 'aden', text: 'Aden receives the Emperor\u2019s envoy' },
+      { id: 'mogadishu', kind: 'accept', target: 'mogadishu', text: 'Magadoxo receives it' },
+      { id: 'malindi', kind: 'accept', target: 'malindi', text: 'Melinde receives it' },
+      { id: 'qilin', kind: 'deed', target: 'qilin', text: 'A giraffe is taken aboard for the Emperor' },
+    ],
+    renown: 150, silver: 1200,
+    closing: 'The giraffe is led through Nanjing and the court declares it the qilin, a sign of heaven\u2019s favour.',
+  },
+  {
+    n: 6, title: 'The sixth voyage', years: '1421\u20131422',
+    orders: 'The envoys carried home on the last voyage are to be taken back to their courts. The Emperor is building a new capital in the north and needs the court to see the world still pays him.',
+    objectives: [
+      { id: 'hormuz', kind: 'accept', target: 'hormuz', text: 'Hormuz sees its envoy home' },
+      { id: 'aden', kind: 'accept', target: 'aden', text: 'Aden sees its envoy home' },
+      { id: 'kilwa', kind: 'accept', target: 'kilwa', text: 'The sultan of Kilwa receives the Emperor\u2019s envoy' },
+    ],
+    renown: 120, silver: 900,
+    closing: 'The envoys are home. The court in the north is cooler to the voyages than it was; there is talk of their cost.',
+  },
+  {
+    n: 7, title: 'The seventh voyage', years: '1431\u20131433',
+    orders: 'The Xuande Emperor wishes the foreign kings reminded of the Ming. This is to be the last: you will visit every court on the old road, and the Admiral is old.',
+    objectives: [
+      { id: 'champa', kind: 'accept', target: 'champa', text: 'Champa' },
+      { id: 'majapahit', kind: 'accept', target: 'majapahit', text: 'Java' },
+      { id: 'malacca', kind: 'accept', target: 'malacca', text: 'Malacca' },
+      { id: 'calicut', kind: 'accept', target: 'calicut', text: 'Calicut' },
+      { id: 'hormuz', kind: 'accept', target: 'hormuz', text: 'Hormuz' },
+    ],
+    renown: 200, silver: 1500,
+    closing: 'It is the last voyage. The Admiral is old, and the court does not send the fleet out again.',
+  },
 ];
 
 export interface ImperialState {
@@ -148,8 +220,89 @@ function chenZuyi(): SeaEvent {
   };
 }
 
+function alakeshvara(): SeaEvent {
+  return {
+    id: 'imperial:alakeshvara', title: 'The king of Ceylon\u2019s invitation', severity: 'warning', council: true,
+    text: 'King Alakeshvara asks the Admiral to come inland to receive his answer to the Emperor. The road goes into the hills, and the country around is full of armed men. He has robbed Chinese envoys before.',
+    choices: [
+      {
+        label: 'Refuse the road and call the fleet\u2019s soldiers to the beach',
+        detail: 'You will not leave the ships. If the king means no harm, he loses face; if he does, he finds the fleet ready.',
+        resolve: (g) => {
+          g.imperial!.done.alakeshvara = true;
+          g.adjustPolity('kotte', { respect: 0.2, trust: -0.05 }, 'the Ming fleet answered the king of Ceylon\u2019s ambush');
+          return 'Alakeshvara\u2019s men came down on the fleet in the night and found it waiting. Two thousand soldiers took his capital while he was out of it, and he was brought to the ships.';
+        },
+      },
+      {
+        label: 'Go as he asks, with a guard, and see what he means',
+        detail: 'It is a long risk for little. But it is the Admiral\u2019s own office to hear a king in his house.',
+        resolve: (g) => {
+          g.imperial!.done.alakeshvara = true;
+          g.crew.morale = Math.max(0, g.crew.morale - 0.1);
+          g.adjustPolity('kotte', { respect: 0.1, trust: -0.15 }, 'the Ming fleet was nearly cut off in Ceylon');
+          return 'The road was shut behind you, and the fleet had to fight its way to the guard. You came back with the king as a prisoner, and fewer men than you left with.';
+        },
+      },
+    ],
+  };
+}
+
+function sekandar(): SeaEvent {
+  return {
+    id: 'imperial:sekandar', title: 'The usurper of Samudera', severity: 'warning', council: true,
+    text: 'Sekandar, who killed the old king\u2019s heir and took the throne, has refused to receive the Emperor\u2019s envoy and sent his men to the beach. The old king\u2019s son, Sultan Zain al-Abidin, has sent word that he will join the fleet if it moves against him.',
+    choices: [
+      {
+        label: 'Move against Sekandar with the old king\u2019s son',
+        detail: 'A war of three days, ashore, with the fleet\u2019s soldiers in the front.',
+        resolve: (g) => {
+          g.imperial!.done.sekandar = true;
+          g.adjustPolity('pasai', { trust: 0.2, respect: 0.2 }, 'the Ming fleet set the rightful sultan of Samudera on his throne');
+          return 'Sekandar was taken at his own gate and the rightful sultan was seated again. He will not forget who seated him.';
+        },
+      },
+      {
+        label: 'Leave it to the sultan\u2019s son and keep the fleet aboard',
+        detail: 'It is not the Emperor\u2019s quarrel. But the Emperor\u2019s envoy was insulted.',
+        resolve: (g) => {
+          g.imperial!.done.sekandar = true;
+          g.adjustPolity('pasai', { trust: 0.05, respect: -0.1 }, 'the Ming fleet stood by at Samudera');
+          return 'The sultan\u2019s son was left to finish it alone, and did, after a hard month. The Emperor will hear of the fleet that stood by.';
+        },
+      },
+    ],
+  };
+}
+
+function qilin(): SeaEvent {
+  return {
+    id: 'imperial:qilin', title: 'The sultan\u2019s giraffe', severity: 'note', council: true,
+    text: 'The sultan of Melinde has a giraffe, a beast his people call by a name your interpreter renders as "the long-necked one". He would send it to the Emperor, who is said to collect such things.',
+    choices: [
+      {
+        label: 'Take it aboard, with the sultan\u2019s thanks',
+        detail: 'A long voyage with a beast that stands taller than a deck beam, and a cargo bay that has to be built for it.',
+        resolve: (g) => {
+          g.imperial!.done.qilin = true;
+          g.adjustPolity('malindi', { trust: 0.1, respect: 0.05 }, 'the Ming fleet took the sultan\u2019s giraffe for the Emperor');
+          return 'The giraffe was led up the plank on a cord, and stood on the main hatch for the whole of the voyage with the carpenters trying to give it a roof.';
+        },
+      },
+      {
+        label: 'Decline: the fleet has no room for such a beast',
+        detail: 'The Emperor will not be told what the sultan offered.',
+        resolve: () => 'The sultan was not offended, only a little disappointed. The giraffe went back to its pen.',
+      },
+    ],
+  };
+}
+
 export function imperialArrival(g: Game, portId: string): void {
   const s = g.imperial;
   if (!s) return;
   if (s.voyage === 1 && portId === 'palembang' && !s.done.chen_zuyi) g.queueScene(chenZuyi());
+  if (s.voyage === 3 && portId === 'galle' && !s.done.alakeshvara) g.queueScene(alakeshvara());
+  if (s.voyage === 4 && portId === 'pasai' && !s.done.sekandar) g.queueScene(sekandar());
+  if (s.voyage === 5 && portId === 'melinde' && !s.done.qilin) g.queueScene(qilin());
 }

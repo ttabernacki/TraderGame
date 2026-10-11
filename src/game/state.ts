@@ -2080,6 +2080,28 @@ export class Game {
   /** The ships that sail with the flagship; only the Xiyang campaign has one. See game/fleet. */
   fleet: PlayerFleet | null = null;
 
+  /** An order to the fleet by banner and drum. Returns what the log should say. */
+  fleetOrder(what: 'shape' | 'spacing' | 'together'): string {
+    const f = this.fleet;
+    if (!f) return '';
+    if (what === 'together') {
+      f.keepTogether = !f.keepTogether;
+      return f.keepTogether
+        ? 'The master will hold her canvas to the slowest ship, and the fleet keeps together.'
+        : 'The master will press on. The slow ships will fall astern.';
+    }
+    if (what === 'shape') {
+      const next = f.shape === 'crescent' ? 'line' : f.shape === 'line' ? 'column' : 'crescent';
+      f.reform(next, f.spacing);
+      return next === 'crescent' ? 'The fleet opens into a crescent, for open sea and safety.'
+        : next === 'line' ? 'The fleet comes into line abreast, for searching.'
+          : 'The fleet forms in column, for narrow water.';
+    }
+    const next = f.spacing === 'close' ? 'open' : 'close';
+    f.reform(f.shape, next);
+    return next === 'close' ? 'Close order, for pirate waters.' : 'Open order, for weather.';
+  }
+
   /** The Emperor's orders, in the Xiyang campaign. See campaigns/xiyang/imperial. */
   imperial: ImperialState | null = null;
 

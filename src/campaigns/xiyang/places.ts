@@ -79,7 +79,7 @@ export const XIYANG_POLITIES: PolityDef[] = [
   },
   {
     id: 'ayutthaya', name: 'Ayutthaya', people: 'siamese', ports: ['ayutthaya'], seat: 'ayutthaya',
-    title: 'King', rulers: ['Intharacha'], temper: 'mercantile',
+    title: 'King', rulers: ['The king of Ayutthaya'], temper: 'mercantile',
     wants: ['seda', 'porcelana'], factions: SEA_COURT, network: 'east',
     allies: [], feuds: ['malacca'], customs: C_SEA,
     blurb: 'A river city that sends rice and rhinoceros horn to the Ming, and would like to be the Ming’s friend against Malacca.',

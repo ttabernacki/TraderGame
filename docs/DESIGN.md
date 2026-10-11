@@ -203,3 +203,9 @@ frame and at a day's step; orders reach ships by signal, nearest first (3 s
 plus 12 ms a metre); each hull class has a speed share and a turn rate, so a
 slow class falls astern unless the flagship's master holds her to 95% of the
 slowest (`keepTogether`). Nothing here is drawn yet: that is the campaign's job.
+
+Xiyang sources (checked): Chen Zuyi taken at Palembang on the first voyage with the
+headman Shi Jinqing's help (about 5,000 of his men killed); Alakeshvara of Ceylon
+taken on the third; the usurper Sekandar of Samudera on the fourth; Malindi sent
+giraffes to the Ming (the year and route are disputed, so the scene claims neither).
+The Admiral's death on or after the seventh voyage is uncertain and not stated.

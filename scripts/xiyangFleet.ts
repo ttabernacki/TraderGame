@@ -44,4 +44,28 @@ for (const scale of [2, 5, 7]) {
   const h = Game.deserialize(g.serialize());
   check('the fleet and the campaign survive a save', h.campaign === 'xiyang' && h.fleet?.ships.length === g.fleet?.ships.length);
 }
+// Orders: the shape and spacing change, and the ships sail to their new places rather than jumping.
+{
+  const g = new Game(6, 'xiyang');
+  g.mode = 'sailing'; g.dockedAt = 'changle'; g.weighAnchor();
+  g.ship.state.pos = { lat: 24.2, lon: 120.9 };
+  g.clock.scaleIndex = 6;
+  for (let i = 0; i < 400; i++) g.update(0.05);
+  const f = g.fleet!;
+  const before = f.formation!.consorts.map((c) => ({ x: c.x, y: c.y }));
+  const said = g.fleetOrder('shape');
+  check('the shape order is answered', /line abreast/.test(said) && f.shape === 'line', said);
+  const after = f.formation!.consorts.map((c) => ({ x: c.x, y: c.y }));
+  check('a new formation is not a jump', before.every((b, i) => Math.hypot(b.x - after[i].x, b.y - after[i].y) < 1));
+  let maxStep = 0;
+  for (let i = 0; i < 200; i++) {
+    const p0 = f.formation!.consorts.map((c) => ({ x: c.x, y: c.y }));
+    g.update(0.05);
+    const dt = g.clock.scale * 0.05;
+    f.formation!.consorts.forEach((c, k) => { maxStep = Math.max(maxStep, Math.hypot(c.x - p0[k].x, c.y - p0[k].y) / Math.max(dt, 1e-6)); });
+  }
+  check('ships sail to their new places at ship speeds', maxStep < 14, `(${maxStep.toFixed(1)} m/s)`);
+  const t0 = g.fleetOrder('together');
+  check('keep-together toggles the master\u2019s hold', !f.keepTogether && /press on/.test(t0));
+}
 process.exit(bad ? 1 : 0);
