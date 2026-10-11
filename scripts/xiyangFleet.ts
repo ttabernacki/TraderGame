@@ -68,4 +68,24 @@ for (const scale of [2, 5, 7]) {
   const t0 = g.fleetOrder('together');
   check('keep-together toggles the master\u2019s hold', !f.keepTogether && /press on/.test(t0));
 }
+// A gale scatters the fleet, a calm brings it back.
+{
+  const g = new Game(7, 'xiyang');
+  g.mode = 'sailing'; g.dockedAt = 'changle'; g.weighAnchor();
+  g.ship.state.pos = { lat: 24.2, lon: 120.9 };
+  for (let i = 0; i < 100; i++) g.update(0.05);
+  const f = g.fleet!;
+  const real = g.weatherNow;
+  g.weatherNow = { ...real, wind: { ...real.wind, speed: 52 } };
+  f.step(g, 60);
+  check('a gale breaks the fleet', f.formation!.mode === 'scattered');
+  f.step(g, 1);
+  check('the master hoves to for it', f.limitMs <= 0.7);
+  for (let i = 0; i < 400; i++) f.step(g, 60);
+  g.weatherNow = { ...real, wind: { ...real.wind, speed: 15 } };
+  f.step(g, 60);
+  check('when it moderates the ships make for the flag', f.formation!.mode === 'rejoining');
+  for (let i = 0; i < 3000; i++) f.step(g, 60);
+  check('and fall in again', f.formation!.mode === 'formed', f.formation!.mode);
+}
 process.exit(bad ? 1 : 0);

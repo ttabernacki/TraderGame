@@ -44,6 +44,8 @@ export interface Consort {
   spd: number;
   /** Seconds a signal takes to reach this ship. */
   delay: number;
+  /** Where she runs when the formation breaks, compass radians, set when it does. */
+  runHdg: number;
 }
 
 export interface Fleet {
@@ -55,6 +57,8 @@ export interface Fleet {
   t: number;
   /** The flagship's master holds her canvas to the slowest class. */
   keepTogether: boolean;
+  /** Formed, broken by weather (each ship runs off on her own), or making for her place again. */
+  mode: 'formed' | 'scattered' | 'rejoining';
 }
 
 export const CABLE = 185.2;
@@ -93,9 +97,9 @@ export function slotsFor(n: number, shape: Shape, spacing: Spacing, weatherSide:
 
 export function newFleet(flag: Flag, classes: HullClass[], shape: Shape, spacing: Spacing): Fleet {
   const slots = slotsFor(classes.length, shape, spacing);
-  const f: Fleet = { shape, spacing, consorts: [], history: [{ t: 0, f: { ...flag } }], t: 0, keepTogether: true };
+  const f: Fleet = { shape, spacing, consorts: [], history: [{ t: 0, f: { ...flag } }], t: 0, keepTogether: true, mode: 'formed' };
   classes.forEach((cls, i) => {
-    const c: Consort = { id: i, cls, slotA: slots[i].a, slotB: slots[i].b, x: 0, y: 0, hdg: flag.hdg, spd: flag.spd, delay: 0 };
+    const c: Consort = { id: i, cls, slotA: slots[i].a, slotB: slots[i].b, x: 0, y: 0, hdg: flag.hdg, spd: flag.spd, delay: 0, runHdg: 0 };
     const p = slotWorld(flag, c);
     c.x = p.x; c.y = p.y;
     c.delay = SIGNAL_BASE + SIGNAL_PER_M * Math.hypot(c.slotA, c.slotB);
@@ -134,6 +138,21 @@ export function fleetSpeedCap(f: Fleet, wanted: number): number {
 }
 
 /**
+ * The weather breaks the formation: each ship runs off before it on a heading of her own, and
+ * after it she makes for her place again at the best her hull can do. `blowingTo` is the compass
+ * direction the wind blows toward; `rand` gives numbers in [0, 1).
+ */
+export function scatter(f: Fleet, blowingTo: number, rand: () => number): void {
+  if (f.mode === 'scattered') return;
+  f.mode = 'scattered';
+  for (const c of f.consorts) c.runHdg = blowingTo + (rand() - 0.5) * (80 * Math.PI / 180);
+}
+
+export function rejoin(f: Fleet): void {
+  if (f.mode === 'scattered') f.mode = 'rejoining';
+}
+
+/**
  * `free` is the speed the flagship would make unconstrained on this point of sail;
  * a class's capability is its share of that, whatever the master is holding her to.
  */
@@ -146,7 +165,35 @@ export function stepFleet(f: Fleet, flag: Flag, dt: number, free: number = flag.
 
   // Exponential relaxation, so the correction is the same whether dt is a frame or a watch.
   const relax = 1 - Math.exp(-GAIN * dt);
+  if (f.mode === 'rejoining' && f.consorts.every((c) => slotError(flag, c) < 3 * CABLE)) f.mode = 'formed';
   for (const c of f.consorts) {
+    if (f.mode === 'scattered') {
+      // Running off before it: her own heading, at what she can carry in that sea.
+      const v = Math.max(1, free * c.cls.speedFactor * 0.7);
+      const maxTurn = (c.cls.turnRate * Math.PI / 180) * dt;
+      c.hdg += Math.max(-maxTurn, Math.min(maxTurn, norm(c.runHdg - c.hdg)));
+      c.x += Math.sin(c.hdg) * v * dt; c.y += Math.cos(c.hdg) * v * dt;
+      c.spd = v;
+      continue;
+    }
+    if (f.mode === 'rejoining') {
+      // Making for the place, flat out for her hull, and into formation when she is near it.
+      const seen0 = flagAt(f, 0);
+      const slot0 = slotWorld(seen0, c);
+      const ex0 = slot0.x - c.x, ey0 = slot0.y - c.y;
+      const d = Math.hypot(ex0, ey0);
+      if (d >= 3 * CABLE) {
+        const v = Math.max(1, free * c.cls.speedFactor);
+        const want = Math.atan2(ex0, ey0);
+        const maxTurn = (c.cls.turnRate * Math.PI / 180) * dt;
+        c.hdg += Math.max(-maxTurn, Math.min(maxTurn, norm(want - c.hdg)));
+        const step = Math.min(v * dt, d);
+        c.x += Math.sin(c.hdg) * step; c.y += Math.cos(c.hdg) * step;
+        c.spd = step / Math.max(dt, 1e-6);
+        continue;
+      }
+      // Near her place: she falls in with the rest, as below.
+    }
     const seen = flagAt(f, c.delay);
     // The signal is old; dead-reckon the flag forward along the heading it signalled.
     const sx = Math.sin(seen.hdg), sy = Math.cos(seen.hdg);

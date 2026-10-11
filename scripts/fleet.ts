@@ -4,7 +4,7 @@
  * the drawn speed of a consort relative to the flag stays under about 3 m/s; a tack ripples through forty ships
  * in under a minute; a slow class drops astern when the flagship will not wait; frame time stays tiny.
  */
-import { CABLE, fleetSpeedCap, newFleet, slotError, stepFleet, type Flag, type HullClass } from '../src/fleet/formation';
+import { CABLE, fleetSpeedCap, newFleet, rejoin, scatter, slotError, stepFleet, type Flag, type HullClass } from '../src/fleet/formation';
 
 let bad = 0;
 const check = (name: string, ok: boolean, extra = ''): void => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name} ${extra}`); if (!ok) bad++; };
@@ -89,5 +89,29 @@ for (const dt of [1 / 60, 1, 10, 60]) {
   for (let i = 0; i < N; i++) { flag.x += 0.1; stepFleet(fleet, flag, 1 / 60, 6); }
   const ms = Number(process.hrtime.bigint() - t0) / 1e6 / N;
   check('forty ships cost far under a millisecond a frame', ms < 0.2, `(${(ms * 1000).toFixed(1)} µs)`);
+}
+// A typhoon breaks the formation; afterwards the fleet makes for its places and falls in again.
+{
+  const flag: Flag = { x: 0, y: 0, hdg: 0.3, spd: 4.6 };
+  const fleet = newFleet(flag, forty(), 'crescent', 'close');
+  let seed = 3; const rnd = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+  const dt = 10;
+  const advance = (seconds: number) => { for (let t = 0; t < seconds; t += dt) { flag.x += Math.sin(flag.hdg) * flag.spd * dt; flag.y += Math.cos(flag.hdg) * flag.spd * dt; stepFleet(fleet, flag, dt, 6); } };
+  advance(1800);
+  scatter(fleet, flag.hdg + Math.PI, rnd);
+  advance(4 * 3600);
+  const spread = Math.max(...fleet.consorts.map((c) => slotError(flag, c)));
+  check('a typhoon breaks the fleet up', fleet.mode === 'scattered' && spread > 8000, `(${(spread / 1852).toFixed(1)} nm at the worst)`);
+  rejoin(fleet);
+  // The master hoves to for the stragglers.
+  flag.spd = 0.5;
+  let back = -1;
+  for (let t = 0; t < 36 * 3600; t += dt) {
+    advance(dt);
+    if (fleet.mode === 'formed' && back < 0) { back = t / 3600; break; }
+  }
+  check('after it the ships make for their places and fall in again', back > 0 && back < 30, `(${back.toFixed(1)} h)`);
+  advance(3600);
+  check('and are in place within a cable', fleet.consorts.every((c) => slotError(flag, c) < CABLE), `(${Math.max(...fleet.consorts.map((c) => slotError(flag, c))).toFixed(0)} m)`);
 }
 process.exit(bad ? 1 : 0);

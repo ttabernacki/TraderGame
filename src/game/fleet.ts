@@ -1,5 +1,5 @@
 import { clamp, cosd, NM, type LatLon } from '../core/math';
-import { newFleet, stepFleet, type Fleet, type HullClass as ClassSlot, type Shape, type Spacing } from '../fleet/formation';
+import { newFleet, rejoin, scatter, stepFleet, type Fleet, type HullClass as ClassSlot, type Shape, type Spacing } from '../fleet/formation';
 import { polarAt } from '../ship/polars';
 import { KNOTS, type DynamicState } from '../ship/physics';
 import type { Game } from './state';
@@ -102,6 +102,19 @@ export class PlayerFleet {
     }
     // The master holds her canvas a shade under the slowest hull's best.
     this.limitMs = this.keepTogether && Number.isFinite(slowest) ? Math.max(1, slowest * 0.95 * KNOTS) : Infinity;
+    // The fleet is scattered or making for her again: the master waits for it.
+    if (this.keepTogether && f.mode !== 'formed') this.limitMs = 0.6;
+    // Heavy weather breaks the order; the master waits for the fleet when it clears.
+    if (f.mode === 'formed' && wind.speed >= 45) {
+      scatter(f, ((wind.from + 180) % 360) * Math.PI / 180, () => g.rng.next());
+      g.pushAlert('The signals are lost in the weather. The fleet is breaking up, each ship running off before it.', 'grave');
+      g.logEvent('note', 'The fleet scattered in the gale, every ship running off on her own.', true);
+    } else if (f.mode === 'scattered' && wind.speed < 30) {
+      rejoin(f);
+      g.pushAlert('The weather is moderating. The fleet is making for the flagship.', 'warning');
+    } else if (f.mode === 'rejoining' && wind.speed >= 45) {
+      f.mode = 'scattered';
+    }
     this.lastHdg = hdg;
     stepFleet(f, { x: this.fx, y: this.fy, hdg, spd: groundMs }, dt, flagCap * KNOTS);
   }
