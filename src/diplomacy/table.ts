@@ -66,11 +66,11 @@ export function stepPiece(g: Game, run: PieceRun, choice: string): Outcome | nul
 
 function resolve(g: Game, run: PieceRun, o: Outcome): void {
   const now = g.clock.t;
-  for (const m of o.marks) writeMark(g.diplomacy.marks, run.polity, m, now);
+  for (const m of o.marks) { writeMark(g.diplomacy.marks, run.polity, m, now); feelMark(g, run.polity, m.tone); }
   if (o.measures) g.adjustPolity(run.polity, o.measures, o.line);
   for (const b of o.book ?? []) learn(g.diplomacy.book, run.polity, b, now);
   for (const a of o.also ?? []) {
-    for (const m of a.marks) writeMark(g.diplomacy.marks, a.polity, m, now);
+    for (const m of a.marks) { writeMark(g.diplomacy.marks, a.polity, m, now); feelMark(g, a.polity, m.tone); }
     if (a.measures) g.adjustPolity(a.polity, a.measures);
   }
   if (o.factions) {
@@ -87,6 +87,17 @@ function resolve(g: Game, run: PieceRun, o: Outcome): void {
   if (done.length > 24) {
     const drop = new Set(done.slice(0, done.length - 24).map((r) => r.id));
     g.diplomacy.pieces.runs = g.diplomacy.pieces.runs.filter((r) => !drop.has(r.id));
+  }
+}
+
+/**
+ * A mark is felt where it was made: the ports of that court think a little
+ * better or worse of you, apart from what the court's own measures say.
+ */
+function feelMark(g: Game, polityId: string, tone: number): void {
+  for (const port of POLITY_BY_ID.get(polityId)?.ports ?? []) {
+    const r = g.relationsFor(port);
+    r.local = (r.local ?? 0) + tone * 0.05;
   }
 }
 

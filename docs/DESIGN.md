@@ -159,3 +159,26 @@ southerly, and the Cape's summer south-easter. Intended shape: the volta and the
 the fast roads; up the Saharan coast, down the Angolan coast, and Melinde→India in the NE monsoon
 are slogs; outward round the Cape is easy in the austral winter and hard in summer (wide is
 better), homeward round it easy in Feb–Apr with the Natal north-easter and the Agulhas.
+
+## Set pieces, marks and the Book of Courtesies
+
+A court is met through small games (`src/diplomacy/pieces/`), each with the same
+shape: `available`, `start`, `view`, `step`, and for passages `beat`. They run
+on the road and never ask for a return: audience pieces play where you stand
+(the greeting, the meal, the hall, the case, the tray, the refusal, the
+linguist, the mat, the informer, the go-between); passages (envoy aboard,
+pilot's test, hostage's letters) are carried by the clock and put a scene to the
+captain a few weeks apart, wherever he is.
+
+A piece ends in **marks**, not numbers: named, toned entries a court keeps of
+you. Every mark is felt in three places: the court says its `echo` when it next
+sees you; its ports' local regard shifts by tone (`feelMark`); and the price of
+a House there moves (friends are let off 6% per kind mark, up to three; each
+offence adds 10%, up to two). Some marks gate later pieces: the go-between is
+offered only to a court that already has a reason to like you.
+
+What a piece teaches goes into the **Book of Courtesies** with how it was
+learned (told, seen, bought, taught, or blundered), and the epilogue prints
+what the courts said of you. Solver bots in `scripts/*.ts` hold each piece to
+its targets: a perfect bot always wins, one that reads only the view wins most,
+a random one rarely, and no single policy dominates.

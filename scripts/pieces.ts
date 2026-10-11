@@ -7,6 +7,7 @@ import { Game } from '../src/game/state';
 import { startPiece, stepPiece, runView, offered, tickPieces } from '../src/diplomacy/table';
 import { echoFor, hasMark } from '../src/diplomacy/marks';
 import { knows } from '../src/diplomacy/book';
+import { portDef } from '../src/world/ports';
 
 let fails = 0;
 function check(name: string, ok: boolean, extra = ''): void {
@@ -73,6 +74,27 @@ check('old save loads', g4.diplomacy.marks.marks.length === 0 && g4.diplomacy.pi
   check('envoy resolves at Lisbon with a mark', run.outcome?.grade === 'win' && hasMark(e.diplomacy.marks, 'malindi', 'envoy', e.clock.t), JSON.stringify(run.outcome?.grade));
   const e3 = Game.deserialize(e.serialize());
   check('envoy outcome survives a save', e3.diplomacy.pieces.runs.some((r) => r.pieceId === 'envoy' && r.outcome));
+}
+
+// A5: marks are felt. Regard, the price of a House, and what a court will offer next all move.
+{
+  const a = new Game(21);
+  const port = 'melinde';
+  check('go-between needs a friend first', !offered(a, 'malindi').some((p) => p.id === 'between'));
+  const regard0 = a.relationsFor(port).regard;
+  const cost0 = a.foundingCost(portDef(port));
+  const r1 = startPiece(a, 'bow', 'malindi', port)!;
+  stepPiece(a, r1, 'ask');
+  check('a kind mark lifts the ports\u2019 regard', a.relationsFor(port).regard > regard0, `${regard0.toFixed(3)} -> ${a.relationsFor(port).regard.toFixed(3)}`);
+  check('go-between is offered once the court has a reason', offered(a, 'malindi').some((p) => p.id === 'between'));
+  check('a House costs less to a friend', a.foundingCost(portDef(port)) < cost0, `${cost0} -> ${a.foundingCost(portDef(port))}`);
+  const b = new Game(22);
+  const cost1 = b.foundingCost(portDef(port));
+  const rb = startPiece(b, 'bow', 'malindi', port)!;
+  stepPiece(b, rb, 'stand');
+  const rb2 = startPiece(b, 'silent', 'khoi', 'sao-bras')!; void rb2;
+  b.diplomacy.marks.marks.push({ id: 90, polity: 'malindi', key: 'x', text: 'x', echo: '', t: b.clock.t, tone: -0.9 });
+  check('an offence is paid for in the price of a House', b.foundingCost(portDef(port)) > cost1, `${cost1} -> ${b.foundingCost(portDef(port))}`);
 }
 
 process.exit(fails ? 1 : 0);

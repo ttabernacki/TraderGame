@@ -72,7 +72,7 @@ export interface TradeListing extends Listing {
 import { Crown, commissionPoints, portName, type Patent } from '../progression/crown';
 import { ARCS, ARC_BY_ID, BONDS, dueBeat, type BondId } from '../progression/arcs';
 import { newRelations, type Relations } from '../diplomacy/contact';
-import { newMarks } from '../diplomacy/marks';
+import { markCounts, newMarks } from '../diplomacy/marks';
 import { startPiece, tickPieces } from '../diplomacy/table';
 import { newBook } from '../diplomacy/book';
 import { newPieces } from '../diplomacy/piece';
@@ -7847,7 +7847,12 @@ export class Game {
   /** Timber, tools, trade goods to start the chest, and a year's victuals for the men. */
   foundingCost(def: PortDef | null = this.portHere): number {
     // Ground granted at an audience is most of the price of a House.
-    return def && (def.people === 'portuguese' || this.can('ambassador') || this.relationsFor(def.id).factory) ? 320 : 640;
+    const base = def && (def.people === 'portuguese' || this.can('ambassador') || this.relationsFor(def.id).factory) ? 320 : 640;
+    // What the court thinks of you shows in what a House costs: a friend is let off a little, one who gave offence pays for it.
+    const pol = def ? polityOfPort(def.id) : null;
+    if (!pol) return base;
+    const m = markCounts(this.diplomacy.marks, pol.id, this.clock.t);
+    return Math.round(base * (1 - 0.06 * Math.min(3, m.for) + 0.1 * Math.min(2, m.against)) / 10) * 10;
   }
 
   /**

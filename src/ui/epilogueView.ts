@@ -7,6 +7,7 @@ import { originDef } from '../progression/origins';
 import { lateEndings, originEnding } from '../progression/quests';
 import { casaEnding } from '../progression/casa';
 import { portName } from '../progression/crown';
+import { POLITY_BY_ID } from '../diplomacy/polities';
 import type { Game } from '../game/state';
 import { button, card, el, kv } from './dom';
 
@@ -119,6 +120,15 @@ export class EpilogueView {
                   : [];
               })(),
             )
+          : null,
+
+        // What the courts made of you, in the words they would use.
+        g.diplomacy.marks.marks.length > 0
+          ? card('What the courts said of you',
+              el('p', { class: 'flavour' }, 'Every court you sat at kept some account of you. These are the entries.'),
+              ...[...new Set(g.diplomacy.marks.marks.map((m) => m.polity))].slice(0, 12).map((id) => el('p', {},
+                el('b', {}, POLITY_BY_ID.get(id)?.name ?? id), ' \u2014 ',
+                g.diplomacy.marks.marks.filter((m) => m.polity === id).map((m) => m.text).join(' '))))
           : null,
 
         // What the company gave you, which is the part that outlasted them.

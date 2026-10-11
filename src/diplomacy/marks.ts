@@ -59,3 +59,9 @@ export function echoFor(s: MarksState, polity: string, t: number): string | null
   const ms = marksOf(s, polity, t).filter((m) => m.echo);
   return ms.length ? ms[ms.length - 1].echo : null;
 }
+
+/** How many marks, active now, a court holds for you (tone above 0.3) and against you (below -0.5). */
+export function markCounts(s: MarksState, polity: string, t: number): { for: number; against: number } {
+  const ms = marksOf(s, polity, t);
+  return { for: ms.filter((m) => m.tone > 0.3).length, against: ms.filter((m) => m.tone < -0.5).length };
+}

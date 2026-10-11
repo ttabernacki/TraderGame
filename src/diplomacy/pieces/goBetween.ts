@@ -1,3 +1,4 @@
+import { markCounts } from '../marks';
 import type { Piece, PieceView } from '../piece';
 import { POLITY_BY_ID } from '../polities';
 
@@ -64,7 +65,9 @@ export const goBetween: Piece<S> = {
   available: (g, pol) => {
     const other = pol.feuds.find((f) => POLITY_BY_ID.has(f) && ['malindi', 'mombasa', 'calicut', 'cochin', 'kilwa'].includes(f))
       ?? null;
+    // Neither court will use a stranger it has no reason to like.
     return !!other && ['malindi', 'mombasa', 'calicut', 'cochin', 'kilwa'].includes(pol.id)
+      && markCounts(g.diplomacy.marks, pol.id, g.clock.t).for >= 1
       && !g.diplomacy.pieces.runs.some((r) => r.pieceId === 'between' && (r.polity === pol.id || (r.state as S).other === pol.id)
         && (!r.outcome || g.clock.t - r.outcome.t < 180 * 86400));
   },
