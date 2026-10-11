@@ -206,7 +206,7 @@ export class AudienceView {
 
   /** What follows a piece: the greeting and the mat lead to the custom of the court; the tray, to terms. */
   private afterPiece(o: Outcome): void {
-    if (['meal', 'hall', 'linguist', 'case', 'between', 'informer'].includes(this.run?.pieceId ?? '')) {
+    if (['meal', 'hall', 'linguist', 'case', 'between', 'informer', 'refusal'].includes(this.run?.pieceId ?? '')) {
       this.run = null;
       this.toGifts();
       return;
@@ -228,7 +228,7 @@ export class AudienceView {
   private toGifts(): void {
     const g = this.game!;
     // A court with a matter before it asks the stranger first, once each, before the presents.
-    for (const id of ['meal', 'hall', 'linguist', 'case', 'between', 'informer']) {
+    for (const id of ['meal', 'hall', 'linguist', 'case', 'between', 'informer', 'refusal']) {
       if (!this.invited.has(id) && offered(g, this.pol!.id).some((p) => p.id === id)) {
         this.invited.add(id);
         this.pending = id;
@@ -247,7 +247,10 @@ export class AudienceView {
     const pol = this.pol!;
     const id = this.pending;
     const other = POLITY_BY_ID.get(pol.feuds[0])?.name ?? 'their old enemy';
-    const t = id === 'hall'
+    const t = id === 'refusal'
+      ? { head: 'A friend asks too much', text: `${rulerName(pol, this.st)} has come to trust you, and asks a thing of you that you cannot give. A refusal can end a friendship, or deepen it.`,
+        yes: 'Compose your answer', hint: 'A reason, a consolation, and a door.', no: 'Put him off with a smile', say: 'You compose your answer.', nosay: 'You put him off with a smile, and a promise to think on it.' }
+      : id === 'hall'
       ? { head: 'The audience hall', text: `The hall of ${rulerName(pol, this.st)} is ranked and ritually pure. Where each man stands, who touches what, and which hand gives are all laws, and nobody is going to tell you what they are. An escort will say a word or two.`,
         yes: 'Order your party', hint: 'Two tries at most. A mistake is made in front of everyone.', no: 'Go in as you are', say: 'You order your party as best you can.', nosay: 'You go in as you are, and trust to luck.' }
       : id === 'linguist'

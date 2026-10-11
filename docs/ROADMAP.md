@@ -23,7 +23,7 @@ has win / half-win / fail-forward; saves round-trip.
   Envoy Aboard, Informer. Port the two toys from the design page onto the real engine.
   *Check:* bots (perfect / reader / random) win ~100% / 70-80% / ~33%; no ruling right for
   >50% of generated cases; straight split fails the tension issue.
-- [ ] **A4 Remaining six** (Meal, Linguist, Hall done): Through the Linguist, The Hall, The Refusal, Pilot's Test,
+- [ ] **A4 Remaining six** (Meal, Linguist, Hall, Refusal done): Through the Linguist, The Hall, The Refusal, Pilot's Test,
   Hostage's Letters. Passages run by dispatch on the clock. *Check:* none needs a return;
   mid-piece save/load; a skipped month at fast clock still resolves.
 - [ ] **A5 Arcs.** Per-court chains (Melinde first) with cast, marks, callbacks, epilogues,
@@ -46,4 +46,4 @@ has win / half-win / fail-forward; saves round-trip.
 
 ## Checkpoint
 
-Objective: Track A. Completed: A1, A2, A3 Silent Trade, Gift Table, The Case, Go-Between, Envoy, Informer (scripts/silent.ts, gifts.ts, case.ts, between.ts bots ok; marks, Book, piece engine, Table; scripts/pieces.ts passes). Next: A4 (Refusal, Pilot's Test, Hostage's Letters).
+Objective: Track A. Completed: A1, A2, A3 Silent Trade, Gift Table, The Case, Go-Between, Envoy, Informer (scripts/silent.ts, gifts.ts, case.ts, between.ts bots ok; marks, Book, piece engine, Table; scripts/pieces.ts passes). Next: A4 (Pilot's Test, Hostage's Letters).
