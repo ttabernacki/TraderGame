@@ -2236,8 +2236,9 @@ export class Game {
     const now = this.clock.t;
     for (const a of this.diplomacy.agreements) {
       if (a.status !== 'open') continue;
-      if (a.kind === 'envoy' && this.dockedAt === 'lisboa') {
-        this.keepAgreement(a, 'the envoy has seen the King');
+      const homePort = this.dockedAt === 'lisboa' || (this.campaign === 'xiyang' && !!this.dockedAt && portDef(this.dockedAt).people === 'han');
+      if (a.kind === 'envoy' && homePort) {
+        this.keepAgreement(a, this.campaign === 'xiyang' ? 'the envoy has seen the Emperor' : 'the envoy has seen the King');
         this.crown.standing += 20; this.crown.lifetimeStanding += 20;
         continue;
       }

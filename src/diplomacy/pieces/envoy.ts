@@ -25,7 +25,12 @@ interface S {
 const GAP_DAYS = 12;
 const BEATS = 4;
 
-function scene(n: number, faith: string, who: string): PieceScene {
+/** Where the envoy is being taken, and to whom: Lisbon and the King, or Nanjing and the Emperor. */
+const homeOf = (xiyang: boolean): { place: string; ruler: string; Ruler: string } =>
+  (xiyang ? { place: 'Nanjing', ruler: 'the Emperor', Ruler: 'The Emperor' } : { place: 'Lisbon', ruler: 'the King', Ruler: 'The King' });
+
+function scene(n: number, faith: string, who: string, xiyang: boolean): PieceScene {
+  const home = homeOf(xiyang);
   const rite = faith === 'muslim' ? 'to pray at the hours, facing Mecca' : 'to keep his own rites';
   switch (n) {
     case 0: return {
@@ -56,12 +61,12 @@ function scene(n: number, faith: string, who: string): PieceScene {
       ],
     };
     default: return {
-      title: 'What will the King make of him?',
-      text: `${who} asks what will be expected of him at Lisbon, and whether it is true the King receives men from every sea.`,
+      title: `What will ${home.ruler} make of him?`,
+      text: `${who} asks what will be expected of him at ${home.place}, and whether it is true ${home.ruler} receives men from every sea.`,
       choices: [
         { id: '3:truth', label: 'Tell him what you know, plainly', detail: 'He will be sobered, and he will know whom to trust.' },
         { id: '3:coach', label: 'Teach him the court’s manners on the way', detail: 'He learns, and the weeks pass quickly.' },
-        { id: '3:lie', label: 'Tell him the King will give him whatever he asks', detail: 'He will be happier until Lisbon.' },
+        { id: '3:lie', label: `Tell him ${home.ruler} will give him whatever he asks`, detail: `He will be happier until ${home.place}.` },
       ],
     };
   }
@@ -82,6 +87,7 @@ export const envoy: Piece<S> = {
   start: () => ({ since: 0, n: 0, pending: null, care: 0, curiosity: 0, trust: 0, lied: false }),
   view: () => ({ title: 'The envoy aboard', lines: [], choices: [] }),
   beat: ({ g, polity }, s, days) => {
+    const home = homeOf(g.campaign === 'xiyang');
     const ag = g.diplomacy.agreements.find((a) => a.kind === 'envoy' && a.polity === polity.id && a.status !== 'broken'
       && g.clock.t - a.made < 400 * 86400);
     const open = g.diplomacy.agreements.some((a) => a.kind === 'envoy' && a.polity === polity.id && a.status === 'open');
@@ -90,7 +96,7 @@ export const envoy: Piece<S> = {
       const total = s.care + s.curiosity + s.trust;
       if (!kept) {
         return { state: s, outcome: {
-          grade: 'fail', line: 'The envoy never saw the King, and went home with his grievance',
+          grade: 'fail', line: `The envoy never saw ${home.ruler}, and went home with his grievance`,
           marks: [{ key: 'envoy', text: 'You promised to carry their envoy, and did not.', echo: 'They remember the envoy you did not carry.', tone: -0.8 }],
           measures: { trust: -0.1 },
         } };
@@ -98,16 +104,16 @@ export const envoy: Piece<S> = {
       const lied = s.lied;
       return { state: s, outcome: total >= 5 && !lied ? {
         grade: 'win', line: 'The envoy comes home to say the Portuguese are a people one can deal with',
-        marks: [{ key: 'envoy', text: 'Your envoy came home and spoke well of you.', echo: 'Their envoy came home from Lisbon with stories, and they are told at every table.', tone: 0.9 }],
+        marks: [{ key: 'envoy', text: 'Your envoy came home and spoke well of you.', echo: `Their envoy came home from ${home.place} with stories, and they are told at every table.`, tone: 0.9 }],
         measures: { trust: 0.12, interest: 0.06 },
-        book: [{ kind: 'person', tag: 'envoy-friend', how: 'taught', text: 'A man of this court has seen Lisbon, and speaks for you.' }],
+        book: [{ kind: 'person', tag: 'envoy-friend', how: 'taught', text: `A man of this court has seen ${home.place}, and speaks for you.` }],
       } : lied ? {
         grade: 'fail', line: 'The envoy found out what you had told him was not so',
-        marks: [{ key: 'envoy', text: 'You told their envoy a comfortable lie, and he found out.', echo: 'Their envoy learned at Lisbon what you had promised him was not so.', tone: -0.7 }],
+        marks: [{ key: 'envoy', text: 'You told their envoy a comfortable lie, and he found out.', echo: `Their envoy learned at ${home.place} what you had promised him was not so.`, tone: -0.7 }],
         measures: { trust: -0.1 },
       } : {
         grade: 'half', line: 'The envoy comes home with a mixed report',
-        marks: [{ key: 'envoy', text: 'Your envoy came home, and his report was mixed.', echo: 'Their envoy has been to Lisbon and says little of the voyage.', tone: 0.1 }],
+        marks: [{ key: 'envoy', text: 'Your envoy came home, and his report was mixed.', echo: `Their envoy has been to ${home.place} and says little of the voyage.`, tone: 0.1 }],
         measures: { trust: 0.03 },
       } };
     }
@@ -115,7 +121,7 @@ export const envoy: Piece<S> = {
     if (s.pending !== null || s.n >= BEATS || s.since < GAP_DAYS) return { state: s };
     s.pending = s.n;
     const who = `The envoy of ${polity.name}`;
-    return { state: s, scene: scene(s.n, people(polity.people).faith, who) };
+    return { state: s, scene: scene(s.n, people(polity.people).faith, who, g.campaign === 'xiyang') };
   },
   step: (_ctx, s0, choice) => {
     const s: S = { ...s0 };

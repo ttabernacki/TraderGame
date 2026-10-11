@@ -1,6 +1,7 @@
 import type { Game } from '../../game/state';
 import type { SeaEvent } from '../../game/seaEvents';
 import { POLITY_BY_ID } from '../../diplomacy/polities';
+import { startPiece } from '../../diplomacy/table';
 
 /**
  * The Emperor's orders. A voyage of the Western Ocean is not a trading
@@ -148,6 +149,19 @@ export function courtAccepts(g: Game, polityId: string): boolean {
   return st.trust >= 0.2 && pol.ports.some((p) => g.relations.get(p)?.mayTrade);
 }
 
+/** A court that has taken the calendar sends a man to Nanjing, and the fleet carries him. */
+function takeEnvoy(g: Game, polityId: string): void {
+  const pol = POLITY_BY_ID.get(polityId);
+  if (!pol || g.diplomacy.agreements.some((a) => a.kind === 'envoy' && a.polity === polityId && a.status === 'open')) return;
+  const now = g.clock.t;
+  g.diplomacy.agreements.push({
+    id: g.diplomacy.nextId++, polity: polityId, kind: 'envoy',
+    text: `Carry the envoy of ${pol.name} to Nanjing`, made: now, due: now + 2 * 365 * 86400, status: 'open',
+  });
+  startPiece(g, 'envoy', polityId, pol.seat);
+  g.logEvent('contact', `An envoy of ${pol.name} comes aboard to be carried to the Emperor.`, true);
+}
+
 export function evaluateImperial(g: Game): void {
   const s = g.imperial;
   const v = s && voyageOf(s);
@@ -157,6 +171,7 @@ export function evaluateImperial(g: Game): void {
     if (o.kind === 'accept' && courtAccepts(g, o.target)) {
       s.done[o.id] = true;
       g.logEvent('crown', `${o.text}. The Admiral will want it written down.`, true);
+      takeEnvoy(g, o.target);
     }
   }
 }

@@ -22,6 +22,17 @@ for (const o of voyageOf(s)!.objectives.filter((x) => x.kind === 'accept')) {
 }
 evaluateImperial(g);
 check('the courts that accept are written down', voyageOf(s)!.objectives.filter((o) => o.kind === 'accept').every((o) => s.done[o.id]));
+{
+  const accepted = voyageOf(s)!.objectives.filter((o) => o.kind === 'accept').length;
+  const envoys = g.diplomacy.agreements.filter((a) => a.kind === 'envoy' && a.status === 'open');
+  check('each court that accepts sends an envoy aboard', envoys.length === accepted, `(${envoys.length} of ${accepted})`);
+  check('and a piece is carrying each one', g.diplomacy.pieces.runs.filter((r) => r.pieceId === 'envoy' && !r.outcome).length === accepted);
+  const stand = g.crown.standing;
+  g.dockedAt = 'changle';
+  g.checkAgreements(null);
+  check('at Nanjing\u2019s port the envoys are delivered', g.diplomacy.agreements.filter((a) => a.kind === 'envoy' && a.status === 'kept').length === accepted && g.crown.standing > stand);
+  g.dockedAt = null;
+}
 check('the report waits on the pirate', !ordersDone(s) && reportVoyage(g) === null);
 imperialArrival(g, 'palembang');
 check('Palembang puts the headman’s warning to the captain', g.pendingEvent?.id === 'imperial:chen_zuyi');
@@ -30,9 +41,9 @@ g.pendingEvent = null;
 check('the pirate is dealt with', !!s.done.chen_zuyi && ordersDone(s));
 const gold0 = g.crown.gold, stand0 = g.crown.standing;
 const text = reportVoyage(g);
-check('reporting pays the captain and closes the voyage', !!text && g.crown.gold > gold0 && g.crown.standing > stand0 && s.completed.includes(1) && s.voyage === 0);
+check('reporting pays the captain and closes the voyage', !!text && g.crown.gold > gold0 && g.crown.standing > stand0 && s.completed.includes(1) && s.voyage === 2);
 const h = Game.deserialize(g.serialize());
-check('the orders survive a save', h.imperial?.completed.includes(1) === true && h.imperial?.voyage === 0);
+check('the orders survive a save', h.imperial?.completed.includes(1) === true && h.imperial?.voyage === 2);
 // All seven voyages, in order: every court the orders name is a court of this world, every deed has a scene.
 {
   const w = new Game(9, 'xiyang');
