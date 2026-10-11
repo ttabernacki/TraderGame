@@ -206,7 +206,7 @@ export class AudienceView {
 
   /** What follows a piece: the greeting and the mat lead to the custom of the court; the tray, to terms. */
   private afterPiece(o: Outcome): void {
-    if (['case', 'between', 'informer'].includes(this.run?.pieceId ?? '')) {
+    if (['meal', 'case', 'between', 'informer'].includes(this.run?.pieceId ?? '')) {
       this.run = null;
       this.toGifts();
       return;
@@ -228,7 +228,7 @@ export class AudienceView {
   private toGifts(): void {
     const g = this.game!;
     // A court with a matter before it asks the stranger first, once each, before the presents.
-    for (const id of ['case', 'between', 'informer']) {
+    for (const id of ['meal', 'case', 'between', 'informer']) {
       if (!this.invited.has(id) && offered(g, this.pol!.id).some((p) => p.id === id)) {
         this.invited.add(id);
         this.pending = id;
@@ -247,7 +247,10 @@ export class AudienceView {
     const pol = this.pol!;
     const id = this.pending;
     const other = POLITY_BY_ID.get(pol.feuds[0])?.name ?? 'their old enemy';
-    const t = id === 'informer'
+    const t = id === 'meal'
+      ? { head: 'A meal is laid', text: `Before business, ${rulerName(pol, this.st)} has a meal laid, as the custom is. Dates and water are brought before a word is said.`,
+        yes: 'Sit down to it', hint: 'Watch what he does, and do the same.', no: 'Excuse yourself', say: 'You sit down.', nosay: 'You excuse yourself: there is business first.' }
+      : id === 'informer'
       ? { head: 'A word in the dark', text: 'A clerk of the court finds you after the audience. For a price he will say that the Portuguese are not the only foreigners here with friends in the palace.',
         yes: 'Hear him, and watch', hint: 'Four nights. Naming the wrong man ruins him.', no: 'Send him away', say: 'You hear him out.', nosay: 'You send him away. You are not here to spy on a court that has received you.' }
       : id === 'between'
