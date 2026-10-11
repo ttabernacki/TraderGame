@@ -189,3 +189,16 @@ export const XIYANG_PORTS: PortDef[] = [
 
 /** Galle belongs to the king of Kotte. */
 export const XIYANG_EXTRA_PORTS: Record<string, string[]> = { kotte: ['galle'] };
+
+/** The ships that sail with the player's own at the start: the admiral's, and the fleet's train. */
+export const XIYANG_FLEET: { hullId: string; name: string }[] = [
+  { hullId: 'baochuan', name: 'Taiping' },
+  { hullId: 'zhanchuan', name: 'Zhenyuan' },
+  { hullId: 'zhanchuan', name: 'Anhai' },
+  { hullId: 'liangchuan', name: 'Fuhai' },
+  { hullId: 'machuan', name: 'Yongan' },
+  { hullId: 'shuichuan', name: 'Qingquan' },
+  { hullId: 'zuochuan', name: 'Pingjiang' },
+  { hullId: 'zhanchuan', name: 'Dingyuan' },
+  { hullId: 'liangchuan', name: 'Guangji' },
+];

@@ -52,7 +52,7 @@ export const CAMPAIGNS: CampaignDef[] = [
       + 'What is unknown is whether forty kings will take the Emperor’s calendar, and whether the court will still pay when you come home.',
     start: { year: 1405, month: 12, day: 20 },
     port: 'changle',
-    hullId: 'nau',
+    hullId: 'zuochuan',
     shipName: 'Qinghe',
     opening: 'The Qinghe lies in the Taiping anchorage off Changle among three hundred sail, stored and watered, waiting on the monsoon.',
     inDevelopment: true,

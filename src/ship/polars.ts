@@ -1,4 +1,6 @@
 import { clamp } from '../core/math';
+import { IS_XIYANG } from '../campaigns/active';
+import { XIYANG_POLARS } from '../campaigns/xiyang/polars';
 
 /**
  * What every hull in the game will actually do, on every point of sail, in
@@ -97,6 +99,8 @@ export const POLARS: Record<string, number[][]> = {
     [0, 0, 0, 0, 0, 0, 2.54, 5.43, 7.49, 8.87, 9.71, 10.23, 10.58, 10.7, 10.55, 10.4, 10.48, 10.71, 10.83],
   ],
 };
+
+if (IS_XIYANG) Object.assign(POLARS, XIYANG_POLARS);
 
 /**
  * Best speed this hull will make with the wind `beta` degrees off her bow,

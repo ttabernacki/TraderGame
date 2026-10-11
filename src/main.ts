@@ -1,4 +1,4 @@
-import { ACTIVE_CAMPAIGN } from './campaigns/active';
+import { ACTIVE_CAMPAIGN, keepCampaign } from './campaigns/active';
 import { DiscoveryBanner } from './ui/discoveryBanner';
 import './style.css';
 
@@ -215,6 +215,17 @@ function startNew(difficulty: Difficulty = 'watch', origin: OriginId = 'segundo'
   if (renderer) renderer.cameraMode = 'chase';
   // The Carreira opens at the King's court; the Ming fleet opens at the quay of its own port.
   ui.setMode(ACTIVE_CAMPAIGN === 'xiyang' ? 'port' : 'court');
+  // For looking at the sea from somewhere in particular: ?place=lat,lon puts her there, under way.
+  try {
+    const at = new URLSearchParams(globalThis.location?.search ?? '').get('place')?.split(',').map(Number);
+    if (at && at.length === 2 && at.every(Number.isFinite)) {
+      game.ship.state.pos = { lat: at[0], lon: at[1] };
+      game.dockedAt = null;
+      game.mode = 'sailing';
+      game.ship.state.surge = 3;
+      ui.setMode('sailing');
+    }
+  } catch { /* no query string */ }
   lastThreads = -1; lastMilestones = -1; lastDock = undefined;
   lastCheckpointT = game.clock.t;
 }
@@ -238,6 +249,19 @@ async function continueSaved(): Promise<void> {
  * has the file or the other copy.
  */
 function resumeFrom(json: string): void {
+  // A voyage belongs to the world it was sailed in, and the world is read once at load: a
+  // voyage from the other campaign is kept aside and the page reloaded into the right one.
+  try {
+    const want = (JSON.parse(json).campaign as string | undefined) ?? 'carreira';
+    if (want !== ACTIVE_CAMPAIGN && (want === 'xiyang' || want === 'carreira')) {
+      globalThis.sessionStorage?.setItem('carreira.resume', json);
+      keepCampaign(want);
+      const u = new URL(globalThis.location.href);
+      u.searchParams.set('campaign', want);
+      globalThis.location.href = u.toString();
+      return;
+    }
+  } catch { /* an unreadable save is dealt with below */ }
   let loaded: Game;
   try {
     loaded = Game.deserialize(json);
@@ -499,6 +523,7 @@ function buildFrame(g: Game): RenderFrame {
 
   const other = g.encounter;
   return {
+    fleet: g.fleet && !g.dockedAt ? g.fleet.poses(g) : [],
     stranger: other
       ? {
         hullId: other.hullId,
@@ -626,6 +651,11 @@ if (import.meta.env.DEV) {
 Ui.rescueOldSave();
 
 ui.showTitle();
+// A voyage kept aside while the page reloaded into its own world.
+try {
+  const stash = globalThis.sessionStorage?.getItem('carreira.resume');
+  if (stash) { globalThis.sessionStorage.removeItem('carreira.resume'); resumeFrom(stash); }
+} catch { /* nothing kept aside */ }
 
 // A page that was reloaded in the middle of a voyage — a new version of the
 // game published under the player, the phone dropping the tab and bringing

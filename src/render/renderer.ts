@@ -67,6 +67,12 @@ function spring(
   return value + nextRate * dt;
 }
 
+interface OtherSlot {
+  mesh: ShipMesh | null;
+  hullId: string | null;
+  pose: { x: number; z: number; heading: number; ok: boolean };
+}
+
 export interface RenderFrame {
   pos: LatLon;
   heading: number;
@@ -109,6 +115,8 @@ export interface RenderFrame {
    * off the sea instead of off a panel.
    */
   stranger: { hullId: string; pos: LatLon; heading: number; beta: number } | null;
+  /** The ships sailing with her, when there are any. */
+  fleet?: { hullId: string; pos: LatLon; heading: number; beta: number }[];
 }
 
 /**
@@ -160,6 +168,8 @@ export class Renderer {
   ship: ShipMesh;
   /** The strange sail's hull, built the first time one is raised. */
   private stranger: ShipMesh | null = null;
+  /** The ships of the player's fleet, drawn as full models while they are near. */
+  private fleetSlots: OtherSlot[] = [];
   private shipLight = { night: 0, overcast: 0 };
   private strangerHullId: string | null = null;
 
@@ -355,16 +365,52 @@ export class Renderer {
     this.drawOther(f, f.stranger);
   }
 
+  /** The consorts: the nearest few as full models, the rest not drawn at all. */
+  private drawFleet(f: RenderFrame): void {
+    const poses = f.fleet ?? [];
+    const mPerDegLat = NM * 60;
+    const mPerDegLon = mPerDegLat * Math.max(cosd(f.pos.lat), 1e-6);
+    const MAX_DRAWN = 14;
+    const MAX_RANGE = 9000;
+    const order = poses
+      .map((p, i) => ({ p, i, d: Math.hypot(wrap180(p.pos.lon - f.pos.lon) * mPerDegLon, (p.pos.lat - f.pos.lat) * mPerDegLat) }))
+      .filter((x) => x.d < MAX_RANGE)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, MAX_DRAWN);
+    const drawn = new Set(order.map((x) => x.i));
+    while (this.fleetSlots.length < poses.length) this.fleetSlots.push({ mesh: null, hullId: null, pose: { x: 0, z: 0, heading: 0, ok: false } });
+    for (let i = 0; i < this.fleetSlots.length; i++) {
+      const slot = this.fleetSlots[i];
+      if (!drawn.has(i)) {
+        if (slot.mesh) slot.mesh.group.visible = false;
+        slot.pose.ok = false;
+        continue;
+      }
+      this.placeOther(slot, f, poses[i]);
+    }
+  }
+
   /** One other ship on the water, whoever she belongs to. */
   private drawOther(
     f: RenderFrame,
     s: { hullId: string; pos: LatLon; heading: number; beta: number } | null,
   ): void {
-    const held = this.stranger;
-    const heldId = this.strangerHullId;
+    const slot: OtherSlot = { mesh: this.stranger, hullId: this.strangerHullId, pose: this.otherPose };
+    this.placeOther(slot, f, s);
+    this.stranger = slot.mesh;
+    this.strangerHullId = slot.hullId;
+  }
+
+  private placeOther(
+    slot: OtherSlot,
+    f: RenderFrame,
+    s: { hullId: string; pos: LatLon; heading: number; beta: number } | null,
+  ): void {
+    const held = slot.mesh;
+    const heldId = slot.hullId;
     if (!s) {
       if (held) held.group.visible = false;
-      this.otherPose.ok = false;
+      slot.pose.ok = false;
       return;
     }
     let mesh = held;
@@ -375,8 +421,8 @@ export class Renderer {
       }
       mesh = new ShipMesh(hullClass(s.hullId));
       this.scene.add(mesh.group);
-      this.stranger = mesh;
-      this.strangerHullId = s.hullId;
+      slot.mesh = mesh;
+      slot.hullId = s.hullId;
     }
     if (!mesh) return;
     mesh.group.visible = true;
@@ -390,7 +436,7 @@ export class Renderer {
     // no faster than a ship can be seen to turn. At the fast clock rates the
     // simulation moves her in jumps and swings her head between steps; drawn
     // raw, that was a ship flicking about the horizon.
-    const o = this.otherPose;
+    const o = slot.pose;
     const fresh = !o.ok || Math.hypot(tx - o.x, tz - o.z) > 4000;
     const k = fresh ? 1 : 1 - Math.exp(-this.lastRealDt / 0.35);
     o.x += (tx - o.x) * k;
@@ -715,6 +761,7 @@ export class Renderer {
     this.ship.setHeel(this.drawnHeel + this.shipRoll, this.shipPitch);
 
     this.drawStranger(f);
+    this.drawFleet(f);
 
     this.ship.update({
       sails: f.sails,

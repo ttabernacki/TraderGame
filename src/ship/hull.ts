@@ -1,3 +1,6 @@
+import { IS_XIYANG } from '../campaigns/active';
+import { XIYANG_HULLS } from '../campaigns/xiyang/hulls';
+
 export type RigKind = 'lateen' | 'square';
 
 export interface MastSpec {
@@ -57,6 +60,8 @@ export interface HullClass {
   fouling?: number;
   /** Divides the damage a sea does her, on top of strength: a hull built to take it. */
   toughness?: number;
+  /** A ship of the Ming fleets: on the slip only in the Xiyang campaign, and not at all in the Carreira. */
+  xiyang?: boolean;
 }
 
 const lateen = (name: string, area: number, ceHeight: number, station: number): MastSpec =>
@@ -158,6 +163,11 @@ export const HULL_CLASSES: HullClass[] = [
     castles: 0.45, gmScale: 1.05, paint: 'ochre', device: 'plain',
   },
 ];
+
+if (IS_XIYANG) HULL_CLASSES.push(...XIYANG_HULLS);
+
+/** The hulls that exist in this world. */
+export const HULLS_IN_PLAY: HullClass[] = HULL_CLASSES.filter((h) => !!h.xiyang === IS_XIYANG);
 
 export const HULL_BY_ID = new Map(HULL_CLASSES.map((h) => [h.id, h]));
 

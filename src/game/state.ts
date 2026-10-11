@@ -31,7 +31,7 @@ import { LEAD_REACH_M, depthAt, isLand, nearestShore } from '../world/landmass';
 import { PORTS, anchorageOf, portDef, portsNear, type PortDef } from '../world/ports';
 import { people } from '../world/peoples';
 import { Ship } from '../ship/ship';
-import { HULL_CLASSES, hullClass } from '../ship/hull';
+import { HULLS_IN_PLAY, hullClass } from '../ship/hull';
 import { UPGRADE_BY_ID, movesWithTheFlag, tierCap } from '../ship/upgrades';
 import {
   KNOTS, prudentCanvas, stepShip, type Environment, type ShipTuning, type StepResult,
@@ -104,6 +104,8 @@ import {
 import { polarAt } from '../ship/polars';
 import { newTutorial, stepTutorial, type TutorialState, type TutorialStep } from './tutorial';
 import { campaignDef, type CampaignId } from './campaign';
+import { PlayerFleet, type FleetSave } from './fleet';
+import { XIYANG_FLEET } from '../campaigns/xiyang/places';
 import { rollOfficerEvent } from './officerEvents';
 import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty';
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
@@ -1034,6 +1036,7 @@ export class Game {
     this.ship = new Ship(cd.shipName, cd.hullId, start, 200);
     this.crew = newCrew(hullClass(cd.hullId).crewFull, this.rng);
     this.nav = new Navigator(start, seed);
+    if (campaign === 'xiyang') this.fleet = new PlayerFleet(XIYANG_FLEET.map((f, i) => ({ id: i + 1, ...f })));
     this.wireNavigator();
     this.chart = new Chart();
     this.crown = new Crown(seed);
@@ -1531,7 +1534,7 @@ export class Game {
       this.finance.regard(d.house, -3, 0.2);
     }
 
-    const cheapest = HULL_CLASSES.reduce((a, b) => (a.cost <= b.cost ? a : b));
+    const cheapest = HULLS_IN_PLAY.reduce((a, b) => (a.cost <= b.cost ? a : b));
     const old = this.ship;
     const next = new Ship(old.name, cheapest.id, old.state.pos, old.state.heading);
     let carried = 0;
@@ -2069,6 +2072,9 @@ export class Game {
   // -------------------------------------------------------------------------
 
   diplomacy: DiplomacyState = newDiplomacy();
+
+  /** The ships that sail with the flagship; only the Xiyang campaign has one. See game/fleet. */
+  fleet: PlayerFleet | null = null;
 
   polityState(id: string) {
     let st = this.diplomacy.polities[id];
@@ -3101,10 +3107,13 @@ export class Game {
   private runPhysics(dt: number): StepResult {
     const sail = this.skillSail;
     if (this.ship.skillSail !== sail) { this.ship.skillSail = sail; this.ship.refreshDerived(); }
-    return stepShip(
+    const result = stepShip(
       this.ship.state, this.ship.hull, this.ship.derived,
       this.buildEnvironment(), this.tuning, dt,
     );
+    // The master keeping the fleet together holds her canvas to the slowest hull.
+    this.fleet?.hold(this.ship.state, result.groundKnots * KNOTS);
+    return result;
   }
 
   /**
@@ -3150,6 +3159,7 @@ export class Game {
     // world produced one sighting a month instead of one a week.
     this.checkForSails(simDt / 86400);
     this.updateEncounter(simDt);
+    this.fleet?.step(this, simDt);
     this.rollIncidents(simDt);
     this.expireAlerts();
   }
@@ -9400,6 +9410,7 @@ export class Game {
   serialize(): string {
     return JSON.stringify({
       version: 1,
+      campaign: this.campaign,
       seed: this.seed,
       careerId: this.careerId,
       t: this.clock.t,
@@ -9507,6 +9518,7 @@ export class Game {
       galeRecord: this.galeRecord,
       route: this.route,
       diplomacy: this.diplomacy,
+      fleet: this.fleet?.serialize() ?? null,
       trade: this.trade,
       chronicle: this.chronicle,
       quests: this.quests,
@@ -9535,7 +9547,7 @@ export class Game {
 
   static deserialize(json: string): Game {
     const d = JSON.parse(json);
-    const g = new Game(d.seed);
+    const g = new Game(d.seed, d.campaign ?? 'carreira');
     // A save from before careers had ids keeps a fresh one from here on.
     if (typeof d.careerId === 'string' && d.careerId) g.careerId = d.careerId;
     g.clock.t = d.t;
@@ -9647,6 +9659,7 @@ export class Game {
     g.soundedGround = d.soundedGround ?? [];
     g.quests = d.quests ?? [];
     g.diplomacy = d.diplomacy ?? newDiplomacy();
+    g.fleet = d.fleet ? PlayerFleet.deserialize(d.fleet as FleetSave) : null;
     // Careers from before the set pieces have no marks, Book or runs yet.
     g.diplomacy.marks ??= newMarks();
     g.diplomacy.book ??= newBook();

@@ -1,7 +1,7 @@
 import { clamp, haversine, NM, type LatLon } from '../core/math';
 import { Rng } from '../core/rng';
 import { PORTS } from '../world/ports';
-import { HULL_CLASSES } from '../ship/hull';
+import { HULLS_IN_PLAY } from '../ship/hull';
 
 export interface Title {
   id: string;
@@ -672,7 +672,7 @@ export class Crown {
 
   /** Hull classes the Crown will grant or sell at your present standing. */
   availableHulls() {
-    return HULL_CLASSES.filter((h) => h.standing <= this.lifetimeStanding);
+    return HULLS_IN_PLAY.filter((h) => h.standing <= this.lifetimeStanding);
   }
 
   /** Sum of everything the Crown could still pay you for. */
