@@ -4708,6 +4708,8 @@ export class Game {
    * theory about.
    */
   private rollArcBeat(): SeaEvent | null {
+    // The officers' stories are the Carreira's: Portuguese men with Portuguese lives. The Ming company has its own, still to be written.
+    if (this.campaign === 'xiyang') return null;
     for (const o of this.crew.officers) {
       if (!o.arc || !o.alive) continue;
       const served = (this.clock.t - (o.joined ?? this.startT)) / 86400;

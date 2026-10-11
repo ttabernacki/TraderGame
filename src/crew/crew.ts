@@ -1,3 +1,4 @@
+import { IS_XIYANG } from '../campaigns/active';
 import { clamp, lerp, smoothstep } from '../core/math';
 import { Rng } from '../core/rng';
 import type { SkillId } from './skills';
@@ -117,7 +118,12 @@ const SURNAMES = [
   'de Sintra', 'Gomes', 'de Mendonça', 'Pacheco', 'de Abreu', 'Homem',
 ];
 
+// The Ming fleet's company: family name first, as they wrote it.
+const MING_FAMILY = ['Wang', 'Li', 'Zhang', 'Liu', 'Chen', 'Yang', 'Huang', 'Zhao', 'Zhou', 'Wu', 'Xu', 'Sun', 'Ma', 'Hong', 'Zhu', 'Lin', 'He', 'Gao', 'Luo', 'Zheng'];
+const MING_GIVEN = ['Bao', 'Shan', 'Fu', 'Hai', 'Ming', 'Qing', 'Wen', 'Zhong', 'Yong', 'Tai', 'Guang', 'Jin', 'Cheng', 'De', 'Lan', 'Ren', 'An', 'Kui', 'Rong', 'Chun'];
+
 export function randomName(rng: Rng): string {
+  if (IS_XIYANG) return `${rng.pick(MING_FAMILY)} ${rng.pick(MING_GIVEN)}`;
   return `${rng.pick(FIRST_NAMES)} ${rng.pick(SURNAMES)}`;
 }
 

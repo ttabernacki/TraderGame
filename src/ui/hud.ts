@@ -1,3 +1,4 @@
+import { voyageOf } from '../campaigns/xiyang/imperial';
 import { angleDelta, bearingTo, clamp, compassPoint, formatBearing, wrap360 } from '../core/math';
 import { ACT_CHARGE } from '../progression/chronicle';
 import { describeStranger, strangerIntentText } from '../game/encounter';
@@ -750,6 +751,17 @@ export class Hud {
       } else {
         lines.push({ k: 'The King', v: 'Discharged. Bring her home.' });
       }
+    }
+
+    // The Emperor's orders: the next court still to bring in, or the report to make.
+    const imp = g.imperial;
+    const impVoyage = imp && voyageOf(imp);
+    if (imp && impVoyage) {
+      const next = impVoyage.objectives.find((o) => !imp.done[o.id]);
+      lines.push({
+        k: 'The Emperor',
+        v: next ? next.text : `Orders done: report at ${g.fleet ? 'a Ming port' : 'court'}.`,
+      });
     }
 
     if (g.homeRun) {

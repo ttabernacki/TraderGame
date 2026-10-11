@@ -12,6 +12,11 @@ const WORDS: [RegExp, string][] = [
   [/\brenown\b/g, 'favour'],
   [/\bRenown\b/g, 'Favour'],
   [/\bEscudeiro\b/g, 'Captain'],
+  [/\bPortuguese factory\b/g, 'Ming station'],
+  [/\bA padr\u00e3o of yours\b/g, 'A stele of yours'],
+  [/\bpadr\u00f5es\b/g, 'steles'],
+  [/\bpadr\u00e3o\b/g, 'stele'],
+  [/The Casa\u2019s word/g, 'The pilots\u2019 word'],
 ];
 
 function skinNode(n: Node): void {
