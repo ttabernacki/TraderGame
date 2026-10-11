@@ -12,25 +12,25 @@ import type { Custom, FactionDef, PolityDef } from '../../diplomacy/polities';
 
 export const XIYANG_PEOPLES: People[] = [
   {
-    id: 'han', name: 'The Ming', language: 'Hanyu', faith: 'confucian',
+    id: 'han', name: 'Ming Chinese', language: 'Hanyu', faith: 'confucian',
     sophistication: 0.97, disposition: 0.7, rivalNetwork: false,
     gifts: { loves: ['ouro', 'pedras', 'marfim', 'perolas'], scorns: ['contas', 'manilhas'] },
     blurb: 'Home: the Son of Heaven, the dockyards of Longjiang, and a court that counts every gift given and every one received.',
   },
   {
-    id: 'cham', name: 'The Cham', language: 'Cham', faith: 'hindu',
+    id: 'cham', name: 'Cham', language: 'Cham', faith: 'hindu',
     sophistication: 0.65, disposition: 0.25, rivalNetwork: false,
     gifts: { loves: ['seda', 'porcelana', 'ferramenta'], scorns: ['contas'] },
     blurb: 'Seafarers of the long Vietnamese coast, pressed between Dai Viet and the Khmer, who send tribute to Nanjing to be left alone.',
   },
   {
-    id: 'siamese', name: 'The Siamese', language: 'Thai', faith: 'buddhist',
+    id: 'siamese', name: 'Siamese', language: 'Thai', faith: 'buddhist',
     sophistication: 0.75, disposition: 0.2, rivalNetwork: false,
     gifts: { loves: ['seda', 'porcelana', 'ouro'], scorns: ['contas'] },
     blurb: 'Ayutthaya, a river city of a hundred temples, whose kings send tribute to the Ming and take the Ming’s side against Malacca.',
   },
   {
-    id: 'javanese', name: 'The Javanese', language: 'Javanese', faith: 'hindu',
+    id: 'javanese', name: 'Javanese', language: 'Javanese', faith: 'hindu',
     sophistication: 0.85, disposition: -0.05, rivalNetwork: false,
     gifts: { loves: ['porcelana', 'seda', 'ouro'], scorns: ['contas', 'ferramenta'] },
     blurb: 'The heirs of Majapahit, whose western and eastern kings are at war with each other and will each want you for an ally.',
@@ -202,3 +202,34 @@ export const XIYANG_FLEET: { hullId: string; name: string }[] = [
   { hullId: 'zhanchuan', name: 'Dingyuan' },
   { hullId: 'liangchuan', name: 'Guangji' },
 ];
+
+/**
+ * How the Ming fleets knew the places the Portuguese map already has. The
+ * ports keep their ids; only what the captain reads changes.
+ */
+export const XIYANG_PORT_NAMES: Record<string, [name: string, modern: string]> = {
+  calecute: ['Guli', 'Calicut'],
+  cochim: ['Kezhi', 'Cochin'],
+  coulao: ['Xiaogelan', 'Quilon'],
+  columbo: ['Kolomobu', 'Colombo'],
+  malaca: ['Manlajia', 'Melaka'],
+  ormuz: ['Hulumosi', 'Hormuz'],
+  adem: ['Adan', 'Aden'],
+  melinde: ['Malin', 'Malindi'],
+  magadoxo: ['Mugudushu', 'Mogadishu'],
+  mombaca: ['Mombasa', 'Mombasa'],
+  dofar: ['Zufaer', 'Dhofar'],
+  mascate: ['Mosikate', 'Muscat'],
+  cananor: ['Kananur', 'Cannanore'],
+};
+
+export const XIYANG_POLITY_NAMES: Record<string, string> = {
+  calicut: 'The Zamorin of Guli',
+  cochin: 'The Raja of Kezhi',
+  kotte: 'The Kingdom of Kotte (the cinnamon island)',
+  malacca: 'The Sultanate of Manlajia',
+  hormuz: 'The Kingdom of Hulumosi',
+  aden: 'The Sultanate of Adan',
+  malindi: 'The Sultanate of Malin',
+  mogadishu: 'The Sultanate of Mugudushu',
+};

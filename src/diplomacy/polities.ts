@@ -331,10 +331,11 @@ export const POLITIES: PolityDef[] = [
 ];
 
 import { IS_XIYANG } from '../campaigns/active';
-import { XIYANG_EXTRA_PORTS, XIYANG_POLITIES } from '../campaigns/xiyang/places';
+import { XIYANG_EXTRA_PORTS, XIYANG_POLITIES, XIYANG_POLITY_NAMES } from '../campaigns/xiyang/places';
 
 if (IS_XIYANG) {
   POLITIES.push(...XIYANG_POLITIES);
+  for (const [id, name] of Object.entries(XIYANG_POLITY_NAMES)) { const p = POLITIES.find((x) => x.id === id); if (p) p.name = name; }
   for (const [id, ports] of Object.entries(XIYANG_EXTRA_PORTS)) POLITIES.find((p) => p.id === id)?.ports.push(...ports);
 }
 

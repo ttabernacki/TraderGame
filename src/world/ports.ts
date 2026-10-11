@@ -33,7 +33,7 @@ export interface PortDef {
 }
 
 import { IS_XIYANG } from '../campaigns/active';
-import { XIYANG_PORTS } from '../campaigns/xiyang/places';
+import { XIYANG_PORT_NAMES, XIYANG_PORTS } from '../campaigns/xiyang/places';
 
 export const PORTS: PortDef[] = [
   // --- Portugal ------------------------------------------------------------
@@ -469,7 +469,13 @@ export const PORTS: PortDef[] = [
   },
 ];
 
-if (IS_XIYANG) PORTS.push(...XIYANG_PORTS);
+if (IS_XIYANG) {
+  PORTS.push(...XIYANG_PORTS);
+  for (const p of PORTS) {
+    const n = XIYANG_PORT_NAMES[p.id];
+    if (n) { p.name = n[0]; p.modern = n[1]; }
+  }
+}
 
 /**
  * Broader demand.

@@ -18,6 +18,7 @@ import { PortView } from './portView';
 import { SightView } from './sightView';
 import { GameOverView, TitleView } from './titleView';
 import { AdmiralView } from './admiralView';
+import { skin } from './skin';
 import { ACTIVE_CAMPAIGN } from '../campaigns/active';
 import { TouchControls } from './touch';
 import { DeckBar } from './deckBar';
@@ -141,6 +142,7 @@ export class Ui {
 
     host.append(this.hud.root, this.touch.root, this.bar.root, this.pilot.root,
       this.events.root, this.overlay);
+    skin(host);
     this.hud.setVisible(false);
   }
 
