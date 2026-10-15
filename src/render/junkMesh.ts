@@ -46,9 +46,9 @@ interface Style {
   deck: JunkKind;
 }
 
-const RED = 0xa5261b;
-const VERMILION = 0xc2311f;
-const GOLD = 0xd8a838;
+const RED = 0xc42c1e;
+const VERMILION = 0xdc4429;
+const GOLD = 0xf2c445;
 const BLACK = 0x1a1512;
 const TAR = 0x2a2018;
 const LIME = 0xe4dcc8;
@@ -57,39 +57,39 @@ const MAT = 0xb48f56;
 const STYLES: Record<JunkKind, Style> = {
   war: {
     topsides: RED, wale: BLACK, bottom: 0x8a7a64, band: LIME, trim: GOLD,
-    sail: 'cloth', sailColor: '#8e231a', sailDark: '#5c140f', device: false,
-    castle: 1, tiles: 0x4a4038, bulwark: 1.15, crenel: true, guns: true, shields: true, eyes: true,
-    banners: 5, bannerColors: [0xf0c030, 0xb02a1c, 0xf0c030], lanterns: 2, deck: 'war',
+    sail: 'cloth', sailColor: '#7a1a12', sailDark: '#3e0c08', device: false,
+    castle: 1, tiles: 0x66767a, bulwark: 1.15, crenel: true, guns: true, shields: true, eyes: true,
+    banners: 5, bannerColors: [0xc89010, 0x8a1a10, 0xc89010], lanterns: 2, deck: 'war',
   },
   troop: {
-    topsides: 0x9b2c1e, wale: 0x2a1c12, bottom: 0x8a7a64, band: null, trim: 0xc0902c,
-    sail: 'cloth', sailColor: '#8a3a22', sailDark: '#5a2414', device: false,
-    castle: 1, tiles: 0x55483c, bulwark: 1.25, crenel: true, guns: false, shields: true, eyes: true,
-    banners: 4, bannerColors: [0xe8b82a, 0xa5261b], lanterns: 2, deck: 'troop',
+    topsides: 0xbc3824, wale: 0x2a1c12, bottom: 0x8a7a64, band: null, trim: 0xe8b43c,
+    sail: 'cloth', sailColor: '#7c3a1c', sailDark: '#40200e', device: false,
+    castle: 1, tiles: 0x66767a, bulwark: 1.25, crenel: true, guns: false, shields: true, eyes: true,
+    banners: 4, bannerColors: [0xc89010, 0x8a1a10], lanterns: 2, deck: 'troop',
   },
   grain: {
-    topsides: 0x3b2c20, wale: 0x1d1510, bottom: 0x7a6a55, band: LIME, trim: 0x8a6a3a,
-    sail: 'mat', sailColor: '#b79a62', sailDark: '#8a6f3c', device: false,
+    topsides: 0x5a4332, wale: 0x1d1510, bottom: 0x7a6a55, band: LIME, trim: 0x8a6a3a,
+    sail: 'mat', sailColor: '#9a7a3a', sailDark: '#5c4620', device: false,
     castle: 1, tiles: 0x6b5a44, bulwark: 1.0, crenel: false, guns: false, shields: false, eyes: true,
-    banners: 2, bannerColors: [0xe8b82a], lanterns: 1, deck: 'grain',
+    banners: 2, bannerColors: [0xc89010], lanterns: 1, deck: 'grain',
   },
   water: {
-    topsides: 0x4e6670, wale: 0x1d1d1a, bottom: 0x7a6a55, band: 0xd8cfb8, trim: 0x8a8f90,
-    sail: 'mat', sailColor: '#b8a070', sailDark: '#8c7442', device: false,
+    topsides: 0x5f8190, wale: 0x1d1d1a, bottom: 0x7a6a55, band: 0xd8cfb8, trim: 0x8a8f90,
+    sail: 'mat', sailColor: '#a08a52', sailDark: '#604c26', device: false,
     castle: 1, tiles: 0x5a5148, bulwark: 1.0, crenel: false, guns: false, shields: false, eyes: true,
-    banners: 2, bannerColors: [0x3a6a8a, 0xe8b82a], lanterns: 1, deck: 'water',
+    banners: 2, bannerColors: [0x2a5a7a, 0xc89010], lanterns: 1, deck: 'water',
   },
   horse: {
-    topsides: 0x8f3524, wale: 0x2a1c12, bottom: 0x8a7a64, band: 0xc8a050, trim: 0xc8a050,
-    sail: 'cloth', sailColor: '#9a5030', sailDark: '#66301a', device: false,
-    castle: 2, tiles: 0x5a4a3c, bulwark: 1.35, crenel: false, guns: false, shields: false, eyes: true,
-    banners: 3, bannerColors: [0xe8b82a, 0xa5261b], lanterns: 2, deck: 'horse',
+    topsides: 0xb04029, wale: 0x2a1c12, bottom: 0x8a7a64, band: 0xe0b860, trim: 0xe8c060,
+    sail: 'cloth', sailColor: '#8a3e1e', sailDark: '#4a200e', device: false,
+    castle: 2, tiles: 0x6a7478, bulwark: 1.35, crenel: false, guns: false, shields: false, eyes: true,
+    banners: 3, bannerColors: [0xc89010, 0x8a1a10], lanterns: 2, deck: 'horse',
   },
   treasure: {
     topsides: VERMILION, wale: BLACK, bottom: 0x8a7a64, band: GOLD, trim: GOLD,
-    sail: 'cloth', sailColor: '#a71f18', sailDark: '#6a120e', device: true,
-    castle: 3, tiles: 0xe0b23a, bulwark: 1.3, crenel: false, guns: false, shields: true, eyes: true,
-    banners: 9, bannerColors: [0xf4c82a, 0xc2311f, 0xf4c82a, 0x1f6a54], lanterns: 4, deck: 'treasure',
+    sail: 'cloth', sailColor: '#8e1610', sailDark: '#4a0806', device: true,
+    castle: 3, tiles: 0xf4c850, bulwark: 1.3, crenel: false, guns: false, shields: true, eyes: true,
+    banners: 9, bannerColors: [0xd8a010, 0x9a1c10, 0xd8a010, 0x16583f], lanterns: 4, deck: 'treasure',
   },
 };
 
@@ -193,18 +193,80 @@ function sailTexture(kind: 'cloth' | 'mat', color: string, dark: string, panels:
     // The luff and the leech are bolt-roped.
     g.fillStyle = dark; g.fillRect(0, 0, 5, H); g.fillRect(W - 4, 0, 4, H);
     if (device) {
-      // The Emperor's device on the great sail: a disc of gold with a wheeling dragon's coil.
-      const cx = W * 0.5, cy = H * 0.5, r = W * 0.34;
-      g.fillStyle = 'rgba(232,184,48,0.95)'; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
-      g.strokeStyle = 'rgba(120,20,12,0.9)'; g.lineWidth = 7; g.lineCap = 'round';
+      // The Emperor's device on the great sail: a gold roundel, a ring of petals and a coiled dragon.
+      const cx = W * 0.5, cy = H * 0.5, r = W * 0.36;
+      g.fillStyle = 'rgba(244,200,70,0.97)'; g.beginPath(); g.arc(cx, cy, r, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(120,16,10,0.95)'; g.beginPath(); g.arc(cx, cy, r * 0.84, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(244,200,70,0.97)';
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        g.beginPath(); g.ellipse(cx + Math.cos(a) * r * 0.66, cy + Math.sin(a) * r * 0.66, r * 0.13, r * 0.06, a, 0, Math.PI * 2); g.fill();
+      }
+      g.strokeStyle = 'rgba(244,200,70,0.97)'; g.lineWidth = 11; g.lineCap = 'round';
       g.beginPath();
-      for (let a = 0; a < Math.PI * 3.4; a += 0.08) {
-        const rr = r * (0.12 + 0.82 * (a / (Math.PI * 3.4)));
-        const x = cx + Math.cos(a * 1.0) * rr * 0.92, y = cy + Math.sin(a * 1.0) * rr * 0.92;
+      for (let a = 0; a < Math.PI * 2.6; a += 0.07) {
+        const rr = r * (0.06 + 0.4 * (a / (Math.PI * 2.6)));
+        const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr;
         if (a === 0) g.moveTo(x, y); else g.lineTo(x, y);
       }
       g.stroke();
-      g.fillStyle = 'rgba(120,20,12,0.95)'; g.beginPath(); g.arc(cx + r * 0.52, cy - r * 0.52, 9, 0, Math.PI * 2); g.fill();
+      g.fillStyle = 'rgba(244,200,70,0.97)'; g.beginPath(); g.arc(cx + r * 0.42, cy - r * 0.18, 12, 0, Math.PI * 2); g.fill();
+    }
+    return c;
+  });
+}
+
+
+/** A tiger-faced pavise: the painted round shield hung along the rail. */
+function shieldTexture(): THREE.CanvasTexture {
+  return cached('shield', () => {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 256;
+    const g = c.getContext('2d')!;
+    g.clearRect(0, 0, 256, 256);
+    g.fillStyle = '#d8a838'; g.beginPath(); g.arc(128, 128, 126, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#7a1610'; g.beginPath(); g.arc(128, 128, 112, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#e8b82a'; g.beginPath(); g.arc(128, 128, 98, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#a5261b'; g.beginPath(); g.arc(128, 128, 90, 0, Math.PI * 2); g.fill();
+    // Brows, eyes, nose, fangs.
+    g.fillStyle = '#f4ecd8';
+    for (const sx of [-1, 1]) {
+      g.beginPath(); g.ellipse(128 + sx * 42, 112, 24, 15, sx * -0.35, 0, Math.PI * 2); g.fill();
+    }
+    g.fillStyle = '#16100c';
+    for (const sx of [-1, 1]) { g.beginPath(); g.arc(128 + sx * 40, 113, 9, 0, Math.PI * 2); g.fill(); }
+    g.strokeStyle = '#16100c'; g.lineWidth = 9; g.lineCap = 'round';
+    for (const sx of [-1, 1]) { g.beginPath(); g.moveTo(128 + sx * 14, 78); g.lineTo(128 + sx * 44, 90); g.lineTo(128 + sx * 70, 82); g.stroke(); }
+    g.beginPath(); g.moveTo(128, 70); g.lineTo(128, 96); g.stroke();
+    g.fillStyle = '#16100c'; g.beginPath(); g.moveTo(112, 138); g.lineTo(144, 138); g.lineTo(128, 156); g.fill();
+    g.fillStyle = '#f4ecd8'; g.beginPath(); g.ellipse(128, 176, 46, 22, 0, 0, Math.PI); g.fill();
+    g.fillStyle = '#16100c';
+    for (const sx of [-1, 1]) { g.beginPath(); g.moveTo(128 + sx * 22, 176); g.lineTo(128 + sx * 30, 176); g.lineTo(128 + sx * 26, 198); g.fill(); }
+    return c;
+  });
+}
+
+/** A running frieze of cloud-scrolls in gold, for the wale band and the bow screen. */
+function friezeTexture(hex: number): THREE.CanvasTexture {
+  return cached(`frieze:${hex}`, () => {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 128;
+    const g = c.getContext('2d')!;
+    g.clearRect(0, 0, 512, 128);
+    const col = `#${new THREE.Color(hex).getHexString()}`;
+    g.strokeStyle = col; g.fillStyle = col; g.lineCap = 'round';
+    g.lineWidth = 8; g.fillRect(0, 6, 512, 8); g.fillRect(0, 114, 512, 8);
+    g.lineWidth = 11;
+    for (let k = 0; k < 4; k++) {
+      const x = k * 128 + 64;
+      for (const dir of [-1, 1]) {
+        g.beginPath();
+        for (let a = 0; a < Math.PI * 3.1; a += 0.1) {
+          const r = 6 + a * 4.6;
+          const px = x + dir * (22 + Math.cos(a * dir + (dir > 0 ? Math.PI : 0)) * r * 0.9), py = 64 + Math.sin(a) * r * 0.62;
+          if (a === 0) g.moveTo(px, py); else g.lineTo(px, py);
+        }
+        g.stroke();
+      }
+      g.beginPath(); g.arc(x, 64, 11, 0, Math.PI * 2); g.fill();
     }
     return c;
   });
@@ -219,10 +281,10 @@ function tileTexture(hex: number): THREE.CanvasTexture {
     g.fillStyle = `#${col.getHexString()}`; g.fillRect(0, 0, 128, 128);
     for (let y = 0; y < 128; y += 16) {
       for (let x = ((y / 16) % 2) * 8; x < 128; x += 16) {
-        g.fillStyle = 'rgba(0,0,0,0.18)'; g.fillRect(x, y, 2, 16);
-        g.fillStyle = 'rgba(255,255,255,0.10)'; g.fillRect(x + 2, y, 3, 15);
+        g.fillStyle = 'rgba(0,0,0,0.10)'; g.fillRect(x, y, 2, 16);
+        g.fillStyle = 'rgba(255,255,255,0.16)'; g.fillRect(x + 2, y, 3, 15);
       }
-      g.fillStyle = 'rgba(0,0,0,0.38)'; g.fillRect(0, y + 14, 128, 2);
+      g.fillStyle = 'rgba(0,0,0,0.22)'; g.fillRect(0, y + 14, 128, 2);
     }
     return c;
   }, [3, 3]);
@@ -289,8 +351,8 @@ function makeLines(hull: HullClass, kind: JunkKind): Lines {
     return -D * (1 - Math.max(stern, bow));
   };
   const sheerY = (t: number): number => {
-    const stern = t < 0.5 ? Math.pow((0.5 - t) / 0.5, 2) * fb * 0.55 : 0;
-    const bow = t > 0.5 ? Math.pow((t - 0.5) / 0.5, 2.2) * fb * 0.42 : 0;
+    const stern = t < 0.5 ? Math.pow((0.5 - t) / 0.5, 2.1) * fb * 0.95 : 0;
+    const bow = t > 0.5 ? Math.pow((t - 0.5) / 0.5, 2.4) * fb * 0.7 : 0;
     return fb + stern + bow;
   };
   return {
@@ -430,6 +492,8 @@ function buildHull(ln: Lines, st: Style): HullParts {
     tp.push(0, cy, cz); tc.push(cc.r, cc.g, cc.b);
     for (const r of ring) { tp.push(r[0], r[1], r[2]); const c = r[1] < ln.D * 0.14 && r[1] > -ln.D * 0.14 ? tar : r[1] < -ln.D * 0.14 ? bottom : cc; tc.push(c.r, c.g, c.b); }
     for (let r = 1; r < ring.length; r++) { if (t === 0) ti.push(base, base + r + 1, base + r); else ti.push(base, base + r, base + r + 1); }
+    // The last wedge, across the top, closes the screen.
+    if (t === 0) ti.push(base, base + 1, base + ring.length); else ti.push(base, base + ring.length, base + 1);
   }
   const transoms = new THREE.BufferGeometry();
   transoms.setAttribute('position', new THREE.Float32BufferAttribute(tp, 3));
@@ -524,6 +588,14 @@ export class JunkMesh {
   private lampLight: THREE.PointLight | null = null;
   private lit = { night: -1, overcast: -1 };
   private cloths: THREE.MeshLambertMaterial[] = [];
+  private faces = new Bucket();
+  /** Standard materials given a lift in the shade, dimmed again at night. */
+  private fills: { m: THREE.MeshStandardMaterial; base: THREE.Color }[] = [];
+  private fill<T extends THREE.MeshStandardMaterial>(m: T, hex: number): T {
+    m.emissive.set(hex);
+    this.fills.push({ m, base: m.emissive.clone() });
+    return m;
+  }
 
   constructor(hull: HullClass, opts: { lamp?: boolean } = {}) {
     const kind = JUNK_KIND[hull.id] ?? 'troop';
@@ -535,15 +607,24 @@ export class JunkMesh {
     // -- Hull ---------------------------------------------------------------
     const parts = buildHull(ln, st);
     const plank = plankTexture();
-    const skinMat = new THREE.MeshStandardMaterial({
-      vertexColors: true, map: plank, bumpMap: plank, bumpScale: 1.0, roughness: 0.78, side: THREE.DoubleSide,
-    });
+    const skinMat = this.fill(new THREE.MeshStandardMaterial({
+      vertexColors: true, map: plank, bumpMap: plank, bumpScale: 0.15, roughness: 0.62, side: THREE.DoubleSide,
+    }), 0x241008);
     const hullMesh = new THREE.Mesh(parts.skin, skinMat);
     this.group.add(hullMesh);
     const deckMesh = new THREE.Mesh(parts.deck, new THREE.MeshStandardMaterial({ vertexColors: true, map: plank, roughness: 0.9, side: THREE.DoubleSide }));
     this.group.add(deckMesh);
     this.group.add(new THREE.Mesh(parts.bulwarkInner, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, side: THREE.DoubleSide })));
     this.group.add(new THREE.Mesh(parts.transoms, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, side: THREE.DoubleSide })));
+
+    this.group.add(this.frieze(ln, st));
+    // The bow screen wears the tiger.
+    if (st.shields) {
+      const k = ln.keelY(1), sh = ln.sheerY(1), H = sh - k;
+      const dz = ln.z(1, 1) - ln.z(1, 0);
+      const r = Math.min(ln.width(1, 0.5) * 0.9, H * 0.46);
+      this.faces.add(put(new THREE.CircleGeometry(r, 28), { y: k + H * 0.56, z: ln.z(1, 0.56) + 0.03, rx: Math.atan2(dz, H) }));
+    }
 
     // Finish buckets.
     const wood = new Bucket();    // bare and tarred timber
@@ -598,16 +679,19 @@ export class JunkMesh {
 
     // -- Merge the buckets into meshes -------------------------------------
     const std = (rough: number, metal = 0, extra: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: rough, metalness: metal, side: THREE.DoubleSide, ...extra });
+      this.fill(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: rough, metalness: metal, side: THREE.DoubleSide, ...extra }), 0x2a1810);
     for (const m of [
-      wood.build(std(0.88)), lacquer.build(std(0.5, 0.05)), iron.build(std(0.5, 0.6)), rope.build(std(0.95)),
+      wood.build(std(0.88)), lacquer.build(std(0.45, 0)), iron.build(std(0.5, 0.25)), rope.build(std(0.95)),
     ]) if (m) this.group.add(m);
-    const tileMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: tileTexture(st.tiles), roughness: 0.4, metalness: 0.1, side: THREE.DoubleSide });
+    const tileMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: tileTexture(st.tiles), roughness: 0.45, metalness: 0, side: THREE.DoubleSide });
+    tileMat.emissiveMap = tileMat.map; this.fill(tileMat, 0x707070);
     const tm = tiles.build(tileMat); if (tm) this.group.add(tm);
     this.windowMat = new THREE.MeshLambertMaterial({ map: windowTexture(), side: THREE.DoubleSide, emissive: 0x000000 });
     const wm = windows.build(this.windowMat as unknown as THREE.Material); if (wm) this.group.add(wm);
     const em = eyes.build(new THREE.MeshLambertMaterial({ map: eyeTexture(), transparent: true, side: THREE.DoubleSide }), false);
     if (em) this.group.add(em);
+    const fm = this.faces.build(new THREE.MeshLambertMaterial({ map: shieldTexture(), emissiveMap: shieldTexture(), emissive: 0x707070, transparent: true, alphaTest: 0.4, side: THREE.DoubleSide }), false);
+    if (fm) this.group.add(fm);
     const lm = lanterns.build(this.lanternMat, false); if (lm) this.group.add(lm);
 
     // -- Lantern glows and the player's lamp ---------------------------------
@@ -650,6 +734,38 @@ export class JunkMesh {
   // ---------------------------------------------------------------------
   // Parts
 
+  /** A band of gilded cloud-scrolls running the length of each side, just proud of the planking. */
+  private frieze(ln: Lines, st: Style): THREE.Mesh {
+    const S = 48, pos: number[] = [], uv: number[] = [], idx: number[] = [];
+    const yMid = ln.fb * 0.47, hh = ln.fb * 0.085;
+    for (const sx of [-1, 1]) {
+      const base = pos.length / 3;
+      for (let i = 0; i <= S; i++) {
+        const t = 0.025 + 0.95 * (i / S);
+        for (const dy of [-hh, hh]) {
+          const y = yMid + dy, k = ln.keelY(t), sh = ln.sheerY(t);
+          const u = (y - k) / (sh - k);
+          pos.push(sx * (ln.width(t, u) + 0.07), y, ln.z(t, u));
+          uv.push((t * ln.L) / 7.5, dy > 0 ? 0 : 1);
+        }
+      }
+      for (let i = 0; i < S; i++) {
+        const a = base + i * 2;
+        if (sx > 0) idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); else idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    const tex = friezeTexture(st.trim);
+    tex.wrapS = THREE.RepeatWrapping;
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ map: tex, transparent: true, alphaTest: 0.35, roughness: 0.4, metalness: 0, side: THREE.DoubleSide }));
+    m.castShadow = false;
+    return m;
+  }
+
   /** Rails, capping, the painted shields and screens, gun ports, anchors, bollards. */
   private fittings(ln: Lines, st: Style, _kind: JunkKind, rnd: () => number, wood: Bucket, lacquer: Bucket, iron: Bucket, rope: Bucket, eyes: Bucket): void {
     const L = ln.L;
@@ -678,10 +794,7 @@ export class JunkMesh {
           const x = sx * (ln.width(t, 1) - 0.12), y = ln.sheerY(t) + 0.2, z = ln.z(t, 1);
           if (st.crenel && i % 2 === 0) lacquer.add(box(0.2, 0.85, 1.0, st.topsides, { x, y: y + 0.42, z }));
           if (st.shields) {
-            const alt = i % 2 === 0;
-            const sh = cyl(0.62, 0.62, 0.08, alt ? 0xe8b82a : 0xa5261b, { x: x + sx * 0.14, y: y + (st.crenel ? 0.05 : 0.45), z, rz: Math.PI / 2 }, 14);
-            lacquer.add(sh);
-            lacquer.add(cyl(0.2, 0.2, 0.1, alt ? 0xa5261b : 0xe8b82a, { x: x + sx * 0.2, y: y + (st.crenel ? 0.05 : 0.45), z, rz: Math.PI / 2 }, 10));
+            this.faces.add(put(new THREE.CircleGeometry(0.7, 20), { x: x + sx * 0.16, y: y + (st.crenel ? 0.05 : 0.45), z, ry: sx * Math.PI / 2 }));
           }
         }
       }
@@ -1003,8 +1116,9 @@ export class JunkMesh {
       map: sailTexture(st.sail, color, st.sailDark, panels, device, index * 7 + hullSeed(hull.id)),
       side: THREE.DoubleSide,
       // Cloth is thin enough that the sun comes through it.
-      emissive: 0x3a2a22, transparent: false,
+      emissive: new THREE.Color(color).multiplyScalar(0.5), transparent: false,
     });
+    mat.userData.glow = mat.emissive.clone();
     this.cloths.push(mat);
     const sail = new THREE.Mesh(build.geometry, mat);
     rig.add(sail);
@@ -1059,7 +1173,9 @@ export class JunkMesh {
     const geo = new THREE.PlaneGeometry(length, width, 16, 2);
     geo.translate(length / 2, 0, 0);
     const base = new Float32Array(geo.getAttribute('position').array);
-    const mat = new THREE.MeshLambertMaterial({ color: hex, side: THREE.DoubleSide, emissive: new THREE.Color(hex).multiplyScalar(0.18) });
+    const mat = new THREE.MeshLambertMaterial({ color: hex, side: THREE.DoubleSide, emissive: new THREE.Color(hex).multiplyScalar(0.06) });
+    mat.userData.tint = new THREE.Color(hex);
+    mat.userData.glow = mat.emissive.clone();
     this.cloths.push(mat);
     return { mesh: new THREE.Mesh(geo, mat), geo, base, length, phase: seed * 1.7 };
   }
@@ -1152,9 +1268,10 @@ export class JunkMesh {
     this.lit = { night, overcast };
     const dim = (1 - overcast * 0.72) * (1 - night * 0.82);
     for (const m of this.cloths) {
-      m.emissive.setRGB(0.23, 0.17, 0.13).multiplyScalar(dim);
-      m.color.setScalar(1 - overcast * 0.34);
+      m.emissive.copy(m.userData.glow as THREE.Color).multiplyScalar(dim);
+      m.color.copy((m.userData.tint as THREE.Color | undefined) ?? new THREE.Color(1, 1, 1)).multiplyScalar(1 - overcast * 0.34);
     }
+    for (const f of this.fills) f.m.emissive.copy(f.base).multiplyScalar((1 - night * 0.92) * (1 - overcast * 0.5));
     const glow = smoothstep(0.2, 0.7, night);
     this.lanternMat.emissive.setRGB(1, 0.42, 0.14).multiplyScalar(0.08 + glow * 2.6);
     this.windowMat.emissive.setRGB(1, 0.62, 0.26).multiplyScalar(glow * 1.2);
