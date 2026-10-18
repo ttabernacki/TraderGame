@@ -1,5 +1,7 @@
 # Dev roadmap
 
+
+> **Superseded for forward work by `docs/BUILD_PLAN.md`** (structural plan; no Armada, Wreck Chain or combat).
 > **Track C (Xiyang / Zheng He) is shelved** — see `docs/SHELVED.md`.
 
 Order of work. Each stage ships on its own (build, bundle, publish) and has an exit check
