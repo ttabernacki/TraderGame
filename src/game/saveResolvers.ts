@@ -34,3 +34,22 @@ export function migrateEstate(g: Game, old: any): void {
   for (const n of old.news ?? []) g.logEvent('trade', String(n), true);
   if (old.lordship && !g.lordship) g.lordship = String(old.lordship);
 }
+
+/** Port, by the ids of the goods-delivery errands cut in A3 (portCharacter.ts used to hold them). */
+const OLD_PORT_QUESTS: Record<string, string> = {
+  'funchal-wheat': 'funchal', 'benin-coral': 'ugoton', 'kongo-tools': 'mpinda', 'melinde-horses': 'melinde',
+};
+
+/**
+ * PortQuest goods-delivery errands are gone. The only state they had was the set
+ * of those already done, which is simply dropped. An errand still open (never
+ * done) where the captain is docked is cancelled with one log line; nothing is
+ * refunded, because nothing was ever taken before delivery.
+ */
+export function cancelPortQuests(g: Game, done: string[] | undefined): void {
+  const at = g.dockedAt;
+  if (!at) return;
+  const finished = new Set(done ?? []);
+  const open = Object.entries(OLD_PORT_QUESTS).find(([id, port]) => port === at && !finished.has(id));
+  if (open) g.logEvent('note', 'The town’s errand for goods is withdrawn; nobody here is asking any more.', true);
+}

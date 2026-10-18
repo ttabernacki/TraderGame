@@ -275,24 +275,12 @@ export class PortView {
 
     // The place itself: the blurb and what it is known for, as one card.
     const ch = characterOf(def.id);
-    const quest = ch ? g.questHere() : null;
     left.append(el('div', { class: 'port-character' },
       el('div', { class: 'port-character-eyebrow' }, ch ? 'Known for' : def.name),
       ch ? el('h2', {}, ch.signature) : null,
       el('p', {}, def.blurb),
       ch?.custom ? el('p', {}, ch.custom) : null,
       ch?.danger ? el('p', { class: 'port-character-danger' }, ch.danger) : null,
-      quest ? el('div', { class: 'port-character-quest' },
-        el('p', {}, quest.ask),
-        el('div', { class: 'row' },
-          button(`Give ${quest.qty} ${good(quest.good).english.toLowerCase()}`, () => {
-            this.notice = { text: g.doQuestHere() };
-            this.render();
-          }, { disabled: g.ship.quantityOf(quest.good) < quest.qty }),
-          el('span', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', alignSelf: 'center' } },
-            `${g.ship.quantityOf(quest.good).toFixed(0)} aboard`),
-        ),
-      ) : null,
     ));
 
     if (g.portGossip) {
