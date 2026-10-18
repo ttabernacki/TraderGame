@@ -9,6 +9,16 @@ along the road for a clue, a letter, or a reward.** Lisbon is where a voyage
 begins and ends, and where the Casa, the court and the shipyard are — not a
 checkpoint between acts.
 
+### The spine, sharpened (see `docs/BUILD_PLAN.md` §0.3)
+
+1. The captain's **person** is one-way: nothing requires him to sail back for a clue, a letter or a reward.
+2. His **assets** (letters, bills, price sheets, dispatches, Lines' payouts) may travel both ways.
+3. **Revisiting ports on the next voyage is allowed**: a career is round trips. Forbidden is a *story step* that
+   requires returning to a place behind you.
+4. A detour is legal if it **ends further along the road than it begins** (volta do largo, Brazil swing,
+   Madagascar channel); test with `road.ts: along()`.
+5. Any new place a system makes meaningful gets a `road.ts` entry.
+
 ## Rules for new content
 
 1. A story's steps run in road order. If step N+1 is behind step N, it is
