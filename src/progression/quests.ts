@@ -125,6 +125,11 @@ const OUTCOME_DEEDS: Record<string, { tag: LedgerTag; target: string; magnitude?
   'caravel:mass': { tag: 'mercy.shown', target: 'Isabel da Costa', magnitude: 0.6 },
 };
 
+/** Whether the Ledger already says this outcome (so the epilogue need not say it twice). */
+export function ledgerSays(questId: string, outcome: string): boolean {
+  return `${questId}:${outcome}` in OUTCOME_DEEDS;
+}
+
 function end(g: Game, q: QuestState, outcome: string, line: string): string {
   q.outcome = outcome;
   q.fired = false;
@@ -3743,6 +3748,8 @@ const ORIGIN_ENDINGS: Record<string, string> = {
 export function originEnding(g: Game): string | null {
   const id: QuestId | undefined = ({ segundo: 'nome', converso: 'ficheiro', piloto: 'roteiro', fidalgo: 'escudeiro' } as const)[g.origin];
   const q = id && g.quests.find((x) => x.id === id);
+  // Where the Ledger already says it (the chronicles above), the card does not repeat it.
+  if (q && q.outcome && ledgerSays(q.id, q.outcome)) return null;
   return q && q.outcome ? ORIGIN_ENDINGS[`${id}:${q.outcome}`] ?? null : null;
 }
 

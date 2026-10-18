@@ -1,7 +1,6 @@
 import { characterOf } from '../world/portCharacter';
 import { clamp } from '../core/math';
 import { good, unitOf } from '../economy/goods';
-import { provisioningCost } from '../economy/market';
 import {
   ANTWERP, ANTWERP_DAYS, CASA_SHARE, CHEST_TONS, COMPETITION, MONOPOLY, REGION_NAME, antwerpBid, fairsAt, gradeWord,
   paymentAt,
@@ -10,14 +9,14 @@ import { formatDateAt } from '../core/clock';
 import { people } from '../world/peoples';
 import { type PortDef } from '../world/ports';
 import {
-  SYSTEMS, UPGRADES, UPGRADE_BY_ID, describeEffects, nodeStatus, systemNodes, tierCap, yardLevel, type Upgrade,
+  SLOTS, UPGRADE_BY_ID, describeEffects, nodeStatus, ordnanceResale, slotFittings, type Upgrade,
 } from '../ship/upgrades';
 import { hullClass } from '../ship/hull';
 import { shipyardCard } from './shipyard';
 import { houseHead, openLineCard, worksBlock } from './networkView';
 import { footingOf, footingWord, hullPrice, postureOf } from '../progression/network';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
-import { OFFICER_ROLES } from '../crew/crew';
+import { OFFICER_ROLES, enduranceDays } from '../crew/crew';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
 import { RATING_LABEL, TEMPER, regardWord as handRegardWord } from '../crew/hands';
 import { ARC_BY_ID } from '../progression/arcs';
@@ -34,6 +33,8 @@ import {
   WORKS, buyable, capacityOf, residentPrice, stockTons, stockValue, type Feitoria,
 } from '../progression/feitoria';
 import type { Game, TradeListing } from '../game/state';
+import { MAX_VICTUAL_DAYS, MAX_WATER_DAYS, STORE_TONS, fitPlan, loadPlan, planCost, planOf, planTons, recommendedPlan, roomForStores, sparesSetTons, type StoresPlan } from '../game/stores';
+import { doRefit, fitFitting, quoteRefit, refitPlace, removeFitting, type RefitJob } from '../game/refit';
 import { append, button, card, clear, el, fold, foldCard, kv, plural } from './dom';
 
 type Tab = 'town' | 'market' | 'freight' | 'money' | 'station' | 'stores' | 'yard';
@@ -58,6 +59,9 @@ export class PortView {
   private notice: { text: string; grave?: boolean } | null = null;
   /** The waiting row, opened from the foot of the page on any tab. */
   private waitOpen = false;
+  /** The loading being set on the Stores tab, and whether the pilot has had his word before this weighing. */
+  private storesPlan: StoresPlan | null = null;
+  private storesAdvised = false;
   /** Sail her home asks twice: the page may not show a browser dialog. */
   private homeArmed = false;
   /** The Ribeira's drawing table stays open while a design is being worked. */
@@ -79,6 +83,8 @@ export class PortView {
     this.game = g;
     this.waitOpen = false;
     this.homeArmed = false;
+    this.storesPlan = null;
+    this.storesAdvised = false;
     // The story waits for the port screen: the King's summons at the start of
     // a career, and whatever is due on arrival.
     g.checkStory();
@@ -142,6 +148,18 @@ export class PortView {
       button('Weigh anchor  (Space)', () => {
         const why = g.cannotWeigh();
         if (why) { this.notice = { text: why, grave: true }; this.render(); return; }
+        // The pilot's word on the stores comes once, before she weighs, and only if he has one.
+        if (!this.storesAdvised) {
+          this.storesAdvised = true;
+          const rec = recommendedPlan(g);
+          if (enduranceDays(g.crew, g.ration) < rec.victuals * 0.8 || g.crew.provisions.water < rec.water * 0.8) {
+            this.tab = 'stores';
+            this.storesPlan = rec;
+            this.notice = { text: `The pilot would load ${rec.water} days of water and ${rec.victuals} of victuals for the leg ahead. Set the sliders and load, or weigh again to go as she is.` };
+            this.render();
+            return;
+          }
+        }
         g.weighAnchor(); this.onClose();
       },
         { primary: def.people === 'portuguese' || rel.mayTrade }),
@@ -1207,53 +1225,110 @@ export class PortView {
 
   private renderStores(host: HTMLElement, g: Game): void {
     const def = g.portHere!;
-    const options = [30, 60, 90, 150, 240];
+    const house = g.factoryHere;
+    const discount = house && postureOf(house) === 'stores' ? 0.5 : 1;
+    const fx = g.ship.effects;
+    const hold = g.ship.holdCapacity;
+    const complement = g.crew.complement;
+    if (!this.storesPlan) this.storesPlan = planOf(g.crew);
+    const plan = this.storesPlan;
 
     const left = el('div', {});
-    left.append(card('Water and victuals',
+    const summary = el('div', {});
+    const goBtn = button('Load', () => {}, { primary: true });
+    const rows: { key: keyof StoresPlan; label: string; unit: string; min: number; max: number; step: number; tons: (v: number) => number; input?: HTMLInputElement; out?: HTMLElement }[] = [
+      { key: 'water', label: 'Water', unit: 'days', min: 0, max: MAX_WATER_DAYS + fx.water, step: 5,
+        tons: (v) => v * STORE_TONS.water * complement * fx.storage },
+      { key: 'victuals', label: 'Victuals', unit: 'days', min: 0, max: MAX_VICTUAL_DAYS, step: 5,
+        tons: (v) => v * (STORE_TONS.biscuit + STORE_TONS.saltMeat * 0.9 + STORE_TONS.wine * 0.7) * complement * fx.storage },
+      { key: 'spares', label: 'Spares', unit: '%', min: 0, max: 100, step: 5,
+        tons: (v) => (v / 100) * sparesSetTons(hold) },
+    ];
+    const valueOf = (key: keyof StoresPlan) => (key === 'spares' ? Math.round(plan.spares * 100) : plan[key]);
+
+    const refresh = () => {
+      const fit = fitPlan(g, plan);
+      let clamped = false;
+      for (const r of rows) {
+        const want = r.key === 'spares' ? plan.spares : plan[r.key];
+        if (fit[r.key] < want - 1e-6) clamped = true;
+      }
+      Object.assign(plan, fit);
+      const total = planTons(plan, complement, hold, fx.storage);
+      const cost = Math.round(planCost(def, g, plan) * discount);
+      const room = roomForStores(g);
+      for (const r of rows) {
+        const v = valueOf(r.key);
+        if (r.input && Number(r.input.value) !== v) r.input.value = String(v);
+        if (r.out) r.out.textContent = `${v}${r.unit === '%' ? '%' : ` ${r.unit}`} · ${r.tons(v).toFixed(1)} t`;
+      }
+      summary.textContent = `${total.toFixed(1)} t of stores of ${room.toFixed(1)} t the cargo leaves free`
+        + `${clamped ? ' — the hold is full' : ''} · ${cost} cruzados`;
+      (goBtn as HTMLButtonElement).disabled = cost > 0 && g.crown.gold + g.creditFree < cost;
+      (goBtn as HTMLButtonElement).textContent = cost > 0 ? `Load for ${cost} cruzados` : 'Load';
+    };
+    const sliders = rows.map((r) => {
+      const input = el('input', {
+        type: 'range', min: String(r.min), max: String(r.max), step: String(r.step), value: String(valueOf(r.key)),
+        oninput: (e: Event) => {
+          const v = Number((e.target as HTMLInputElement).value);
+          if (r.key === 'spares') plan.spares = v / 100; else plan[r.key] = v;
+          refresh();
+        },
+      }) as HTMLInputElement;
+      const out = el('span', { class: 'stores-out' });
+      r.input = input; r.out = out;
+      return el('div', { class: 'stores-row', style: { padding: '6px 0' } },
+        el('div', { style: { display: 'flex', justifyContent: 'space-between' } }, el('b', {}, r.label), out),
+        input,
+      );
+    });
+    (goBtn as HTMLButtonElement).onclick = () => {
+      const cost = Math.round(planCost(def, g, plan) * discount);
+      // Draw on the Casa if the purse is short, as the market does: water and
+      // victuals were always to be had on the Crown's account.
+      if (g.crown.gold < cost) g.drawCredit(cost);
+      if (g.crown.gold < cost) {
+        this.notice = { text: 'Not enough in the purse, and nothing left to draw on. Sell something out of the hold.', grave: true };
+        this.render();
+        return;
+      }
+      const days = Math.max(plan.water, plan.victuals);
+      const got = loadPlan(g, plan, discount);
+      g.logEvent('note', `Loaded stores at ${def.name}: ${got.plan.water} days of water, ${got.plan.victuals} of victuals, ${(got.plan.spares * 100).toFixed(0)}% of a set of spares. ${got.cost} cruzados.`);
+      g.clock.t += 86400 * clamp(days / 90, 0.5, 3);
+      this.storesPlan = null;
+      this.notice = { text: `Stores aboard: ${got.tons.toFixed(1)} tons.` };
+      this.render();
+    };
+
+    const rec = recommendedPlan(g);
+    const last = g.crew.lastStores;
+    left.append(card('Loading — before she weighs',
       el('p', {}, def.refit > 0.6
         ? 'There is good water here, and a market for stock and greens.'
         : def.refit > 0.3
           ? 'Water can be had, though it is a labour to get it aboard, and there is not much else.'
           : 'Little enough to be had here. Take what you can and do not count on it.'),
-      ...options.map((d) => {
-        const house = g.factoryHere;
-        const cost = Math.round(provisioningCost(def, d, g.crew.count) * (house && postureOf(house) === 'stores' ? 0.5 : 1));
-        return el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' } },
-          el('span', {}, `${d} days for ${g.crew.count} men`),
-          button(`${cost} cruzados`, () => {
-            // Draw on the Casa if the purse is short, exactly as the market
-            // does. Water and victuals were the one thing a captain could
-            // always get on the Crown's account, and refusing him credit here
-            // while extending it for a cargo of pepper had it precisely the
-            // wrong way round — a man who had spent his purse could buy trade
-            // goods and could not buy the water to carry them anywhere.
-            if (g.crown.gold < cost) g.drawCredit(cost);
-            if (g.crown.gold < cost) {
-              this.notice = {
-                text: 'Not enough in the purse, and nothing left to draw on. '
-                  + 'Sell something out of the hold.',
-                grave: true,
-              };
-              this.render();
-              return;
-            }
-            g.provision(d, cost);
-            g.clock.t += 86400 * clamp(d / 90, 0.5, 3);
-            this.notice = { text: `Watered and victualled for ${d} days.` };
-            this.render();
-          }, { disabled: g.crown.gold + g.creditFree < cost }),
-        );
-      }),
+      ...sliders,
+      summary,
+      el('div', { style: { display: 'flex', gap: '7px', flexWrap: 'wrap', marginTop: '9px' } },
+        button('Pilot\u2019s advice', () => { Object.assign(plan, rec); this.render(); },
+          { title: `${rec.water} days of water, ${rec.victuals} of victuals, ${(rec.spares * 100).toFixed(0)}% spares, for the leg as the pilot reckons it` }),
+        last ? button('Same as last leg', () => { Object.assign(plan, fitPlan(g, last)); this.render(); }) : null,
+        goBtn),
     ));
+    refresh();
 
     const right = el('div', {});
     right.append(card('Aboard now',
-      kv('Water aboard', `${g.crew.provisions.water.toFixed(0)} days`),
+      kv('Water', `${g.crew.provisions.water.toFixed(0)} days`),
+      kv('Victuals', `${Math.min(g.crew.provisions.biscuit, g.crew.provisions.saltMeat / 0.9).toFixed(0)} days`),
       kv('Fresh provisions', `${g.crew.provisions.fresh.toFixed(0)} days`),
+      kv('Spares', `${((g.crew.spares ?? 0) * 100).toFixed(0)}% of a set`),
+      kv('Stores in the hold', `${g.ship.storesTons.toFixed(1)} t of ${hold.toFixed(0)}`),
       kv('Days since fresh food', `${g.crew.daysWithoutFresh.toFixed(0)}`),
     ));
-
     host.append(el('div', { class: 'cols two' }, left, right));
   }
 
@@ -1261,38 +1336,48 @@ export class PortView {
     const def = g.portHere!;
     if (def.refit < 0.5) {
       host.append(el('div', { class: 'notice grave' },
-        'There is no yard here worth the name. You can careen on the beach if you must, and nothing more.'));
+        'There is no yard here worth the name. You can careen on a beach if you must, and mend what the spares in the hold will mend, and nothing more.'));
     }
 
     const left = el('div', {});
-    const repairCost = Math.ceil((1 - g.ship.condition.hull) * 900 / clamp(def.refit, 0.15, 1));
-    left.append(card('Repairs',
+    const place = refitPlace(g);
+    const jobRow = (job: RefitJob, label: string) => {
+      const q = quoteRefit(g, job);
+      return el('div', { style: { padding: '6px 0', borderBottom: '1px solid rgba(90,74,55,.12)' } },
+        el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' } },
+          el('b', {}, label),
+          q.ok
+            ? button(`${q.gold} cr \u00b7 ${q.days}d`, () => {
+                const r = doRefit(g, job);
+                this.notice = { text: r.text, grave: !r.ok };
+                this.render();
+              }, { disabled: g.crown.gold < q.gold, title: q.does })
+            : el('em', { class: 'sys-why' }, q.days ? '' : '\u2014')),
+        el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '3px', lineHeight: '1.5' } },
+          q.ok
+            ? `${q.does} ${q.days} days${q.fromHold > 0 ? `, ${(q.fromHold * 100).toFixed(0)}% of a set of spares from the hold` : ''}${q.bought > 0.001 ? `, ${(q.bought * 100).toFixed(0)}% bought here` : ''}.`
+            : q.why));
+    };
+    left.append(card('The yard\u2019s work',
       kv('Hull', `${(g.ship.condition.hull * 100).toFixed(0)}%`),
       kv('Fouling', `${(g.ship.condition.fouling * 100).toFixed(0)}%`),
-      g.ship.condition.hull < 0.99
-        ? el('div', { style: { marginTop: '10px' } },
-            button(`Make her sound — ${repairCost} cruzados`, () => {
-              if (g.crown.gold < repairCost) { this.notice = { text: 'Not enough in the purse.', grave: true }; this.render(); return; }
-              g.crown.gold -= repairCost;
-              g.ship.repair(1);
-              for (const s of g.ship.state.sails) s.condition = 1;
-              g.clock.t += 86400 * 8;
-              g.logEvent('note', 'Hauled out, seams caulked, and new canvas bent. She is as good as she was.');
-              this.notice = { text: 'She is sound again.' };
-              this.render();
-            }, { primary: true, disabled: g.crown.gold < repairCost }))
-        : el('p', {}, 'She wants nothing.'),
+      kv('Spares in the hold', `${((g.crew.spares ?? 0) * 100).toFixed(0)}% of a set`),
+      jobRow('careen', 'Careen and breame'),
+      jobRow('hull', 'Work the hull'),
+      jobRow('rig', 'Re-mast and re-canvas'),
+      el('p', { style: { fontSize: '12.5px', marginTop: '8px' } },
+        'Parts come out of the spares in the hold first; what is short is bought here. The work takes days, and she eats nothing from the sea stores while she lies alongside.'),
     ));
 
-    // The ship's systems, each a tree. See ship/upgrades.
-    const yard = yardLevel(def);
-    const cap = tierCap(g.ship.hullId);
+    // Six slots, one fitting in each. See ship/upgrades.
+    const yard = place.kind === 'yard' ? place.level : 0;
     const effectLines = (u: Upgrade) => {
       const d = describeEffects(u.effects);
       return el('div', { class: 'fit-effects' },
         ...d.good.map((t) => el('span', { class: 'fit-good' }, t)),
         ...d.bad.map((t) => el('span', { class: 'fit-bad' }, t)),
         u.tons > 0 ? el('span', { class: 'fit-bad' }, `${u.tons} t`) : null,
+        el('span', { class: 'fit-bad' }, u.price),
       );
     };
     const node = (u: Upgrade) => {
@@ -1301,12 +1386,16 @@ export class PortView {
         el('div', { class: 'fit-title' },
           el('b', {}, u.english), el('span', {}, u.name),
           st.state === 'built'
-            ? el('em', { class: 'sys-built' }, 'built')
+            ? el('em', { class: 'sys-built' }, 'fitted')
             : st.state === 'open'
-              ? button(`${u.cost} cr \u00b7 ${u.days}d`, () => this.fitUpgrade(g, u.id), {
-                disabled: g.crown.gold < u.cost,
-                title: st.replaces.length ? `Replaces ${st.replaces.map((id) => UPGRADE_BY_ID.get(id)?.english).join(', ')}` : u.blurb,
-              })
+              ? button(`${u.cost} cr \u00b7 ${u.days}d`, () => {
+                  const r = fitFitting(g, u.id);
+                  this.notice = { text: r.text, grave: !r.ok };
+                  this.render();
+                }, {
+                  disabled: g.crown.gold < u.cost,
+                  title: st.replaces.length ? `Replaces ${st.replaces.map((id) => UPGRADE_BY_ID.get(id)?.english).join(', ')}` : u.blurb,
+                })
               : el('em', { class: 'sys-why' }, st.why),
         ),
         effectLines(u),
@@ -1314,43 +1403,36 @@ export class PortView {
     };
     const fx = g.ship.effects;
     const right = el('div', {});
-    right.append(card(`Her systems \u2014 the yard here can do ${['nothing', 'the simple work', 'a real refit', 'anything'][yard]}`,
+    right.append(card(`Her fittings \u2014 the yard here can do ${['nothing', 'the simple work', 'a real refit', 'anything'][yard]}`,
       el('div', { class: 'sys-profile' },
         el('span', {}, `Points ${Math.round(g.noGoAngle)}\u00b0 off the wind`),
         el('span', {}, `Canvas ${Math.round(fx.sailArea * 100)}%`),
         el('span', {}, `Strength ${Math.round(fx.strength * 100)}%`),
         el('span', {}, `Hold ${g.ship.holdCapacity.toFixed(0)} t`),
         el('span', {}, `Fittings weigh ${fx.tons} t`),
-        fx.guns ? el('span', {}, `${fx.guns} guns`) : null),
+        fx.pieces ? el('span', {}, `${fx.pieces} pieces of ordnance`) : null),
       el('p', { style: { fontSize: '13px' } },
-        `A ${hullClass(g.ship.hullId).name} can be taken ${cap >= 5 ? 'to the top of every tree' : `as far as the ${['', 'first', 'second', 'third', 'fourth'][cap]} work of five in each tree`}. `
-        + 'At the fork she is fitted for one purpose or the other; changing branch is work for Lisbon. Everything built into her weighs something, and weight is room and speed.'),
+        'One fitting to a slot, each with its price in tons, wear or the temper of the company. Taking another out of the same slot replaces it.'),
     ));
-    for (const sys of SYSTEMS) {
-      const nodes = systemNodes(sys.id).filter((u) => !u.hulls || u.hulls.includes(g.ship.hullId));
-      const plan = nodes.filter((u) => u.tier === 0);
-      const trunk = nodes.filter((u) => u.tier === 1);
-      const a = nodes.filter((u) => u.branch === 'a');
-      const b = nodes.filter((u) => u.branch === 'b');
-      // Folded, each of them: nine trees of five works apiece laid open at
-      // once was most of the length of the old page. The summary says what
-      // is fitted, which is what a captain looks for first.
-      const fitted = nodes.filter((u) => g.ship.upgrades.includes(u.id));
-      right.append(fold(sys.english,
-        fitted.length ? fitted.map((u) => u.english).join(', ') : 'nothing fitted',
+    for (const slot of SLOTS) {
+      const options = slotFittings(slot.id).filter((u) => !u.hulls || u.hulls.includes(g.ship.hullId));
+      const fitted = options.find((u) => g.ship.upgrades.includes(u.id));
+      right.append(fold(slot.english,
+        fitted ? fitted.english : 'nothing fitted',
         false,
-        el('p', { class: 'fit-blurb' }, sys.blurb),
-        plan.length ? el('div', { class: 'fit-cat-head' }, 'Rig plan') : null,
-        ...plan.map(node),
-        ...trunk.map(node),
-        cap >= 2 ? el('div', { class: 'sys-fork' },
-          el('div', {}, el('div', { class: 'fit-cat-head' }, sys.a), ...a.filter((u) => u.tier <= cap).map(node)),
-          el('div', {}, el('div', { class: 'fit-cat-head' }, sys.b), ...b.filter((u) => u.tier <= cap).map(node)),
-        ) : null,
+        el('p', { class: 'fit-blurb' }, slot.blurb),
+        ...options.map(node),
+        fitted && yard >= 1
+          ? button(slot.id === 'ordnance'
+              ? `Sell the ordnance \u2014 ${ordnanceResale(fitted, def)} cr`
+              : 'Take it out', () => {
+                const r = removeFitting(g, fitted.id);
+                this.notice = { text: r.text, grave: !r.ok };
+                this.render();
+              })
+          : null,
       ));
     }
-    const services = UPGRADES.filter((u) => u.service);
-    left.append(card('The yard\u2019s own work', ...services.map(node)));
 
     // A ship to your own lines, at the Ribeira: folded until wanted, open
     // while one is on the stocks.
@@ -1454,35 +1536,6 @@ export class PortView {
     section('Compasses', COMPASSES.map((c) => ({ ...c, standing: 0 })), g.nav.kit.compass, (id) => { g.nav.kit.compass = id; });
 
     return card('Instruments', ...rows);
-  }
-
-  private fitUpgrade(g: Game, id: string): void {
-    const u = UPGRADE_BY_ID.get(id)!;
-    const st = nodeStatus(u, g.ship.upgrades, g.ship.hullId, g.crown.lifetimeStanding, yardLevel(g.portHere!));
-    if (st.state !== 'open') { this.notice = { text: st.why || 'Already done.', grave: true }; this.render(); return; }
-    if (g.crown.gold < u.cost) { this.notice = { text: 'Not enough in the purse.', grave: true }; this.render(); return; }
-    g.crown.gold -= u.cost;
-    if (id === 'breame') {
-      g.ship.condition.fouling = 0;
-    } else {
-      // Taking the other branch, or another rig plan, strips out what it replaces.
-      const out = new Set(st.replaces);
-      if (u.tier === 2 && out.size > 0) {
-        for (const x of g.ship.upgrades) {
-          const v = UPGRADE_BY_ID.get(x);
-          if (v && v.system === u.system && v.tier >= 3 && v.branch !== u.branch) out.add(x);
-        }
-      }
-      g.ship.upgrades = g.ship.upgrades.filter((x) => !out.has(x));
-      if (!g.ship.upgrades.includes(id)) g.ship.upgrades.push(id);
-    }
-    g.ship.applyRigConversion();
-    g.ship.refreshDerived();
-    g.waitDays(u.days);
-    const gone = st.replaces.map((x) => UPGRADE_BY_ID.get(x)?.english).filter(Boolean);
-    g.logEvent('note', `${u.english} \u2014 ${u.days} days in the yard, ${u.cost} cruzados.${gone.length ? ` Out came ${gone.join(', ')}.` : ''}`);
-    this.notice = { text: `${u.english} done. ${u.blurb}` };
-    this.render();
   }
 
   private buyShip(g: Game, hullId: string): void {

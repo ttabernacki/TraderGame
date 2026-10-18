@@ -7,8 +7,8 @@ import { originDef } from '../progression/origins';
 import { lateEndings, originEnding } from '../progression/quests';
 import { casaEnding } from '../progression/casa';
 import { portName } from '../progression/crown';
-import { POLITY_BY_ID } from '../diplomacy/polities';
 import type { Game } from '../game/state';
+import { chronicles, muster } from '../ledger/chronicle';
 import { button, card, el, kv } from './dom';
 
 /**
@@ -72,6 +72,23 @@ export class EpilogueView {
             `${o.name} was put ashore among strangers and has not been heard of since.`)),
         ),
 
+        // The same career told twice, and then once more by each court that
+        // kept a book of him. Generated from the Ledger; none of it is fixed
+        // text, and a family of deeds the Ledger does not hold is not mentioned.
+        ...(() => {
+          const c = chronicles(g.ledger, `the captain of ${g.ship.name}`);
+          const one = (x: { title: string; byline: string; lines: string[] }): HTMLElement => card(x.title,
+            el('p', { class: 'flavour' }, x.byline),
+            ...x.lines.map((l) => el('p', {}, l)));
+          return [
+            el('p', { class: 'epilogue-lede' }, c.others.length > 0
+              ? `Lisbon wrote one account of the career. ${c.others.length === 1 ? 'One court' : `${c.others.length} courts`} wrote another, and they do not agree.`
+              : 'Lisbon wrote an account of the career. No court on the coast kept a book of you that is worth reading beside it.'),
+            one(c.lisbon),
+            ...c.others.map(one),
+          ];
+        })(),
+
         // What kind of captain the fo'c'sle decided he was. Not a score: three
         // counters that only exist because he did those things, each of which
         // was a choice made in front of everybody at the worst hour of a
@@ -102,34 +119,31 @@ export class EpilogueView {
             )
           : null,
 
-        // The men forward, by name. The figure above is the one the Casa
-        // recorded; this is the one that was actually paid.
-        g.hands.some((h) => !h.alive)
-          ? card('Names',
-              el('p', { class: 'flavour' },
-                'The muster roll went to the Casa da Mina and was filed. These are the ones off '
-                + 'the fo’c’sle you could still have named twenty years later, which is '
-                + 'not all of them, and you know it is not.'),
-              ...g.hands.filter((h) => !h.alive).map((h) => el('p', {},
-                el('b', {}, h.name), `, of ${h.from}. `, h.fate ?? 'Lost.')),
-              ...(() => {
-                const back = g.hands.filter((h) => h.alive && h.aboard);
-                return back.length > 0
-                  ? [el('p', { class: 'good' },
-                      `Came up the Tagus with you: ${back.map((h) => h.name).join(', ')}.`)]
-                  : [];
-              })(),
-            )
-          : null,
-
-        // What the courts made of you, in the words they would use.
-        g.diplomacy.marks.marks.length > 0
-          ? card('What the courts said of you',
-              el('p', { class: 'flavour' }, 'Every court you sat at kept some account of you. These are the entries.'),
-              ...[...new Set(g.diplomacy.marks.marks.map((m) => m.polity))].slice(0, 12).map((id) => el('p', {},
-                el('b', {}, POLITY_BY_ID.get(id)?.name ?? id), ' \u2014 ',
-                g.diplomacy.marks.marks.filter((m) => m.polity === id).map((m) => m.text).join(' '))))
-          : null,
+        // The muster roll: who did not come home, by name where the book has a
+        // name, and by count where it does not. The Ledger holds the deaths
+        // with their cause; hands off an older save are added from the muster.
+        ...(() => {
+          const m = muster(g.ledger);
+          const known = new Set(m.named.map((n) => n.name));
+          const older = g.hands.filter((h) => !h.alive && !known.has(h.name));
+          const total = Math.max(m.total, g.crew.deaths);
+          if (total === 0 && older.length === 0) return [];
+          const named = m.named.length + older.length;
+          return [card('The muster roll',
+            el('p', { class: 'flavour' },
+              'The muster roll went to the Casa da Mina and was filed. These are the ones off '
+              + 'the fo\u2019c\u2019sle you could still have named twenty years later, which is '
+              + 'not all of them, and you know it is not.'),
+            ...m.named.map((n) => el('p', {}, el('b', {}, n.name), `. ${n.fate}`)),
+            ...older.map((h) => el('p', {}, el('b', {}, h.name), `, of ${h.from}. `, h.fate ?? 'Lost.')),
+            el('p', { class: 'bad' }, `${total} dead in all. ${named} by name, and ${Math.max(0, total - named)} whose names nobody wrote down.`),
+            ...(() => {
+              const back = g.hands.filter((h) => h.alive && h.aboard);
+              return back.length > 0
+                ? [el('p', { class: 'good' }, `Came up the Tagus with you: ${back.map((h) => h.name).join(', ')}.`)]
+                : [];
+            })())];
+        })(),
 
         // What the company gave you, which is the part that outlasted them.
         g.bonds.size > 0

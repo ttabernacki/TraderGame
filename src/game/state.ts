@@ -15,7 +15,7 @@ import {
   rumoursHeard,
 } from '../progression/quests';
 import { cancelPortQuests, migrateEstate, settleFoldedPieces, settleStoresOverflow, migrateFittings } from './saveResolvers';
-import { loadPlan, planOf, recordLeg, storesTons } from './stores';
+import { loadPlan, planOf, recordLeg, storesTons, trimToHold } from './stores';
 import { migrateEnterprises, tickLines, type Letter, type Line } from '../progression/network';
 import { deliverFactoryMail, noteSightings, postLetter, tickFactories, transitDays } from '../progression/livingFactory';
 import { ambientAtSea, barkAt } from '../progression/barks';
@@ -159,7 +159,7 @@ export type GameMode =
   | 'sailing' | 'chart' | 'sight' | 'logbook' | 'crew' | 'port'
   | 'audience' | 'court' | 'shipyard' | 'menu' | 'title' | 'gameover' | 'orders' | 'epilogue'
   | 'voyages'
-  | 'shore' | 'rutter';
+  | 'shore' | 'rutter' | 'book';
 
 /** One mast's sails, as set against how they ought to be. */
 export interface MastTrim {
@@ -5881,6 +5881,7 @@ export class Game {
     this.crew.complement = h.crewFull;
     this.crew.count = Math.min(this.crew.count, h.crewFull);
     this.syncStores();
+    trimToHold(this);
     this.refreshEnvironment();
     if (this.crew.count < h.crewMin) {
       this.pushAlert(`The ${h.name} wants ${h.crewMin} men to sail her and you have `

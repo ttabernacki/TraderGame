@@ -154,3 +154,17 @@ export function recommendedPlan(g: Game): StoresPlan {
   // Beyond the Line the pilot wants water for longer than the food: the casks go first.
   return fitPlan(g, { water: need + 10, victuals: need, spares: need > 40 ? 0.6 : 0.4 });
 }
+
+/** After a change of hull or hold: stores that no longer stow beside the cargo are landed. */
+export function trimToHold(g: Game): void {
+  const have = planOf(g.crew);
+  const fit = fitPlan(g, have);
+  if (fit.water < have.water) g.crew.provisions.water = fit.water;
+  if (fit.victuals < have.victuals) {
+    g.crew.provisions.biscuit = fit.victuals;
+    g.crew.provisions.saltMeat = fit.victuals * 0.9;
+    g.crew.provisions.wine = fit.victuals * 0.7;
+  }
+  if (fit.spares < have.spares) g.crew.spares = fit.spares;
+  g.syncStores();
+}

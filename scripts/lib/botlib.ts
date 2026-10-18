@@ -16,7 +16,7 @@ import { provisioningCost } from '../../src/economy/market';
 import { good } from '../../src/economy/goods';
 import { roadBetween } from '../../src/progression/road';
 import { openRuns, offered, runView, startPiece, stepPiece } from '../../src/diplomacy/table';
-import { UPGRADE_BY_ID, nodeStatus, yardLevel } from '../../src/ship/upgrades';
+import { doRefit, quoteRefit } from '../../src/game/refit';
 import { isLand } from '../../src/world/landmass';
 import { polityOfPort } from '../../src/diplomacy/polities';
 
@@ -132,7 +132,7 @@ export function victual(g: Game, want = 90): void {
 }
 
 /** Sell what pays, buy what the next port will pay more for. */
-export function trade(g: Game, nextPort: string | null, t: Tally): void {
+export function trade(g: Game, nextPort: string | null, t: Tally, afterSales?: () => void): void {
   const here = g.dockedAt;
   if (!here) return;
   // Sell every lot that does not lose money here, or that has been carried a long way.
@@ -144,6 +144,8 @@ export function trade(g: Game, nextPort: string | null, t: Tally): void {
       if (r.ok) t.trades++;
     }
   }
+  // Stores share the hold with the cargo: victual after the sales and before the buying.
+  afterSales?.();
   if (!nextPort) return;
   const rows = g.marketHere().filter((l) => l.stock > 1 && !l.casa);
   const there = g.markets.listings(nextPort, g.clock.t, 0, 0, rows.map((r) => r.goodId));
@@ -164,35 +166,22 @@ export function trade(g: Game, nextPort: string | null, t: Tally): void {
   }
 }
 
-/** Make her sound if the yard is worth anything (the Yard card of the port screen, same arithmetic). */
+/** Make her sound if the yard is worth anything (the Yard card of the port screen: parts and days). */
 export function repair(g: Game): void {
-  const def = g.portHere;
-  if (!def || g.ship.condition.hull > 0.9) return;
-  const refit = Math.min(1, Math.max(0.15, def.refit));
-  const full = Math.ceil((1 - g.ship.condition.hull) * 900 / refit);
-  if (g.crown.gold < full) g.drawCredit(full - g.crown.gold);
-  // A poor yard still does what the purse buys: a part-repair in proportion.
-  const spend = Math.min(full, Math.floor(g.crown.gold * 0.9));
-  if (spend < 20) return;
-  g.crown.gold -= spend;
-  g.ship.repair((spend / full) * (1 - g.ship.condition.hull));
-  for (const s of g.ship.state.sails) s.condition = 1;
-  g.clock.t += 86400 * 8;
+  if (!g.portHere || g.ship.condition.hull > 0.9) return;
+  const q = quoteRefit(g, 'hull');
+  if (q.ok && g.crown.gold < q.gold) g.drawCredit(q.gold - g.crown.gold);
+  if (q.ok && g.crown.gold >= q.gold) doRefit(g, 'hull');
+  const r = quoteRefit(g, 'rig');
+  if (r.ok && g.crown.gold >= r.gold) doRefit(g, 'rig');
 }
 
-/** Scrape her bottom where there is a yard that does it (the 'breame' service of the yard card). */
+/** Scrape her bottom where there is a yard that does it. */
 export function careen(g: Game): void {
-  const def = g.portHere;
-  if (!def || g.ship.condition.fouling < 0.45) return;
-  const u = UPGRADE_BY_ID.get('breame');
-  if (!u) return;
-  const st = nodeStatus(u, g.ship.upgrades, g.ship.hullId, g.crown.lifetimeStanding, yardLevel(def));
-  if (st.state !== 'open' || g.crown.gold < u.cost * 1.2) return;
-  g.crown.gold -= u.cost;
-  g.ship.condition.fouling = 0;
-  g.ship.applyRigConversion();
-  g.ship.refreshDerived();
-  g.waitDays(u.days);
+  if (!g.portHere || g.ship.condition.fouling < 0.45) return;
+  const q = quoteRefit(g, 'careen');
+  if (!q.ok || g.crown.gold < q.gold * 1.2) return;
+  doRefit(g, 'careen');
 }
 
 /** The King's commission: take the one the act asks for, else the best-paying. */
@@ -211,10 +200,9 @@ export function atQuay(g: Game, next: string | null, t: Tally, rng: Rng): void {
   answerScenes(g, t);
   if (g.dockedAt === 'lisboa') takeCommission(g);
   audienceHere(g, t, rng);
-  trade(g, next, t);
   repair(g);
   careen(g);
-  victual(g, bigStores(g));
+  trade(g, next, t, () => victual(g, bigStores(g)));
   answerScenes(g, t);
 }
 

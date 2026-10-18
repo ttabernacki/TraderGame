@@ -5,7 +5,7 @@ import type { Game, GameMode } from '../game/state';
 import { AudienceView } from './audienceView';
 import { ChartView } from './chartView';
 import { RutterView } from './rutterView';
-import { BookView, isBookSection } from './bookView';
+import { BookView, KnowledgeView, isBookSection } from './bookView';
 import { CourtView } from './courtView';
 import { CrewView } from './crewView';
 import { clear, el } from './dom';
@@ -66,8 +66,9 @@ export class Ui {
   private chart: ChartView;
   private rutter: RutterView;
   private book: BookView;
+  private knowledge: KnowledgeView;
   /** The page the book was last left open at. */
-  private lastSection: GameMode = 'chart';
+  private lastSection: GameMode = 'book';
   private sight: SightView;
   private logbook: LogbookView;
   private crew: CrewView;
@@ -120,6 +121,7 @@ export class Ui {
     this.chart = new ChartView(back);
     this.rutter = new RutterView(back);
     this.book = new BookView((m) => this.setMode(m));
+    this.knowledge = new KnowledgeView(back, (m) => this.setMode(m));
     this.sight = new SightView(back);
     this.logbook = new LogbookView(back);
     this.crew = new CrewView(back);
@@ -218,6 +220,9 @@ export class Ui {
         break;
       // The five sections of the one book. Each is the screen it always was;
       // the book only binds them and puts tabs on the head.
+      case 'book':
+        this.openBook(mode, this.knowledge.root, () => this.knowledge.open(g));
+        break;
       case 'rutter':
         this.openBook(mode, this.rutter.root, () => this.rutter.open(g));
         break;
@@ -376,7 +381,7 @@ export class Ui {
 
     if (g.mode !== 'sailing') {
       const toggles: Record<string, GameMode> = {
-        c: 'chart', j: 'rutter', n: 'sight', l: 'logbook', k: 'crew', p: 'port', o: 'orders',
+        c: 'chart', j: 'book', n: 'sight', l: 'logbook', k: 'crew', p: 'port', o: 'orders',
       };
       const want = toggles[k];
       // Toggling the same panel closes it.
@@ -415,7 +420,7 @@ export class Ui {
       case 'j':
         // The book, open at the page it was left at — which is how a book is
         // actually used, and means one key reaches everything.
-        this.setMode(isBookSection(this.lastSection) ? this.lastSection : 'rutter');
+        this.setMode(isBookSection(this.lastSection) ? this.lastSection : 'book');
         return true;
       case 't':
         // About ship. The order a windward passage is made of.

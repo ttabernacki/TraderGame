@@ -400,7 +400,7 @@ let last = performance.now();
 
 /** Modes whose screen is opaque and fills the window. */
 const COVERED_MODES: ReadonlySet<string> = new Set([
-  'rutter', 'chart', 'logbook', 'crew', 'orders', 'voyages', 'port', 'court', 'audience',
+  'rutter', 'book', 'chart', 'logbook', 'crew', 'orders', 'voyages', 'port', 'court', 'audience',
   'shore', 'epilogue',
 ]);
 
