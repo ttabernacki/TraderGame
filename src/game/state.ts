@@ -17,7 +17,7 @@ import {
 import { migrateEstate } from './saveResolvers';
 import { migrateEnterprises, tickLines, type Letter, type Line } from '../progression/network';
 import { deliverFactoryMail, noteSightings, postLetter, tickFactories, transitDays } from '../progression/livingFactory';
-import { barkAt } from '../progression/barks';
+import { ambientAtSea, barkAt } from '../progression/barks';
 import { MILESTONES, checkMilestones } from '../progression/milestones';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
 import { azoresHigh, itczLatitude } from '../world/wind';
@@ -411,7 +411,6 @@ export class Game {
   private checkWorld(): void {
     if (this.mode === 'gameover' || this.mode === 'title') return;
     noteSightings(this);
-    tickFactories(this);
     tickLines(this);
     if (this.dockedAt) deliverFactoryMail(this, this.dockedAt);
     const bark = barkAt(this);
@@ -546,6 +545,8 @@ export class Game {
   pendingEvent: SeaEvent | null = null;
   /** The last few event ids, so the same thing does not happen twice running. */
   recentEvents: string[] = [];
+  /** Days until the next ambient sea bark may be said. Not saved. */
+  ambientCool = 0;
   /** Simulated days since anything at all happened, for the pacing floor. */
   daysSinceEvent = 0;
   /** Simulated days since the captain was asked anything, which matters more. */
@@ -4547,6 +4548,8 @@ export class Game {
     this.daysSinceEvent += days;
     this.daysSinceDecision += days;
     this.eventCooldown = Math.max(0, this.eventCooldown - days);
+    const ambient = ambientAtSea(this, days);
+    if (ambient) this.logEvent('note', ambient, false);
     // A written scene jumps the queue. The cooldown exists to keep rolled
     // incidents from arriving on top of each other; a landfall or a landmark is
     // a thing that is happening *now*, and holding it back a day and a half
@@ -7868,8 +7871,9 @@ export class Game {
   private settleFeitoria(def: PortDef): void {
     const f = this.feitorias.find((x) => x.portId === def.id && !x.lost);
     if (!f) return;
-    // The station has been run month by month while she was away; bring it up to
-    // today before the books are read out.
+    // Cut A3: nothing runs in the background any more. The months since the
+    // last visit are run forward here, in one lump, when the captain stands in
+    // the shed (the old catch-up path of livingFactory), then the books are read out.
     tickFactories(this);
     if (f.lost) return;
     const days = (this.clock.t - f.settled) / 86400;

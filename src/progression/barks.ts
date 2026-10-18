@@ -1,5 +1,7 @@
 import type { OfficerRole } from '../crew/crew';
 import type { Game } from '../game/state';
+import { clamp } from '../core/math';
+import { nearestShore } from '../world/landmass';
 
 /**
  * What the wardroom says when the ship gets somewhere.
@@ -63,6 +65,101 @@ export function barkAt(g: Game): string | null {
     if (!o) continue;
     g.secretsHeard.push(key);
     return `${o.name}, the ${o.role === 'piloto' ? 'pilot' : o.role === 'mestre' ? 'master' : o.role === 'contramestre' ? 'boatswain' : o.role === 'escrivao' ? 'clerk' : o.role === 'cirurgiao' ? 'surgeon' : o.role === 'capelao' ? 'chaplain' : o.role === 'lingua' ? 'interpreter' : 'envoy'}: “${b.text}”`;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Ambient sea barks (Cut A3)
+// ---------------------------------------------------------------------------
+
+/**
+ * The small things a passage says to itself: birds, weed, a catch of fish, rain
+ * in the scuppers, a lump of ambergris going astern. These were note-severity sea
+ * events with a card of their own; they are now one line in the log. Two of them
+ * keep their small mechanical edge so the sea does not lose its food and water
+ * (fresh meat against the scurvy clock; a little rain in the casks). Returns the
+ * line, or null.
+ */
+interface Ambient {
+  id: string;
+  everyDays: number;
+  gate: (g: Game, shoreNm: number, day: boolean) => boolean;
+  lines: string[];
+  effect?: (g: Game) => void;
+}
+
+const AMBIENT: Ambient[] = [
+  {
+    id: 'birds', everyDays: 3,
+    gate: (_g, nm, day) => nm < 140 && nm > 8 && day,
+    lines: [
+      'A flight of boobies went over, all on the same course. There is land that way, and not far.',
+      'Terns fishing round the ship, and they do not sleep at sea. There is land within a day or two.',
+      'A gannet came aboard and would not be driven off. Land is near.',
+      'Land birds, small and brown, not sea birds at all. The lookout is watching the horizon.',
+    ],
+  },
+  {
+    id: 'weed', everyDays: 3.5,
+    gate: (_g, nm, day) => nm < 90 && day,
+    lines: [
+      'Weed going past in rafts, still green: it has not been long in the water.',
+      'A branch went by with leaves on it, and after it a bundle of reeds.',
+      'The water has changed colour, greener than it was, and the lead finds a bottom.',
+      'A cane float, cut and bound by hands. Someone made that.',
+    ],
+  },
+  {
+    id: 'fish', everyDays: 2.6,
+    gate: (g) => Math.abs(g.physics.speedKnots) < 7,
+    lines: [
+      'The hands took a shoal of dorado under the bow: fresh meat for all hands.',
+      'A turtle taken asleep on the surface, and turtle is as good as beef.',
+      'Flying fish came aboard in the night by the dozen. The cook has them all.',
+    ],
+    effect: (g) => {
+      const gained = g.rng.range(1.4, 4.5);
+      g.crew.provisions.fresh += gained;
+      g.crew.daysWithoutFresh = Math.max(0, g.crew.daysWithoutFresh - gained * 0.6);
+      g.crew.morale = clamp(g.crew.morale + 0.05, 0, 1);
+    },
+  },
+  {
+    id: 'rainwater', everyDays: 2.2,
+    gate: (g) => g.weatherNow.rain > 0.35 && g.crew.provisions.water < 70,
+    lines: [
+      'It is coming down in rods and the scuppers are running fresh. The hands spread the awnings and fill what casks they can.',
+      'Rain at last. The men stand in it with their mouths open like boys, and the cooper has every cask on deck.',
+    ],
+    effect: (g) => {
+      g.crew.provisions.water = Math.min(120, g.crew.provisions.water + g.rng.range(3, 8));
+      g.crew.morale = clamp(g.crew.morale + 0.03, 0, 1);
+    },
+  },
+  {
+    id: 'ambergris', everyDays: 130,
+    gate: (g, nm, day) => nm > 40 && day && Math.abs(g.physics.speedKnots) < 8,
+    lines: [
+      'A grey waxy mass floating on the swell, the size of a barrel, and the stink of it carries half a cable downwind. Ambergris, they say, worth more by weight than anything in the hold. It goes astern on the swell; there is a passage to make.',
+    ],
+  },
+];
+
+/** Once a step at sea. At most one line, and not more often than every day and a half. */
+export function ambientAtSea(g: Game, days: number): string | null {
+  if (days <= 0 || g.anchored || g.dockedAt) return null;
+  g.ambientCool = Math.max(0, g.ambientCool - days);
+  if (g.ambientCool > 0) return null;
+  const nm = nearestShore(g.ship.state.pos).distance / 1852;
+  const h = g.clock.hour;
+  const day = !(h < 5 || h > 20);
+  for (const a of AMBIENT) {
+    if (!a.gate(g, nm, day)) continue;
+    if (!g.rng.chance(days / a.everyDays)) continue;
+    a.effect?.(g);
+    g.ambientCool = 1.5;
+    return g.rng.pick(a.lines);
   }
   return null;
 }

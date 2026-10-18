@@ -12,6 +12,13 @@ import {
 /**
  * A station that runs itself.
  *
+ * CUT A3: the silent background loop is stopped. `tickFactories` is no longer
+ * called from the frame loop (Game.checkWorld); it runs only from
+ * Game.settleFeitoria, when the captain puts in at a House, and plays the months
+ * since the last visit forward in one lump (capped at MAX_CATCH_UP). The
+ * House's data, works, chest and yield mechanism are unchanged; Houses become
+ * prosperity nodes in C1. The rest of this comment describes the old behaviour.
+ *
  * The factory used to sit frozen until the ship came back and then be run
  * forward in one lump, which made it a chore: visit, read the books, fund the
  * chest, load the shed, pay the demand, go. Nothing happened in between, so

@@ -84,61 +84,10 @@ const day = (c: EventContext) => !c.night;
 // ---------------------------------------------------------------------------
 
 export const EVENTS: SeaEventDef[] = [
-  // --- Signs of the land ---------------------------------------------------
-  {
-    id: 'birds',
-    everyDays: 1.1,
-    gate: (c) => c.shoreNm < 140 && c.shoreNm > 8 && day(c),
-    build: (c) => {
-      const kind = c.rng.pick([
-        'A flight of boobies went over, all on the same course',
-        'Terns fishing round the ship, and they do not sleep at sea',
-        'A gannet came aboard and would not be driven off',
-        'Land birds — small ones, brown, not sea birds at all',
-      ]);
-      const bearing = signBearing(c);
-      return {
-        id: 'birds', severity: 'note',
-        title: 'Signs from the lookout',
-        text: `${kind}, heading ${bearing}. There is land that way, and not far.`,
-      };
-    },
-  },
-  {
-    id: 'weed',
-    everyDays: 1.4,
-    gate: (c) => c.shoreNm < 90 && day(c),
-    build: (c) => ({
-      id: 'weed', severity: 'note',
-      title: 'Signs from the lookout',
-      text: c.rng.pick([
-        'Weed going past in rafts, still green — it has not been long in the water.',
-        'A branch went by with leaves on it, and after it a bundle of reeds.',
-        'The water has changed colour: greener than it was, and the lead finds a bottom.',
-        'A cane float, cut and bound by hands. Someone made that.',
-      ]),
-    }),
-  },
+  // Cut A3: birds, weed, fish, rainwater and ambergris are no longer events; their
+  // lines live on as ambient barks (progression/barks: ambientAtSea).
 
   // --- The crew ------------------------------------------------------------
-  {
-    id: 'fish',
-    everyDays: 2.6,
-    gate: (c) => c.speedKnots < 7,
-    build: (c) => {
-      const catchDays = c.rng.range(1.4, 4.5);
-      return {
-        id: 'fish', severity: 'note',
-        title: 'Fresh meat',
-        text: c.rng.pick([
-          `The hands took a shoal of dorado under the bow — ${catchDays.toFixed(0)} days of fresh meat for all hands.`,
-          `A turtle taken asleep on the surface, and turtle is as good as beef.`,
-          `Flying fish came aboard in the night by the dozen. The cook has them all.`,
-        ]),
-        choices: undefined,
-      };
-    },
-  },
   {
     id: 'cask',
     everyDays: 9,
@@ -260,38 +209,6 @@ export const EVENTS: SeaEventDef[] = [
   // firing every eight days it was the more common of the two. Removed.
 
   // --- Windfalls and losses ------------------------------------------------
-  {
-    id: 'ambergris',
-    everyDays: 130,
-    gate: (c) => c.shoreNm > 40 && day(c) && c.speedKnots < 8,
-    build: () => ({
-      id: 'ambergris', severity: 'note',
-      title: 'Something in the water',
-      text: 'A grey waxy mass floating on the swell, the size of a barrel, and the stink of it carries half a cable downwind. Ambergris — worth more by weight than anything in the hold.',
-      choices: [
-        {
-          label: 'Put the boat over and take it aboard',
-          detail: 'An hour, in this sea, and the boat is at some risk.',
-          resolve: (g) => {
-            g.clock.t += 86400 * 0.08;
-            if (g.rng.chance(0.85)) {
-              const worth = Math.round(g.rng.range(140, 420));
-              g.crown.gold += worth;
-              g.crew.morale = clamp(g.crew.morale + 0.14, 0, 1);
-              return `Got the boat over and the whole mass aboard, stinking to heaven and worth ${worth} cruzados to the apothecaries of Lisbon. The hands are in a very good humour.`;
-            }
-            g.crew.morale = clamp(g.crew.morale - 0.04, 0, 1);
-            return 'The boat was half swamped getting to it and the mass broke apart in their hands. We have a bucket of it and a wet boat\u0027s crew.';
-          },
-        },
-        {
-          label: 'Leave it. There is a passage to make',
-          detail: 'A fortune, probably. And an hour.',
-          resolve: () => 'Held our course and watched a small fortune go astern on the swell. There will be others. There are never others.',
-        },
-      ],
-    }),
-  },
   {
     id: 'wreck',
     everyDays: 70,
@@ -415,39 +332,6 @@ export const EVENTS: SeaEventDef[] = [
   // judgements in the table and a blue-water day was eligible for almost none
   // of them, which is not a pacing problem — it is not having written the
   // content the pacing was meant to deal out.
-  {
-    id: 'rainwater',
-    everyDays: 2.2,
-    // The payoff for the doldrums. A thunder squall is a water cask, and the
-    // belt stops being only a tax the moment a crew can want one.
-    gate: (c) => c.rain > 0.35 && c.g.crew.provisions.water < 70,
-    build: (c) => ({
-      id: 'rainwater', severity: 'note',
-      title: 'Rain',
-      text: 'It is coming down in rods and the scuppers are running fresh. '
-        + `There is ${c.g.crew.provisions.water.toFixed(0)} days\u2019 water in the ground tier.`,
-      choices: [
-        {
-          label: 'Spread the sails and catch it',
-          detail: 'The casks go back up. She lies still while it is done.',
-          resolve: (g) => {
-            const got = g.rng.range(6, 16);
-            g.crew.provisions.water = Math.min(120, g.crew.provisions.water + got);
-            g.handSail(0.2);
-            g.clock.t += 3600 * g.rng.range(2, 5);
-            g.crew.morale = clamp(g.crew.morale + 0.05, 0, 1);
-            return `Unbent the spritsail and spread every awning we had, and filled ${got.toFixed(0)} days\u2019 `
-              + 'water in an afternoon. The men stood in it with their mouths open like boys.';
-          },
-        },
-        {
-          label: 'Let it rain and keep her going',
-          detail: 'Hold the ground you are making.',
-          resolve: () => 'Let it rain on us and held on. The casks are no fuller and we are ten miles further south.',
-        },
-      ],
-    }),
-  },
   {
     id: 'nightloom',
     everyDays: 7,
@@ -601,18 +485,6 @@ export function rollSeaEvent(g: Game, days: number): SeaEvent | null {
 function applyBaseEffect(g: Game, id: string): void {
   const p = g.crew.provisions;
   switch (id) {
-    case 'fish': {
-      const gained = g.rng.range(1.4, 4.5);
-      p.fresh += gained;
-      // Credit for what was actually caught, and less than one for one. A
-      // dozen bonito is a good dinner for a ship's company; it is not a cure
-      // for two months of salt meat, and treating it as two days of credit per
-      // day of food meant a lucky afternoon's fishing wiped out the scurvy
-      // clock entirely and the disease never happened.
-      g.crew.daysWithoutFresh = Math.max(0, g.crew.daysWithoutFresh - gained * 0.6);
-      g.crew.morale = clamp(g.crew.morale + 0.05, 0, 1);
-      break;
-    }
     case 'cask':
       p.water = Math.max(0, p.water - g.rng.range(4, 9));
       g.crew.morale = clamp(g.crew.morale - 0.04, 0, 1);
