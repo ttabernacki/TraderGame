@@ -8,7 +8,7 @@ import {
 } from '../economy/trade';
 import { formatDateAt } from '../core/clock';
 import { people } from '../world/peoples';
-import { portDef, type PortDef } from '../world/ports';
+import { type PortDef } from '../world/ports';
 import {
   SYSTEMS, UPGRADES, UPGRADE_BY_ID, describeEffects, nodeStatus, systemNodes, tierCap, yardLevel, type Upgrade,
 } from '../ship/upgrades';
