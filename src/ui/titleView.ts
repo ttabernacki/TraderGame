@@ -2,7 +2,7 @@ import { formatLat, formatLon } from '../core/math';
 import type { Game } from '../game/state';
 import { DIFFICULTIES, difficultyDef, type Difficulty } from '../game/difficulty';
 import { ORIGINS, originDef, type OriginId } from '../progression/origins';
-import { ACTIVE_CAMPAIGN, keepCampaign } from '../campaigns/active';
+import { ACTIVE_CAMPAIGN, XIYANG_SHELVED, keepCampaign } from '../campaigns/active';
 import { CAMPAIGNS, campaignDef } from '../game/campaign';
 import { button, card, clear, el, kv } from './dom';
 
@@ -54,8 +54,8 @@ export class TitleView {
       el('div', { class: 'tagline' }, cd.tagline),
       el('div', { class: 'blurb' }, cd.blurb),
       // Another campaign is another world, which is read once at load: choosing one reloads the page.
-      el('div', { class: 'difficulty-head' }, 'Which voyage?'),
-      el('div', { class: 'difficulty' }, ...CAMPAIGNS.map((c) => el('button', {
+      ...(XIYANG_SHELVED ? [] : [el('div', { class: 'difficulty-head' }, 'Which voyage?')]),
+      ...(XIYANG_SHELVED ? [] : [el('div', { class: 'difficulty' }, ...CAMPAIGNS.map((c) => el('button', {
         class: `difficulty-btn${c.id === ACTIVE_CAMPAIGN ? ' active' : ''}`,
         onclick: () => {
           if (c.id === ACTIVE_CAMPAIGN) return;
@@ -65,7 +65,7 @@ export class TitleView {
           globalThis.location.href = u.toString();
         },
       }, el('span', { class: 'difficulty-name' }, c.title),
-        el('span', { class: 'difficulty-english' }, c.inDevelopment ? `${c.tagline} \u00b7 preview` : c.tagline)))),
+        el('span', { class: 'difficulty-english' }, c.inDevelopment ? `${c.tagline} \u00b7 preview` : c.tagline))))]),
       ...(xiyang ? [] : [el('div', { class: 'difficulty-head' }, 'Who are you?'), this.origins, this.originBlurb]),
       el('div', { class: 'difficulty-head' }, 'How is she to be worked?'),
       this.choices,

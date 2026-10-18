@@ -1,5 +1,7 @@
 # Dev roadmap
 
+> **Track C (Xiyang / Zheng He) is shelved** — see `docs/SHELVED.md`.
+
 Order of work. Each stage ships on its own (build, bundle, publish) and has an exit check
 that is measured, not eyeballed. Resume from the first unchecked stage. Design lives in
 the published pages "The Audience" (Table engine) and "Twelve Set Pieces" (pieces, marks,

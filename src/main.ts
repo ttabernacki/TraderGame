@@ -1,4 +1,4 @@
-import { ACTIVE_CAMPAIGN, keepCampaign } from './campaigns/active';
+import { ACTIVE_CAMPAIGN, XIYANG_SHELVED, keepCampaign } from './campaigns/active';
 import { DiscoveryBanner } from './ui/discoveryBanner';
 import './style.css';
 
@@ -253,6 +253,10 @@ function resumeFrom(json: string): void {
   // voyage from the other campaign is kept aside and the page reloaded into the right one.
   try {
     const want = (JSON.parse(json).campaign as string | undefined) ?? 'carreira';
+    if (XIYANG_SHELVED && want === 'xiyang') {
+      if (game) game.pushAlert('That voyage belongs to the shelved Western Ocean campaign.', 'grave'); else ui.showTitle();
+      return;
+    }
     if (want !== ACTIVE_CAMPAIGN && (want === 'xiyang' || want === 'carreira')) {
       globalThis.sessionStorage?.setItem('carreira.resume', json);
       keepCampaign(want);
