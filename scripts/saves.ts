@@ -39,8 +39,11 @@ function invariants(g: Game, label: string): string[] {
   need(g.mode !== 'title', 'mode is title');
   need(!!g.ship.name, 'ship has no name');
   need(g.dockedAt === null || !!g.dockedAt, 'dockedAt undefined');
-  // The Ledger (B1) is not in the game yet: when it lands, it must survive the round trip.
-  if ('ledger' in (g as any)) need(Array.isArray((g as any).ledger?.entries ?? (g as any).ledger), 'ledger malformed');
+  // The Ledger (B1): an array of well-formed entries (an array has an `entries` method, so test the array first).
+  if ('ledger' in (g as any)) {
+    const l = (g as any).ledger;
+    need(Array.isArray(l) && l.every((e: any) => e && typeof e.tag === 'string' && Number.isFinite(e.t) && Array.isArray(e.actors)), 'ledger malformed');
+  }
   return bad;
 }
 

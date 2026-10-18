@@ -14,6 +14,7 @@ export class Finish {
   private glare: HTMLDivElement;
   private lastV = -1;
   private lastGlare = '';
+  private off = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.vignette = document.createElement('div');
@@ -24,12 +25,20 @@ export class Finish {
     canvas.insertAdjacentElement('afterend', this.vignette);
   }
 
+  /** Hide both layers, when the post stack does their work in the shader. */
+  setEnabled(on: boolean): void {
+    this.off = !on;
+    this.vignette.style.display = on ? '' : 'none';
+    this.glare.style.display = on ? '' : 'none';
+  }
+
   /**
    * `night` and `overcast` are 0 to 1. `sun` is where the sun is on screen as
    * fractions of the width and height, and how strongly it should bloom, or
    * null when it is behind the camera, below the horizon or clouded out.
    */
   update(night: number, overcast: number, sun: { x: number; y: number; strength: number; warm: number } | null, photo: boolean): void {
+    if (this.off) return;
     const v = (0.26 + night * 0.16 + overcast * 0.10) * (photo ? 0.8 : 1);
     if (Math.abs(v - this.lastV) > 0.004) {
       this.lastV = v;

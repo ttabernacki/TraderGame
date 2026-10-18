@@ -3,6 +3,7 @@ import { clamp, lerp } from '../core/math';
 import { fbm1 } from '../core/rng';
 import { GOODS, good, type Good } from './goods';
 import { PORTS, portDef, type PortDef } from '../world/ports';
+import { lotUnits } from './ladder';
 
 export interface Listing {
   goodId: string;
@@ -96,18 +97,21 @@ export class Markets {
     return bySize * (0.5 + def.wealth);
   }
 
-  /** Baseline quantity a port keeps of a good it produces. */
+  /**
+   * Baseline quantity a port keeps of a good it produces.
+   *
+   * Capped in tons by the hold of the hull class above the ones that call here,
+   * and in money for the dense goods: see economy/ladder.
+   */
   private baseStock(def: PortDef, g: Good, abundance: number): number {
-    const scale = { anchorage: 0.15, village: 0.4, town: 1, city: 2.2, emporium: 4.5 }[def.size];
-    const bulkiness = clamp(0.06 / Math.max(g.bulk, 0.001), 0.4, 14);
     // A road to the interior, bought with a man's three years. What it changes
     // is not the price — it is that the goods arrive here through two pairs of
     // hands instead of four, so there is simply more of them and the town can
     // pay for more of them. See progression/inland.
     const road = this.roads.has(def.id) ? 1.7 : 1;
-    const units = abundance * scale * bulkiness * 45 * (0.5 + def.wealth) * road;
+    const units = lotUnits(def, g, 'produces', abundance, road);
     const affordable = (this.valueCeiling(def) * abundance * road) / Math.max(g.lisbon, 0.01);
-    return Math.round(Math.min(units, affordable));
+    return Math.max(1, Math.round(Math.min(units, affordable)));
   }
 
   /**
@@ -181,20 +185,14 @@ export class Markets {
   }
 
   private baseAppetite(def: PortDef, g: Good, hunger: number): number {
-    const scale = { anchorage: 0.12, village: 0.35, town: 0.9, city: 2, emporium: 4 }[def.size];
-    const bulkiness = clamp(0.06 / Math.max(g.bulk, 0.001), 0.4, 14);
     // What a great market craves, it will take as much of as you can carry.
     //
     // Lisbon's appetite for pepper measured at ninety-one quintais, against a
     // caravel's hold of five hundred — so the hold, which is the central
-    // scarcity of the entire genre, never once bound on any route. It was
-    // always the far end's appetite, which meant a captain filled a third of
-    // his ship and there was no cargo decision to make at all. A city that
-    // wants a thing badly now wants more of it than one voyage can bring, and
-    // the goods it only half wants still cap out — so the choice is what to
-    // fill her with, not how little to bother carrying.
-    const craving = 1 + hunger * hunger * 5;
-    return Math.round(hunger * scale * bulkiness * 38 * (0.4 + def.wealth) * craving);
+    // scarcity of the entire genre, never once bound on any route. A city that
+    // wants a thing badly now wants more of it than one voyage can bring, in
+    // tons for the staples and in money for the dense goods (economy/ladder).
+    return Math.max(1, Math.round(lotUnits(def, g, 'wants', hunger)));
   }
 
   /** Units on the quay now, and that against what the town usually holds (1 = normal). */

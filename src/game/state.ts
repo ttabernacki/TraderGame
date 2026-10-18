@@ -107,7 +107,7 @@ import { polarAt } from '../ship/polars';
 import { migrateTutorial, newTutorial, noteVerb, stepTutorial, type TutorialState, type TutorialStep } from './tutorial';
 import { ringWatchBell } from './watchBell';
 import { legReportOnArrival, noteDeparture, type LegStart } from './legReport';
-import { record as recordDeed, sanitize as sanitizeLedger, type Deed, type Entry as LedgerEntry } from '../ledger/ledger';
+import { decayed as decayedLedger, record as recordDeed, sanitize as sanitizeLedger, type Deed, type Entry as LedgerEntry } from '../ledger/ledger';
 import type { Tag as LedgerTag } from '../ledger/tags';
 import { campaignDef, type CampaignId } from './campaign';
 import { PlayerFleet, type FleetSave } from './fleet';
@@ -4895,6 +4895,8 @@ export class Game {
     // The Lines go on running for the heir, from whatever home they had.
     this.lines = old.lines.filter((l) => !l.lost).map((l) => ({ ...l, phase: 'home' as const, at: this.clock.t, cargo: null, purse: 0, history: [] }));
     this.nextLineId = old.nextLineId;
+    // The Ledger is inherited, faded: what is older than eight years loses weight, and past sixteen is gone.
+    this.ledger = decayedLedger(old.ledger, old.clock.t);
     this.logEvent('note',
       `You are the ${['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth'][this.generation] ?? `${this.generation}th`} `
       + `of your line. Your ${old.generation === 1 ? 'father' : 'predecessor'} left ${purse} cruzados, a name worth ${name} at court, `

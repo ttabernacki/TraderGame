@@ -103,10 +103,7 @@ const ui = new Ui(uiHost, {
   onPhoto: () => togglePhoto(),
   onQuality: () => {
     if (!renderer || !game) return;
-    const order = ['auto', 'high', 'medium', 'low'] as const;
-    const next = order[(order.indexOf(renderer.qualitySetting) + 1) % order.length];
-    const level = renderer.setQuality(next);
-    game.pushAlert(next === 'auto' ? `Graphics: automatic (${level} for now).` : `Graphics: ${level}.`, 'note');
+    game.pushAlert(renderer.cycleQuality(), 'note');
   },
 });
 

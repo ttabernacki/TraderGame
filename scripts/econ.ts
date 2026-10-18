@@ -9,13 +9,17 @@
  * Units per route = min(town stock, destination appetite, hold / bulk).
  */
 import { Markets } from '../src/economy/market';
+import { LOT_TONS, PORT_PROFIT } from '../src/economy/ladder';
 import { PORTS, anchorageOf } from '../src/world/ports';
 import { GOODS } from '../src/economy/goods';
 import { HULL_CLASSES } from '../src/ship/hull';
 import { haversine, NM } from '../src/core/math';
-import { regionOf, type Region } from '../src/economy/trade';
+import { CASA_SHARE, MONOPOLY, regionOf, type Region } from '../src/economy/trade';
 
 const args = process.argv.slice(2);
+// Tuning hooks for sweeps: PP='{"europe":900}' and LT='{"city":600}' override the caps for one run.
+if (process.env.PP) Object.assign(PORT_PROFIT, JSON.parse(process.env.PP));
+if (process.env.LT) Object.assign(LOT_TONS, JSON.parse(process.env.LT));
 const LADDER = args.includes('--ladder');
 const CHECK = args.includes('--check');
 // --burthen: use the headline burthen (tons: 140/260/480, the design team's convention)
@@ -37,7 +41,7 @@ for (const p of PORTS) {
 // Stock hulls only: the galleon is gated behind unobtainable standing.
 const HULLS = HULL_CLASSES.filter((h) => h.standing < 1e8).sort((a, b) => a.cost - b.cost);
 const hull = (id: string) => HULLS.find((h) => h.id === id)!;
-const REF = hull('nau-pequena'); // 140 t
+const REF = hull('nau-pequena'); // 140 t burthen, 105 t of hold
 const BIG = hull('nau-da-india'); // 480 t
 
 interface Lane { g: string; from: string; to: string; nm: number; margin: number; bulk: number; stock: number; appetite: number; ask: number }
@@ -101,28 +105,140 @@ const perHull = (lane: Lane, label: string) => {
 const bestRes = perHull(bestLane, 'best lane (at the largest hull)');
 perHull(medianLane, 'median lane (at the reference hull)');
 
+const byPair = new Map<string, Lane[]>();
+for (const l of lanes) { const k = l.from + '>' + l.to; (byPair.get(k) ?? byPair.set(k, []).get(k)!).push(l); }
+
+// ---------------------------------------------------------------------------
+// The price ladder (BUILD_PLAN B3): net per voyage on the lanes a hull can reach.
+// ---------------------------------------------------------------------------
+// Net, not gross: the load is what the hold has left after the stores for the
+// voyage (0.005 t per man-day, game/stores), the buying and selling both pay the
+// market's slippage on a big order (Markets.slippage), the Casa keeps its share
+// of the King's goods at Lisbon, and the crew's victuals are paid for.
+const REACH: Record<string, Region[]> = {
+  'barcha': ['europe', 'atlantic', 'maghreb'],
+  'caravela-latina': ['europe', 'atlantic', 'maghreb', 'guinea'],
+  'caravela-redonda': ['europe', 'atlantic', 'maghreb', 'guinea', 'kongo', 'cape', 'brazil'],
+  'nau-pequena': ['europe', 'atlantic', 'maghreb', 'guinea', 'kongo', 'cape', 'brazil', 'swahili'],
+  'nau': ['europe', 'atlantic', 'maghreb', 'guinea', 'kongo', 'cape', 'brazil', 'swahili', 'arabia'],
+  'nau-da-india': ['europe', 'atlantic', 'maghreb', 'guinea', 'kongo', 'cape', 'brazil', 'swahili', 'arabia', 'india', 'east'],
+};
+// Net per voyage band and voyages to buy the next hull, from BUILD_PLAN B3.
+const BANDS: Record<string, [number, number, string]> = {
+  'barcha': [120, 220, '3'], 'caravela-latina': [300, 500, '3'], 'caravela-redonda': [500, 800, '3-4'],
+  'nau-pequena': [1200, 1800, '3-4'], 'nau': [2500, 3500, '4'], 'nau-da-india': [6000, 9000, '4-6'],
+};
+const KNOTS_DAY = 4.5 * 24;
+/** Crew wages, cruzados per man per month (game/wages). */
+const WAGE_PER_MAN_MONTH = 5;
+const slip = (q: number, avail: number) => (avail <= 0 ? 1 : 1 + Math.min(1, q / avail) ** 2 * 0.55);
+function voyageDays(nm: number): number { return 2 * (nm / KNOTS_DAY) + 12; }
+interface PairNet { net: number; storeT: number; goods: string[] }
+/** One voyage on a pair of ports with a mixed cargo, best profit per ton first. */
+function pairNet(ls: Lane[], h: { crewFull: number; hold: number; tons: number }): PairNet {
+  const days = voyageDays(ls[0].nm);
+  const storeT = 0.005 * h.crewFull * days;
+  let room = Math.max(0, cap(h) - storeT), total = 0;
+  const goods: string[] = [];
+  for (const l of [...ls].sort((a, b) => b.margin / b.bulk - a.margin / a.bulk)) {
+    const units = Math.floor(Math.min(l.stock, l.appetite, room / l.bulk));
+    if (units <= 0) continue;
+    const casa = l.to === 'lisboa' && MONOPOLY.includes(l.g) ? CASA_SHARE : 1;
+    const bid = l.margin + l.ask;
+    const net = (units * bid * casa) / slip(units, l.appetite) - units * l.ask * slip(units, l.stock);
+    if (net <= 0) continue;
+    room -= units * l.bulk;
+    total += net;
+    goods.push(l.g);
+  }
+  return { net: total - days * h.crewFull * (0.012 + WAGE_PER_MAN_MONTH / 30), storeT, goods };
+}
+const tiers = HULLS.map((h, i) => {
+  const ok = new Set(REACH[h.id]);
+  const rs = [...byPair.entries()]
+    .filter(([, ls]) => ok.has(regionOf(ls[0].from)) && ok.has(regionOf(ls[0].to)))
+    .map(([k, ls]) => ({ k, ...pairNet(ls, h) }))
+    .sort((a, b) => b.net - a.net);
+  const best = rs[0];
+  const nets = rs.map((r) => r.net).filter((n) => n > 0).sort((a, b) => a - b);
+  const next = HULLS[i + 1];
+  return { h, best, median: pct(nets, 0.5), p90: pct(nets, 0.9), voyages: next ? next.cost / best.net : null };
+});
+
 if (LADDER) {
-  const targets: Record<string, string> = {
-    'barcha': '120-220 / 3', 'caravela-latina': '300-500 / 3', 'caravela-redonda': '500-800 / 3-4',
-    'nau-pequena': '1200-1800 / 3-4', 'nau': '2500-3500 / 4', 'nau-da-india': '6000-9000 / 4-6',
-  };
-  console.log('\nPrice ladder (net = gross profit per voyage; no dues, upkeep or wages)');
-  console.log(`${id('hull', 18)}${'price'.padStart(7)}${'hold'.padStart(6)}${'best'.padStart(9)}${'median'.padStart(9)}${'vy best'.padStart(9)}${'vy med'.padStart(9)}   B3 target (net / voyages)`);
-  HULLS.forEach((h, i) => {
-    const rs = routesFor(cap(h)), st = stats(rs);
-    const next = HULLS[i + 1];
-    const vb = next ? (next.cost / st.top).toFixed(1) : '-';
-    const vm = next ? (next.cost / st.median).toFixed(1) : '-';
-    console.log(`${id(h.id, 18)}${f(h.cost).padStart(7)}${f(cap(h)).padStart(6)}${f(st.top).padStart(9)}${f(st.median).padStart(9)}${vb.padStart(9)}${vm.padStart(9)}   ${targets[h.id] ?? '-'}`);
-  });
+  console.log('\nPrice ladder, net per voyage on the lanes each hull can reach (stores in tons, slippage, Casa share)');
+  console.log(`${id('hull', 18)}${'price'.padStart(7)}${'hold'.padStart(6)}${'net best'.padStart(10)}${'median'.padStart(8)}${'p90'.padStart(8)}${'vy next'.padStart(9)}  band (net / voyages)    best lane`);
+  for (const t of tiers) {
+    const [lo, hi, vy] = BANDS[t.h.id];
+    const b = t.best;
+    console.log(`${id(t.h.id, 18)}${f(t.h.cost).padStart(7)}${f(cap(t.h)).padStart(6)}${f(b.net).padStart(10)}${f(t.median).padStart(8)}${f(t.p90).padStart(8)}${(t.voyages === null ? '-' : t.voyages.toFixed(1)).padStart(9)}  ${String(lo + '-' + hi + ' / ' + vy).padEnd(22)}${b.k} (${b.goods.slice(0, 4).join(',')}; stores ${b.storeT.toFixed(1)} t)`);
+  }
 }
 
 const bigVsSmall = bestRes.get(BIG.id)!.profit / bestRes.get(REF.id)!.profit;
 console.log(`\n${cap(BIG)} t / ${cap(REF)} t earnings on best lane: ${bigVsSmall.toFixed(2)}x`);
+console.log(`${cap(BIG)} t / ${cap(REF)} t on the median lane (${medianLane.g} ${medianLane.from}->${medianLane.to}): ${(load(medianLane, cap(BIG)).profit / load(medianLane, cap(REF)).profit).toFixed(2)}x`);
+
+// A voyage carries more than one good. Mixed cargo on one pair of ports: fill the
+// hold in order of profit per ton, each good up to what the origin holds and the
+// destination takes. Dense lots (stock-capped in money) go in first, staples fill
+// what is left, and that is where a bigger hull earns more.
+function pairProfit(ls: Lane[], hold: number): number {
+  let room = hold, total = 0;
+  for (const l of [...ls].sort((a, b) => b.margin / b.bulk - a.margin / a.bulk)) {
+    const u = Math.min(l.stock, l.appetite, room / l.bulk);
+    if (u <= 0) continue;
+    room -= u * l.bulk;
+    total += u * l.margin;
+  }
+  return total;
+}
+const pairs = [...byPair.entries()].map(([k, ls]) => ({ k, ls, ref: pairProfit(ls, cap(REF)), big: pairProfit(ls, cap(BIG)) })).filter((p) => p.ref > 0);
+pairs.sort((a, b) => a.ref - b.ref);
+const bestPair = pairs.reduce((a, b) => (b.big > a.big ? b : a));
+const medPair = pairs[Math.floor(pairs.length / 2)];
+const mixBest = bestPair.big / bestPair.ref, mixMed = medPair.big / medPair.ref;
+console.log(`Mixed cargo, ${pairs.length} port pairs: best pair ${bestPair.k} ${f(bestPair.ref)} -> ${f(bestPair.big)} (${mixBest.toFixed(2)}x); median pair ${medPair.k} ${f(medPair.ref)} -> ${f(medPair.big)} (${mixMed.toFixed(2)}x)`);
+const pairAsc = pairs.map((p) => p.ref);
+console.log(`pair profit at ${cap(REF)} t: median ${f(medPair.ref)}  p90 ${f(pct(pairAsc, 0.9))}  top ${f(pairAsc[pairAsc.length - 1])}`);
+
+// Pearls from Ormuz to Cambay: the hop that was 66,000 in one leg.
+const pearls = lanes.find((l) => l.g === 'perolas' && l.from === 'ormuz' && l.to === 'cambaia');
+if (pearls) {
+  const gross = load(pearls, cap(BIG)).profit;
+  console.log(`Ormuz -> Cambay pearls, one leg: ${f(gross)} gross at ${cap(BIG)} t (was 66,175)`);
+}
+
+// Ports at zero stock, and prices out of band, over every port and good.
+let zero = 0, off = 0;
+for (const p of PORTS) for (const g of GOODS) {
+  const l = book.get(p.id)!.get(g.id);
+  if (!l) continue;
+  if (l.local && l.stock <= 0) zero++;
+  if (!(l.ask > 0) || !(l.bid > 0) || l.bid > g.lisbon * 4 || l.ask > g.lisbon * 4) off++;
+}
+console.log(`ports/goods at zero stock: ${zero}; prices out of band: ${off}`);
+
+if (args.includes('--json')) {
+  console.log('JSON ' + JSON.stringify({
+    ratio: s.ratio, bigVsSmall, mixBest, mixMed, median: s.median, top: s.top,
+    tiers: tiers.map((t) => ({ id: t.h.id, net: Math.round(t.best.net), vy: t.voyages, lane: t.best.k })),
+  }));
+}
+
 if (CHECK) {
   const fails: string[] = [];
   if (s.ratio > MAX_SPREAD) fails.push(`best:median ${s.ratio.toFixed(1)} > ${MAX_SPREAD}`);
   if (bigVsSmall < MIN_BIG_VS_SMALL) fails.push(`${cap(BIG)} t earns ${bigVsSmall.toFixed(2)}x the ${cap(REF)} t on the best lane (< ${MIN_BIG_VS_SMALL}x)`);
+  if (mixBest < MIN_BIG_VS_SMALL) fails.push(`mixed cargo, best pair: ${cap(BIG)} t earns ${mixBest.toFixed(2)}x the ${cap(REF)} t (< ${MIN_BIG_VS_SMALL}x)`);
+  if (mixMed < 1.4) fails.push(`mixed cargo, median pair: ${cap(BIG)} t earns ${mixMed.toFixed(2)}x the ${cap(REF)} t (< 1.4x)`);
+  for (const t of tiers) {
+    const [lo, hi] = BANDS[t.h.id];
+    if (t.best.net < lo * 0.9 || t.best.net > hi * 1.1) fails.push(`${t.h.id} nets ${f(t.best.net)} per voyage, band ${lo}-${hi}`);
+    if (t.voyages !== null && (t.voyages < 2 || t.voyages > 6.5)) fails.push(`${t.h.id} buys the next hull in ${t.voyages.toFixed(1)} voyages (2-6.5)`);
+  }
+  if (zero > 0) fails.push(`${zero} port goods at zero stock`);
+  if (off > 0) fails.push(`${off} prices out of band`);
   if (fails.length) { console.log('CHECK FAILED:\n  ' + fails.join('\n  ')); process.exit(1); }
   console.log('CHECK PASSED');
 }
@@ -136,35 +252,15 @@ if (args.includes('--lane')) {
   }
 }
 
-if (args.includes('--tiers')) {
-  // Reach: a hull works the lanes of the regions her tier can sail to (the road, BUILD_PLAN B3).
-  const REACH: Record<string, Region[]> = {
-    'barcha': ['europe', 'atlantic', 'maghreb'],
-    'caravela-latina': ['europe', 'atlantic', 'maghreb', 'guinea'],
-    'caravela-redonda': ['europe', 'atlantic', 'maghreb', 'guinea', 'kongo', 'cape', 'brazil'],
-    'nau-pequena': ['europe', 'atlantic', 'maghreb', 'guinea', 'kongo', 'cape', 'brazil', 'swahili'],
-    'nau': ['europe', 'atlantic', 'maghreb', 'guinea', 'kongo', 'cape', 'brazil', 'swahili', 'arabia'],
-    'nau-da-india': ['europe', 'atlantic', 'maghreb', 'guinea', 'kongo', 'cape', 'brazil', 'swahili', 'arabia', 'india', 'east'],
-  };
-  console.log('\nTier ladder (lanes within the hull\'s reach)');
-  HULLS.forEach((h, i) => {
-    const ok = new Set(REACH[h.id]);
-    const rs = lanes.filter((l) => ok.has(regionOf(l.from)) && ok.has(regionOf(l.to))).map((l) => load(l, cap(h))).sort((x, y) => y.profit - x.profit);
-    const st = stats(rs);
-    const next = HULLS[i + 1];
-    const top = rs[0];
-    console.log(`${id(h.id, 18)}${f(h.cost).padStart(7)}${f(cap(h)).padStart(6)} best ${f(st.top).padStart(7)} (${top.g} ${top.from}->${top.to}) median ${f(st.median).padStart(6)} p90 ${f(st.p90).padStart(7)} vy ${next ? (next.cost / st.top).toFixed(1) : '-'}`);
-  });
-}
-
-if (args.includes('--density')) {
-  console.log('\nPer good: best margin per ton of hold, and its stock in tons at that origin');
-  for (const g of GOODS) {
-    const ls = lanes.filter((l) => l.g === g.id);
-    if (!ls.length) continue;
-    const dens = ls.map((l) => l.margin / l.bulk).sort((a, b) => a - b);
-    const best = ls.reduce((a, b) => (b.margin / b.bulk > a.margin / a.bulk ? b : a));
-    const med = dens[Math.floor(dens.length / 2)];
-    console.log(`${id(g.id, 12)} n ${String(ls.length).padStart(4)}  m/t med ${f(med).padStart(6)} best ${f(best.margin / best.bulk).padStart(6)}  ${best.from}->${best.to} stock ${f(best.stock * best.bulk)} t  profit@stock ${f(best.stock * best.margin)}`);
+if (args.includes('--mid')) {
+  // Lanes around the median at the reference hold: why are they small?
+  const n = ref.length, m = Math.floor(n / 2);
+  console.log('\nLanes around the median (reference hold): good from to units stock appetite margin bound-by');
+  for (const r of ref.slice(m - 12, m + 12)) {
+    const by = r.units === r.stock ? 'stock' : r.units === r.appetite ? 'appetite' : 'hold';
+    console.log(`${id(r.g, 11)}${id(r.from, 13)}${id(r.to, 13)}${f(r.units).padStart(6)} stock ${f(r.stock).padStart(6)} app ${f(r.appetite).padStart(6)} m ${r.margin.toFixed(1).padStart(6)} ${by.padStart(8)} ${f(r.profit).padStart(6)}`);
   }
+  const bound = { stock: 0, appetite: 0, hold: 0 };
+  for (const r of ref) bound[r.units === r.stock ? 'stock' : r.units === r.appetite ? 'appetite' : 'hold']++;
+  console.log('bound by', JSON.stringify(bound));
 }

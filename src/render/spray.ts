@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { postUniforms, wrapPostOut } from './post/color';
 import { clamp } from '../core/math';
 
 const MAX = 420;
@@ -61,10 +62,10 @@ export class Spray {
 
     this.material = new THREE.ShaderMaterial({
       vertexShader,
-      fragmentShader,
+      fragmentShader: wrapPostOut(fragmentShader),
       transparent: true,
       depthWrite: false,
-      uniforms: { uColor: { value: new THREE.Color(0.95, 0.97, 1.0) } },
+      uniforms: postUniforms({ uColor: { value: new THREE.Color(0.95, 0.97, 1.0) } }),
     });
 
     this.points = new THREE.Points(geo, this.material);

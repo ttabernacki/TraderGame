@@ -7,7 +7,10 @@ import { Finish } from './finish';
 import { Sky, type SkyLighting } from './sky';
 import { makeHullModel, type HullModel } from './junkMesh';
 import { Life } from './life';
-import { QUALITY, loadAutoLevel, loadSetting, saveAutoLevel, saveSetting, stepDown, type QualityLevel, type QualitySetting } from './quality';
+import { QUALITY, loadAutoLevel, loadRenderMode, loadSetting, saveAutoLevel, saveRenderMode, saveSetting, stepDown, type QualityLevel, type QualitySetting, type RenderMode } from './quality';
+import { PostStack, hdrSupported } from './post/stack';
+import { POST_EXPOSURE } from './post/color';
+import { PerfOverlay } from './perfOverlay';
 import { Spray } from './spray';
 import { depthAt, nearestShore } from '../world/landmass';
 import { hullClass, type HullClass } from '../ship/hull';
@@ -160,6 +163,10 @@ export class Renderer {
   /** What the player asked for, and the level actually in force. */
   qualitySetting: QualitySetting = loadSetting();
   quality: QualityLevel = 'high';
+  /** `legacy` is the pre-upgrade picture: no post stack, CSS vignette and glare. */
+  renderMode: RenderMode = loadRenderMode();
+  private post: PostStack | null = null;
+  readonly perf = new PerfOverlay();
   private frameTimes: number[] = [];
   private landNm = Infinity;
   private landCheckAt = -1e9;
@@ -265,7 +272,9 @@ export class Renderer {
     const phone = isPhone();
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: !phone,
+      // The post stack multisamples its own HDR target, so the canvas only
+      // needs it for the legacy path.
+      antialias: !phone && this.renderMode === 'legacy',
       powerPreference: 'high-performance',
     });
     // A modern phone reports a device pixel ratio of three, which on a 390-point
@@ -288,6 +297,13 @@ export class Renderer {
     // blue sea and a slate one.
     this.renderer.toneMapping = THREE.NeutralToneMapping;
     this.renderer.toneMappingExposure = 1.42;
+    POST_EXPOSURE.value = 1.42;
+    // Counted per frame by the overlay, not per draw call.
+    this.renderer.info.autoReset = false;
+    try {
+      if (hdrSupported(this.renderer)) this.post = new PostStack(this.renderer);
+      else this.renderMode = 'legacy';
+    } catch { this.post = null; this.renderMode = 'legacy'; }
     this.renderer.shadowMap.enabled = true;
     // The soft variant takes many more samples per fragment. On a phone that is
     // paid for on every frame for a softness nobody can see at that size.
@@ -492,6 +508,10 @@ export class Renderer {
     const w = Math.max(1, Math.round(box.width)) || window.innerWidth;
     const h = Math.max(1, Math.round(box.height)) || window.innerHeight;
     this.renderer.setSize(w, h, false);
+    if (this.post) {
+      const sz = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+      this.post.setSize(sz.x, sz.y);
+    }
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
 
@@ -859,9 +879,25 @@ export class Renderer {
         sunOnScreen = { x: this.glareV.x * 0.5 + 0.5, y: 0.5 - this.glareV.y * 0.5, strength, warm: low };
       }
     }
+    const usePost = !!this.post && this.renderMode === 'new';
+    this.finish.setEnabled(!usePost || !QUALITY[this.quality].post.grade);
     this.finish.update(lighting.night, overcast, sunOnScreen, this.photo);
 
-    this.renderer.render(this.scene, this.camera);
+    this.perf.begin(this.renderer);
+    if (usePost) {
+      const y = lighting.sunDir.y;
+      this.post!.render(this.scene, this.camera, {
+        night: lighting.night,
+        twilight: smoothstep(-0.2, 0.02, y) * (1 - smoothstep(0.02, 0.28, y)) * (1 - overcast * 0.7),
+        overcast,
+        weather: clamp(Math.max(f.rain, f.storm ? 0.8 : 0), 0, 1),
+        photo: this.photo,
+      });
+    } else {
+      this.renderer.setRenderTarget(null);
+      this.renderer.render(this.scene, this.camera);
+    }
+    this.perf.end({ gl: this.renderer, tier: this.quality, mode: usePost ? 'new' : 'legacy', postBytes: usePost ? this.post!.bytes : 0, postPasses: usePost ? this.post!.passes : 0 }, realDt);
     this.watchFrameRate(realDt);
   }
 
@@ -1167,6 +1203,30 @@ export class Renderer {
     return this.quality;
   }
 
+  /** Switch between the upgraded picture and the old one. */
+  setRenderMode(m: RenderMode): RenderMode {
+    this.renderMode = this.post ? m : 'legacy';
+    saveRenderMode(this.renderMode);
+    return this.renderMode;
+  }
+
+  /**
+   * One press of the graphics key: auto, then each level, then the legacy path.
+   * Returns a line for the alerts.
+   */
+  cycleQuality(): string {
+    const order: (QualitySetting | 'legacy')[] = ['auto', 'ultra', 'high', 'medium', 'low', 'legacy'];
+    const cur = this.renderMode === 'legacy' ? 'legacy' : this.qualitySetting;
+    const next = order[(order.indexOf(cur) + 1) % order.length];
+    if (next === 'legacy') {
+      this.setRenderMode('legacy');
+      return 'Graphics: previous look (no post-processing).';
+    }
+    this.setRenderMode('new');
+    const level = this.setQuality(next);
+    return next === 'auto' ? `Graphics: automatic (${level} for now).` : `Graphics: ${level}.`;
+  }
+
   private applyQuality(): void {
     const phone = isPhone();
     this.quality = this.qualitySetting === 'auto' ? loadAutoLevel(phone) : this.qualitySetting;
@@ -1179,6 +1239,13 @@ export class Renderer {
       this.sun.shadow.map = null;
     }
     this.sky.setCloudOctaves(q.cloudOctaves);
+    this.post?.configure(q.post);
+    if (this.envTarget.width !== q.envSize) {
+      this.envTarget.setSize(q.envSize, q.envSize);
+      this.envTargetB.setSize(q.envSize, q.envSize);
+      this.envFirst = true;
+      this.envFrame = 0;
+    }
     this.frameTimes = [];
     this.resize();
   }

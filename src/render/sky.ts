@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clamp, smoothstep, DEG } from '../core/math';
 import { STARS, moonPosition, starPosition, sunPosition } from '../navigation/celestial';
+import { postUniforms, wrapPostOut } from './post/color';
 
 const SKY_RADIUS = 11000;
 
@@ -272,11 +273,11 @@ export class Sky {
   constructor() {
     this.domeMaterial = new THREE.ShaderMaterial({
       vertexShader: skyVertex,
-      fragmentShader: skyFragment,
+      fragmentShader: wrapPostOut(skyFragment),
       defines: { CLOUD_OCTAVES: phoneish() ? 4 : 6 },
       side: THREE.BackSide,
       depthWrite: false,
-      uniforms: {
+      uniforms: postUniforms({
         uZenith: { value: new THREE.Color(0.18, 0.38, 0.72) },
         uHorizon: { value: new THREE.Color(0.68, 0.78, 0.88) },
         uSunDir: { value: new THREE.Vector3(0, 1, 0) },
@@ -294,7 +295,7 @@ export class Sky {
         uCloudLit: { value: new THREE.Color(1, 1, 1) },
         uCloudShade: { value: new THREE.Color(0.6, 0.65, 0.72) },
         uCloudOn: { value: 1 },
-      },
+      }),
     });
     this.dome = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, 40, 24), this.domeMaterial);
     this.dome.renderOrder = -100;
@@ -329,11 +330,11 @@ export class Sky {
 
     this.starMaterial = new THREE.ShaderMaterial({
       vertexShader: starVertex,
-      fragmentShader: starFragment,
+      fragmentShader: wrapPostOut(starFragment),
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      uniforms: { uOpacity: { value: 0 } },
+      uniforms: postUniforms({ uOpacity: { value: 0 } }),
     });
     this.starPoints = new THREE.Points(starGeo, this.starMaterial);
     this.starPoints.frustumCulled = false;

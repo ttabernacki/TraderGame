@@ -79,10 +79,13 @@ const synth = (tag: Tag, n = 1, over: Partial<Entry> = {}): Entry[] => Array.fro
     ['tray', 0.6], ['tray', -0.6], ['tray', 0.1], ['meal', 0.7], ['hall', -0.8], ['meal', 0], ['case', 0.7], ['case', -0.7], ['case', 0.1],
     ['hostage', 0.3], ['hostage', 0.8], ['hostage', -0.2], ['hostage', -1], ['pilot', 0.6], ['pilot', -0.5], ['pilot', 0], ['silent', 0.7], ['silent', -1], ['silent', 0],
     ['informer', 0.7], ['informer', -0.8], ['informer', 0], ['refusal', 0.8], ['refusal', 0], ['newpiece', 0.9], ['newpiece', -0.9], ['newpiece', 0]];
-  for (const [key, tone] of markKeys) writeMarkAndRecord(g, 'malindi', { key: `${key}${tone}`.startsWith(key) ? key : key, text: `${key} ${tone}`, echo: 'e', tone });
+  for (const [key, tone] of markKeys) writeMarkAndRecord(g, 'malindi', { key, text: `${key} ${tone}`, echo: 'e', tone });
   const markTags = new Set(g.ledger.map((e) => e.tag));
-  const markFamily = ALL_TAGS.filter((t) => /^(courtesy|table|gift|peace|judgement|hostage|pilot|silent|informer|refusal|mark|envoy)\./.test(t) || t.startsWith('promise.'));
-  const unreached = markFamily.filter((t) => !markTags.has(t) && !['promise.kept', 'promise.broken'].includes(t) && !t.startsWith('gift.') || (t.startsWith('gift.') && !markTags.has(t) && t !== 'gift.great' && t !== 'gift.insult' && t !== 'gift.plain'));
+  const expected: Tag[] = ['courtesy.kept', 'courtesy.broken', 'courtesy.plain', 'promise.kept', 'promise.broken', 'envoy.mixed', 'peace.made', 'peace.left',
+    'gift.great', 'gift.insult', 'gift.plain', 'table.kept', 'table.spoiled', 'table.plain', 'judgement.just', 'judgement.unjust', 'judgement.heard',
+    'hostage.freed', 'hostage.raised', 'hostage.ill', 'hostage.died', 'pilot.trusted', 'pilot.misled', 'pilot.mixed', 'silent.fair', 'silent.blood',
+    'silent.none', 'informer.found', 'informer.wronged', 'informer.silent', 'refusal.honest', 'refusal.curt', 'mark.for', 'mark.against', 'mark.mixed'];
+  const unreached = expected.filter((t) => !markTags.has(t));
   check('marks of every kind land in the Ledger under their tag', unreached.length === 0, unreached.join(','));
   check('a mark keeps its echo and its key', echoFor(g.diplomacy.marks, 'malindi', g.clock.t) === 'e' && hasMark(g.diplomacy.marks, 'malindi', 'case', g.clock.t));
 }

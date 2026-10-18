@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { clamp, lerp, smoothstep } from '../core/math';
+import { postUniforms, wrapPostOut } from './post/color';
 
 /**
  * Wave train. Eight Gerstner components spread either side of the wind, spanning
@@ -768,8 +769,8 @@ export class Ocean {
 
     this.material = new THREE.ShaderMaterial({
       vertexShader,
-      fragmentShader,
-      uniforms: {
+      fragmentShader: wrapPostOut(fragmentShader),
+      uniforms: postUniforms({
         uNoiseTime: { value: 0 },
         uNoiseOrigin: { value: new THREE.Vector2(0, 0) },
         uEyeM: { value: 20 },
@@ -817,7 +818,7 @@ export class Ocean {
         uTrackAge: { value: new Array(TRACK_POINTS).fill(0) },
         uTrackRun: { value: new Array(TRACK_POINTS).fill(0) },
         uTrackCount: { value: 0 },
-      },
+      }),
     });
 
     this.mesh = new THREE.Mesh(geometry, this.material);
