@@ -14,7 +14,7 @@ import {
   QUESTS, callbackAt, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
   rumoursHeard,
 } from '../progression/quests';
-import { cancelPortQuests, migrateEstate } from './saveResolvers';
+import { cancelPortQuests, migrateEstate, settleFoldedPieces } from './saveResolvers';
 import { migrateEnterprises, tickLines, type Letter, type Line } from '../progression/network';
 import { deliverFactoryMail, noteSightings, postLetter, tickFactories, transitDays } from '../progression/livingFactory';
 import { ambientAtSea, barkAt } from '../progression/barks';
@@ -9566,6 +9566,7 @@ export class Game {
     g.diplomacy.marks ??= newMarks();
     g.diplomacy.book ??= newBook();
     g.diplomacy.pieces ??= newPieces();
+    settleFoldedPieces(g);
     g.trade = { ...newTrade(g.clock.t), ...(d.trade ?? {}) };
     g.ship.reservedTons = g.trade.quintaladas
       ? g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length * CHEST_TONS : 0;

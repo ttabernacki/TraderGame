@@ -7,13 +7,42 @@ import { Game } from '../src/game/state';
 import { Rng } from '../src/core/rng';
 import { startPiece, stepPiece, runView } from '../src/diplomacy/table';
 import { POLITY_BY_ID } from '../src/diplomacy/polities';
-import { trayScore } from '../src/diplomacy/pieces/giftTable';
+import { trayScore, HALL_RULES } from '../src/diplomacy/pieces/giftTable';
 
 type Bot = (g: Game, run: any, rng: Rng) => string;
 const pol = (run: any) => POLITY_BY_ID.get(run.polity)!;
 
+/**
+ * The table manner folded in from the old Meal and Hall pieces (Cut A3). Perfect
+ * knows the answers; the reader copies the host's example / reads the escort's
+ * words, as the old reader bots did; random picks anything.
+ */
+const words = (t: string) => t.toLowerCase().replace(/[^a-z ]/g, '').split(' ').filter((w) => w.length > 3);
+const mannersPerfect = (run: any): string => {
+  const m = run.state.manners;
+  if (m.kind === 'meal') return m.n < 2 ? 'm:0' : m.test === 'fast' ? 'mt:decline' : 'mt:take';
+  const t = (['you', 'gifts'] as const).find((x) => !m.placed[x])!;
+  const idx = ['you', 'interp', 'gifts', 'retinue'].indexOf(t);
+  return `h:${HALL_RULES[m.rules[idx]].zone}`;
+};
+const mannersReader = (g: Game, run: any): string => {
+  const m = run.state.manners;
+  const v = runView(g, run)!;
+  if (m.kind === 'meal') {
+    const text = v.lines.map((l) => l.text).join(' ');
+    if (v.choices.some((c) => c.id.startsWith('mt:'))) return /untouched/.test(text) ? 'mt:decline' : 'mt:take';
+    const host = [...v.lines].reverse().find((l) => l.who === 'them')?.text ?? '';
+    const hw = new Set(words(host));
+    return v.choices.map((c) => [c.id, words(c.label).filter((w) => hw.has(w)).length] as const).sort((a, b) => b[1] - a[1])[0][0];
+  }
+  const t = (['you', 'gifts'] as const).find((x) => !m.placed[x])!;
+  const rule = HALL_RULES.find((r) => r.thing === t && v.lines.some((l) => l.text.includes(r.text)));
+  return `h:${rule?.zone ?? 'front'}`;
+};
+
 const perfect: Bot = (_g, run) => {
   const s = run.state;
+  if (s.carried) return mannersPerfect(run);
   if (s.tray.length >= 3) return 'done';
   let best = '', bs = -9;
   for (const id of Object.keys(s.stock).filter((x) => !s.tray.includes(x))) {
@@ -27,6 +56,7 @@ const perfect: Bot = (_g, run) => {
 /** Uses only what the view tells it; asks first; treats the unknown as neutral. */
 const reader: Bot = (g, run) => {
   const s = run.state;
+  if (s.carried) return mannersReader(g, run);
   if (s.asks < 2) {
     const f = pol(run).factions.sort((a, b) => b.weight - a.weight)[s.asks];
     const c = runView(g, run)!.choices.find((x) => x.id === `ask:${f.id}`);
@@ -45,8 +75,9 @@ const reader: Bot = (g, run) => {
   return best ? `place:${best}` : 'done';
 };
 
-const random: Bot = (_g, run, rng) => {
+const random: Bot = (g, run, rng) => {
   const s = run.state;
+  if (s.carried) return rng.pick(runView(g, run)!.choices).id;
   const ids = Object.keys(s.stock);
   const n = 1 + Math.floor(rng.next() * 3);
   if (s.tray.length >= n) return 'done';
@@ -68,7 +99,7 @@ function play(bot: Bot, seed: number, polity: string): string {
 }
 
 const N = 300;
-const courts = ['calicut', 'malindi', 'benin', 'kongo', 'fez'];
+const courts = ['calicut', 'malindi', 'benin', 'kongo', 'fez', 'kilwa'];
 let bad = 0;
 for (const [name, bot, lo, hi] of [['perfect', perfect, 0.95, 1], ['reader', reader, 0.55, 0.9], ['random', random, 0, 0.35]] as const) {
   const t: Record<string, number> = { win: 0, half: 0, fail: 0, stuck: 0 };

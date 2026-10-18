@@ -10,6 +10,14 @@ import type { PolityDef } from '../polities';
  * often different, and a wrong ruling is tested weeks later.
  *
  * Names: A is the house clerk (whose rod it is), B the ship's master, C the broker.
+ *
+ * Cut A3: the old 'linguist' piece is folded in. At the courts of the Guinea
+ * and Kongo coasts nobody sits as a qadi; the king's linguist hears the dispute
+ * and the stranger sits with him. After the ruling the linguist asks for a
+ * proverb to close it, and the king's liking for one of three is what the
+ * linguist spent the old piece's days finding out (he lets slip the two things
+ * the king has been talking about). The right proverb teaches the Book tag
+ * 'proverb-*'. At Moorish and Malabar courts nothing changes.
  */
 
 type Variant = 'rod' | 'tally' | 'broker';
@@ -25,12 +33,32 @@ interface S {
   said: string[];
   /** Exhibits too old and handled to be read. */
   blur: Item[];
+  /** Guinea and Kongo courts only: the linguist's proverb, asked for after the ruling. */
+  ling?: {
+    proverbs: number[];
+    want: number;
+    decoy: number;
+    decoyFirst: boolean;
+    /** Set once the ruling is made: whether it was right. */
+    ruled?: boolean;
+  };
 }
+
+const THEMES = [
+  { id: 'guest', text: 'The river does not refuse the stream', gist: 'how a guest is received' },
+  { id: 'return', text: 'The cow that goes far comes home', gist: 'who comes back' },
+  { id: 'patience', text: 'Water carried slowly arrives full', gist: 'patience' },
+  { id: 'kin', text: 'Two hands wash each other', gist: 'who is kin to whom' },
+  { id: 'strength', text: 'The hunter sleeps with his spear', gist: 'strength' },
+  { id: 'market', text: 'A market belongs to those who keep its peace', gist: 'the peace of the market' },
+];
+const LING_COURTS = new Set(['jolof', 'eguafo', 'benin', 'kaabu', 'kongo', 'temne', 'ndongo']);
 
 const NAMES: Record<string, [string[], string[], string[]]> = {
   swahili: [['Hasan', 'Khamis', 'Mwinyi'], ['Idris', 'Yusuf', 'Bakari'], ['Salim', 'Rashid', 'Juma']],
   arab: [['Hasan', 'Mansur', 'Hamad'], ['Idris', 'Khalid', 'Yusuf'], ['Salim', 'Rashid', 'Nasir']],
   malabar: [['Kutty Ali', 'Pokker', 'Mammali'], ['Nambiar', 'Cherian', 'Itty'], ['Koya', 'Mussa', 'Abdulla']],
+  guinea: [['Mamadu', 'Sori', 'Dembo'], ['Kofi', 'Osei', 'Adjei'], ['Nzinga', 'Mpanzu', 'Lukeni']],
 };
 const POOL_OF: Record<string, string> = { swahili: 'swahili', arab: 'arab', malabar: 'malabar', gujarati: 'arab' };
 
@@ -102,7 +130,8 @@ const ITEMS: { id: Item; label: string }[] = [
 
 const fill = (t: string, n: S['names']): string => t.replace(/\{A\}/g, n.A).replace(/\{B\}/g, n.B).replace(/\{C\}/g, n.C);
 
-const COURTS = new Set(['malindi', 'kilwa', 'mombasa', 'mogadishu', 'aden', 'hormuz', 'calicut', 'cochin', 'gujarat']);
+const COURTS = new Set(['malindi', 'kilwa', 'mombasa', 'mogadishu', 'aden', 'hormuz', 'calicut', 'cochin', 'gujarat', ...LING_COURTS]);
+
 
 export const theCase: Piece<S> = {
   id: 'case',
@@ -111,22 +140,36 @@ export const theCase: Piece<S> = {
     && !g.diplomacy.pieces.runs.some((r) => r.pieceId === 'case' && r.polity === pol.id
       && (!r.outcome || g.clock.t - r.outcome.t < 120 * 86400)),
   start: ({ polity, rng }) => {
-    const pool = NAMES[POOL_OF[polity.people] ?? 'swahili'] ?? NAMES.swahili;
+    const pool = LING_COURTS.has(polity.id) ? NAMES.guinea : NAMES[POOL_OF[polity.people] ?? 'swahili'] ?? NAMES.swahili;
     const names = { A: rng.pick(pool[0]), B: rng.pick(pool[1]), C: rng.pick(pool[2]) };
     const v = rng.pick<Variant>(['rod', 'tally', 'broker']);
     const items: Item[] = ['rod', 'tally', 'receipt'];
-    return { v, left: INQUIRIES, names, asked: [], said: [], blur: items.filter(() => rng.next() < 0.3) };
+    const base: S = { v, left: INQUIRIES, names, asked: [], said: [], blur: items.filter(() => rng.next() < 0.3) };
+    if (LING_COURTS.has(polity.id)) {
+      const idx = rng.shuffle([0, 1, 2, 3, 4, 5]);
+      const proverbs = idx.slice(0, 3);
+      const want = proverbs[Math.floor(rng.next() * 3)];
+      base.ling = { proverbs, want, decoy: idx[3], decoyFirst: rng.next() < 0.5 };
+    }
+    return base;
   },
   view: (_ctx, s): PieceView => {
     const n = s.names;
     const lines: PieceView['lines'] = [{
       who: 'narrator',
       text: s.said.length === 0
-        ? `The qadi hears ${n.A}, a house clerk, against ${n.B}, a ship’s master, over forty pieces of cloth. He asks the stranger to sit with him. You have ${INQUIRIES} inquiries before you must say what you think.`
-        : `Inquiries left: ${s.left}.`,
+        ? `${s.ling ? 'The king’s linguist' : 'The qadi'} hears ${n.A}, a house clerk, against ${n.B}, a ship’s master, over forty pieces of cloth. He asks the stranger to sit with him. You have ${INQUIRIES} inquiries before you must say what you think.`
+        : s.ling?.ruled !== undefined ? 'The ruling is made. The linguist asks what proverb will close it.' : `Inquiries left: ${s.left}.`,
     }];
     for (const t of s.said) lines.push({ who: 'them', text: t });
     const choices: PieceView['choices'] = [];
+    if (s.ling?.ruled !== undefined) {
+      const l = s.ling;
+      const gist = (i: number) => THEMES[i].gist;
+      lines.push({ who: 'them', text: `The linguist says, to nobody, that the king has been speaking of ${l.decoyFirst ? `${gist(l.decoy)} and of ${gist(l.want)}` : `${gist(l.want)} and of ${gist(l.decoy)}`}.` });
+      for (const i of l.proverbs) choices.push({ id: `prov:${i}`, label: `“${THEMES[i].text}”` });
+      return { title: 'The case', lines, choices };
+    }
     if (s.left > 0) {
       for (const w of WITNESSES) for (const t of TOPICS) {
         const k = `${w.id}/${t.id}`;
@@ -157,7 +200,11 @@ export const theCase: Piece<S> = {
       }
       return { state: s };
     }
-    if (!choice.startsWith('rule:')) return { state: s };
+    if (choice.startsWith('prov:') && s.ling?.ruled !== undefined) {
+      const proverb = Number(choice.slice(5));
+      return { state: s, outcome: closeLing(s, s.ling.ruled, proverb === s.ling.want) };
+    }
+    if (!choice.startsWith('rule:') || s.ling?.ruled !== undefined) return { state: s };
     const r = Number(choice.slice(5));
     const right = r === RIGHT[s.v];
     const d = DELTAS[r] ?? {};
@@ -165,6 +212,7 @@ export const theCase: Piece<S> = {
     if (d.fav) fx[d.fav] = (fx[d.fav] ?? 0) + 0.08;
     if (d.against) fx[d.against] = (fx[d.against] ?? 0) - 0.08;
     s.said.push(`The truth: ${fill(TRUTH[s.v], s.names)}`);
+    if (s.ling) { s.ling.ruled = right; return { state: s }; }
     return { state: s, outcome: right ? {
       grade: 'win',
       line: 'The qadi nods slowly: that is what the law says',
@@ -179,3 +227,30 @@ export const theCase: Piece<S> = {
     } };
   },
 };
+
+/** The Guinea/Kongo close: the ruling and the proverb each count. Win only if both are right. */
+function closeLing(s: S, ruledRight: boolean, proverbRight: boolean): NonNullable<ReturnType<typeof theCase.step>['outcome']> {
+  const theme = THEMES[s.ling!.want];
+  const book: NonNullable<ReturnType<typeof theCase.step>['outcome']>['book'] = [];
+  if (ruledRight) book.push({ kind: 'custom', tag: 'case-weights', text: 'Here a false measure or a scratched tally is read before the price.', how: 'seen' });
+  if (proverbRight) book.push({ kind: 'phrase', tag: 'proverb-' + theme.id, how: 'told', text: `“${theme.text}”: said of ${theme.gist}.` });
+  if (ruledRight && proverbRight) {
+    return {
+      grade: 'win', line: 'The ruling is just, and the right words close it',
+      marks: [{ key: 'case', text: 'Your words reached the king whole.', echo: 'The linguist remembers a stranger who spoke as a guest of the house.', tone: 0.8 }],
+      measures: { trust: 0.08, respect: 0.04 }, factions: { custom: 0.1 }, book,
+    };
+  }
+  if (ruledRight || proverbRight) {
+    return {
+      grade: 'half', line: ruledRight ? 'The ruling stands, and the proverb falls flat' : 'The proverb is liked, and the ruling will not stand a second look',
+      marks: [{ key: 'case', text: 'You were heard at the linguist’s court, not entirely.', echo: '', tone: 0.1 }],
+      measures: { trust: 0.01 }, book,
+    };
+  }
+  return {
+    grade: 'fail', line: 'The linguist spoke at length, and the king heard something other than what you meant',
+    marks: [{ key: 'case', text: 'You were taken for a boaster at this court.', echo: 'The mediators remember how you spoke.', tone: -0.7 }],
+    measures: { respect: -0.04, trust: -0.03 }, factions: { custom: -0.12 },
+  };
+}

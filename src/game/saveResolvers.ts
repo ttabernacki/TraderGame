@@ -53,3 +53,22 @@ export function cancelPortQuests(g: Game, done: string[] | undefined): void {
   const open = Object.entries(OLD_PORT_QUESTS).find(([id, port]) => port === at && !finished.has(id));
   if (open) g.logEvent('note', 'The town’s errand for goods is withdrawn; nobody here is asking any more.', true);
 }
+
+/** Pieces cut in A3, folded into the Gift Table (meal, hall) and the Case (linguist). */
+const FOLDED_PIECES = new Set(['meal', 'hall', 'linguist']);
+
+/**
+ * A Meal, Hall or Linguist piece still open in a save is settled neutrally: a
+ * half-grade outcome with no marks, measures or Book entries, so the court
+ * neither thinks better nor worse of the captain. The finished ones stay in the
+ * ledger as history. One log line says so.
+ */
+export function settleFoldedPieces(g: Game): void {
+  let n = 0;
+  for (const run of g.diplomacy.pieces.runs) {
+    if (run.outcome || !FOLDED_PIECES.has(run.pieceId)) continue;
+    run.outcome = { grade: 'half', line: 'The matter was let drop', t: g.clock.t };
+    n++;
+  }
+  if (n) g.logEvent('contact', `${n === 1 ? 'An audience matter' : `${n} audience matters`} left open at court ${n === 1 ? 'was' : 'were'} let drop, with no offence taken.`, true);
+}

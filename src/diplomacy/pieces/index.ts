@@ -1,12 +1,9 @@
 import type { Piece } from '../piece';
 import { bow } from './bow';
 import { envoy } from './envoy';
-import { hall } from './hall';
 import { hostage } from './hostage';
 import { pilot } from './pilot';
 import { refusal } from './refusal';
-import { linguist } from './linguist';
-import { meal } from './meal';
 import { informer } from './informer';
 import { giftTable } from './giftTable';
 import { goBetween } from './goBetween';
@@ -14,4 +11,4 @@ import { theCase } from './theCase';
 import { silentTrade } from './silentTrade';
 
 /** Every piece the Table can offer. New pieces are added here. */
-export const PIECES: Piece[] = [bow, silentTrade, giftTable, theCase, goBetween, envoy, informer, meal, linguist, hall, refusal, pilot, hostage];
+export const PIECES: Piece[] = [bow, silentTrade, giftTable, theCase, goBetween, envoy, informer, refusal, pilot, hostage];

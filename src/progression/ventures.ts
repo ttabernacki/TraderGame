@@ -16,6 +16,10 @@ import { PORTS, portDef, type PortDef } from '../world/ports';
  * They are also the pressure. A charter with a date on it is the reason to
  * carry more canvas than is prudent, to take the shorter passage through worse
  * water, and to decide that the leak can wait.
+ *
+ * DEPRECATED (A3): ventures are replaced by plain dated contracts in D1 (the
+ * NPC lanes + contracts task). Until then this stays as it is, and active
+ * ventures in a save keep working; nothing new should be built on it.
  */
 
 export interface Venture {

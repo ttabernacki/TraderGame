@@ -59,4 +59,36 @@ for (let i = 1; i <= N; i++) play(perfect, i, rights);
 const maxShare = Math.max(...Object.values(rights)) / N;
 console.log(`${maxShare <= 0.5 ? 'ok  ' : 'FAIL'} no ruling right for more than half (max ${(maxShare * 100).toFixed(0)}%)`);
 if (maxShare > 0.5) bad++;
+
+// Folded in from the old linguist piece (Cut A3): at a Guinea/Kongo court the ruling is followed by a proverb.
+const THEME_GIST: Record<string, string> = {
+  'The river does not refuse the stream': 'how a guest is received', 'The cow that goes far comes home': 'who comes back',
+  'Water carried slowly arrives full': 'patience', 'Two hands wash each other': 'who is kin to whom',
+  'The hunter sleeps with his spear': 'strength', 'A market belongs to those who keep its peace': 'the peace of the market',
+};
+function playLing(kind: 'perfect' | 'reader' | 'random', seed: number): { grade: string; learned: boolean } {
+  const g = new Game(seed);
+  const run = startPiece(g, 'case', 'kongo', 'mpinda')!;
+  const rng = new Rng(seed * 17 + 3);
+  for (let i = 0; i < 40; i++) {
+    const v = runView(g, run)!;
+    let pick: string;
+    if (v.choices.some((c) => c.id.startsWith('prov:'))) {
+      const text = v.lines.map((l) => l.text).join(' ');
+      if (kind === 'perfect') pick = `prov:${run.state.ling.want}`;
+      else if (kind === 'reader') pick = v.choices.find((c) => text.includes(THEME_GIST[c.label.replace(/[“”]/g, '')]))?.id ?? v.choices[0].id;
+      else pick = rng.pick(v.choices).id;
+    } else pick = kind === 'perfect' || kind === 'reader' ? (kind === 'perfect' ? `rule:${RIGHT[run.state.v]}` : reader(g, run, rng)) : random(g, run, rng);
+    const o = stepPiece(g, run, pick);
+    if (o) return { grade: o.grade, learned: g.diplomacy.book.entries.some((e) => e.polity === 'kongo' && e.tag.startsWith('proverb-')) };
+  }
+  return { grade: 'stuck', learned: false };
+}
+for (const [name, lo, hi] of [['perfect', 1, 1], ['reader', 0.6, 0.95], ['random', 0, 0.12]] as const) {
+  let win = 0, stuck = 0, learnedWin = 0;
+  for (let i = 1; i <= N; i++) { const r = playLing(name, i); if (r.grade === 'win') { win++; if (r.learned) learnedWin++; } if (r.grade === 'stuck') stuck++; }
+  const w = win / N; const ok = w >= lo && w <= hi && !stuck && learnedWin === win;
+  if (!ok) bad++;
+  console.log(`${ok ? 'ok  ' : 'FAIL'} linguist-court ${name.padEnd(8)} win ${(w * 100).toFixed(0)}%  (a win always teaches the proverb: ${learnedWin === win})`);
+}
 process.exit(bad ? 1 : 0);
