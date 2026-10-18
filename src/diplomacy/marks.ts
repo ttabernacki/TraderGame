@@ -8,6 +8,9 @@
  * they are given a `until`; most are for the life of the career.
  */
 
+import { record, type Entry, type LedgerHost } from '../ledger/ledger';
+import { tagForMark } from '../ledger/markTags';
+
 export interface Mark {
   id: number;
   polity: string;
@@ -44,6 +47,32 @@ export function writeMark(s: MarksState, polity: string, m: NewMark, t: number):
   const mark: Mark = { id: s.nextId++, polity, t, ...m };
   s.marks.push(mark);
   return mark;
+}
+
+/** The Ledger entry a mark is: the same act, under a tag, with the court as its target. */
+export function markEntry(polity: string, m: NewMark, t: number, place = ''): Entry {
+  return {
+    t, place, tag: tagForMark(m.key, m.tone), actors: ['captain'], target: polity,
+    magnitude: Math.max(0.2, Math.abs(m.tone)), witnesses: [], note: m.text,
+  };
+}
+
+/**
+ * Write a mark and record it in the Ledger. The mark, its echo and everything
+ * that reads them are unchanged; the Ledger entry is the same act in the one
+ * record every other system will read. Silent: a mark already says its piece.
+ */
+export function writeMarkAndRecord(g: LedgerHost & { diplomacy: { marks: MarksState } }, polity: string, m: NewMark): Mark {
+  const mark = writeMark(g.diplomacy.marks, polity, m, g.clock.t);
+  record(g, tagForMark(m.key, m.tone), {
+    target: polity, magnitude: Math.max(0.2, Math.abs(m.tone)), note: m.text,
+  });
+  return mark;
+}
+
+/** Marks held by a save that has no Ledger yet, as the entries they would have been. */
+export function entriesFromMarks(marks: Mark[]): Entry[] {
+  return [...marks].sort((a, b) => a.t - b.t).map((m) => markEntry(m.polity, m, m.t));
 }
 
 export function marksOf(s: MarksState, polity: string, t: number): Mark[] {

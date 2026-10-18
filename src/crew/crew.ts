@@ -90,6 +90,10 @@ export interface CrewState {
   fatigue: number;
   officers: Officer[];
   provisions: Provisions;
+  /** Spares aboard (timber, cordage, canvas): a fraction of a full set, 0-1. See game/stores. */
+  spares?: number;
+  /** The loading she last sailed with, for "same as last leg". */
+  lastStores?: { water: number; victuals: number; spares: number };
   /** Rising unrest. Above one, they rise. */
   unrest: number;
   deaths: number;
@@ -155,7 +159,8 @@ export function newCrew(complement: number, _rng?: Rng): CrewState {
     // sails. There is no crimp's list any more and no three anonymous
     // placeholders to be quietly replaced by better ones later.
     officers: [],
-    provisions: { water: 90, biscuit: 120, saltMeat: 90, wine: 70, fresh: 20 },
+    provisions: { water: 60, biscuit: 75, saltMeat: 60, wine: 45, fresh: 15 },
+    spares: 0.4,
     unrest: 0,
   deaths: 0,
   };

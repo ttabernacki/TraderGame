@@ -13,6 +13,7 @@ import { PORTS, anchorageOf } from '../src/world/ports';
 import { GOODS } from '../src/economy/goods';
 import { HULL_CLASSES } from '../src/ship/hull';
 import { haversine, NM } from '../src/core/math';
+import { regionOf, type Region } from '../src/economy/trade';
 
 const args = process.argv.slice(2);
 const LADDER = args.includes('--ladder');
@@ -132,5 +133,38 @@ if (args.includes('--lane')) {
   const [fr, to] = [args[i + 1], args[i + 2]];
   for (const l of lanes.filter((x) => x.from === fr && x.to === to)) {
     console.log(`${l.g}: ref ${f(load(l, cap(REF)).profit)}  big ${f(load(l, cap(BIG)).profit)}  stock ${f(l.stock)}`);
+  }
+}
+
+if (args.includes('--tiers')) {
+  // Reach: a hull works the lanes of the regions her tier can sail to (the road, BUILD_PLAN B3).
+  const REACH: Record<string, Region[]> = {
+    'barcha': ['europe', 'atlantic', 'maghreb'],
+    'caravela-latina': ['europe', 'atlantic', 'maghreb', 'guinea'],
+    'caravela-redonda': ['europe', 'atlantic', 'maghreb', 'guinea', 'kongo', 'cape', 'brazil'],
+    'nau-pequena': ['europe', 'atlantic', 'maghreb', 'guinea', 'kongo', 'cape', 'brazil', 'swahili'],
+    'nau': ['europe', 'atlantic', 'maghreb', 'guinea', 'kongo', 'cape', 'brazil', 'swahili', 'arabia'],
+    'nau-da-india': ['europe', 'atlantic', 'maghreb', 'guinea', 'kongo', 'cape', 'brazil', 'swahili', 'arabia', 'india', 'east'],
+  };
+  console.log('\nTier ladder (lanes within the hull\'s reach)');
+  HULLS.forEach((h, i) => {
+    const ok = new Set(REACH[h.id]);
+    const rs = lanes.filter((l) => ok.has(regionOf(l.from)) && ok.has(regionOf(l.to))).map((l) => load(l, cap(h))).sort((x, y) => y.profit - x.profit);
+    const st = stats(rs);
+    const next = HULLS[i + 1];
+    const top = rs[0];
+    console.log(`${id(h.id, 18)}${f(h.cost).padStart(7)}${f(cap(h)).padStart(6)} best ${f(st.top).padStart(7)} (${top.g} ${top.from}->${top.to}) median ${f(st.median).padStart(6)} p90 ${f(st.p90).padStart(7)} vy ${next ? (next.cost / st.top).toFixed(1) : '-'}`);
+  });
+}
+
+if (args.includes('--density')) {
+  console.log('\nPer good: best margin per ton of hold, and its stock in tons at that origin');
+  for (const g of GOODS) {
+    const ls = lanes.filter((l) => l.g === g.id);
+    if (!ls.length) continue;
+    const dens = ls.map((l) => l.margin / l.bulk).sort((a, b) => a - b);
+    const best = ls.reduce((a, b) => (b.margin / b.bulk > a.margin / a.bulk ? b : a));
+    const med = dens[Math.floor(dens.length / 2)];
+    console.log(`${id(g.id, 12)} n ${String(ls.length).padStart(4)}  m/t med ${f(med).padStart(6)} best ${f(best.margin / best.bulk).padStart(6)}  ${best.from}->${best.to} stock ${f(best.stock * best.bulk)} t  profit@stock ${f(best.stock * best.margin)}`);
   }
 }

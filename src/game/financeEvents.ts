@@ -239,6 +239,7 @@ export function ruinScene(g: Game, d: Debt): SeaEvent {
           d.settled = true;
           d.outcome = 'defaulted';
           game.finance.defaults += 1;
+          game.noteDeed('loan.defaulted', { target: h.name, magnitude: 1, note: `Let ${h.name} enter the debt in his bad book.` });
           game.finance.credit[d.house] = 0;
           game.finance.regard(d.house, 0, 0);
           for (const other of Object.keys(game.finance.credit) as (keyof typeof game.finance.credit)[]) {

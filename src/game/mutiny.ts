@@ -247,6 +247,10 @@ function hang(g: Game, leader: Hand, sides: { with: Hand[]; against: Hand[] }): 
   }
   shiftAll(g.hands, -0.1, `${leader.name} was hanged at the yardarm.`);
   g.crew.floggings = (g.crew.floggings ?? 0) + 1;
+  g.noteDeed('hand.hanged', {
+    target: leader.name, actors: ['captain'], witnesses: sides.with.concat(sides.against).map((h) => h.name),
+    magnitude: 1, note: `${leader.name}, of ${leader.from}, hanged at the main yardarm for mutiny.`,
+  });
 
   g.logEvent('crew',
     `${leader.name}, ${RATING_LABEL[leader.rating].english.toLowerCase()} of ${leader.from}, was `
@@ -269,6 +273,7 @@ function concede(g: Game, leader: Hand, top: Grievance[]): string {
   shiftRegard(leader, 0.3, 'The captain listened, in front of everybody.');
   // Authority publicly conceded is authority spent. The next one comes sooner.
   g.crew.conceded = (g.crew.conceded ?? 0) + 1;
+  g.noteDeed('mutiny.conceded', { target: leader.name, magnitude: 0.6, note: `Heard ${leader.name} out in front of the ship\u2019s company and told him he was right.` });
 
   const answerable = top.filter((x) => x.answerable).length > 0;
   g.logEvent('crew',
@@ -300,6 +305,7 @@ function faceDown(
     g.crew.unrest = 0.3;
     g.crew.morale = clamp(g.crew.morale + 0.05, 0, 1);
     shiftRegard(leader, -0.15, 'Backed down in front of the whole company.');
+    g.noteDeed('mutiny.faced_down', { target: leader.name, magnitude: 0.5, note: `Faced down ${leader.name} and he went back to his station.` });
     g.logEvent('crew',
       `Went forward to ${leader.name} and stood in front of him and told him to get back to his `
       + 'station. He looked past you for a long moment at the men who were supposed to be behind '
@@ -317,6 +323,7 @@ function faceDown(
   g.helmOrder = null;
   g.latitudeOrder = null;
   g.crew.taken = true;
+  g.noteDeed('mutiny.lost', { target: leader.name, magnitude: 1, note: `Tried to face down ${leader.name}; the crew took the ship and put her head for home.` });
   g.logEvent('crew',
     `Told ${leader.name} to get back to his station. He did not move, and then neither did `
     + 'anybody else, and the silence went on a great deal too long. The helm is up. She is '
@@ -337,6 +344,7 @@ function turnBack(g: Game, leader: Hand): string {
   g.latitudeOrder = null;
   g.clearDestination();
   g.crew.turnedBack = (g.crew.turnedBack ?? 0) + 1;
+  g.noteDeed('mutiny.turned_back', { target: leader.name, magnitude: 0.7, note: `Put the helm up before ${leader.name} could ask again, and laid her for home.` });
   // The Crown does not care what it cost the men.
   g.crown.standing = Math.max(0, g.crown.standing - 18);
   g.logEvent('crew',

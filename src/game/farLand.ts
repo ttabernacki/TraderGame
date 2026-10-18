@@ -292,6 +292,7 @@ export function searchRumours(g: Game): string | null {
       l.followed = true;
       l.false = true;
       g.crown.record('island', `${name} — not there`, at, l.value, g.clock.t);
+      g.noteDeed('rumour.false', { target: name, magnitude: 0.3, silent: true, note: `Looked for ${name} where the tale put it; it is not there.` });
       g.crew.morale = clamp(g.crew.morale - 0.03, 0, 1);
       const text = `Here, by the reckoning, is where ${name} ought to be, and there is nothing: `
         + 'a clear horizon all round and no bottom with the deep-sea lead. The pilot rules a line '

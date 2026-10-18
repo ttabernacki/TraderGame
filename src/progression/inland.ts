@@ -217,6 +217,7 @@ function outcomes(g: Game, j: Journey, def: PortDef, o: Officer | null): Journey
   if (!well && g.rng.next() < e.peril) {
     if (o) { o.alive = false; o.ashoreAt = undefined; }
     g.journeyRecord.lost++;
+    g.noteDeed('journey.lost', { target: name, place: def.id, actors: [name], magnitude: 1, note: `${name} went inland from ${def.name} and did not come down.` });
     return {
       title: `${name} did not come back`,
       severity: 'grave',
@@ -238,6 +239,7 @@ function outcomes(g: Game, j: Journey, def: PortDef, o: Officer | null): Journey
       if (!o.languages.includes(pe.language)) o.languages.push(pe.language);
     }
     g.journeyRecord.returned++;
+    g.noteDeed('journey.returned', { target: name, place: def.id, magnitude: 0.3, note: `${name} came back from inland, short of where he was sent.` });
     return {
       title: `${name} is back`,
       severity: 'warning',
@@ -257,6 +259,7 @@ function outcomes(g: Game, j: Journey, def: PortDef, o: Officer | null): Journey
   // He got there.
   g.journeyRecord.returned++;
   g.journeyRecord.succeeded++;
+  g.noteDeed('journey.returned', { target: name, place: def.id, magnitude: 0.7, note: `${name} came back having got where he was sent.` });
   if (o) {
     o.ashoreAt = undefined;
     o.ability = clamp(o.ability + 0.18, 0, 0.97);

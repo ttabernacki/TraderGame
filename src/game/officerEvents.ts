@@ -126,6 +126,7 @@ const EVENTS: OfficerEventDef[] = [
           detail: 'The ship is run tighter. The fo’c’sle is sullen for a week.',
           resolve: (g) => {
             regard(c.o, 0.12, 'was backed over the man asleep on watch');
+            g.noteDeed('hand.flogged', { target: c.o.name, magnitude: 0.5, note: `Backed ${c.o.name} and had a man asleep on watch flogged at the capstan bar.` });
             g.crew.unrest = clamp(g.crew.unrest - 0.18, 0, 2);
             g.crew.morale = clamp(g.crew.morale - 0.06, 0, 1);
             return 'Two dozen at the capstan bar with the ship\u2019s company mustered. Nobody '
@@ -189,6 +190,7 @@ const EVENTS: OfficerEventDef[] = [
           detail: 'Keeps the freight. If it is ever discovered it is a hanging matter.',
           resolve: (g) => {
             regard(c.o, -0.2, 'made him write a lie into the King’s book');
+            g.noteDeed('companion.lied_to', { target: c.o.name, magnitude: 0.6, note: `Made ${c.o.name} enter private freight as ship\u2019s stores in the King\u2019s book.` });
             g.crew.morale = clamp(g.crew.morale + 0.01, 0, 1);
             return 'He wrote what he was told, and drew a small mark beside it that he thinks '
               + 'you did not see.';

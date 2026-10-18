@@ -2,6 +2,7 @@ import { POLITY_BY_ID } from '../diplomacy/polities';
 import { NM, clamp, haversine, type LatLon } from '../core/math';
 import type { SeaEvent, SeaChoice } from '../game/seaEvents';
 import type { Game } from '../game/state';
+import type { Tag as LedgerTag } from '../ledger/tags';
 import { prevailingWind } from '../world/wind';
 import { currentAt } from '../world/currents';
 import { anchorageOf, portDef } from '../world/ports';
@@ -96,9 +97,40 @@ function whatChanged(g: Game): string {
   return parts.join(', ');
 }
 
+/**
+ * What a finished thread did, in the Ledger's vocabulary. Outcomes not listed
+ * here are only recorded as `thread.closed`; the ones that were a choice about
+ * word, weights, charts or mercy are also entered under their own tag.
+ */
+const OUTCOME_DEEDS: Record<string, { tag: LedgerTag; target: string; magnitude?: number }> = {
+  'kongo:enforced': { tag: 'promise.kept', target: 'kongo', magnitude: 0.8 },
+  'kongo:lookedaway': { tag: 'promise.broken', target: 'kongo', magnitude: 0.5 },
+  'sofala:fair': { tag: 'promise.kept', target: 'kilwa', magnitude: 0.7 },
+  'pesos:cheat': { tag: 'weights.false', target: 'eguafo', magnitude: 0.8 },
+  'pesos:inland': { tag: 'weights.fair', target: 'eguafo', magnitude: 0.7 },
+  'pesos:report': { tag: 'weights.fair', target: 'eguafo', magnitude: 0.6 },
+  'pesos:repaid': { tag: 'weights.fair', target: 'eguafo', magnitude: 0.6 },
+  'monsoon:freed': { tag: 'companion.freed', target: 'Malemo', magnitude: 0.9 },
+  'monsoon:kept': { tag: 'companion.kept', target: 'Malemo', magnitude: 0.6 },
+  'roteiro:sold': { tag: 'chart.sold', target: 'nation:foreign', magnitude: 0.7 },
+  'roteiro:crown': { tag: 'chart.shared', target: 'portugal', magnitude: 0.6 },
+  'roteiro:named': { tag: 'chart.shared', target: 'portugal', magnitude: 0.5 },
+  'count:caught': { tag: 'smuggle.caught', target: 'portugal', magnitude: 0.8 },
+  'count:got away': { tag: 'smuggle.escaped', target: 'portugal', magnitude: 0.4 },
+  'count:declared': { tag: 'parcel.redeemed', target: 'portugal', magnitude: 0.7 },
+  'escudeiro:honest': { tag: 'patron.honest', target: 'portugal', magnitude: 0.7 },
+  'escudeiro:flattered': { tag: 'patron.flattered', target: 'portugal', magnitude: 0.5 },
+  'adrift:boy': { tag: 'mercy.shown', target: 'Arguim', magnitude: 0.7 },
+  'feverfleet:nursed': { tag: 'mercy.shown', target: 'the São Vicente', magnitude: 0.9 },
+  'caravel:mass': { tag: 'mercy.shown', target: 'Isabel da Costa', magnitude: 0.6 },
+};
+
 function end(g: Game, q: QuestState, outcome: string, line: string): string {
   q.outcome = outcome;
   q.fired = false;
+  const deed = OUTCOME_DEEDS[`${q.id}:${outcome}`];
+  if (deed) g.noteDeed(deed.tag, { target: deed.target, magnitude: deed.magnitude, note: line });
+  g.noteDeed('thread.closed', { target: q.id, note: `${QUESTS[q.id].title}: ${outcome}. ${line}` });
   const change = whatChanged(g);
   q.journal.push({ t: g.clock.t, text: change ? `${line} (${change})` : line });
   g.logEvent('crown', `${QUESTS[q.id].title} — ${line}`, true);
@@ -2826,6 +2858,7 @@ const count: QuestDef = {
             detail: 'Stowed in the lazarette under the spare sails. Not in the book.',
             resolve: (gg) => {
               q.flags.parcel = true;
+              gg.noteDeed('parcel.carried', { target: 'the factor', magnitude: 0.6, note: 'Took the factor\u2019s forty quintals aboard unwritten.' });
               renown(gg, -5);
               return go(gg, q, 'cape', 'Took the factor’s forty quintals aboard unwritten. They are in the lazarette, under the spare canvas.');
             },
@@ -2835,6 +2868,7 @@ const count: QuestDef = {
             detail: 'A forty-quintal parcel honestly declared is the King’s, and so is the profit.',
             resolve: (gg) => {
               renown(gg, 25);
+              gg.noteDeed('parcel.refused', { target: 'the factor', magnitude: 0.6, note: 'Refused the factor\u2019s parcel and saw the pepper weighed into the book.' });
               q.flags.honest = true;
               return go(gg, q, 'cape', 'Refused the factor’s parcel and saw the pepper weighed into the book. He shrugged, and was quietly relieved.');
             },

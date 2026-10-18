@@ -17,7 +17,15 @@ export interface LegStart {
 export function noteDeparture(g: Game): void {
   if (!g.dockedAt) return;
   g.legStart = { from: g.dockedAt, t: g.clock.t, deaths: g.crew.deaths };
+  // A voyage is what lies between sailing from Lisbon and coming home to it.
+  if (g.dockedAt === 'lisboa') {
+    g.noteDeed('voyage.begun', { place: 'lisboa', note: `Sailed from Lisbon in ${g.ship.name}.` });
+  }
 }
+
+/** A landfall from the sea is a test of the reckoning: the Ledger keeps those that held or failed badly. */
+const EXACT_NM = 15;
+const LOST_NM = 60;
 
 /** The lines, without emitting them. Called before the landfall corrects the reckoning. */
 export function legReportLines(g: Game, toId: string): string[] {
@@ -63,6 +71,17 @@ export function legReportLines(g: Game, toId: string): string[] {
 
 export function legReportOnArrival(g: Game, toId: string): void {
   const lines = legReportLines(g, toId);
+  const start = g.legStart;
+  if (start && start.from !== toId) {
+    const days = (g.clock.t - start.t) / 86400;
+    const err = haversine(g.nav.estimated, g.ship.state.pos) / NM;
+    if (days >= 5 && err <= EXACT_NM) {
+      g.noteDeed('landfall.exact', { place: toId, target: toId, magnitude: 0.5, note: `Raised ${portDef(toId).name} after ${Math.round(days)} days, ${err.toFixed(0)} miles from the reckoning.` });
+    } else if (err >= LOST_NM) {
+      g.noteDeed('landfall.lost', { place: toId, target: toId, magnitude: Math.min(1, err / 200), note: `Raised ${portDef(toId).name} ${err.toFixed(0)} miles from where the reckoning put her.` });
+    }
+    if (toId === 'lisboa' && days >= 5) g.noteDeed('voyage.home', { place: 'lisboa', note: `Came home to Lisbon after ${Math.round(days)} days from ${portDef(start.from).name}.` });
+  }
   g.legStart = null;
   if (lines.length === 0) return;
   // Logbook entries are shown newest first, so the headline goes in last.

@@ -1,7 +1,7 @@
 import { Rng } from '../core/rng';
 import type { Game } from '../game/state';
 import { learn } from './book';
-import { writeMark } from './marks';
+import { writeMarkAndRecord } from './marks';
 import type { Outcome, Piece, PieceCtx, PieceRun, PieceView } from './piece';
 import { POLITY_BY_ID } from './polities';
 import { PIECES } from './pieces';
@@ -66,11 +66,11 @@ export function stepPiece(g: Game, run: PieceRun, choice: string): Outcome | nul
 
 function resolve(g: Game, run: PieceRun, o: Outcome): void {
   const now = g.clock.t;
-  for (const m of o.marks) { writeMark(g.diplomacy.marks, run.polity, m, now); feelMark(g, run.polity, m.tone); }
+  for (const m of o.marks) { writeMarkAndRecord(g, run.polity, m); feelMark(g, run.polity, m.tone); }
   if (o.measures) g.adjustPolity(run.polity, o.measures, o.line);
   for (const b of o.book ?? []) learn(g.diplomacy.book, run.polity, b, now);
   for (const a of o.also ?? []) {
-    for (const m of a.marks) { writeMark(g.diplomacy.marks, a.polity, m, now); feelMark(g, a.polity, m.tone); }
+    for (const m of a.marks) { writeMarkAndRecord(g, a.polity, m); feelMark(g, a.polity, m.tone); }
     if (a.measures) g.adjustPolity(a.polity, a.measures);
   }
   if (o.factions) {

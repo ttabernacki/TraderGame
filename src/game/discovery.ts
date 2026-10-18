@@ -64,6 +64,7 @@ export function landmarkScene(g: Game, l: Landmark): SeaEvent {
           gg.crown.record('padrao', `Padrão at ${l.name}`, gg.nav.estimated, Math.round(l.value * 0.4), gg.clock.t);
           gg.crown.standing += Math.round(l.value * 0.5);
           gg.crown.progressObjective('padrao', undefined, 1);
+          gg.noteDeed('claim.made', { target: l.name, magnitude: 0.9, note: `Landed a padr\u00e3o at ${l.name} and claimed it for the Crown.` });
           // Reaching it is reaching it however you mark it: a commission to
           // make this headland must not fail because you claimed it as well.
           gg.crown.progressObjective('reach', l.id);
@@ -91,6 +92,7 @@ export function landmarkScene(g: Game, l: Landmark): SeaEvent {
           gg.crew.fatigue = clamp(gg.crew.fatigue - 0.12, 0, 1);
           gg.crown.record('coast', l.name, gg.nav.estimated, l.value, gg.clock.t);
           gg.crown.progressObjective('reach', l.id);
+          gg.noteDeed('landmark.surveyed', { target: l.name, magnitude: 0.7, note: `Stood in to ${l.name} for two days and surveyed it.` });
           gg.chartedThisPassage += 40;
           gg.crown.chartedSincePatent += 40;
           // A landfall on something this size is a fix, and a good one.
@@ -108,6 +110,7 @@ export function landmarkScene(g: Game, l: Landmark): SeaEvent {
         resolve: (gg) => {
           gg.crown.record('coast', l.name, gg.nav.estimated, Math.round(l.value * 0.6), gg.clock.t);
           gg.crown.progressObjective('reach', l.id);
+          gg.noteDeed('landmark.passed', { target: l.name, magnitude: 0.3, note: `Noted ${l.name} and pressed on.` });
           gg.crew.morale = clamp(gg.crew.morale - 0.04, 0, 1);
           return 'The bearing is taken, the name written in, and she never alters course. The men '
             + 'watch it go by on the beam and there is a good deal of talk on the forecastle about '
@@ -145,6 +148,7 @@ export function beyondScene(g: Game): SeaEvent {
           gg.crew.morale = clamp(gg.crew.morale + 0.18, 0, 1);
           gg.crew.unrest = clamp(gg.crew.unrest - 0.25, 0, 2);
           gg.crown.standing += 10;
+          gg.noteDeed('south.beyond', { target: 'the furthest south', magnitude: 0.9, note: `Passed ${lat.toFixed(1)}\u00b0 south, further than any Christian, and told the men what it meant.` });
           return 'You tell them where they are, and that nobody has ever been here, and that every '
             + 'one of their names is in the book against it. The wine is broken out at four in the '
             + 'afternoon on a Tuesday for no reason the Casa would accept. It is the best hour of '
@@ -156,6 +160,7 @@ export function beyondScene(g: Game): SeaEvent {
         detail: 'Men who are thinking about how far from home they are do not work the ship.',
         resolve: (gg) => {
           gg.crew.unrest = clamp(gg.crew.unrest + 0.15, 0, 2);
+          gg.noteDeed('south.beyond', { target: 'the furthest south', magnitude: 0.6, note: `Passed ${lat.toFixed(1)}\u00b0 south, further than any Christian, and said nothing.` });
           return 'You give the helmsman the course and go below. It is entered in the log in one '
             + 'line. The hands work it out among themselves within a day, as they always do, and '
             + 'are left to decide on their own what it means, which is how a ship gets a mood.';

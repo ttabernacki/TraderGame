@@ -14,7 +14,8 @@ import {
   QUESTS, callbackAt, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
   rumoursHeard,
 } from '../progression/quests';
-import { cancelPortQuests, migrateEstate, settleFoldedPieces } from './saveResolvers';
+import { cancelPortQuests, migrateEstate, settleFoldedPieces, settleStoresOverflow, migrateFittings } from './saveResolvers';
+import { loadPlan, planOf, recordLeg, storesTons } from './stores';
 import { migrateEnterprises, tickLines, type Letter, type Line } from '../progression/network';
 import { deliverFactoryMail, noteSightings, postLetter, tickFactories, transitDays } from '../progression/livingFactory';
 import { ambientAtSea, barkAt } from '../progression/barks';
@@ -33,7 +34,7 @@ import { PORTS, anchorageOf, portDef, portsNear, type PortDef } from '../world/p
 import { people } from '../world/peoples';
 import { Ship } from '../ship/ship';
 import { HULLS_IN_PLAY, hullClass } from '../ship/hull';
-import { UPGRADE_BY_ID, movesWithTheFlag, tierCap } from '../ship/upgrades';
+import { UPGRADE_BY_ID, fitsHull, movesWithTheFlag } from '../ship/upgrades';
 import {
   KNOTS, prudentCanvas, stepShip, type Environment, type ShipTuning, type StepResult,
 } from '../ship/physics';
@@ -73,7 +74,7 @@ export interface TradeListing extends Listing {
 import { Crown, commissionPoints, portName, type Patent } from '../progression/crown';
 import { ARCS, ARC_BY_ID, BONDS, dueBeat, type BondId } from '../progression/arcs';
 import { newRelations, type Relations } from '../diplomacy/contact';
-import { markCounts, newMarks } from '../diplomacy/marks';
+import { entriesFromMarks, markCounts, newMarks } from '../diplomacy/marks';
 import { startPiece, tickPieces } from '../diplomacy/table';
 import { newBook } from '../diplomacy/book';
 import { newPieces } from '../diplomacy/piece';
@@ -106,6 +107,8 @@ import { polarAt } from '../ship/polars';
 import { migrateTutorial, newTutorial, noteVerb, stepTutorial, type TutorialState, type TutorialStep } from './tutorial';
 import { ringWatchBell } from './watchBell';
 import { legReportOnArrival, noteDeparture, type LegStart } from './legReport';
+import { record as recordDeed, sanitize as sanitizeLedger, type Deed, type Entry as LedgerEntry } from '../ledger/ledger';
+import type { Tag as LedgerTag } from '../ledger/tags';
 import { campaignDef, type CampaignId } from './campaign';
 import { PlayerFleet, type FleetSave } from './fleet';
 import { XIYANG_FLEET } from '../campaigns/xiyang/places';
@@ -348,6 +351,7 @@ export class Game {
   acceptQuest(id: QuestId): string {
     if (this.quests.some((q) => q.id === id)) return 'Already taken up.';
     this.quests.push(newQuest(id, this.clock.t));
+    this.noteDeed('thread.taken', { target: id, magnitude: 0.2, note: `Took up ${QUESTS[id].title}.` });
     this.logEvent('crown', `Took up: ${QUESTS[id].title}. ${QUESTS[id].blurb}`, true);
     this.checkQuests();
     return `${QUESTS[id].title} — in the Book, under Missions.`;
@@ -400,6 +404,7 @@ export class Game {
       landed: 0, paidOut: 0,
     };
     this.feitorias.push(f);
+    this.noteDeed('port.funded', { target: portId, place: portId, magnitude: 0.5, note: `Put a House at ${portName(portId)} under ${factor}.` });
     return f;
   }
 
@@ -422,6 +427,7 @@ export class Game {
     for (const m of checkMilestones(this)) {
       const line = `${m.title}: ${m.hint.replace(/\.$/, '')}. +${m.renown} renown${m.gold ? `, +${m.gold} cruzados` : ''}.`;
       this.pushAlert(`Milestone — ${line}`, 'note');
+      this.noteDeed('milestone.reached', { target: m.id, magnitude: 0.3, note: `${m.title}: ${m.hint.replace(/\.$/, '')}.` });
       this.logEvent('crown', `Milestone — ${line}`, true);
     }
   }
@@ -925,6 +931,7 @@ export class Game {
     this.weather = new Weather(seed);
     this.ship = new Ship(cd.shipName, cd.hullId, start, 200);
     this.crew = newCrew(hullClass(cd.hullId).crewFull, this.rng);
+    this.syncStores();
     this.nav = new Navigator(start, seed);
     if (campaign === 'xiyang') {
       this.fleet = new PlayerFleet(XIYANG_FLEET.map((f, i) => ({ id: i + 1, ...f })));
@@ -1030,6 +1037,7 @@ export class Game {
     this.chartedThisPassage = 0;
     this.correctedNm = 0;
     this.captain.points += points;
+    this.noteDeed('patent.completed', { target: 'portugal', magnitude: 0.8, note: `"${patent.title}" discharged and entered at the Casa.` });
 
     this.logEvent('crown',
       `"${patent.title}" is discharged and entered at the Casa. ${points} points to spend on `
@@ -1068,6 +1076,7 @@ export class Game {
       const points = this.awardCommission(p, beyond);
       s.lines.push(`${points} points to spend on yourself, in the book under Captain.`);
     }
+    this.noteDeed('crown.reported', { target: 'portugal', magnitude: 0.4, note: `Reported to the King\u2019s factor: ${s.gold} cruzados and ${s.standing} renown.` });
     this.logEvent('crown', `Reported to the King\u2019s factor. ${s.gold} cruzados and ${s.standing} renown. ${this.crown.title.name}.`, true);
     return s.lines;
   }
@@ -1289,6 +1298,7 @@ export class Game {
       voyage: this.crown.patent && !this.crown.patent.complete
         ? this.crown.patent.title : 'the voyage in hand',
     });
+    this.noteDeed('loan.taken', { target: h.name, magnitude: Math.min(1, sum / 2000), note: `Drew ${sum} cruzados of ${h.name}, ${owed} to be repaid in ${terms.days} days.` });
     this.logEvent('trade',
       `Drew ${sum} cruzados of ${h.name} on a ${kind === 'cambio' ? 'câmbio marítimo' : 'letra'} `
       + `at ${(terms.rate * 100).toFixed(0)} per cent, ${owed} to be repaid inside ${terms.days} days.`
@@ -1350,6 +1360,7 @@ export class Game {
       d.settled = true;
       d.outcome = 'paid';
       const late = this.clock.t > d.dueBy;
+      this.noteDeed('loan.repaid', { target: h.name, magnitude: late ? 0.4 : 0.7, note: `Discharged ${h.name}\u2019s paper${late ? ', late' : ', inside the date'}.` });
       this.finance.regard(d.house, late ? 5 : 11);
       this.logEvent('trade',
         `Discharged ${h.name}’s paper with ${paid} cruzados${late ? ', late' : ', inside the date'}. `
@@ -1422,6 +1433,7 @@ export class Game {
     this.finance.repaid += Math.min(worth, owed);
     if (worth < owed) {
       this.finance.defaults += 1;
+      this.noteDeed('loan.defaulted', { target: h.name, magnitude: 0.9, note: `Gave up the ship to ${h.name}, and she did not cover the debt.` });
       this.finance.regard(d.house, -14, 0.5);
     } else {
       this.finance.regard(d.house, -3, 0.2);
@@ -2041,6 +2053,7 @@ export class Game {
     a.status = 'broken';
     const def = POLITY_BY_ID.get(a.polity)!;
     this.adjustPolity(a.polity, { trust: -0.4, respect: -0.05 }, `agreement broken — ${why}`);
+    this.noteDeed('promise.broken', { target: a.polity, magnitude: 0.9, note: `${a.text}: broken (${why}).` });
     spreadWord(this, a.polity, -0.12, 0, `The Portuguese broke their word to the ${def.title} of ${portDef(def.seat).name}.`);
     this.pushAlert(`Broken: ${a.text} (${def.name}).`, 'grave');
   }
@@ -2051,6 +2064,7 @@ export class Game {
     const def = POLITY_BY_ID.get(a.polity)!;
     const word = this.can('keptWord') ? 1.5 : 1;
     this.adjustPolity(a.polity, { trust: 0.25 * word, interest: 0.1 }, `agreement kept — ${why}`);
+    this.noteDeed('promise.kept', { target: a.polity, magnitude: 0.8, note: `${a.text}: kept (${why}).` });
     this.practise('diplomacia', 1);
     spreadWord(this, a.polity, 0.06 * word * word, 0.02, `The Portuguese kept their word to the ${def.title} of ${portDef(def.seat).name}.`);
     this.pushAlert(`Kept: ${a.text}.`, 'note');
@@ -2202,6 +2216,7 @@ export class Game {
           this.crown.progressObjective('padrao', undefined, 1);
           this.crown.record('padrao', `Padrão at ${def.name}`, this.nav.estimated, 12, now);
           this.crown.padraoSites.push({ name: `Padrão at ${def.name}`, lat: this.nav.estimated.lat, lon: this.nav.estimated.lon, t: now });
+          this.noteDeed('claim.made', { target: def.id, magnitude: 0.5, note: `Set a padr\u00e3o on the headland at ${def.name} by leave of its court.` });
           lines.push('a padrão on the headland');
         } else lines.push('leave for a padrão, and no stone to set');
       }
@@ -2398,6 +2413,7 @@ export class Game {
         c.status = 'kept';
         this.finance.credit[c.house as HouseId] = clamp((this.finance.credit[c.house as HouseId] ?? 0) + 8, 0, 100);
         this.enter('contract', `Delivered ${c.qty} ${unitOf(good(c.goodId), c.qty)} of ${good(c.goodId).english.toLowerCase()} to ${c.houseName}`, due);
+        this.noteDeed('contract.kept', { target: c.houseName, magnitude: 0.5, note: `Delivered ${c.qty} ${good(c.goodId).english.toLowerCase()} to ${c.houseName} under contract.` });
         this.logEvent('trade', `Delivered ${c.qty} ${good(c.goodId).english.toLowerCase()} to ${c.houseName} under contract: ${due.toFixed(0)} cruzados, the advance already had.`, true);
         this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
       } else if (now > c.due) {
@@ -2406,6 +2422,7 @@ export class Game {
         this.crown.gold = Math.max(0, this.crown.gold - penalty);
         this.finance.credit[c.house as HouseId] = clamp((this.finance.credit[c.house as HouseId] ?? 0) - 20, 0, 100);
         this.enter('contract', `Contract with ${c.houseName} broken`, -penalty);
+        this.noteDeed('contract.broken', { target: c.houseName, magnitude: 0.7, note: `The contract with ${c.houseName} ran out undelivered; ${penalty} cruzados forfeit.` });
         this.logEvent('trade', `The contract with ${c.houseName} has run out undelivered. They have taken back the advance and half as much again, ${penalty} cruzados, and they will remember.`, true);
         this.pushAlert(`Contract broken: ${c.houseName} (${penalty} cruzados).`, 'grave');
         this.crown.standing = Math.max(0, this.crown.standing - Math.round(penalty * 0.1));
@@ -2860,6 +2877,7 @@ export class Game {
     this.crew.count = Math.max(0, this.crew.count - n);
     this.crew.deaths += n;
     const live = aboardHands(this.hands);
+    const named: string[] = [];
     for (let i = 0; i < Math.min(n, live.length); i++) {
       const man = live[Math.floor(this.rng.next() * live.length)];
       if (!man.alive) continue;
@@ -2867,7 +2885,9 @@ export class Game {
       man.aboard = false;
       man.fate = fate;
       man.fateT = this.clock.t;
+      named.push(man.name);
     }
+    this.noteDeed('hand.died', { actors: named, magnitude: n, note: fate });
   }
 
   /**
@@ -4034,6 +4054,8 @@ export class Game {
     }
 
     const w = this.wardroom;
+    const deathsBefore = this.crew.deaths;
+    const officersBefore = this.crew.officers.filter((o) => o.alive);
     const events = updateCrew(this.crew, {
       days,
       ashore: this.anchored && this.dockedAt !== null,
@@ -4068,11 +4090,22 @@ export class Game {
 
     this.driftRegard(days);
 
+    const buried: string[] = [];
     for (const e of events) {
       this.pushAlert(e.message, e.severity);
       this.logEvent('crew', e.message, e.severity === 'grave');
       if (e.kind === 'mutiny') this.handleMutiny();
-      if (e.kind === 'death') this.buryTheNamed();
+      if (e.kind === 'death') { const m = this.buryTheNamed(); if (m) buried.push(m); }
+    }
+    // The Ledger keeps the dead: the count, and the names of those the captain knew.
+    for (const o of officersBefore) {
+      if (!o.alive) this.noteDeed('officer.died', { target: o.name, magnitude: 1, note: `${o.name}, your ${o.role}, died at sea.` });
+    }
+    if (this.crew.deaths > deathsBefore) {
+      this.noteDeed('hand.died', {
+        actors: buried, magnitude: this.crew.deaths - deathsBefore, silent: true,
+        note: this.crew.scurvy > 0.3 ? 'Died of the scurvy and were put over the side.' : 'Died at sea and were put over the side.',
+      });
     }
 
     // A ship is not lost when the last man dies; she is lost when there are not
@@ -4106,6 +4139,12 @@ export class Game {
     for (const s of wear.spoiled) {
       this.logEvent('note', `The ${s.toLowerCase()} in the hold is spoiled past saving and has been thrown over the side.`);
     }
+    // Spares in the hold: timber, cordage and canvas. At sea the carpenter and the
+    // sailmaker use them to mend what the sea has done, and the rot and the rats
+    // take a little of the set every month. See game/stores.
+    if (!this.dockedAt) this.useSpares(days);
+    if (this.ship.effects.morale) this.crew.morale = clamp(this.crew.morale + this.ship.effects.morale * days, 0, 1);
+    this.syncStores();
     // A sailmaker and spare canvas: blown-out sails are mended at sea.
     if (this.ship.effects.sailRepair) {
       for (const sl of this.ship.state.sails) sl.condition = Math.min(1, sl.condition + days * 0.06);
@@ -4238,11 +4277,11 @@ export class Game {
    * should be, and the other two thirds are the men the captain genuinely did
    * not know, which is also true and is most of why the figure is horrifying.
    */
-  private buryTheNamed(): void {
+  private buryTheNamed(): string | null {
     const live = aboardHands(this.hands);
-    if (live.length === 0) return;
+    if (live.length === 0) return null;
     const share = live.length / Math.max(live.length, this.crew.count + 1);
-    if (!this.rng.chance(share)) return;
+    if (!this.rng.chance(share)) return null;
     const man = live[Math.floor(this.rng.next() * live.length)];
     man.alive = false;
     man.aboard = false;
@@ -4258,6 +4297,7 @@ export class Game {
       + 'and put over the side, and the ship was hove to for as long as it took, which was not long.',
       true);
     this.pushAlert(`${man.name} is dead.`, 'grave');
+    return man.name;
   }
 
   /**
@@ -5650,6 +5690,7 @@ export class Game {
       if (v.delivered || v.failed || v.toPort !== def.id) continue;
       if (this.ship.quantityOf(v.goodId) < v.quantity - 0.01) {
         v.failed = true;
+        this.noteDeed('commission.failed', { target: v.patron, magnitude: 0.6, note: `${v.patron}\u2019s ${good(v.goodId).english.toLowerCase()} was not aboard at ${def.name}.` });
         this.crown.gold -= v.penalty;
         // A merchant's word of you is your name, not a book of its own.
         this.crown.standing = Math.max(0, this.crown.standing - v.penalty * 0.1);
@@ -5668,6 +5709,7 @@ export class Game {
       this.crown.standing += renown;
       this.crown.lifetimeStanding += renown;
       this.crew.morale = clamp(this.crew.morale + 0.04, 0, 1);
+      this.noteDeed('commission.delivered', { target: v.patron, magnitude: 0.5, silent: true, note: `Landed ${ventureLine(v)} for ${v.patron} at ${def.name}; paid ${v.fee} cruzados.` });
       this.pushAlert(`Charter discharged. ${v.fee} cruzados.`, 'note');
       this.logEvent('trade',
         `Landed ${ventureLine(v)} for ${v.patron}, within his time, and was paid ${v.fee} `
@@ -5787,7 +5829,7 @@ export class Game {
     return this.ship.upgrades.filter((id) => {
       if (!movesWithTheFlag(id)) return false;
       const u = UPGRADE_BY_ID.get(id)!;
-      return (!u.hulls || u.hulls.includes(hullId)) && u.tier <= tierCap(hullId);
+      return fitsHull(u, hullId);
     });
   }
 
@@ -5838,6 +5880,7 @@ export class Game {
     this.ship = next;
     this.crew.complement = h.crewFull;
     this.crew.count = Math.min(this.crew.count, h.crewFull);
+    this.syncStores();
     this.refreshEnvironment();
     if (this.crew.count < h.crewMin) {
       this.pushAlert(`The ${h.name} wants ${h.crewMin} men to sail her and you have `
@@ -5944,6 +5987,7 @@ export class Game {
         this.crown.standing += lead.value;
         this.crown.lifetimeStanding += lead.value;
         this.pushAlert(`The rumour was true. ${lead.value} renown.`, 'note');
+        this.noteDeed('rumour.true', { target: lead.source, magnitude: 0.4, silent: true, note: `Ran down the report from ${lead.source}; it was where he said.` });
         this.logEvent('discovery',
           `Ran down the report we had from ${lead.source}, and it was where he said it was, `
           + 'or near enough that a seaman would call it the same place.', true);
@@ -5963,6 +6007,7 @@ export class Game {
         lead.false = true;
         this.crew.morale = clamp(this.crew.morale - 0.05, 0, 1);
         this.pushAlert('Nothing here. The report was wrong.', 'warning');
+        this.noteDeed('rumour.false', { target: lead.source, magnitude: 0.3, silent: true, note: `Made the position from ${lead.source}; nothing but water.` });
         this.logEvent('note',
           `Made the position we had from ${lead.source} and there is nothing in it but water. `
           + 'The hands have opinions about the man who told us.', true);
@@ -5981,6 +6026,7 @@ export class Game {
       if (v.delivered || v.failed) continue;
       if (!inPort && this.clock.t > v.dueBy) {
         v.failed = true;
+        this.noteDeed('commission.failed', { target: v.patron, magnitude: 0.6, silent: true, note: `The charter for ${ventureLine(v)} ran out of time.` });
         this.crown.standing = Math.max(0, this.crown.standing - v.penalty * 0.1);
         this.crown.gold -= v.penalty;
         this.pushAlert(`${v.patron}\u2019s charter is out of time.`, 'warning');
@@ -6006,6 +6052,9 @@ export class Game {
     );
     if (!news) return;
     this.rival.lastNews = this.clock.t;
+    for (const id of news.claimed) {
+      this.noteDeed('claim.lost', { target: id, magnitude: 0.5, note: `${this.rival.name} reported ${portDef(id).name} first; the court entered it under his name.` });
+    }
     this.pushAlert(`${this.rival.name} has been before you.`, 'warning');
     this.logEvent('note', news.text, true);
     this.crew.morale = clamp(this.crew.morale - 0.04, 0, 1);
@@ -6172,6 +6221,7 @@ export class Game {
     this.chartedThisPassage += 25;
     this.crown.chartedSincePatent += 25;
     this.crew.morale = clamp(this.crew.morale + 0.04, 0, 1);
+    this.noteDeed('name.given', { target: given, magnitude: 0.4, note: `Named a ${f.kind === 'river' ? 'river mouth' : 'headland'} ${given}.` });
     this.logEvent('discovery',
       `Entered this ${f.kind === 'river' ? 'river' : 'headland'} as ${given}, at `
       + `${formatLat(this.nav.estimated.lat)}, ${formatLon(this.nav.estimated.lon)} by the `
@@ -6276,6 +6326,7 @@ export class Game {
     }
     // A pillar is a signpost and the other man can read it.
     if (beyond) this.rival.frontierLat = Math.min(this.rival.frontierLat, f.lat + 1.5);
+    this.noteDeed('claim.made', { target: given, magnitude: beyond ? 0.9 : 0.4, note: `Landed a padr\u00e3o at ${given}.` });
     this.logEvent('discovery',
       `Hoisted out the boat and landed the pillar on the high ground at ${given}. The arms of `
       + 'Portugal and the date cut into the stone, the cross set on top of it, and the whole '
@@ -6814,6 +6865,7 @@ export class Game {
       backing,
     });
     this.journeyRecord.sent++;
+    this.noteDeed('journey.sent', { target: o.name, magnitude: 0.3, note: `Sent ${o.name} up the river from ${def.name}.` });
     this.logEvent('contact',
       `${o.name} went up the river from ${def.name} with nine men, four hundred cruzados of `
       + `goods, and orders to ${e.brief.charAt(0).toLowerCase()}${e.brief.slice(1)} He was told `
@@ -6895,6 +6947,7 @@ export class Game {
   openTheRoad(portId: string): void {
     this.inlandRoads.add(portId);
     this.markets.openRoad(portId, this.clock.t);
+    this.noteDeed('lane.opened', { target: portId, place: portId, magnitude: 0.6, note: `Opened the inland road at ${portName(portId)}.` });
   }
 
   /** Give it up, and go back to steering direct for the mark. */
@@ -7486,6 +7539,10 @@ export class Game {
 
   /** Where the current leg began, for the Leg Report. See game/legReport.ts. */
   legStart: LegStart | null = null;
+  /** The Ledger (B1): every consequential act, tagged. Append-only. See ledger/. */
+  ledger: LedgerEntry[] = [];
+  /** Record a deed in the Ledger and say in one quiet line what it did. */
+  noteDeed(tag: LedgerTag, d: Deed = {}): LedgerEntry { return recordDeed(this, tag, d); }
 
   /** The instruction standing at the moment, or null once he has stopped. */
   tutorialStep(): TutorialStep | null {
@@ -7672,6 +7729,7 @@ export class Game {
       }
     }
     noteDeparture(this);
+    recordLeg(this);
     this.anchored = false;
     this.dockedAt = null;
     // Start the day's run from the moment she drops down the river, so the
@@ -7848,6 +7906,7 @@ export class Game {
       paidOut: 0,
     };
     this.feitorias.push(f);
+    this.noteDeed('port.funded', { target: def.id, place: def.id, magnitude: 0.7, note: `Founded a House at ${def.name}.` });
     this.relationsFor(def.id).factorySettled = this.clock.t;
     this.crown.standing += 12;
     this.refreshEnvironment();
@@ -8255,26 +8314,51 @@ export class Game {
     }
   }
 
-  /** Take on water, provisions and fresh food. Returns the cost. */
+  /**
+   * Take on water, provisions and fresh food for `days`, as far as the hold has room
+   * for them (they share it with the cargo). `cost` is the price asked for the full
+   * order; a part-order is charged in proportion.
+   */
   provision(days: number, cost: number): void {
-    const p = this.crew.provisions;
-    // The extra casks raise what she can stow, they do not refill themselves.
-    //
-    // This added the upgrade's forty-five days on top of *every* purchase
-    // rather than to her capacity, so thirty days of water bought six times at
-    // the same quay came to three hundred days. Water is the hard limit on
-    // every passage in this game — it is the reason the volta do mar is a
-    // gamble and the reason a captain turns for home — and a hundred and twenty
-    // cruzados of casks turned it off altogether.
-    p.water = Math.max(p.water, days + this.ship.effects.water);
-    p.biscuit = Math.max(p.biscuit, days);
-    p.saltMeat = Math.max(p.saltMeat, days * 0.9);
-    p.wine = Math.max(p.wine, days * 0.7);
-    const def = this.portHere;
-    p.fresh = Math.max(p.fresh, 18 * (def ? clamp(def.refit * 1.4, 0.15, 1.4) : 0.5));
-    this.crew.daysWithoutFresh = 0;
-    this.crown.gold -= cost;
-    this.logEvent('note', `Watered and victualled for ${days} days at a cost of ${cost} cruzados.`);
+    const want = { water: days + this.ship.effects.water, victuals: days, spares: this.crew.spares ?? 0 };
+    const have = planOf(this.crew);
+    const target = { water: Math.max(have.water, want.water), victuals: Math.max(have.victuals, want.victuals), spares: want.spares };
+    const room = loadPlan(this, target, 0);
+    const asked = Math.max(1, target.water - have.water + target.victuals - have.victuals);
+    const got = Math.max(0, room.plan.water - have.water) + Math.max(0, room.plan.victuals - have.victuals);
+    const pay = Math.round(cost * clamp(got / asked, 0, 1));
+    this.crown.gold -= pay;
+    const short = got < asked - 0.5;
+    this.logEvent('note', short
+      ? `Watered and victualled as far as the hold allowed, ${pay} cruzados. The rest of the stores would not stow beside the cargo.`
+      : `Watered and victualled for ${days} days at a cost of ${pay} cruzados.`);
+  }
+
+  /** Mend with the spares aboard: sails first, then the seams. Uses what it mends with. */
+  private useSpares(days: number): void {
+    const c = this.crew;
+    c.spares = Math.max(0, (c.spares ?? 0) - days * 0.0012);
+    if ((c.spares ?? 0) <= 0.01) return;
+    let used = 0;
+    for (const sl of this.ship.state.sails) {
+      if (sl.condition < 1 && sl.condition > 0) {
+        const mend = Math.min(1 - sl.condition, days * 0.02);
+        sl.condition += mend;
+        used += mend * 0.05;
+      }
+    }
+    const hull = this.ship.condition;
+    if (hull.hull < 0.97) {
+      const mend = Math.min(0.97 - hull.hull, days * 0.003);
+      this.ship.repair(mend);
+      used += mend * 0.6;
+    }
+    c.spares = Math.max(0, (c.spares ?? 0) - used);
+  }
+
+  /** Put her stores' weight on the hold. Called wherever provisions or the hull change. */
+  syncStores(): void {
+    this.ship.storesTons = storesTons(this.crew, this.ship.holdCapacity, this.ship.effects.storage);
   }
 
   /** Advance time in port. */
@@ -8480,6 +8564,7 @@ export class Game {
     const officers = this.crew.officers.filter((o) => o.alive);
     const deaths = this.crew.deaths;
     this.crew = newCrew(hullClass('caravela-latina').crewFull, this.rng);
+    this.syncStores();
     this.crew.officers = officers;
     this.crew.deaths = deaths;
     this.wardroomCache = null;
@@ -9402,6 +9487,7 @@ export class Game {
       tutorial: this.tutorial,
       seenChart: this.seenChart,
       legStart: this.legStart,
+      ledger: this.ledger,
       encounter: this.encounter,
       seaRecord: this.seaRecord,
       chaseOrder: this.chaseOrder,
@@ -9566,6 +9652,8 @@ export class Game {
     g.diplomacy.marks ??= newMarks();
     g.diplomacy.book ??= newBook();
     g.diplomacy.pieces ??= newPieces();
+    // Careers from before the Ledger carry their marks over as its first entries (once: ??=).
+    g.ledger = d.ledger !== undefined ? sanitizeLedger(d.ledger) : entriesFromMarks(g.diplomacy.marks.marks);
     settleFoldedPieces(g);
     g.trade = { ...newTrade(g.clock.t), ...(d.trade ?? {}) };
     g.ship.reservedTons = g.trade.quintaladas
@@ -9619,6 +9707,9 @@ export class Game {
     g.lastLat = g.ship.state.pos.lat;
     g.displayHeading = g.ship.state.heading;
     g.displayHeel = g.ship.state.heel;
+    migrateFittings(g);
+    g.syncStores();
+    settleStoresOverflow(g);
     g.refreshEnvironment();
     // A voyage begun before milestones existed has already done what it has
     // done: claim it quietly rather than paying it all out at once.

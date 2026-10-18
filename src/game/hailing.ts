@@ -29,6 +29,16 @@ function shiftNation(g: Game, s: Stranger, delta: number): void {
   g.shiftPeopleRegard(NATION_PEOPLE[s.nation], delta);
 }
 
+/** The party a stranger's flag stands for in the Ledger: a polity where there is one. */
+function nationTarget(s: Stranger): string {
+  switch (s.nation) {
+    case 'castilian': return 'castile';
+    case 'moorish': return 'fez';
+    case 'portuguese': return 'portugal';
+    default: return `nation:${s.nation}`;
+  }
+}
+
 /** Her worth as a prize, before anybody has been hurt over it. */
 export function prizeValue(g: Game, s: Stranger): number {
   const hull = hullClass(s.hullId);
@@ -70,6 +80,7 @@ function takeHer(g: Game, s: Stranger, lawful: boolean): string {
   if (!won) {
     g.seaRecord.repulsed++;
     g.ship.damage(g.rng.range(0.04, 0.14));
+    g.noteDeed('ship.repulsed', { target: nationTarget(s), magnitude: 0.4, note: `Went in to board ${s.name} and was beaten back.` });
     return `The boats went in and were beaten back off her side. ${lost === 1 ? 'One man' : `${lost} men`} `
       + `killed for nothing, the boats stove, and ${s.name} standing away to the `
       + 'westward with her people cheering on the rail. It will be in the escrivão’s book by supper.';
@@ -77,6 +88,7 @@ function takeHer(g: Game, s: Stranger, lawful: boolean): string {
 
   const purse = prizeValue(g, s);
   g.seaRecord.prizes++;
+  g.noteDeed('ship.stopped', { target: nationTarget(s), magnitude: lawful ? 0.5 : 0.8, note: `Boarded and carried ${s.name}${lawful ? ' under the King\u2019s letter' : ', under the same flag as your own'}.` });
   // Most of what a ship is worth is what she carries, and that comes across
   // into your hold, to be sold like any other cargo — gluts and all. The rest
   // is the master's strongbox.
@@ -126,6 +138,7 @@ function copyHisCoast(g: Game, s: Stranger, accuracyNm: number, rangeNm: number)
     return 'His sheet is worse than ours and he is embarrassed about it. We gave him ours to '
       + 'copy instead, which the Casa would have something to say about.';
   }
+  g.noteDeed('chart.copied', { target: nationTarget(s), magnitude: 0.3, note: `Copied ${gained} headlands from ${s.master}\u2019s roteiro.` });
   return `Two hours with his roteiro open on our table and the pilot copying as fast as he can `
     + `write. ${gained} headlands laid down that we had never seen, drawn where ${s.master} `
     + `believes they are — which is a better guess than ours and is still a guess.`;
@@ -316,6 +329,7 @@ const BUILDERS: Record<string, Build> = {
             gg.crown.standing += licensed ? 2 : 4;
             gg.crown.lifetimeStanding += licensed ? 2 : 4;
             gg.casa.regard = clamp(gg.casa.regard - (licensed ? 0.2 : 0), -1, 1);
+            gg.noteDeed('ship.spared', { target: nationTarget(s), magnitude: 0.5, note: `Read ${s.master} the King\u2019s words and let him go south.` });
             return `You read him the King's words across fifty yards of water and he listens to `
               + `all of it with his hat in his hand. Then he says that he has eleven men aboard `
               + `who have not been paid since March, and puts his helm up, and goes south.`
@@ -334,12 +348,14 @@ const BUILDERS: Record<string, Build> = {
             if (licensed) {
               gg.casa.regard = clamp(gg.casa.regard - 0.3, -1, 1);
               gg.crown.standing -= 8;
+              gg.noteDeed('order.breached', { target: 'portugal', magnitude: 0.6, note: `Let a ${NATION_NAME[s.nation]} interloper pass against your commission.` });
               return 'You alter two points and go about your own business, and he goes about his, '
                 + 'and neither ship fires. It is the sensible thing and it is a breach of your '
                 + 'commission, and the man who writes the Casa\'s copy of this voyage was standing '
                 + 'at the break of the quarterdeck for the whole of it.';
             }
             shiftNation(gg, s, 0.08);
+            gg.noteDeed('ship.spared', { target: nationTarget(s), magnitude: 0.3, note: `Let ${s.master} alone.` });
             return 'You alter two points and he alters two the other way, and by dark there is '
               + 'nothing in that quarter but water. Whatever is going on between the two crowns '
               + 'is being conducted by people who are not out here.';
@@ -406,6 +422,7 @@ const BUILDERS: Record<string, Build> = {
             gg.crew.morale = clamp(gg.crew.morale - 0.06, 0, 1);
             shiftAll(gg.hands, -0.04);
             shiftNation(gg, s, 0.15);
+            gg.noteDeed('ship.ransomed', { target: nationTarget(s), magnitude: 0.3, note: `Bought off a corsair for ${ransom} cruzados.` });
             return `${ransom} cruzados into a basket and across on a line, and he counts it on `
               + `his own deck while sixty men watch you in silence. Then he takes his hat off, `
               + 'and bears away east, and that is the whole of it. Every man forward understood '
@@ -442,6 +459,7 @@ const BUILDERS: Record<string, Build> = {
           gg.crown.lifetimeStanding += 6;
           shiftNation(gg, s, 0.3);
           gg.casa.regard = clamp(gg.casa.regard + 0.15, -1, 1);
+          gg.noteDeed('ship.succoured', { target: nationTarget(s), magnitude: 0.9, note: `Went alongside ${s.name}, dismasted, and got her sailing.` });
           for (const o of gg.crew.officers) {
             if (o.alive) o.loyalty = clamp(o.loyalty + 0.08, 0, 1);
           }
@@ -462,6 +480,7 @@ const BUILDERS: Record<string, Build> = {
           gg.crew.morale = clamp(gg.crew.morale + 0.03, 0, 1);
           shiftAll(gg.hands, 0.02);
           shiftNation(gg, s, 0.12);
+          gg.noteDeed('ship.succoured', { target: nationTarget(s), magnitude: 0.4, note: `Gave ${s.name} water and a course.` });
           return 'Four casks across and a course to steer, and we filled away before the boat '
             + 'was properly hoisted in. Her master shouted something after us that nobody chose '
             + 'to hear clearly. It was probably thanks.';
@@ -475,6 +494,7 @@ const BUILDERS: Record<string, Build> = {
           gg.crew.morale = clamp(gg.crew.morale - 0.14, 0, 1);
           shiftAll(gg.hands, -0.18);
           gg.casa.regard = clamp(gg.casa.regard - 0.1, -1, 1);
+          gg.noteDeed('ship.abandoned', { target: nationTarget(s), magnitude: 0.8, note: `Held your course past ${s.name}, dismasted.` });
           for (const o of gg.crew.officers) {
             if (o.alive) o.loyalty = clamp(o.loyalty - 0.07, 0, 1);
           }
@@ -511,6 +531,7 @@ const GENOESE: Build = (g, s) => {
               + 'gracious about it in a way that is worse than if he had laughed.';
           }
           gg.crown.gold -= price;
+          gg.noteDeed('chart.bought', { target: 'nation:genoese', magnitude: 0.3, note: `Bought a Catalan sheet of the Gulf from ${s.master} for ${price} cruzados.` });
           return copyHisCoast(gg, s, 9, 320);
         },
       },
@@ -522,6 +543,7 @@ const GENOESE: Build = (g, s) => {
           gg.crown.gold += worth;
           gg.casa.regard = clamp(gg.casa.regard - 0.25, -1, 1);
           gg.crown.standing -= 6;
+          gg.noteDeed('chart.sold', { target: 'nation:genoese', magnitude: 0.6, note: `Sold a copy of your survey to ${s.master} of Genoa for ${worth} cruzados.` });
           return `${worth} cruzados, counted out on his own capstan, for two hours of the pilot's `
             + 'time and a sheet of paper. What you have also done is put the Casa\'s survey into '
             + 'the hands of a man who will sell it again in Seville before Lent, and the Casa '

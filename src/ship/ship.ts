@@ -106,8 +106,11 @@ export class Ship {
   /** Tons of the hold given over to the officers' own chests. */
   reservedTons = 0;
 
+  /** Tons of the hold taken by water, victuals and spares. Kept in step by Game.syncStores. */
+  storesTons = 0;
+
   get holdFree(): number {
-    return Math.max(0, this.holdCapacity - this.reservedTons - this.cargoTons);
+    return Math.max(0, this.holdCapacity - this.reservedTons - this.storesTons - this.cargoTons);
   }
 
   get sailArea(): number {
@@ -201,7 +204,7 @@ export class Ship {
       0, 1,
     );
 
-    const leakRate = this.condition.leak * (2 - this.condition.hull);
+    const leakRate = this.condition.leak * (2 - this.condition.hull) * fx.wear;
     const pumped = pumpEffort * fx.pumping * days * 3.2;
     this.condition.bilge = Math.max(0, this.condition.bilge + days * leakRate - pumped);
 
