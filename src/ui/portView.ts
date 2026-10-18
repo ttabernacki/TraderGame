@@ -16,7 +16,6 @@ import { hullClass } from '../ship/hull';
 import { shipyardCard } from './shipyard';
 import { houseHead, openLineCard, worksBlock } from './networkView';
 import { footingOf, footingWord, hullPrice, postureOf } from '../progression/network';
-import { HOLDINGS, ROUTE_BY_ID, temperWord } from '../progression/estate';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
 import { OFFICER_ROLES } from '../crew/crew';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
@@ -202,14 +201,6 @@ export class PortView {
       case 'freight': this.renderFreight(inner, g, rel); break;
       case 'money': {
         this.renderMoney(inner, g);
-        // What you own at home belongs with the rest of the money, where there
-        // is a Portuguese quay to hear of it.
-        if (def.people === 'portuguese') {
-          inner.append(el('h2', { class: 'fit-head' }, 'Your holdings'));
-          const h = el('div', {});
-          this.renderEstate(h, g);
-          inner.append(h);
-        }
         break;
       }
       case 'station': this.renderStation(inner, g); break;
@@ -224,92 +215,6 @@ export class PortView {
       case 'yard': this.renderYard(inner, g); break;
     }
     this.body.append(inner);
-  }
-
-  /** Money at work at home. See progression/estate. */
-  private renderEstate(host: HTMLElement, g: Game): void {
-    const st = g.estate;
-    const say = (err: string | null, ok: string) => {
-      this.notice = err ? { text: err, grave: true } : { text: ok };
-      this.render();
-    };
-    const left = el('div', {});
-    const right = el('div', {});
-
-    const out = st.outfits.filter((o) => !o.outcome);
-    const done = st.outfits.filter((o) => o.outcome).slice(-4).reverse();
-    left.append(card(st.lordship ? `Senhor de ${st.lordship}` : 'Your affairs at home',
-      el('p', {}, st.earned > 0
-        ? `Your money has earned ${Math.round(st.earned)} cruzados while you were at sea. Whatever is owing is paid over at any Portuguese port.`
-        : (st.outfits.length || Object.keys(st.holdings).length)
-          ? 'Your money is at work. What it earns is paid over, with the letters, at any Portuguese port.'
-          : 'Nothing of yours is working at home yet. A share in another man\u2019s voyage, a house on the Rua Nova, land: all of it earns while you sail.'),
-      out.length ? el('div', { class: 'fit-cat-head' }, 'Voyages you have money in') : null,
-      ...out.map((o) => {
-        const r = ROUTE_BY_ID.get(o.route)!;
-        const left = Math.max(0, Math.ceil(((o.dueT ?? 0) - g.clock.t) / 86400));
-        return el('div', { class: 'estate-row' },
-          el('div', {}, el('b', {}, o.ship), ` \u2014 ${o.captain}, ${r.name}`),
-          el('div', { class: 'estate-sub' }, `${o.stake} cruzados in her \u00b7 ${left > 0 ? `due in about ${left} days` : 'overdue; no word yet'}`));
-      }),
-      ...(() => {
-        const shares = g.lines.filter((l) => l.share && !l.lost);
-        return shares.length ? [el('div', { class: 'fit-cat-head' }, 'Ships you have shares in'),
-          ...shares.map((l) => el('div', { class: 'estate-row' },
-            el('div', {}, el('b', {}, l.name), ` — ${l.partner}, to ${portDef(l.to).name}`),
-            el('div', { class: 'estate-sub' }, `${l.trips} voyages, ${Math.round(l.earned)} cruzados to you so far`)))] : [];
-      })(),
-      done.length ? el('div', { class: 'fit-cat-head' }, 'Lately') : null,
-      ...done.map((o) => el('div', { class: 'estate-row' },
-        el('div', {}, el('b', {}, o.ship), ` \u2014 ${ROUTE_BY_ID.get(o.route)!.name}`),
-        el('div', { class: `estate-sub ${o.outcome === 'lost' ? 'bad' : 'good'}` },
-          o.outcome === 'lost' ? `Lost, and ${o.stake} cruzados with her` : `${o.stake} came back as ${o.payout}`))),
-    ));
-
-    if (g.dockedAt === 'lisboa') {
-      left.append(card('Voyages wanting backers',
-        el('p', { class: 'fit-blurb' }, 'Owners on the Rua Nova selling shares in their ships. She runs her road voyage after voyage, through the same markets as your own, and your part of each voyage is paid at the next Portuguese port. He runs her; you can sell the share back when she is in the river.'),
-        ...(st.offers.length ? st.offers.map((o) => {
-          const r = ROUTE_BY_ID.get(o.route)!;
-          return el('div', { class: 'estate-offer' },
-            el('div', {}, el('b', {}, o.ship), ` \u2014 ${r.name}`),
-            el('div', { class: 'estate-sub' }, `${o.captain}, ${temperWord(o.temper)}. A share of a ship on this road, for as long as she swims.`),
-            el('div', { class: 'row', style: { gap: '6px', flexWrap: 'wrap', marginTop: '6px' } },
-              ...([[0.25, 'A quarter'], [0.5, 'Half']] as [number, string][]).map(([share, label]) => {
-                const cost = Math.round(o.ask * share);
-                const why = g.outfitBlocked(o.id, share);
-                return button(`${label} \u2014 ${cost}`, () => say(g.outfitVoyage(o.id, share), `A share of the ${o.ship} is yours.`),
-                  { disabled: !!why, title: why ?? undefined, ghost: share < 1 });
-              })),
-          );
-        }) : [el('p', {}, 'Nobody on the river is looking for money this month.')]),
-      ));
-    }
-
-    right.append(card('Property',
-      ...HOLDINGS.map((h) => {
-        const level = st.holdings[h.id] ?? 0;
-        const why = g.holdingBlocked(h.id);
-        const full = level >= h.cost.length;
-        const here = g.dockedAt === h.where;
-        return el('div', { class: `estate-holding${level ? ' held' : ''}` },
-          el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'baseline' } },
-            el('span', {}, el('b', {}, h.english), ' ', el('i', { style: { color: 'var(--ink-soft)' } }, h.name)),
-            level ? el('span', { class: 'tag good' }, h.cost.length > 1 ? `${level} of ${h.cost.length}` : 'yours') : null),
-          el('div', { class: 'estate-sub' }, h.blurb),
-          el('div', { class: 'estate-sub' },
-            `${level ? `Earns about ${h.income[level - 1]} a month` : `Would earn about ${h.income[0]} a month`}`
-            + `${h.renown ? `, and ${h.renown} renown a year` : ''}, give or take ${Math.round(h.swing * 100)}% on the month.`),
-          full ? null : here
-            ? el('div', { class: 'row', style: { marginTop: '6px', gap: '8px', alignItems: 'center' } },
-              button(`${level ? 'Enlarge it' : 'Buy it'} \u2014 ${h.cost[level]} cruzados`,
-                () => say(g.buyHolding(h.id), `${h.english} is yours.`), { disabled: !!why, title: why ?? undefined }),
-              why ? el('span', { class: 'sys-why' }, why) : null)
-            : el('div', { class: 'sys-why' }, h.where === 'lisboa' ? 'Bought in Lisbon.' : 'Bought at Funchal, on Madeira.'),
-        );
-      }),
-    ));
-    host.append(el('div', { class: 'cols two' }, left, right));
   }
 
   private renderTown(host: HTMLElement, g: Game, rel: ReturnType<Game['relationsFor']>): void {

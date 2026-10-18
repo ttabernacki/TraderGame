@@ -1584,11 +1584,8 @@ const nome: QuestDef = {
           },
           {
             label: 'Take the cane land above the town',
-            detail: '250 cruzados for the lot and the water. A mill of your own, in your own name.',
+            detail: 'The lot and the water, on the donatary’s terms. A mill of your own, in your own name.',
             resolve: (gg) => {
-              if (gg.crown.gold < 250) return later(q, 'The donatary’s agent wants two hundred and fifty, and you have not got it.');
-              gg.crown.gold -= 250;
-              gg.estate.holdings.engenho = Math.max(1, gg.estate.holdings.engenho ?? 0);
               q.flags.land = true;
               return go(gg, q, 'younger', 'Took the cane land above Funchal in your own name. It is the first '
                 + 'thing you have ever owned that nobody had to die for.');
@@ -2051,7 +2048,7 @@ const escudeiro: QuestDef = {
             detail: 'Every private trade, every bribe, every man who has starved his crew for a profit.',
             resolve: (gg) => {
               renown(gg, 70);
-              gg.estate.accrued += 1500;
+              gg.crown.gold += 1500;
               gg.secretsHeard.push('commenda');
               return end(gg, q, 'honest', 'Wrote the King an honest account of the captains. He gave you a '
                 + 'commenda of the Order of Christ, which pays fifteen hundred cruzados and makes '
@@ -3572,11 +3569,10 @@ const kingsOffer: QuestDef = {
             label: 'A lordship, and the quiet of the land',
             detail: 'Senhor de a town with rents and a gallows. The sea is a long way from it.',
             resolve: (gg) => {
-              gg.estate.holdings.senhorio = 1;
-              gg.estate.lordship = ['Alvito', 'Sortelha', 'Ferreira de Aves', 'Castelo Rodrigo'][Math.floor(gg.rng.next() * 4)];
+              gg.lordship = ['Alvito', 'Sortelha', 'Ferreira de Aves', 'Castelo Rodrigo'][Math.floor(gg.rng.next() * 4)];
               gg.secretsHeard.push('lordship');
               renown(gg, 90);
-              return end(gg, q, 'lordship', `The King made you Senhor de ${gg.estate.lordship}, with its rents and its gallows. He was kind about it.`);
+              return end(gg, q, 'lordship', `The King made you Senhor de ${gg.lordship}, with its rents and its gallows. He was kind about it.`);
             },
           },
           {
