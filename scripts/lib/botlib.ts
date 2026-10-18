@@ -16,6 +16,7 @@ import { provisioningCost } from '../../src/economy/market';
 import { good } from '../../src/economy/goods';
 import { roadBetween } from '../../src/progression/road';
 import { openRuns, offered, runView, startPiece, stepPiece } from '../../src/diplomacy/table';
+import { UPGRADE_BY_ID, nodeStatus, yardLevel } from '../../src/ship/upgrades';
 import { isLand } from '../../src/world/landmass';
 import { polityOfPort } from '../../src/diplomacy/polities';
 
@@ -116,10 +117,9 @@ export function audienceHere(g: Game, t: Tally, rng: Rng): void {
 // Port business
 // ---------------------------------------------------------------------------
 
-export function victual(g: Game): void {
+export function victual(g: Game, want = 90): void {
   const def = g.portHere;
   if (!def) return;
-  const want = 90;
   const cost = Math.round(provisioningCost(def, want, g.crew.count));
   if (g.crown.gold < cost) g.drawCredit(cost);
   if (g.crown.gold >= cost) g.provision(want, cost);
@@ -168,13 +168,31 @@ export function trade(g: Game, nextPort: string | null, t: Tally): void {
 export function repair(g: Game): void {
   const def = g.portHere;
   if (!def || g.ship.condition.hull > 0.9) return;
-  const cost = Math.ceil((1 - g.ship.condition.hull) * 900 / Math.min(1, Math.max(0.15, def.refit)));
-  if (g.crown.gold < cost) g.drawCredit(cost);
-  if (g.crown.gold < cost) return;
-  g.crown.gold -= cost;
-  g.ship.repair(1);
+  const refit = Math.min(1, Math.max(0.15, def.refit));
+  const full = Math.ceil((1 - g.ship.condition.hull) * 900 / refit);
+  if (g.crown.gold < full) g.drawCredit(full - g.crown.gold);
+  // A poor yard still does what the purse buys: a part-repair in proportion.
+  const spend = Math.min(full, Math.floor(g.crown.gold * 0.9));
+  if (spend < 20) return;
+  g.crown.gold -= spend;
+  g.ship.repair((spend / full) * (1 - g.ship.condition.hull));
   for (const s of g.ship.state.sails) s.condition = 1;
   g.clock.t += 86400 * 8;
+}
+
+/** Scrape her bottom where there is a yard that does it (the 'breame' service of the yard card). */
+export function careen(g: Game): void {
+  const def = g.portHere;
+  if (!def || g.ship.condition.fouling < 0.45) return;
+  const u = UPGRADE_BY_ID.get('breame');
+  if (!u) return;
+  const st = nodeStatus(u, g.ship.upgrades, g.ship.hullId, g.crown.lifetimeStanding, yardLevel(def));
+  if (st.state !== 'open' || g.crown.gold < u.cost * 1.2) return;
+  g.crown.gold -= u.cost;
+  g.ship.condition.fouling = 0;
+  g.ship.applyRigConversion();
+  g.ship.refreshDerived();
+  g.waitDays(u.days);
 }
 
 /** The King's commission: take the one the act asks for, else the best-paying. */
@@ -195,8 +213,14 @@ export function atQuay(g: Game, next: string | null, t: Tally, rng: Rng): void {
   audienceHere(g, t, rng);
   trade(g, next, t);
   repair(g);
-  victual(g);
+  careen(g);
+  victual(g, bigStores(g));
   answerScenes(g, t);
+}
+
+/** Days of stores for the next leg: more beyond the Line. */
+export function bigStores(g: Game): number {
+  return g.ship.state.pos.lat < 0 || g.ship.state.pos.lon > 20 ? 150 : 90;
 }
 
 // ---------------------------------------------------------------------------
@@ -234,11 +258,15 @@ export function sailMarks(g: Game, marks: LatLon[], destId: string, t: Tally, ma
   let snapped = 0;
   let bestToMark = Infinity;
   let lastProgressStep = 0;
+  let groundings = 0;
   const target = anchorageOf(dest);
   let why = '';
   while (steps < maxDays * 24 + 200) {
+    const grounded = g.pendingEvent?.id === 'aground';
     answerScenes(g, t);
     if ((g.mode as string) === 'gameover') { why = 'gameover'; break; }
+    // Aground twice running is the bot's seamanship, not the game's: lift her over the bank.
+    if (grounded) { groundings++; if (groundings % 2 === 0) lastProgressStep = -1e9; }
     g.clock.scaleIndex = TOP_SCALE;
     g.update(0.25);
     steps++;
@@ -251,14 +279,14 @@ export function sailMarks(g: Game, marks: LatLon[], destId: string, t: Tally, ma
     const next = g.route[0];
     if (next) {
       const d = haversine(g.ship.state.pos, next) / NM;
-      if (d < bestToMark - 2) { bestToMark = d; lastProgressStep = steps; }
+      if (d < bestToMark - 25) { bestToMark = d; lastProgressStep = steps; }
       if (d < 6 && g.route.length > 1) { g.route.shift(); bestToMark = Infinity; lastProgressStep = steps; }
     } else if (steps - lastProgressStep > 48) {
       // Out of marks and no port: run in on the port itself.
       g.setDestinationPort(destId);
       lastProgressStep = steps;
     }
-    if (steps - lastProgressStep > 24 * 10) {
+    if (steps - lastProgressStep > 24 * 6) {
       // The bot's one cheat: carry her past whatever is holding her.
       snapped++;
       t.snaps++;
@@ -337,8 +365,14 @@ function nearestOpen(p: LatLon): [number, number] {
   return [i0, j0];
 }
 
+const TAGUS_OFFING: LatLon = { lat: 38.6, lon: -9.6 };
+const nearLisbon = (p: LatLon): boolean => haversine(p, anchorageOf(portDef('lisboa'))) / NM < 6;
+
 /** Marks in open water from `from` to just off `to` (not including `to`). */
 export function seaRoute(from: LatLon, to: LatLon): LatLon[] {
+  // The Tagus mouth has a bar and a peninsula either side; the coarse mask cannot see it.
+  if (nearLisbon(from) && !nearLisbon(to)) return [TAGUS_OFFING, ...seaRoute(TAGUS_OFFING, to)];
+  if (nearLisbon(to) && !nearLisbon(from)) return [...seaRoute(from, TAGUS_OFFING), TAGUS_OFFING];
   mask ??= buildMask();
   const [si, sj] = nearestOpen(from);
   const [gi, gj] = nearestOpen(to);
