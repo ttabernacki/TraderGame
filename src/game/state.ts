@@ -102,7 +102,9 @@ import {
   type Journey, type JourneyRecord,
 } from '../progression/inland';
 import { polarAt } from '../ship/polars';
-import { newTutorial, stepTutorial, type TutorialState, type TutorialStep } from './tutorial';
+import { migrateTutorial, newTutorial, noteVerb, stepTutorial, type TutorialState, type TutorialStep } from './tutorial';
+import { ringWatchBell } from './watchBell';
+import { legReportOnArrival, noteDeparture, type LegStart } from './legReport';
 import { campaignDef, type CampaignId } from './campaign';
 import { PlayerFleet, type FleetSave } from './fleet';
 import { XIYANG_FLEET } from '../campaigns/xiyang/places';
@@ -1074,7 +1076,7 @@ export class Game {
       rel.met = true; rel.mayTrade = true; rel.regard = 1;
       this.chart.chartPort(home, anchorageOf(home), anchorageOf(home), this.clock.t, true);
       // Not the Portuguese captain's first voyage, and not his rival either.
-      this.tutorial = { on: false, at: 0, finished: true };
+      this.tutorial = { on: false, at: 6, finished: true, f: {} };
       this.rival.eclipsed = true;
     }
     this.crown.padraoStock = Math.max(this.crown.padraoStock, 3);
@@ -2428,6 +2430,7 @@ export class Game {
 
   /** Write the book. */
   private enter(kind: EntryKind, text: string, amount: number): void {
+    if (kind === 'buy' || kind === 'sell' || kind === 'barter') noteVerb(this, 'trade');
     currentBook(this.trade).entries.push({ t: this.clock.t, kind, text, amount });
   }
 
@@ -3192,6 +3195,7 @@ export class Game {
     this.fleet?.step(this, simDt);
     if (this.imperial) evaluateImperial(this);
     this.rollIncidents(simDt);
+    ringWatchBell(this, simDt);
     this.expireAlerts();
   }
 
@@ -6688,6 +6692,7 @@ export class Game {
    * an order is not the same as standing at the wheel.
    */
   alterCourse(deg: number): void {
+    noteVerb(this, 'helm');
     const from = this.helmOrder ?? this.courseToSteer() ?? this.ship.state.heading;
     this.helmOrder = wrap360(from + deg);
     this.standingCourse = null;
@@ -7591,6 +7596,9 @@ export class Game {
   /** True once the captain has opened the chart, which one step waits on. */
   seenChart = false;
 
+  /** Where the current leg began, for the Leg Report. See game/legReport.ts. */
+  legStart: LegStart | null = null;
+
   /** The instruction standing at the moment, or null once he has stopped. */
   tutorialStep(): TutorialStep | null {
     return stepTutorial(this);
@@ -7708,6 +7716,7 @@ export class Game {
   }
 
   adjustTrim(delta: number): void {
+    noteVerb(this, 'trim');
     this.autoTrim = false;
     this.lastManualTrim = this.clock.t;
     for (let i = 0; i < this.ship.state.sails.length; i++) {
@@ -7774,6 +7783,7 @@ export class Game {
         }
       }
     }
+    noteDeparture(this);
     this.anchored = false;
     this.dockedAt = null;
     // Start the day's run from the moment she drops down the river, so the
@@ -8268,6 +8278,7 @@ export class Game {
     // back over the coast drawn since the last fix (see Chart.amend). Then the
     // town goes on the chart where it is, and the coast in sight of it is put
     // right and the stretch around bent to meet it (Chart.settleAround).
+    legReportOnArrival(this, def.id);
     this.nav.applyLandfall(anchorageOf(def), this.clock.t);
     this.chart.chartPort(def, this.nav.estimated, this.ship.state.pos, this.clock.t, true);
     this.chart.settleAround(anchorageOf(def), this.clock.t);
@@ -9537,6 +9548,7 @@ export class Game {
       coastOrder: this.coastOrder,
       tutorial: this.tutorial,
       seenChart: this.seenChart,
+      legStart: this.legStart,
       encounter: this.encounter,
       seaRecord: this.seaRecord,
       chaseOrder: this.chaseOrder,
@@ -9671,7 +9683,8 @@ export class Game {
     g.lettersSeen = d.lettersSeen ?? [];
     // A voyage begun before the pilot existed is a voyage whose captain has
     // plainly worked it out for himself, so he is not started on lesson one.
-    g.tutorial = d.tutorial ?? { on: false, at: 0, finished: true };
+    g.tutorial = migrateTutorial(d.tutorial);
+    g.legStart = d.legStart ?? null;
     g.seenChart = d.seenChart ?? true;
     g.encounter = d.encounter ?? null;
     g.seaRecord = { ...newSeaRecord(), ...(d.seaRecord ?? {}) };

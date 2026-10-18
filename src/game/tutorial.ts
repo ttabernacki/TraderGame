@@ -1,256 +1,122 @@
-import { NM, haversine } from '../core/math';
 import type { Game } from './state';
 
 /**
- * The first voyage, with the pilot talking.
+ * The first hour: six verbs, each unlocked by succeeding at the one before.
  *
- * Every game of this kind has to solve the problem that its first ten minutes
- * are a wall: a quadrant, a traverse board, a lead line, a market, a wardroom
- * and a chart that is deliberately wrong, none of which explains itself. The
- * usual answers are a wall of tooltips or a separate tutorial mode that is not
- * the game.
+ * Steer, trim, read the wind, take a sight, enter a port, trade. The pilot says
+ * one short line per verb and then shuts up until the captain has done it; the
+ * next line is never shown early and never lectures. Success is read off game
+ * state (or a flag set by the action itself), so a captain who happens to have
+ * done a later thing already is not told to do it: satisfied steps are skipped
+ * silently.
  *
- * This is neither. It is a commission — the real first commission, worth real
- * money, with real objectives — sailed with a pilot aboard who tells the new
- * captain what to do next, because that is exactly what happened. A fidalgo's
- * son given his first command did not know how to find a latitude; the
- * *piloto* did, and was paid to say so, and every roteiro of the period is a
- * professional explaining the route to somebody who has not sailed it. So the
- * teaching is in the fiction rather than laid over it, and when the voyage is
- * discharged the pilot simply stops narrating and the game continues, because
- * by then the captain has done all of it once.
- *
- * The voyage is the right one. Lisbon to Funchal is a week of fair wind and
- * teaches nothing except how to work the ship, which is the point of putting it
- * first. Funchal home is the whole problem of the Atlantic in miniature: the
- * wind that carried you down blows dead against the way back, and the answer —
- * stand out north-west, away from Portugal, until the wind changes hands — is
- * completely counter-intuitive and is the single piece of knowledge the entire
- * carreira was built on. A captain who has made the Azores leg once has the
- * volta do mar in his hands, and can be trusted with Guinea.
+ * Old saves carried a 13-step tutorial (`at` 0..14). `migrateTutorial` maps
+ * that onto the six: finished stays finished, otherwise the position is scaled.
  */
 
 export interface TutorialStep {
   id: string;
-  /** Who is speaking. The pilot for navigation, the master for the ship. */
+  /** Who is speaking. */
   from: string;
   /** The short instruction, which is also the panel's title. */
   task: string;
-  /** What he actually says. */
+  /** The one line he says. */
   says: string;
   /** True once the captain has done it. */
   done: (g: Game) => boolean;
-  /**
-   * Skip the step entirely when this is already true on arrival — so a player
-   * who happens to do things in a different order is never told to do
-   * something he has done.
-   */
-  skipIf?: (g: Game) => boolean;
 }
 
-const at = (g: Game, id: string) => g.dockedAt === id;
-const been = (g: Game, id: string) => g.visitedPorts.has(id);
-const bound = (g: Game, id: string) => g.destination !== null
-  && g.route.some((r) => r.portId === id);
+/** Verbs that have no lasting game state of their own; set by the action. */
+export type Verb = 'helm' | 'trim' | 'trade' | 'sailed';
 
 export const TUTORIAL: TutorialStep[] = [
   {
-    id: 'commission',
-    from: 'The Contador of the Casa da Guiné',
-    task: 'Take the commission at court',
-    says: 'The King grants commissions and the Casa keeps the accounts, and until you have '
-      + 'one of the first you will get nothing from the second. Take what is offered. It is '
-      + 'a short voyage and the Casa gives it to men it has not made up its mind about.',
-    done: (g) => g.crown.patent !== null,
-  },
-  {
-    id: 'sail',
-    from: 'Brás de Sousa, master',
-    task: 'Go aboard and get her under way — W to make sail',
-    says: 'Go aboard when you are done ashore and weigh from the quay. She will not go anywhere with her canvas in the buntlines. W sets more sail and S '
-      + 'takes it in, and she carries all of it in this weather. You will feel her come alive '
-      + 'under you when the courses fill; that is the only instrument on this ship that never '
-      + 'lies to you.',
-    done: (g) => g.ship.canvasSet > 0.5 && !g.dockedAt,
-  },
-  {
-    id: 'course',
+    id: 'steer',
     from: 'Rui Correia, pilot',
-    task: 'Lay off a course for Funchal — C for the chart',
-    says: 'Open the chart and lay off a course for Funchal. It is five hundred miles to the '
-      + 'south-west and the wind here blows from the north-east all summer, so it will put you '
-      + 'there without your having to think about it. Nothing on this voyage out will be '
-      + 'difficult. That is deliberate, and it is not the half of the voyage the Casa is '
-      + 'interested in.',
-    done: (g) => bound(g, 'funchal') || at(g, 'funchal') || been(g, 'funchal'),
+    task: 'Weigh and take the helm — A and D',
+    says: 'Cast off and put her head where you want it. She answers slowly; give her time.',
+    done: (g) => !!g.tutorial.f?.helm,
   },
   {
-    id: 'clock',
+    id: 'trim',
     from: 'Brás de Sousa, master',
-    task: 'Wind the clock on — the arrows by the rate',
-    says: 'A passage is weeks, not minutes. The arrows either side of the rate wind the ship\'s '
-      + 'clock on, and it will ease itself back down whenever something happens that you ought '
-      + 'to be awake for — land, a sail, weather. Let her run.',
-    done: (g) => g.clock.scaleIndex >= 4,
+    task: 'Trim the yards — Q and E',
+    says: 'Square them up or ease them off. A sail that is full is a sail that is working.',
+    done: (g) => !!g.tutorial.f?.trim,
   },
   {
-    id: 'reckoning',
+    id: 'wind',
     from: 'Rui Correia, pilot',
-    task: 'Look at the reckoning — C, and read the plot',
-    says: 'Look at where the chart says we are. It is not where we are. I lay off the course '
-      + 'steered and the distance run every watch and the errors build up in it, and by Madeira '
-      + 'it will be twenty miles out and I will not know in which direction. Every pilot in '
-      + 'Europe works this way and every one of them is wrong by about that much.',
+    task: 'Read the wind — C for the chart',
+    says: 'Look at which way the arrows run. She will go anywhere but into them.',
     done: (g) => g.seenChart,
-    skipIf: (g) => g.seenChart,
   },
   {
     id: 'sight',
     from: 'Rui Correia, pilot',
-    task: 'Take the North Star after dark — N for the quadrant',
-    says: 'This is the one thing that puts the reckoning right, and you take it at night, not '
-      + 'at noon. We carry the Regimento do Norte: it is the rule of the pole star and the '
-      + 'corrections for the Guards, and it is the whole of what is in the chest. Wait for a '
-      + 'clear night, get the pole star\'s altitude with the quadrant, and it gives you your '
-      + 'latitude within a few miles.\n\nThe sun is no use to us. Its altitude at noon is just '
-      + 'a number without a table of declination for the day, and we have none — those are a '
-      + 'different book and they are sold at Lisbon. Buy them before you go south, because the '
-      + 'pole star goes under the horizon at the line and then the sun is all there is.\n\n'
-      + 'Latitude only, either way. Nobody on earth can find a longitude and nobody will for '
-      + 'another two hundred and sixty years.',
-    done: (g) => g.nav.fixes.length > 0,
+    task: 'Take a sight after dark — N for the quadrant',
+    says: 'The pole star gives you your latitude. The reckoning only ever drifts.',
+    done: (g) => g.nav.fixes.some((f) => f.body !== 'the land'),
   },
   {
-    id: 'funchal',
-    from: 'Rui Correia, pilot',
-    task: 'Make Funchal',
-    says: 'Hold her south-west and watch for the island. Madeira stands six thousand feet out '
-      + 'of the water and you will see it a long way before you see the town. When the land is '
-      + 'up, take a cast of the lead — G — before you stand in, every time, for the rest of '
-      + 'your life.',
-    done: (g) => at(g, 'funchal') || been(g, 'funchal'),
-  },
-  {
-    id: 'sugar',
-    from: 'The factor at Funchal',
-    task: 'Load 25 arrobas of sugar',
-    says: 'Sugar is what this island is, and the Casa wants it in Lisbon. Buy it in the market. '
-      + 'Watch the price as you take it: a town has only so much to sell and the price climbs '
-      + 'as you empty the warehouse, which is true of every port in this game and is most of '
-      + 'the difference between a rich captain and a busy one.'
-      + '\n\nIf the purse will not stretch, there is a counting house on this screen and there '
-      + 'are men in it who will lend to you. Read what they offer before you sign: a câmbio '
-      + 'marítimo costs the earth and is cancelled outright if the ship is lost, a letra is '
-      + 'cheap and is owed by you whether she comes home or not, and sixteenths of the voyage '
-      + 'are never repaid at all because the buyer simply takes his share of everything you '
-      + 'land. Which of the three is right depends entirely on how much you trust the sea, '
-      + 'and nobody can tell you that but you.',
-    done: (g) => g.ship.quantityOf('acucar') >= 25,
-  },
-  {
-    id: 'water',
+    id: 'port',
     from: 'Brás de Sousa, master',
-    task: 'Water and victual her before you sail',
-    says: 'Fill the casks and buy what fresh food there is. The way home is longer than the way '
-      + 'out — a great deal longer, whatever the chart looks like — and men who run out of '
-      + 'water do not get another chance to think about it. Fresh food holds off the scurvy; '
-      + 'salt meat does not.',
-    done: (g) => g.crew.provisions.water >= 55 || (!g.dockedAt && been(g, 'funchal')),
+    task: 'Make a port and let go the anchor',
+    says: 'Land is a long way off until the day it is not. Take a cast of the lead before you stand in.',
+    done: (g) => !!g.dockedAt && !!g.tutorial.f?.sailed,
   },
   {
-    id: 'volta',
-    from: 'Rui Correia, pilot',
-    task: 'Lay off a course for Angra, in the Azores',
-    says: 'Now the part you were sent for. Lisbon is north-east of us and the wind is in the '
-      + 'north-east, so you cannot go there — you would beat for two months and arrive with a '
-      + 'dead crew. What you do instead is stand away to the north-west, out into the ocean, '
-      + 'away from where you want to be, until you are up past the Azores and the wind comes '
-      + 'round behind you. Lay off Angra, in Terceira. Every pilot will tell you this and no '
-      + 'man believes it until he has done it.',
-    done: (g) => bound(g, 'angra') || at(g, 'angra') || been(g, 'angra'),
-  },
-  {
-    id: 'standing-out',
-    from: 'Rui Correia, pilot',
-    task: 'Stand out to the north-west and keep standing',
-    says: 'Hold her north-west and do not lose your nerve when Portugal goes further away every '
-      + 'day. Somewhere north of thirty-five the north-easterly falls away and the westerlies '
-      + 'take you, and from there home is a run with the wind over the quarter. This is the '
-      + 'volta do mar. It is the reason there is a Portuguese empire and not a Portuguese '
-      + 'shipwreck, and it is a fortnight of sailing in the wrong direction on purpose.',
-    done: (g) => g.ship.state.pos.lat > 34.5 || at(g, 'angra') || been(g, 'angra'),
-    skipIf: (g) => been(g, 'angra'),
-  },
-  {
-    id: 'angra',
-    from: 'Rui Correia, pilot',
-    task: 'Make Angra',
-    says: 'Terceira is a small island in a large ocean and you are finding it on a latitude and '
-      + 'a guess. Run down the parallel and keep a man at the masthead. Every homeward fleet '
-      + 'for the next century will do exactly this, and a good many of them will not find it '
-      + 'first time either.',
-    done: (g) => at(g, 'angra') || been(g, 'angra'),
-  },
-  {
-    id: 'home',
-    from: 'Brás de Sousa, master',
-    task: 'Carry her home to Lisbon',
-    says: 'Eight hundred miles east with the westerlies behind you and the worst of it is the '
-      + 'boredom. You have the wind, the cargo and a crew who have now done the thing that '
-      + 'frightened them. Take her home.',
-    done: (g) => at(g, 'lisboa') && been(g, 'angra'),
-  },
-  {
-    id: 'report',
-    from: 'The Contador of the Casa da Guiné',
-    task: 'Report at court and discharge the commission',
-    says: 'Go up to the court and render your account. The cargo is weighed, the commission is '
-      + 'discharged, and what you did on the way is entered on the padrão real — which is the '
-      + 'only record that decides what you are trusted with next. Everything after this is the '
-      + 'same voyage, further south, with nobody left who has been there.',
-    done: (g) => g.crown.completedPatents.length > 0,
+    id: 'trade',
+    from: 'The factor',
+    task: 'Buy or sell something on the quay',
+    says: 'A town has only so much to sell, and the price climbs as you empty the shed.',
+    done: (g) => !!g.tutorial.f?.trade,
   },
 ];
 
-/** Where the tutorial has got to, and whether it is running at all. */
+/** Where the pilot has got to, and whether he is running at all. */
 export interface TutorialState {
   on: boolean;
+  /** Index of the verb standing; TUTORIAL.length once all six are done. */
   at: number;
   finished: boolean;
+  /** Flags set by the actions themselves. Optional so old saves load. */
+  f?: Partial<Record<Verb, boolean>>;
 }
 
 export function newTutorial(): TutorialState {
-  return { on: true, at: 0, finished: false };
+  return { on: true, at: 0, finished: false, f: {} };
+}
+
+/** Called by the action that is the verb. Cheap, idempotent. */
+export function noteVerb(g: Game, v: Verb): void {
+  const t = g.tutorial;
+  if (t.finished) return;
+  (t.f ??= {})[v] = true;
+}
+
+/** Old saves: the 13-step tutorial's position, scaled onto six verbs. */
+export function migrateTutorial(old: Partial<TutorialState> | undefined): TutorialState {
+  if (!old || old.finished) return { on: false, at: TUTORIAL.length, finished: true, f: {} };
+  const at = Math.max(0, Math.min(TUTORIAL.length - 1, Math.floor((old.at ?? 0) * TUTORIAL.length / 15)));
+  return { on: old.on ?? true, at, finished: false, f: old.f ?? {} };
 }
 
 /**
- * Advance the pilot.
- *
- * Called every update. Steps that are already satisfied when they come up are
- * skipped silently rather than being announced and immediately ticked, which is
- * what makes a player who does things out of order feel like the game is
- * watching him rather than reciting at him.
+ * Advance the pilot. Called every update; returns the verb standing, or null.
+ * The next verb is only ever returned once the previous is done.
  */
 export function stepTutorial(g: Game): TutorialStep | null {
   const t = g.tutorial;
   if (t.finished) return null;
-
-  // The commission being discharged ends him, whatever step he is on.
-  //
-  // Walking off the end of the list used to be the only way to finish, which
-  // meant a captain who skipped a step — never opened the chart, never bought
-  // the sugar because he already had some — kept a pilot offering instructions
-  // for a voyage that was over. The voyage ending is the ending.
-  if (g.crown.completedPatents.length > 0) {
-    finish(g);
-    return null;
-  }
+  // Underway at any point counts as having sailed; the port verb needs it.
+  if (!g.dockedAt) (t.f ??= {}).sailed = true;
   if (!t.on) return null;
 
   let guard = 0;
-  while (t.at < TUTORIAL.length && guard++ < TUTORIAL.length + 1) {
+  while (t.at < TUTORIAL.length && guard++ <= TUTORIAL.length) {
     const step = TUTORIAL[t.at];
-    if (step.skipIf?.(g) || step.done(g)) {
+    if (step.done(g)) {
       t.at++;
       continue;
     }
@@ -260,28 +126,17 @@ export function stepTutorial(g: Game): TutorialStep | null {
   return null;
 }
 
-/** He stops talking, once, and says why. */
+/** He stops talking, once. */
 function finish(g: Game): void {
   if (g.tutorial.finished) return;
   g.tutorial.finished = true;
   g.tutorial.on = false;
-  g.logEvent('note',
-    'The pilot has stopped explaining things, which from Rui Correia is the nearest thing '
-    + 'to a compliment you are going to get. You have made a landfall on an island in the '
-    + 'open ocean, found a latitude by observation, and come home by standing away from '
-    + 'home until the wind changed hands. The rest of it is the same, further south.', true);
+  g.logEvent('note', 'The pilot has stopped explaining things, which from Rui Correia is the nearest '
+    + 'thing to a compliment you are going to get.', true);
   g.pushAlert('The pilot has nothing more to teach you.', 'note');
 }
 
-/** Distance and bearing to the thing the current step is about, where there is one. */
-export function tutorialMark(g: Game, step: TutorialStep): string | null {
-  const port = step.id === 'funchal' || step.id === 'sugar' || step.id === 'water'
-    ? 'funchal'
-    : step.id === 'angra' || step.id === 'volta' || step.id === 'standing-out' ? 'angra'
-      : step.id === 'home' || step.id === 'report' ? 'lisboa' : null;
-  if (!port) return null;
-  const charted = g.chart.ports.get(port);
-  if (!charted) return null;
-  const d = haversine(g.nav.estimated, { lat: charted.lat, lon: charted.lon }) / NM;
-  return `${d.toFixed(0)} miles by the reckoning`;
+/** Nothing to point at any more; kept for the panel. */
+export function tutorialMark(_g: Game, _step: TutorialStep): string | null {
+  return null;
 }
