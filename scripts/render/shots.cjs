@@ -28,7 +28,7 @@ fs.copyFileSync(path.join(__dirname, 'index.html'), build + '/index.html');
   const scenes = (args.scenes || 'noon').split(',');
   for (const s of scenes) {
     if (args.seq === '1') { await p.close(); p = await b.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 }); p.on('pageerror', (e) => errs.push('PAGEERR ' + e.message)); await p.goto('file://' + build + '/index.html'); await p.evaluate((o) => window.setup(o), { w, h }); }
-    const opts = { tier: args.tier, legacy: args.legacy === '1', cam: args.cam, hull: args.hull, sign: args.sign ? +args.sign : 1, frames: args.frames ? +args.frames : undefined, n: args.n ? +args.n : undefined, w, h, yawRate: args.yaw ? +args.yaw : 0, pitchRate: args.pitch ? +args.pitch : 0 };
+    const opts = { tier: args.tier, legacy: args.legacy === '1', cam: args.cam, hull: args.hull, sign: args.sign ? +args.sign : 1, frames: args.frames ? +args.frames : undefined, n: args.n ? +args.n : undefined, w, h, refSS: args.ss ? +args.ss : 3, yawRate: args.yaw ? +args.yaw : 0, pitchRate: args.pitch ? +args.pitch : 0 };
     const fn = args.seq === '1' ? 'seq' : 'shoot';
     if (fn === 'seq' && args.ref === '1') {
       // ground truth: the same sequence at 3x, from a fresh page so the water starts from the same state

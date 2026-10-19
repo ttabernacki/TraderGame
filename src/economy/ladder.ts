@@ -17,7 +17,8 @@
  */
 import type { Good } from './goods';
 import type { PortDef } from '../world/ports';
-import { regionOf, type Region } from './trade';
+import { fairsAt, FAIRS, regionOf, type Region } from './trade';
+import { polityOfPort } from '../diplomacy/polities';
 
 /** Tons: four times the hold of the next hull class up from the ones that call at a place this size. */
 export const LOT_TONS: Record<PortDef['size'], number> = {
@@ -98,4 +99,40 @@ export function lotUnits(def: PortDef, g: Good, kind: 'produces' | 'wants', leve
   const byMoney = ((kind === 'produces' ? PORT_PROFIT : PORT_DEMAND)[regionOf(def.id)] * wealth * scale * Math.max(level, 0) * (g.id === 'ouro' && kind === 'produces' && regionOf(def.id) === 'guinea' ? GOLD_LOT : 1))
     / (MARGIN_PER_LISBON * Math.max(g.lisbon, 0.01));
   return Math.max(Math.min(byTons, byMoney), parcel);
+}
+
+// ---------------------------------------------------------------------------
+// The second tier (BALANCE.md, "The deeper lots of Malabar")
+// ---------------------------------------------------------------------------
+//
+// The first lot of a dense good at an Indian or Eastern port is what the Casa's factor and the
+// Crown-scale traders hold for a visiting captain: money-capped (PORT_PROFIT), the same for a
+// barcha and for a Nau. Behind it stand the big merchant houses' godowns, the Gujarati, Chinese
+// and Arab warehouses and, in the harvest, the whole wholesale season. That stock is not shown to
+// a man with a hold of forty tons and a purse to match; it is sold only to a buyer who can
+// carry and pay for it, and dearer: the first unit of it costs DEEP_PRICE.base times the quote
+// and the price climbs by DEEP_PRICE.rise by the bottom of the pool (Markets.slippage).
+
+/** Tons a year the carrying polity can spare, order of magnitude (world/lanes reads the same table). */
+export const POLITY_KT: Record<string, number> = { gujarat: 12000, calicut: 8000, kilwa: 2000, malindi: 1000, hormuz: 5000, aden: 5000, malacca: 8000 };
+/** The same, for the polities the lanes did not need to name: the Malabar and Deccan houses. */
+const HOUSE_KT: Record<string, number> = { ...POLITY_KT, cochin: 7000, kolathiri: 5000, bijapur: 6000, vijayanagara: 6000, kotte: 3000 };
+/** What the houses of a region will sell a buyer who can lift it, in profit at the quote, per good (wealth 1, level 1, 8,000 kt polity). */
+export const DEEP_PROFIT: Partial<Record<Region, number>> = { india: 9000, east: 9000 };
+/** The price of the deep lot, as a multiple of the quoted ask: dearer at the top of the pool, dearer still at the bottom. */
+export const DEEP_PRICE = { base: 1.6, rise: 1.6 };
+/** A deep pool in the wholesale season (the pepper harvest, the clove ships) and out of it. */
+export const DEEP_SEASON = { inSeason: 1.35, out: 0.85 };
+
+/** Units of a dense good the merchant houses of a port will sell to a buyer who can lift them, over and above the first lot. 0 where there is no second tier. */
+export function deepUnits(def: PortDef, g: Good, level: number, month: number, worth = def.wealth): number {
+  const money = DEEP_PROFIT[regionOf(def.id)];
+  if (!money || isStaple(g) || level <= 0) return 0;
+  const wealth = SHARE_FLOOR + (1 - SHARE_FLOOR) * Math.min((0.5 + worth) / 1.5, 1.2);
+  const kt = HOUSE_KT[polityOfPort(def.id)?.id ?? ''] ?? 5000;
+  const houses = Math.min(Math.max(kt / 8000, 0.5), 1.5);
+  // The wholesale season: the harvest fair of the port, if it has one for this good.
+  const fairGood = FAIRS.some((f) => f.ports.includes(def.id) && f.goods[g.id] && f.goods[g.id].ask !== undefined);
+  const season = !fairGood ? 1 : fairsAt(def.id, month).some((f) => f.goods[g.id]?.ask !== undefined) ? DEEP_SEASON.inSeason : DEEP_SEASON.out;
+  return Math.floor((money * wealth * level * houses * season) / (MARGIN_PER_LISBON * Math.max(g.lisbon, 0.01)));
 }

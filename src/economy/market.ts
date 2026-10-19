@@ -3,12 +3,18 @@ import { clamp, lerp } from '../core/math';
 import { fbm1 } from '../core/rng';
 import { GOODS, good, type Good } from './goods';
 import { PORTS, portDef, type PortDef } from '../world/ports';
-import { lotUnits } from './ladder';
+import { lotUnits, deepUnits, DEEP_PRICE } from './ladder';
+import { dateFromDays } from '../core/clock';
 
 export interface Listing {
   goodId: string;
-  /** Units the port can sell you right now. */
+  /** Units the port can sell you right now: the first lot and, where there is one, the deeper pool behind it. */
   stock: number;
+  /**
+   * Where a deeper pool stands behind the first lot (the Malabar and Eastern houses, see economy/ladder): the units
+   * of `stock` on offer at the quoted ask. The rest is sold dearer, and the more of it the dearer (Markets.slippage). Absent where there is one tier.
+   */
+  lot?: number;
   /** Units the port still wants to buy before its appetite is satisfied. */
   appetite: number;
   /** What they ask, per unit, before any bargaining. */
@@ -59,6 +65,8 @@ export interface MarketState {
    * by good, decaying month by month (world/lanes). Absent in older saves.
    */
   vol?: { b: Record<string, number>; s: Record<string, number> };
+  /** Units the player and the like have lifted from the deeper pool (economy/ladder `deepUnits`), coming back as the houses restock. Absent in older saves. */
+  deep?: Record<string, number>;
 }
 
 /**
@@ -281,6 +289,12 @@ export class Markets {
       // Stocks rebuild toward the baseline over a season.
       s.stock[g.id] = base + (cur - base) * ratio;
     }
+    // The houses restock their godowns from the next harvest and the next fleet: a half-life of two months.
+    if (s.deep) {
+      const keep = Math.exp(-days / 90);
+      for (const k of Object.keys(s.deep)) { s.deep[k] *= keep; if (s.deep[k] < 0.5) delete s.deep[k]; }
+      if (Object.keys(s.deep).length === 0) delete s.deep;
+    }
   }
 
   /** Consumption pass: gluts decay as the town works through what it was sold. Moves `lastUpdate` on. */
@@ -297,6 +311,14 @@ export class Markets {
       const slow = portId === 'lisboa' && (g.category === 'spice' || g.category === 'precious');
       if (glut > 0) s.glut[g.id] = Math.max(0, glut - days / (slow ? 365 : 120));
     }
+  }
+
+  /** Units in the deeper pool of a good at a port, before anyone has drawn on it, at time `t` (the wholesale season). 0 where there is no second tier. */
+  deepBaseOf(portId: string, goodId: string, t: number): number {
+    const def = portDef(portId);
+    const abundance = def.produces[goodId] ?? 0;
+    if (abundance <= 0) return 0;
+    return deepUnits(def, good(goodId), abundance, dateFromDays(Math.floor(t / 86400)).month, this.wealthOf(def));
   }
 
   /** The baseline stock of a good a port produces (0 if it does not). */
@@ -401,6 +423,9 @@ export class Markets {
       const baseStock = abundance > 0 ? this.baseStock(def, g, abundance) : 0;
       const stock = abundance > 0 ? clamp(s.stock[g.id] ?? baseStock, 0, baseStock * 1.4) : 0;
       const scarcity = baseStock > 0 ? clamp(1 - stock / baseStock, 0, 1) : 0;
+      // The houses behind the first lot: what is still in their godowns, over and above it.
+      const deepLeft = abundance > 0 ? Math.max(0, this.deepBaseOf(portId, g.id, t) - (s.deep?.[g.id] ?? 0)) : 0;
+      const hasDeep = abundance > 0 && deepUnits(def, g, abundance, 1, 1) > 0;
       const glut = s.glut[g.id] ?? 0;
 
       let priceFactor: number;
@@ -441,7 +466,8 @@ export class Markets {
 
       out.push({
         goodId: g.id,
-        stock: fx?.closed ? 0 : Math.floor(stock * world.stock * (fx?.stockMult[g.id] ?? 1)),
+        stock: fx?.closed ? 0 : Math.floor((stock + deepLeft) * world.stock * (fx?.stockMult[g.id] ?? 1)),
+        ...(hasDeep ? { lot: fx?.closed ? 0 : Math.floor(stock * world.stock * (fx?.stockMult[g.id] ?? 1)) } : {}),
         // Never quite zero. A market sated to the eyebrows still has somebody
         // who will take a little more if the price is bad enough, and a hard
         // stop at nought is how a captain ends up with a hold he can never
@@ -470,10 +496,19 @@ export class Markets {
    * true and the thing that stops "buy the entire market in one click" from
    * being the optimal play in every port.
    */
-  static slippage(quantity: number, available: number): number {
+  static slippage(quantity: number, available: number, lot?: number): number {
     if (available <= 0) return 1;
-    const share = clamp(quantity / available, 0, 1);
-    return 1 + share * share * 0.55;
+    if (lot === undefined || lot >= available || quantity <= 0) {
+      const share = clamp(quantity / available, 0, 1);
+      return 1 + share * share * 0.55;
+    }
+    // Two tiers: the first `lot` as ever; whatever is taken beyond it comes out of the houses' godowns, dearer
+    // from the first unit and dearer as the pool is drawn down. Returns the average multiple over the whole order.
+    const q = Math.min(quantity, available);
+    const n1 = Math.min(q, Math.max(0, lot)), n2 = q - n1, deep = available - Math.max(0, lot);
+    const first = lot > 0 ? n1 * (1 + 0.55 * (n1 / lot) ** 2) : 0;
+    const second = n2 * (DEEP_PRICE.base + DEEP_PRICE.rise * 0.5 * clamp(n2 / deep, 0, 1));
+    return (first + second) / q;
   }
 
   /** Record a purchase, which draws down stock and pushes the price up. */
@@ -482,7 +517,12 @@ export class Markets {
     const def = portDef(portId);
     const g = good(goodId);
     const base = this.baseStock(def, g, def.produces[goodId] ?? 0);
-    s.stock[goodId] = Math.max(0, (s.stock[goodId] ?? base) - quantity);
+    const cur = s.stock[goodId] ?? base;
+    s.stock[goodId] = Math.max(0, cur - quantity);
+    // Beyond the first lot a buyer is lifting from the houses' godowns.
+    if (quantity > cur && deepUnits(def, g, def.produces[goodId] ?? 0, 1, 1) > 0) {
+      (s.deep ??= {})[goodId] = (s.deep[goodId] ?? 0) + (quantity - Math.max(0, cur));
+    }
     s.disturbed = s.lastUpdate;
     this.noteVolume(portId, goodId, 'b', quantity);
   }

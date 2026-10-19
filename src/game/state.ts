@@ -2563,12 +2563,12 @@ export class Game {
     const roomFor = Math.floor(this.ship.holdFree / gd.bulk);
     let take = Math.min(qty, l.stock, affordable, roomFor);
     if (take <= 0) return { ok: false, text: roomFor <= 0 ? 'No room in the hold.' : affordable <= 0 ? 'Not enough in the purse.' : 'None to be had.' };
-    let paid = l.ask * Markets.slippage(take, l.stock);
+    let paid = l.ask * Markets.slippage(take, l.stock, l.lot);
     if (take * paid > this.crown.gold) this.drawCredit(take * paid);
     if (take * paid > this.crown.gold) {
       take = Math.floor(this.crown.gold / paid);
       if (take <= 0) return { ok: false, text: 'Not enough in the purse, once they see how much you want.' };
-      paid = l.ask * Markets.slippage(take, l.stock);
+      paid = l.ask * Markets.slippage(take, l.stock, l.lot);
     }
     const cost = take * paid;
     const q = qualityAtSource(port, goodId, this.clock.date.month, this.rng.range(-0.1, 0.1));
@@ -2660,7 +2660,7 @@ export class Game {
       const l = ls.get(t.goodId);
       if (!l || t.qty <= 0) continue;
       const q = Math.min(t.qty, l.stock);
-      theirs += q * l.rawAsk * Markets.slippage(q, l.stock);
+      theirs += q * l.rawAsk * Markets.slippage(q, l.stock, l.lot);
     }
     return { yours, theirs };
   }

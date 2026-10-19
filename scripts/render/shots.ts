@@ -23,7 +23,7 @@ const SCENES: Record<string, Scene> = {
   gale:     { lat: 45, lon: -20, hour: 15.0, cloud: 1.0, rain: 0.9, storm: true, wind: 42, windFrom: 250, wave: 7.5, vis: 3, heading: 70 },
   backlit:  { headSun: true, lat: 20, lon: -35, hour: 16.6, cloud: 0.25, wind: 12, windFrom: 100, wave: 1.2, heading: 270, pitch: -4 },
   // the phone report: dawn, facing away from the sun, 13 kn from the north, chase camera low over the water
-  phone:    { lat: 20, lon: -35, hour: 6.03, cloud: 0.3, wind: 13, windFrom: 0, wave: 1.2, heading: 219, pitch: -8 },
+  phone:    { lat: 20, lon: -35, hour: 6.03, cloud: 0.3, wind: 13, windFrom: 0, wave: 1.2, heading: 219, pitch: -22, dist: 76 },
   // coast / port
   coast:    { lat: 38.60, lon: -9.62, hour: 9.0, cloud: 0.3, wind: 12, windFrom: 330, wave: 1.2, heading: 20 },
   port:     { lat: 32.60, lon: -16.80, hour: 16.8, cloud: 0.3, wind: 8, windFrom: 40, wave: 0.8, heading: 340 },
@@ -181,7 +181,7 @@ async function capture(name: string, o: Record<string, unknown>, w: number, h: n
 window.seq = async (name, o = {}) => {
   const w = Number(o.w), h = Number(o.h);
   if (o.refOnly) {
-    const fr = await capture(name, o, w, h, 3);
+    const fr = await capture(name, o, w, h, Number(o.refSS ?? 3));
     return { luma: fr.map((f) => Array.from({ length: w * h }, (_, i) => Math.round(0.2126 * f[i * 4] + 0.7152 * f[i * 4 + 1] + 0.0722 * f[i * 4 + 2]))) };
   }
   if (o.refLuma) REF.frames = (o.refLuma as number[][]).map((l) => { const f = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < w * h; i++) { f[i * 4] = f[i * 4 + 1] = f[i * 4 + 2] = l[i]; f[i * 4 + 3] = 255; } return f; });

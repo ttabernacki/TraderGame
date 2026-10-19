@@ -9,7 +9,7 @@
  * Units per route = min(town stock, destination appetite, hold / bulk).
  */
 import { Markets } from '../src/economy/market';
-import { LOT_TONS, STAPLE_DEMAND, PORT_DEMAND, PORT_PROFIT, isStaple } from '../src/economy/ladder';
+import { LOT_TONS, STAPLE_DEMAND, PORT_DEMAND, PORT_PROFIT, DEEP_PROFIT, DEEP_PRICE, DEEP_SEASON, isStaple } from '../src/economy/ladder';
 import { PORTS, anchorageOf } from '../src/world/ports';
 import { GOODS } from '../src/economy/goods';
 import { HULL_CLASSES } from '../src/ship/hull';
@@ -27,6 +27,9 @@ const args = process.argv.slice(2);
 if (process.env.PP) Object.assign(PORT_PROFIT, JSON.parse(process.env.PP));
 if (process.env.PD) Object.assign(PORT_DEMAND, JSON.parse(process.env.PD));
 if (process.env.SD) Object.assign(STAPLE_DEMAND, JSON.parse(process.env.SD));
+if (process.env.DP) Object.assign(DEEP_PROFIT, JSON.parse(process.env.DP));
+if (process.env.DPR) Object.assign(DEEP_PRICE, JSON.parse(process.env.DPR));
+if (process.env.DS) Object.assign(DEEP_SEASON, JSON.parse(process.env.DS));
 if (process.env.LT) Object.assign(LOT_TONS, JSON.parse(process.env.LT));
 if (process.env.LANES) Object.assign(TUNE, JSON.parse(process.env.LANES));
 if (args.includes('--world')) {
@@ -57,7 +60,7 @@ const hull = (id: string) => HULLS.find((h) => h.id === id)!;
 const REF = hull('nau-pequena'); // 140 t burthen, 105 t of hold
 const BIG = hull('nau-da-india'); // 480 t
 
-interface Lane { g: string; from: string; to: string; nm: number; margin: number; bulk: number; stock: number; appetite: number; ask: number }
+interface Lane { g: string; from: string; to: string; nm: number; margin: number; bulk: number; stock: number; appetite: number; ask: number; lot?: number }
 interface Route extends Lane { units: number; cost: number; profit: number }
 
 const lanes: Lane[] = [];
@@ -69,12 +72,14 @@ for (const a of PORTS) for (const b of PORTS) {
     if (!la || !lb || !la.local || la.stock <= 0 || lb.appetite <= 0) continue;
     const margin = lb.bid - la.ask;
     if (margin <= 0) continue;
-    lanes.push({ g: g.id, from: a.id, to: b.id, nm, margin, bulk: g.bulk, stock: la.stock, appetite: lb.appetite, ask: la.ask });
+    lanes.push({ g: g.id, from: a.id, to: b.id, nm, margin, bulk: g.bulk, stock: la.stock, appetite: lb.appetite, ask: la.ask, lot: la.lot });
   }
 }
 const load = (l: Lane, hold: number): Route => {
   const units = Math.min(l.stock, l.appetite, hold / l.bulk);
-  return { ...l, units, cost: units * l.ask, profit: units * l.margin };
+  // Where a deeper pool stands behind the first lot (Malabar and the East) the units beyond the lot cost more.
+  const extra = l.lot === undefined ? 0 : units * l.ask * (Markets.slippage(units, l.stock, l.lot) - 1);
+  return { ...l, units, cost: units * l.ask + extra, profit: units * l.margin - extra };
 };
 const routesFor = (hold: number) => lanes.map((l) => load(l, hold)).sort((x, y) => y.profit - x.profit);
 const pct = (sorted: number[], p: number) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
@@ -150,17 +155,31 @@ function voyageDays(nm: number): number { return 2 * (nm / KNOTS_DAY) + 12; }
 /** Port dues at the calls of a voyage (economy/dues): none at a Portuguese quay. */
 const callDues = (ports: string[], h: { tons: number }): number => ports.reduce((sum, id) => sum + duesFor(portDef(id), h.tons).dues, 0);
 interface PairNet { net: number; storeT: number; goods: string[]; out: number; back: number }
+/**
+ * How many units of a lane to take: the buyer stops when the next unit no longer pays (the price climbs with the
+ * order, Markets.slippage), so a lot is the best of its sizes, not the largest. `revenue(u)` is what `u` units fetch.
+ */
+function bestLot(l: Lane, umax: number, _was: number, revenue: (u: number) => number): { units: number; net: number } {
+  let best = { units: umax, net: revenue(umax) - umax * l.ask * Markets.slippage(umax, l.stock, l.lot) };
+  if (l.lot === undefined) return best;
+  for (let i = 1; i < 24; i++) {
+    const u = Math.floor((umax * i) / 24);
+    const net = revenue(u) - u * l.ask * Markets.slippage(u, l.stock, l.lot);
+    if (net > best.net) best = { units: u, net };
+  }
+  return best;
+}
 /** One leg with a mixed cargo, best profit per ton first; returns the money and the goods. */
 function legNet(ls: Lane[], h: { crewFull: number; hold: number; tons: number }, storeT: number): { total: number; goods: string[] } {
   let room = Math.max(0, cap(h) - storeT), total = 0;
   const goods: string[] = [];
   for (const l of [...ls].sort((a, b) => b.margin / b.bulk - a.margin / a.bulk)) {
-    const units = Math.floor(Math.min(l.stock, l.appetite, room / l.bulk));
-    if (units <= 0) continue;
+    const umax = Math.floor(Math.min(l.stock, l.appetite, room / l.bulk));
+    if (umax <= 0) continue;
     const casa = l.to === 'lisboa' && MONOPOLY.includes(l.g) ? CASA_SHARE : 1;
     const bid = l.margin + l.ask;
-    const net = (units * bid * casa) / slip(units, l.appetite) - units * l.ask * slip(units, l.stock);
-    if (net <= 0) continue;
+    const { units, net } = bestLot(l, umax, 0, (u) => (u * bid * casa) / slip(u, l.appetite));
+    if (net <= 0 || units <= 0) continue;
     if (TRACE) console.log(`  ${l.from}>${l.to} ${l.g}: ${units} units (stock ${Math.round(l.stock)}, appetite ${Math.round(l.appetite)}) ask ${l.ask.toFixed(1)} bid ${bid.toFixed(1)} net ${Math.round(net)}`);
     room -= units * l.bulk;
     total += net;
@@ -198,13 +217,14 @@ function tourNet(stops: string[], h: { crewFull: number; hold: number; tons: num
   const sold = new Map<string, number>(), goods: string[] = [];
   for (const l of [...homeLanes].sort((a, b) => b.margin / b.bulk - a.margin / a.bulk)) {
     const left = l.appetite - (sold.get(l.g) ?? 0);
-    const units = Math.floor(Math.min(l.stock, left, room / l.bulk));
-    if (units <= 0) continue;
+    const umax = Math.floor(Math.min(l.stock, left, room / l.bulk));
+    if (umax <= 0) continue;
     const casa = MONOPOLY.includes(l.g) ? CASA_SHARE : 1;
     const bid = l.margin + l.ask, was = sold.get(l.g) ?? 0;
-    const net = (units * bid * casa) / slip(was + units, l.appetite) - units * l.ask * slip(units, l.stock);
-    if (net <= 0) continue;
+    const { units, net } = bestLot(l, umax, was, (u) => (u * bid * casa) / slip(was + u, l.appetite));
+    if (net <= 0 || units <= 0) continue;
     sold.set(l.g, was + units);
+    if (process.env.TT) console.log(`   ${l.from} ${l.g}: ${units}/${umax} (stock ${Math.round(l.stock)} lot ${l.lot === undefined ? '-' : Math.round(l.lot)} app ${Math.round(left)}) ask ${l.ask.toFixed(1)} bid ${bid.toFixed(1)} net ${Math.round(net)} t ${(units * l.bulk).toFixed(1)} room ${room.toFixed(0)}`);
     room -= units * l.bulk; total += net; goods.push(l.g);
   }
   return { net: o.total + total - days * h.crewFull * (0.012 + WAGE_PER_MAN_MONTH / 30) - callDues(['lisboa', ...stops, 'lisboa'], h), storeT, goods: [...o.goods.slice(0, 3), '|', ...goods.slice(0, 4)], out: o.total, back: total };

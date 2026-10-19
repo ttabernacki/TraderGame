@@ -218,7 +218,7 @@ export function stepHouse(host: WorldHost, t: number): void {
           const casa = b === 'lisboa' && MONOPOLY.includes(gid) ? Math.max(CASA_SHARE, 0.9) : 1;
           const margin = lb.bid * casa - ask.ask;
           if (margin <= 0) continue;
-          const qty = Math.floor(Math.min(ask.stock * 0.4, lb.appetite, HOLD_T / Math.max(gd.bulk, 0.001), (h.capital - RESERVE) / (ask.ask * 1.2)));
+          const qty = Math.floor(Math.min((ask.lot ?? ask.stock) * 0.4, lb.appetite, HOLD_T / Math.max(gd.bulk, 0.001), (h.capital - RESERVE) / (ask.ask * 1.2)));
           if (qty < 2) continue;
           // An ally keeps off the captain's lanes.
           const crowd = mk.volumeOf(a, gid).bought + mk.volumeOf(b, gid).sold;
@@ -233,7 +233,7 @@ export function stepHouse(host: WorldHost, t: number): void {
       }
     }
     if (!best) break;
-    const cost = best.qty * best.unit * slip(best.qty, book.get(best.from)!.get(best.goodId)!.stock);
+    const cost = best.qty * best.unit * slip(best.qty, (book.get(best.from)!.get(best.goodId)!.lot ?? book.get(best.from)!.get(best.goodId)!.stock));
     if (cost > h.capital - RESERVE) break;
     mk.buy(best.from, best.goodId, best.qty);
     h.capital -= cost;

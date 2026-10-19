@@ -373,6 +373,8 @@ varying vec2 vLocal;
 varying float vLost;
 uniform float uEnvTexel;
 uniform float uEnvMips;
+uniform float uChopPh[40];
+uniform vec4 uGlintPh;
 
 /**
  * Tiling value noise.
@@ -454,16 +456,41 @@ float resolvable(float featureSize, float px) {
 }
 
 // Ripple detail finer than the mesh can carry, as a normal perturbation.
-vec2 chopNormal(vec2 q, float t) {
+//
+// Each of the eight terms is a plane wave and is taken out on its own as the pixel outgrows it.
+// This used to be done for the sum at once, by the size of its coarsest member, which left the
+// finest terms (under two metres from crest to crest) in the picture long after a pixel was wider
+// than they were. A wave narrower than two pixels is not drawn, it is aliased: it lands on the
+// pixel grid as speckle, and on a phone, where a pixel covers more sea, that is the blocky,
+// grainy "texture" across the middle distance. 'px' is the pixel's size in this field's own
+// units; the variance of what was taken out comes back in 'lost', to become roughness.
+float keepWave(float k, float px, inout float lost, float amp) {
+  float cycles = k * px * 0.15915494 * uOceanNew;           // cycles per pixel
+  float keep = 1.0 - smoothstep(0.17, 0.385, cycles);
+  lost += 0.5 * amp * amp * (1.0 - keep);
+  return keep;
+}
+
+// The phase of every term is held on the CPU, in double precision, wrapped to one turn: the position
+// of the ship over the sea and the time are the two numbers that grow without bound, and a sine of
+// sixty thousand radians is not a sine on a phone's GPU (the fast path loses the low bits of the
+// argument, and what comes back is a staircase: small hard-edged tiles of light and dark where there
+// should be a smooth ripple). Here the argument is only the distance from the ship, which is small
+// wherever the term is still in the picture, plus a phase that is already below 2 pi.
+// 'o' is the octave, whose eight phases follow one another in uChopPh. The wave vectors are the
+// literals of the original sum (the fourth carries its 1.1) and chopPhases() in ocean.ts has the same table.
+vec2 chopNormal(vec2 q, int o, float px, out float lost) {
   vec2 n = vec2(0.0);
-  n.x += sin(q.x * 0.42 + t * 1.5) * 0.60;
-  n.y += cos(q.y * 0.38 - t * 1.3) * 0.60;
-  n.x += sin(dot(q, vec2(0.62, 0.54)) * 1.0 - t * 2.2) * 0.42;
-  n.y += cos(dot(q, vec2(-0.48, 0.66)) * 1.1 + t * 1.9) * 0.42;
-  n.x += sin(dot(q, vec2(1.7, -0.9)) * 1.0 + t * 3.4) * 0.24;
-  n.y += cos(dot(q, vec2(0.8, 1.6)) * 1.0 - t * 3.0) * 0.24;
-  n.x += sin(dot(q, vec2(3.1, 2.2)) * 1.0 - t * 5.1) * 0.13;
-  n.y += cos(dot(q, vec2(-2.6, 2.9)) * 1.0 + t * 4.6) * 0.13;
+  lost = 0.0;
+  int b = o * 8;
+  n.x += sin(q.x * 0.42 + uChopPh[b]) * 0.60 * keepWave(0.42, px, lost, 0.60);
+  n.y += cos(q.y * 0.38 + uChopPh[b + 1]) * 0.60 * keepWave(0.38, px, lost, 0.60);
+  n.x += sin(dot(q, vec2(0.62, 0.54)) + uChopPh[b + 2]) * 0.42 * keepWave(0.82, px, lost, 0.42);
+  n.y += cos(dot(q, vec2(-0.528, 0.726)) + uChopPh[b + 3]) * 0.42 * keepWave(0.90, px, lost, 0.42);
+  n.x += sin(dot(q, vec2(1.7, -0.9)) + uChopPh[b + 4]) * 0.24 * keepWave(1.92, px, lost, 0.24);
+  n.y += cos(dot(q, vec2(0.8, 1.6)) + uChopPh[b + 5]) * 0.24 * keepWave(1.79, px, lost, 0.24);
+  n.x += sin(dot(q, vec2(3.1, 2.2)) + uChopPh[b + 6]) * 0.13 * keepWave(3.8, px, lost, 0.13);
+  n.y += cos(dot(q, vec2(-2.6, 2.9)) + uChopPh[b + 7]) * 0.13 * keepWave(3.9, px, lost, 0.13);
   return n;
 }
 
@@ -504,12 +531,15 @@ void main() {
   // the water there has one uniform normal, the Fresnel term snaps from body
   // colour to sky colour over a couple of degrees of elevation, and that snap
   // lands on screen as a flat pale strip ruled under the horizon.
+  float l1, l2, l3, l4, l5;
   vec2 detail =
-      chopNormal(vSurface, uNoiseTime) * o1
-    + chopNormal(vSurface * 0.26 + 41.0, uNoiseTime * 0.52) * (o2 * 0.82)
-    + chopNormal(vSurface * 0.068 + 91.0, uNoiseTime * 0.27) * (o3 * 0.70)
-    + chopNormal(vSurface * 0.017 + 137.0, uNoiseTime * 0.13) * (o4 * 0.95)
-    + chopNormal(vSurface * 0.0042 + 211.0, uNoiseTime * 0.06) * 1.05;
+      chopNormal(vLocal, 0, px, l1) * mix(o1, 1.0, uOceanNew)
+    + chopNormal(vLocal * 0.26, 1, px * 0.26, l2) * (mix(o2, 1.0, uOceanNew) * 0.82)
+    + chopNormal(vLocal * 0.068, 2, px * 0.068, l3) * (mix(o3, 1.0, uOceanNew) * 0.70)
+    + chopNormal(vLocal * 0.017, 3, px * 0.017, l4) * (mix(o4, 1.0, uOceanNew) * 0.95)
+    + chopNormal(vLocal * 0.0042, 4, px * 0.0042, l5) * 1.05;
+  // Their lost variance, weighted as they are summed.
+  float detailLost = l1 + 0.67 * l2 + 0.49 * l3 + 0.9 * l4 + 1.1 * l5;
 
   // What was filtered away is not simply lost. Slope that can no longer be
   // resolved still scatters light within the pixel, so it is carried forward as
@@ -524,8 +554,7 @@ void main() {
   // derivatives, which catches what neither of those knows about (Tokuyoshi and Kaplanyan's
   // specular anti-aliasing). Their total, turned into a wider and dimmer highlight, is what takes a
   // glitter that crawled from pixel to pixel and makes it a steady glow.
-  float rippleVar = 0.61 * pow(0.125 * clamp(uChop + 0.22, 0.22, 1.5) * graze, 2.0)
-                  * ((1.0 - o1) + 0.67 * (1.0 - o2) + 0.49 * (1.0 - o3) + 0.9 * (1.0 - o4));
+  float rippleVar = pow(0.125 * clamp(uChop + 0.22, 0.22, 1.5) * graze, 2.0) * detailLost;
 
   // The slick astern flattens the ripple as well as the swell, which is what
   // makes a wake visible on a calm day when there is no foam left in it at all.
@@ -613,8 +642,8 @@ void main() {
   // the range where a pixel can hold it, it flattens to its own average rather
   // than being sampled at random.
   float glint = resolvable(2.1, px);
-  float sparkle = 0.60 + 0.40 * glint * sin(vSurface.x * 3.1 + uNoiseTime * 2.6)
-                                      * sin(vSurface.y * 2.7 - uNoiseTime * 2.2);
+  float sparkle = 0.60 + 0.40 * glint * sin(vLocal.x * 3.1 + uGlintPh.x)
+                                      * sin(vLocal.y * 2.7 + uGlintPh.y);
   // The slope the pixel could not resolve becomes roughness: a narrow, bright
   // highlight is spread into a wide, dim one of the same total energy. Leaving
   // the highlight narrow instead is what makes a distant sea flash and crawl —
@@ -650,8 +679,8 @@ void main() {
   float roadEl = exp(-(dEl * dEl) / (0.020 + 0.090 * chopK + 0.05 * rough));
   float roadUp = smoothstep(-0.03, 0.05, uSunDir.y);
   // A little broken up, so it reads as light on moving water and not as a stripe.
-  float roadBreak = 0.72 + 0.28 * glint * sin(vSurface.x * 2.3 + uNoiseTime * 1.9)
-                                       * sin(vSurface.y * 1.9 - uNoiseTime * 1.6);
+  float roadBreak = 0.72 + 0.28 * glint * sin(vLocal.x * 2.3 + uGlintPh.z)
+                                       * sin(vLocal.y * 1.9 + uGlintPh.w);
   float road = roadAz * roadEl * roadUp * roadBreak;
 
   // Water at a grazing angle is very nearly a mirror, and holding the
@@ -889,6 +918,7 @@ export class Ocean {
     this.phases = new Array(WAVE_COUNT).fill(0);
 
     this.material = new THREE.ShaderMaterial({
+      precision: "highp",
       vertexShader,
       fragmentShader: wrapPostOut(fragmentShader),
       uniforms: postUniforms({
@@ -936,6 +966,8 @@ export class Ocean {
         uEnvOn: { value: 0 },
         uOvercast: { value: 0 },
         uOceanNew: { value: 1 },
+        uChopPh: { value: new Array(40).fill(0) },
+        uGlintPh: { value: new THREE.Vector4() },
         uPix: { value: 0.002 },
         uEnvTexel: { value: 0.0123 },
         uEnvMips: { value: 0 },
@@ -1171,6 +1203,30 @@ export class Ocean {
     (this.material.uniforms.uNoiseOrigin.value as THREE.Vector2)
       .set(this.originE, -this.originN);
     this.material.uniforms.uNoiseTime.value = this.noiseTime;
+    this.updatePhases();
+  }
+
+  /**
+   * The phase of every ripple term at this position and time, wrapped to one turn in double
+   * precision. See chopNormal in the fragment shader for why: the argument the GPU sees must
+   * stay small. The tables are the shader's, term for term.
+   */
+  private updatePhases(): void {
+    const TAU = Math.PI * 2;
+    const wrapTau = (x: number) => ((x % TAU) + TAU) % TAU;
+    const ox = this.originE, oy = -this.originN, t = this.noiseTime;
+    const ph = this.material.uniforms.uChopPh.value as number[];
+    for (let o = 0; o < 5; o++) {
+      const sc = CHOP_SCALE[o], off = CHOP_OFFSET[o], ts = CHOP_TIME[o];
+      for (let j = 0; j < 8; j++) {
+        const [kx, ky, w] = CHOP_TERMS[j];
+        ph[o * 8 + j] = wrapTau(sc * (kx * ox + ky * oy) + off * (kx + ky) + w * ts * t);
+      }
+    }
+    (this.material.uniforms.uGlintPh.value as THREE.Vector4).set(
+      wrapTau(3.1 * ox + 2.6 * t), wrapTau(2.7 * oy - 2.2 * t),
+      wrapTau(2.3 * ox + 1.9 * t), wrapTau(1.9 * oy - 1.6 * t),
+    );
   }
 
   /**
@@ -1337,6 +1393,16 @@ export class Ocean {
     this.material.dispose();
   }
 }
+
+/** The ripple terms of the fragment shader's chopNormal: wave vector and time rate, in order. */
+const CHOP_TERMS: [number, number, number][] = [
+  [0.42, 0, 1.5], [0, 0.38, -1.3], [0.62, 0.54, -2.2], [-0.528, 0.726, 1.9],
+  [1.7, -0.9, 3.4], [0.8, 1.6, -3.0], [3.1, 2.2, -5.1], [-2.6, 2.9, 4.6],
+];
+/** The five octaves' spatial scale, constant offset (added to both coordinates) and time scale. */
+const CHOP_SCALE = [1, 0.26, 0.068, 0.017, 0.0042];
+const CHOP_OFFSET = [0, 41, 91, 137, 211];
+const CHOP_TIME = [1, 0.52, 0.27, 0.13, 0.06];
 
 /** Wrap to [-limit, limit), keeping large accumulators inside float precision. */
 function wrap(v: number, limit: number): number {

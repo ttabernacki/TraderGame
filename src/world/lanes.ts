@@ -3,6 +3,7 @@ import { dateFromDays } from '../core/clock';
 import { GOODS, good } from '../economy/goods';
 import { Markets, type MarketEffects } from '../economy/market';
 import { regionOf, type Region } from '../economy/trade';
+import { POLITY_KT } from '../economy/ladder';
 import { polityOfPort } from '../diplomacy/polities';
 import { PORTS, anchorageOf, portDef } from './ports';
 import { MONTH, onMonthStart, setLaneModel, type LaneContext, type LaneModel, type LaneResult, type WorldHost } from './tick';
@@ -64,7 +65,6 @@ export interface LaneDef {
  */
 export const TUNE = { draw: 0.04, floor: 0.55, take: 0.12, glut: 0.15, usual: 0.7, small: 6 };
 /** Annual tons the carrying polity can spare, order of magnitude (BUILD_PLAN D1), by polity then by network. */
-const POLITY_KT: Record<string, number> = { gujarat: 12000, calicut: 8000, kilwa: 2000, malindi: 1000, hormuz: 5000, aden: 5000, malacca: 8000 };
 const NETWORK_KT: Record<Region, number> = {
   europe: 3000, atlantic: 800, maghreb: 1500, guinea: 400, kongo: 300, cape: 100, brazil: 100,
   swahili: 1000, arabia: 4000, india: 5000, east: 6000,

@@ -278,7 +278,7 @@ function sources(g: Game, port: string): { goodId: string; qty: number; unit: nu
   g.markets.refresh(port, g.clock.t);
   for (const l of g.markets.listings(port, g.clock.t, g.relationsFor(port).regard, 0.3)) {
     if (!l.local || l.stock < 1 || out.some((x) => x.goodId === l.goodId)) continue;
-    out.push({ goodId: l.goodId, qty: l.stock, unit: l.ask, store: false });
+    out.push({ goodId: l.goodId, qty: l.lot ?? l.stock, unit: l.ask, store: false });
   }
   return out;
 }
