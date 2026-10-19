@@ -28,7 +28,7 @@ fs.copyFileSync(path.join(__dirname, 'index.html'), build + '/index.html');
   const scenes = (args.scenes || 'noon').split(',');
   for (const s of scenes) {
     const stats = await p.evaluate(([s, o]) => window.shoot(s, o), [s, { tier: args.tier, legacy: args.legacy === '1', cam: args.cam, hull: args.hull, sign: args.sign ? +args.sign : 1, frames: args.frames ? +args.frames : undefined }]);
-    await p.locator('#c').screenshot({ path: path.join(outDir, `${s}-${label}.png`) });
+    await p.locator('#c').screenshot({ path: path.join(outDir, `${s}-${label}.png`), timeout: 240000 });
     console.log(JSON.stringify({ scene: s, label, ...stats }));
   }
   if (errs.length) console.log('ERRORS', [...new Set(errs)].slice(0, 10));

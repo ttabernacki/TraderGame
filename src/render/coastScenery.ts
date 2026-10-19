@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { receiveWorldShadow } from './shadows';
 import { clamp } from '../core/math';
 
 /**
@@ -385,6 +386,7 @@ export class CoastScenery {
 
   constructor() {
     this.material = new THREE.MeshLambertMaterial({ vertexColors: true });
+    receiveWorldShadow(this.material);
     for (const k of KINDS) {
       const mesh = new THREE.InstancedMesh(shape(k), this.material, MAX[k]);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -394,6 +396,10 @@ export class CoastScenery {
       this.meshes.set(k, mesh);
       this.group.add(mesh);
     }
+  }
+
+  setShadows(on: boolean): void {
+    for (const mesh of this.meshes.values()) mesh.castShadow = mesh.receiveShadow = on;
   }
 
   begin(): void {

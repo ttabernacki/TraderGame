@@ -11,7 +11,9 @@ import { QUALITY, loadAutoLevel, loadRenderMode, loadSetting, saveAutoLevel, sav
 import { PostStack, hdrSupported } from './post/stack';
 import { POST_EXPOSURE } from './post/color';
 import { PerfOverlay } from './perfOverlay';
-import { SAIL_TRANS } from './shipMesh';
+import { HULL_ENV, SAIL_TRANS } from './shipMesh';
+import { WorldShadow } from './shadows';
+const SEA_DEEP = new THREE.Color(0.004, 0.022, 0.03);
 import { Spray } from './spray';
 import { depthAt, nearestShore } from '../world/landmass';
 import { hullClass, type HullClass } from '../ship/hull';
@@ -196,6 +198,10 @@ export class Renderer {
   distance = 42;
 
   private sun = new THREE.DirectionalLight(0xffffff, 1);
+  /** The second, coarse shadow for the land and the towns. See render/shadows.ts. */
+  private worldShadow!: WorldShadow;
+  private readonly wsLocal = new THREE.Vector2();
+  private shadowCastable = false;
   private ambient = new THREE.HemisphereLight(0x88aacc, 0x2a2418, 0.6);
   /**
    * Seconds of drawn motion since the view opened. Everything that flutters,
@@ -339,6 +345,7 @@ export class Renderer {
     this.scene.add(this.sun.target);
     this.scene.add(this.ambient);
     this.sun.position.set(0, 1000, 0);
+    this.worldShadow = new WorldShadow(this.scene);
 
     // The shadow frustum is kept tight around the ship, which is the only thing
     // in the scene that casts anything worth seeing.
@@ -662,6 +669,16 @@ export class Renderer {
     this.ocean.setOvercast(overcast);
     this.shipLight = { night: lighting.night, overcast };
     this.ship.setLight(lighting.night, overcast);
+    // The sky the hulls reflect, and how far up the topsides the sea reaches.
+    // Sun below the horizon, the dome is dark and so is what the planks show of it.
+    HULL_ENV.uTimberNew.value = SAIL_TRANS.value;
+    HULL_ENV.uTime.value = this.waveClock;
+    HULL_ENV.uWet.value = clamp(0.75 + f.waveHeight * 0.16 + f.rain * 0.3, 0.75, 1.9);
+    HULL_ENV.uSkyZen.value.copy(lighting.zenith);
+    HULL_ENV.uSkyHor.value.copy(lighting.horizon);
+    HULL_ENV.uSeaCol.value.copy(lighting.zenith).multiplyScalar(0.22).add(SEA_DEEP);
+    // Cloud flattens the sky; so does the camera's exposure.
+    HULL_ENV.uEnvAmt.value = 0.8;
     // The reflection is refreshed a few times a second, which is far faster
     // than a sky changes and far cheaper than every frame.
     // Two cubes in turn. The newest photograph is blended in over the time to the
@@ -842,6 +859,12 @@ export class Renderer {
     // than riding along with her and then jumping. See Land.follow.
     this.land.follow(f.pos);
     this.settlements.follow(f.pos);
+    // The ship in the coast's own frame, which is what the world shadow is snapped in.
+    this.wsLocal.set(-this.land.group.position.x, -this.land.group.position.z);
+    this.worldShadow.update(
+      this.sun.position, this.wsLocal, this.land.group.position,
+      this.sun.shadow.intensity, this.shadowCastable,
+    );
     this.settlements.setFog(lighting.horizon, clamp(1 - f.visibilityNm / 24, 0, 0.7));
     // On the rigging clock, which runs on real seconds: smoke boils at the rate
     // smoke boils whatever the game's clock is set to.
@@ -1024,6 +1047,7 @@ export class Renderer {
     // material, so it is left on until it is invisible.
     const shadowK = smoothstep(0.03, 0.17, l.sunDir.y);
     this.sun.castShadow = shadowK > 0.002;
+    this.shadowCastable = this.sun.castShadow;
     this.sun.shadow.intensity = shadowK;
 
     // Skylight is blue, but not as blue as the zenith looks: most of what falls
@@ -1211,6 +1235,7 @@ export class Renderer {
   setRenderMode(m: RenderMode): RenderMode {
     this.renderMode = this.post ? m : 'legacy';
     saveRenderMode(this.renderMode);
+    this.syncWorldShadow();
     return this.renderMode;
   }
 
@@ -1231,6 +1256,16 @@ export class Renderer {
     return next === 'auto' ? `Graphics: automatic (${level} for now).` : `Graphics: ${level}.`;
   }
 
+  /** The world's shadow is on at the tiers that have the memory for it, and never in the old look. */
+  private syncWorldShadow(): void {
+    if (!this.worldShadow) return;
+    const q = QUALITY[this.quality];
+    const on = this.renderMode === 'new' && q.cascades >= 2 && q.worldShadow.size > 0;
+    this.worldShadow.configure(on ? q.worldShadow : { size: 0, radius: 0 });
+    this.land.setShadows(on);
+    this.settlements.setShadows(on);
+  }
+
   private applyQuality(): void {
     const phone = isPhone();
     this.quality = this.qualitySetting === 'auto' ? loadAutoLevel(phone) : this.qualitySetting;
@@ -1243,6 +1278,7 @@ export class Renderer {
       this.sun.shadow.map = null;
     }
     this.sky.setCloudOctaves(q.cloudOctaves);
+    this.syncWorldShadow();
     this.post?.configure(q.post);
     if (this.envTarget.width !== q.envSize) {
       this.envTarget.setSize(q.envSize, q.envSize);

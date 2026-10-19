@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { receiveWorldShadow } from './shadows';
 import { NM, clamp, cosd, lerp, smoothstep, wrap180, type LatLon } from '../core/math';
 import { elevationAt, isLand, nearestShore } from '../world/landmass';
 import { anchorageOf, portsNear, type PortDef } from '../world/ports';
@@ -528,6 +529,15 @@ export class Settlements {
     this.material = new THREE.MeshLambertMaterial({
       vertexColors: true, transparent: true, depthWrite: true,
     });
+    receiveWorldShadow(this.material);
+  }
+
+  private shadows = false;
+
+  /** Whether the buildings cast and receive the world's shadow. */
+  setShadows(on: boolean): void {
+    this.shadows = on;
+    if (this.mesh) this.mesh.castShadow = this.mesh.receiveShadow = on;
   }
 
   /**
@@ -602,6 +612,7 @@ export class Settlements {
     geo.computeBoundingSphere();
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.renderOrder = 2;
+    this.mesh.castShadow = this.mesh.receiveShadow = this.shadows;
     this.group.add(this.mesh);
   }
 

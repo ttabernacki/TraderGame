@@ -34,26 +34,32 @@ export interface QualitySpec {
   /** 0 to 1: rain, birds, dolphins and the rest. */
   life: number;
   post: PostSpec;
-  /** Cascades for the key light's shadow: 1 is the old ship-only box. */
+  /**
+   * Cascades for the key light's shadow: 1 is the ship-only box, 2 adds a
+   * coarse map about a kilometre across for the land, the towns and the trees
+   * (see render/shadows.ts).
+   */
   cascades: number;
+  /** The second cascade's map edge in texels and half-width in metres; unused at one cascade. */
+  worldShadow: { size: number; radius: number };
 }
 
 export const QUALITY: Record<QualityLevel, QualitySpec> = {
   low: {
     pixelRatio: 1.25, shadowSize: 1024, softShadows: false, envEvery: 40, envSize: 128, cloudOctaves: 3, life: 0.4,
-    post: { msaa: 0, bloomLevels: 0, bloomStrength: 0, fxaa: true, grade: false }, cascades: 1,
+    post: { msaa: 0, bloomLevels: 0, bloomStrength: 0, fxaa: true, grade: false }, cascades: 1, worldShadow: { size: 0, radius: 0 },
   },
   medium: {
     pixelRatio: 1.75, shadowSize: 1024, softShadows: false, envEvery: 16, envSize: 128, cloudOctaves: 5, life: 0.75,
-    post: { msaa: 0, bloomLevels: 4, bloomStrength: 1, fxaa: true, grade: true }, cascades: 1,
+    post: { msaa: 0, bloomLevels: 4, bloomStrength: 1, fxaa: true, grade: true }, cascades: 1, worldShadow: { size: 0, radius: 0 },
   },
   high: {
-    pixelRatio: 2.5, shadowSize: 2048, softShadows: true, envEvery: 8, envSize: 256, cloudOctaves: 6, life: 1,
-    post: { msaa: 4, bloomLevels: 5, bloomStrength: 1, fxaa: false, grade: true }, cascades: 2,
+    pixelRatio: 2.5, shadowSize: 1024, softShadows: true, envEvery: 8, envSize: 256, cloudOctaves: 6, life: 1,
+    post: { msaa: 4, bloomLevels: 5, bloomStrength: 1, fxaa: false, grade: true }, cascades: 2, worldShadow: { size: 2048, radius: 1100 },
   },
   ultra: {
     pixelRatio: 2.75, shadowSize: 4096, softShadows: true, envEvery: 4, envSize: 256, cloudOctaves: 6, life: 1,
-    post: { msaa: 4, bloomLevels: 6, bloomStrength: 1.15, fxaa: false, grade: true }, cascades: 2,
+    post: { msaa: 4, bloomLevels: 6, bloomStrength: 1.15, fxaa: false, grade: true }, cascades: 2, worldShadow: { size: 3072, radius: 1400 },
   },
 };
 

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { receiveWorldShadow } from './shadows';
 import { NM, clamp, cosd, lerp, smoothstep, wrap180, type LatLon } from '../core/math';
 import { LANDMASSES, elevationAt, isLand } from '../world/landmass';
 import { CoastScenery, hash3, regionAt } from './coastScenery';
@@ -198,6 +199,14 @@ export class Land {
   private eyeM = 20;
   /** Palms, forest, dunes and cliffs. See render/coastScenery. */
   private scenery = new CoastScenery();
+  private shadows = false;
+
+  /** Whether the ground and what stands on it cast and receive the world's shadow. */
+  setShadows(on: boolean): void {
+    this.shadows = on;
+    if (this.mesh) this.mesh.castShadow = this.mesh.receiveShadow = on;
+    this.scenery.setShadows(on);
+  }
 
   constructor() {
     this.material = new THREE.MeshLambertMaterial({
@@ -208,6 +217,7 @@ export class Land {
       transparent: true,
       depthWrite: true,
     });
+    receiveWorldShadow(this.material);
     this.group.add(this.scenery.group);
     this.surfMaterial = new THREE.MeshBasicMaterial({
       color: 0xdfeef2, transparent: true, opacity: 0.55, depthWrite: false,
@@ -519,6 +529,7 @@ export class Land {
     geo.computeBoundingSphere();
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.renderOrder = 1;
+    this.mesh.castShadow = this.mesh.receiveShadow = this.shadows;
     this.group.add(this.mesh);
 
     const surfGeo = new THREE.BufferGeometry();

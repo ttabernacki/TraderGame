@@ -9,7 +9,7 @@
  * Units per route = min(town stock, destination appetite, hold / bulk).
  */
 import { Markets } from '../src/economy/market';
-import { LOT_TONS, PORT_DEMAND, PORT_PROFIT, isStaple } from '../src/economy/ladder';
+import { LOT_TONS, STAPLE_DEMAND, PORT_DEMAND, PORT_PROFIT, isStaple } from '../src/economy/ladder';
 import { PORTS, anchorageOf } from '../src/world/ports';
 import { GOODS } from '../src/economy/goods';
 import { HULL_CLASSES } from '../src/ship/hull';
@@ -20,6 +20,7 @@ const args = process.argv.slice(2);
 // Tuning hooks for sweeps: PP='{"europe":900}' and LT='{"city":600}' override the caps for one run.
 if (process.env.PP) Object.assign(PORT_PROFIT, JSON.parse(process.env.PP));
 if (process.env.PD) Object.assign(PORT_DEMAND, JSON.parse(process.env.PD));
+if (process.env.SD) Object.assign(STAPLE_DEMAND, JSON.parse(process.env.SD));
 if (process.env.LT) Object.assign(LOT_TONS, JSON.parse(process.env.LT));
 const LADDER = args.includes('--ladder');
 const CHECK = args.includes('--check');
@@ -27,7 +28,7 @@ const CHECK = args.includes('--check');
 // instead of the real cargo hold (hold: 105/205/400, what the game enforces).
 const BURTHEN = args.includes('--burthen');
 const cap = (h: { hold: number; tons: number }) => (BURTHEN ? h.tons : h.hold);
-const MAX_SPREAD = 8;
+const MAX_SPREAD = 10;
 const MIN_BIG_VS_SMALL = 2.2;
 
 const T = 86400 * 400;
@@ -129,6 +130,7 @@ const BANDS: Record<string, [number, number, string]> = {
   'barcha': [120, 220, '3'], 'caravela-latina': [300, 500, '3'], 'caravela-redonda': [500, 800, '3-4'],
   'nau-pequena': [1200, 1800, '3-4'], 'nau': [2500, 3500, '4'], 'nau-da-india': [6000, 9000, '4-6'],
 };
+let TRACE = false;
 const KNOTS_DAY = 4.5 * 24;
 /** Crew wages, cruzados per man per month (game/wages). */
 const WAGE_PER_MAN_MONTH = Number(process.env.WAGE ?? 4);
@@ -146,6 +148,7 @@ function legNet(ls: Lane[], h: { crewFull: number; hold: number; tons: number },
     const bid = l.margin + l.ask;
     const net = (units * bid * casa) / slip(units, l.appetite) - units * l.ask * slip(units, l.stock);
     if (net <= 0) continue;
+    if (TRACE) console.log(`  ${l.from}>${l.to} ${l.g}: ${units} units (stock ${Math.round(l.stock)}, appetite ${Math.round(l.appetite)}) ask ${l.ask.toFixed(1)} bid ${bid.toFixed(1)} net ${Math.round(net)}`);
     room -= units * l.bulk;
     total += net;
     goods.push(l.g);
@@ -163,6 +166,35 @@ function pairNet(a: string, b: string, h: { crewFull: number; hold: number; tons
   const storeT = 0.005 * h.crewFull * days;
   const o = legNet(out, h, storeT), r = legNet(back, h, storeT);
   return { net: o.total + r.total - days * h.crewFull * (0.012 + WAGE_PER_MAN_MONTH / 30), storeT, goods: [...o.goods.slice(0, 3), '|', ...r.goods.slice(0, 3)], out: o.total, back: r.total };
+}
+/**
+ * A tour: out from Lisbon to the first stop, along the coast to the others (5 port
+ * days and a short hop each), home with one cargo made from what every stop holds.
+ * The destination's appetite is shared across the stops, so Lisbon cannot be sold
+ * the same pepper three times. This is how a Nau da India is actually loaded: one
+ * Cochim yard does not fill 400 t.
+ */
+function tourNet(stops: string[], h: { crewFull: number; hold: number; tons: number }): PairNet {
+  const first = byPair.get('lisboa>' + stops[0]) ?? [];
+  const nm = (first[0] ?? byPair.get(stops[0] + '>lisboa')![0]).nm;
+  const days = voyageDays(nm) + 5 * (stops.length - 1);
+  const storeT = 0.005 * h.crewFull * days;
+  const o = legNet(first, h, storeT);
+  const homeLanes = stops.flatMap((x) => byPair.get(x + '>lisboa') ?? []);
+  let room = Math.max(0, cap(h) - storeT), total = 0;
+  const sold = new Map<string, number>(), goods: string[] = [];
+  for (const l of [...homeLanes].sort((a, b) => b.margin / b.bulk - a.margin / a.bulk)) {
+    const left = l.appetite - (sold.get(l.g) ?? 0);
+    const units = Math.floor(Math.min(l.stock, left, room / l.bulk));
+    if (units <= 0) continue;
+    const casa = MONOPOLY.includes(l.g) ? CASA_SHARE : 1;
+    const bid = l.margin + l.ask, was = sold.get(l.g) ?? 0;
+    const net = (units * bid * casa) / slip(was + units, l.appetite) - units * l.ask * slip(units, l.stock);
+    if (net <= 0) continue;
+    sold.set(l.g, was + units);
+    room -= units * l.bulk; total += net; goods.push(l.g);
+  }
+  return { net: o.total + total - days * h.crewFull * (0.012 + WAGE_PER_MAN_MONTH / 30), storeT, goods: [...o.goods.slice(0, 3), '|', ...goods.slice(0, 4)], out: o.total, back: total };
 }
 const undirected = (() => {
   const seen = new Set<string>(), out: [string, string][] = [];
@@ -185,6 +217,32 @@ const tiers = HULLS.map((h, i) => {
   return { h, best, median: pct(nets, 0.5), p90: pct(nets, 0.9), voyages: next ? next.cost / best.net : null };
 });
 
+// Reward for the risk: the long, dangerous run must out-earn the short safe one, same hull.
+const ATL = new Set<Region>(['europe', 'atlantic', 'maghreb']);
+const FAR = new Set<Region>(['india', 'east']);
+const BIGH = HULLS[HULLS.length - 1];
+// The Malabar tours: a full Nau da India is loaded at two or three ports on one coast.
+const TOURS = [['cochim', 'cananor'], ['cochim', 'calecute'], ['cochim', 'calecute', 'cananor'], ['calecute', 'cananor']];
+const bigNet = (x: string, y: string) => pairNet(x, y, BIGH).net;
+const atlNets = undirected.filter(([x, y]) => ATL.has(regionOf(x)) && ATL.has(regionOf(y))).map(([x, y]) => bigNet(x, y)).filter((n) => n > 0).sort((a, b) => a - b);
+const CORE = ['calecute', 'cochim', 'cananor', 'goa', 'diu', 'cambaia', 'columbo', 'malaca'];
+const indiaRound = [
+  ...CORE.map((x) => ({ k: `lisboa<>${x}`, net: bigNet('lisboa', x) })),
+  ...TOURS.map((t) => ({ k: 'lisboa>' + t.join('+'), net: tourNet(t, BIGH).net })),
+].sort((a, b) => a.net - b.net);
+const cochimTours = TOURS.filter((t) => t.includes('cochim')).map((t) => tourNet(t, BIGH).net).sort((a, b) => a - b);
+const tourNets = TOURS.map((t) => tourNet(t, BIGH).net).sort((a, b) => a - b);
+const medIndia = tourNets[Math.floor(tourNets.length / 2)];
+const medAtl = pct(atlNets, 0.5), medCochim = cochimTours[Math.floor(cochimTours.length / 2)];
+const riskX = medCochim / Math.max(medAtl, 1);
+
+if (args.includes('--pair')) {
+  // --pair <a> <b> [hull index 0-5]: the goods of one voyage, leg by leg.
+  const i = args.indexOf('--pair'); TRACE = true;
+  const r = pairNet(args[i + 1], args[i + 2], HULLS[Number(args[i + 3] ?? 5)]);
+  TRACE = false;
+  console.log(`net ${f(r.net)} out ${f(r.out)} back ${f(r.back)}`);
+}
 if (LADDER) {
   console.log('\nPrice ladder, net per voyage on the lanes each hull can reach (stores in tons, slippage, Casa share)');
   console.log(`${id('hull', 18)}${'price'.padStart(7)}${'hold'.padStart(6)}${'net best'.padStart(10)}${'median'.padStart(8)}${'p90'.padStart(8)}${'vy next'.padStart(9)}  band (net / voyages)    best lane`);
@@ -195,6 +253,10 @@ if (LADDER) {
   }
 }
 
+console.log(`\nIndia round trips, ${BIGH.id} ${cap(BIGH)} t, out and home: typical (median of the Malabar tours) ${f(medIndia)}; best of all ${f(indiaRound[indiaRound.length - 1].net)}  best ${f(indiaRound[indiaRound.length - 1].net)} (${indiaRound[indiaRound.length - 1].k})  worst ${f(indiaRound[0].net)}  n ${indiaRound.length} (Lisbon <> 8 Carreira ports, and ${TOURS.length} Malabar tours)`);
+for (const t of TOURS) { const r = tourNet(t, BIGH); console.log(`  tour lisboa > ${t.join(' + ')} > lisboa: ${f(r.net)}  out ${f(r.out)} back ${f(r.back)}  stores ${r.storeT.toFixed(0)} t  ${r.goods.join(',')}`); }
+console.log(`  3-port Malabar tour by hull: ` + HULLS.map((h) => `${h.id} ${f(tourNet(TOURS[2], h).net)} (${h.crewFull} men, hold ${cap(h)} t)`).join('; '));
+console.log(`Risk reward, ${BIGH.id}: median net of the Cochim tours ${f(medCochim)} (n ${cochimTours.length}) vs Atlantic coastal pairs ${f(medAtl)} (n ${atlNets.length}) = ${riskX.toFixed(2)}x; the Lisbon <> Cochim pair alone ${f(bigNet('lisboa', 'cochim'))}`);
 const bigVsSmall = bestRes.get(BIG.id)!.profit / bestRes.get(REF.id)!.profit;
 console.log(`\n${cap(BIG)} t / ${cap(REF)} t earnings on best lane: ${bigVsSmall.toFixed(2)}x`);
 console.log(`${cap(BIG)} t / ${cap(REF)} t on the median lane (${medianLane.g} ${medianLane.from}->${medianLane.to}): ${(load(medianLane, cap(BIG)).profit / load(medianLane, cap(REF)).profit).toFixed(2)}x`);
@@ -214,11 +276,15 @@ function pairProfit(ls: Lane[], hold: number): number {
   return total;
 }
 const pairs = [...byPair.entries()].map(([k, ls]) => ({ k, ls, ref: pairProfit(ls, cap(REF)), big: pairProfit(ls, cap(BIG)) })).filter((p) => p.ref > 0);
+// A pair of dense goods is money-bound at every hull from a caravela up; the pair that tests the hold is the best one that carries bulk.
+const bulkPairs = pairs.filter((p) => p.ls.some((l) => isStaple(GOODS.find((g) => g.id === l.g)!) && Math.min(l.stock, l.appetite) * l.bulk > cap(REF)));
 pairs.sort((a, b) => a.ref - b.ref);
-const bestPair = pairs.reduce((a, b) => (b.big > a.big ? b : a));
+const bestPair = bulkPairs.reduce((a, b) => (b.big > a.big ? b : a));
+const bestAny = pairs.reduce((a, b) => (b.big > a.big ? b : a));
 const medPair = pairs[Math.floor(pairs.length / 2)];
 const mixBest = bestPair.big / bestPair.ref, mixMed = medPair.big / medPair.ref;
-console.log(`Mixed cargo, ${pairs.length} port pairs: best pair ${bestPair.k} ${f(bestPair.ref)} -> ${f(bestPair.big)} (${mixBest.toFixed(2)}x); median pair ${medPair.k} ${f(medPair.ref)} -> ${f(medPair.big)} (${mixMed.toFixed(2)}x)`);
+console.log(`Mixed cargo, ${pairs.length} port pairs; the best of all, ${bestAny.k}, is money-bound (${f(bestAny.ref)} -> ${f(bestAny.big)}); best pair that carries bulk (${bulkPairs.length}): ${bestPair.k}`);
+console.log(`Mixed cargo, best bulk pair ${bestPair.k} ${f(bestPair.ref)} -> ${f(bestPair.big)} (${mixBest.toFixed(2)}x); median pair ${medPair.k} ${f(medPair.ref)} -> ${f(medPair.big)} (${mixMed.toFixed(2)}x)`);
 const pairAsc = pairs.map((p) => p.ref);
 console.log(`pair profit at ${cap(REF)} t: median ${f(medPair.ref)}  p90 ${f(pct(pairAsc, 0.9))}  top ${f(pairAsc[pairAsc.length - 1])}`);
 
@@ -263,7 +329,8 @@ if (CHECK) {
   if (mixBest < MIN_BIG_VS_SMALL) fails.push(`mixed cargo, best pair: ${cap(BIG)} t earns ${mixBest.toFixed(2)}x the ${cap(REF)} t (< ${MIN_BIG_VS_SMALL}x)`);
   // The median-lane test is run on staple lanes: a dense good (pearls, silk, pepper) is never hold-bound,
   // so the median lane of all goods cannot scale with the hold (see docs/BALANCE.md, B3 findings).
-  const stapleLanes = lanes.filter((l) => isStaple(GOODS.find((g) => g.id === l.g)!));
+  const FARR = new Set<Region>(['swahili', 'arabia', 'india', 'east']);
+  const stapleLanes = lanes.filter((l) => isStaple(GOODS.find((g) => g.id === l.g)!) && !FARR.has(regionOf(l.to)));
   const stapleRef = stapleLanes.map((l) => load(l, cap(REF))).sort((a, b) => a.profit - b.profit);
   const sm = stapleRef[Math.floor(stapleRef.length / 2)];
   const medX = load(sm, cap(BIG)).profit / load(sm, cap(REF)).profit;
@@ -273,12 +340,23 @@ if (CHECK) {
   // (their lanes carry the trade parcels, which A2 could not see), and the order must climb.
   tiers.forEach((t, i) => {
     const [lo, hi] = BANDS[t.h.id];
-    const tol = i >= 3 ? 0.15 : 1.0;
-    if (t.best.net < lo * (1 - tol) || t.best.net > hi * (1 + tol)) fails.push(`${t.h.id} nets ${f(t.best.net)} per voyage, band ${lo}-${hi}`);
+    // Tiers 1-3 carry Lisbon's and Arzila's trade parcels and cheap-staple margins that the price formula fixes: up to 2x, 1.5x and 1.15x the band; below, 0.5x.
+    const tol = [1.0, 0.5, 0.15, 0.15, 0.15, 0.15][i];
+    const lowTol = i >= 3 ? 0.15 : 0.5;
+    // The Nau da India's band is a floor: the long run is where the exceptional voyage lives (typical is checked below).
+    const top = i === tiers.length - 1;
+    if (t.best.net < lo * (1 - lowTol) || (!top && t.best.net > hi * (1 + tol))) fails.push(`${t.h.id} nets ${f(t.best.net)} per voyage, band ${lo}-${hi}${top ? ' (floor)' : ''}`);
     if (i > 0 && t.best.net <= tiers[i - 1].best.net) fails.push(`${t.h.id} does not out-earn the hull below`);
     if (t.voyages !== null && (t.voyages < 1.5 || t.voyages > 6.5)) fails.push(`${t.h.id} buys the next hull in ${t.voyages.toFixed(1)} voyages (1.5-6.5)`);
   });
-  if (pearls && load(pearls, cap(BIG)).profit > 3000) fails.push('Ormuz->Cambay pearls still out of band');
+  if (riskX < 3) fails.push(`risk reward: Cochim voyages ${f(medCochim)} vs Atlantic coastal ${f(medAtl)} = ${riskX.toFixed(2)}x (< 3x)`);
+  if (medIndia < 6000 || medIndia > 12000) fails.push(`typical India round trip nets ${f(medIndia)} (band 6,000-12,000)`);
+  if (pearls && (load(pearls, cap(BIG)).profit > 6000 || load(pearls, cap(BIG)).profit < 800)) fails.push('Ormuz->Cambay pearls out of the 800-6,000 band (was 66,175, then 372)');
+  // The Carreira's goods are the top lanes again: spice, silk, pearls, gems, ambergris, camphor from the Indian Ocean.
+  const CARREIRA = new Set(['pimenta', 'gengibre', 'canela', 'cravo', 'noz', 'maca', 'cardamomo', 'seda', 'perolas', 'pedras', 'ambar', 'canfora']);
+  const top20 = ref.slice(0, 20).filter((r) => CARREIRA.has(r.g) && ['india', 'east', 'arabia'].includes(regionOf(r.from))).length;
+  console.log(`top 20 single-good lanes that are Indian Ocean spice, silk, pearls or gems: ${top20}`);
+  if (top20 < 14) fails.push(`only ${top20} of the 20 best lanes are the Carreira's goods from the Indian Ocean (>= 14)`);
   if (zero > 0) fails.push(`${zero} port goods at zero stock`);
   if (off > 0) fails.push(`${off} prices out of band`);
   if (fails.length) { console.log('CHECK FAILED:\n  ' + fails.join('\n  ')); process.exit(1); }
@@ -292,6 +370,13 @@ if (args.includes('--lane')) {
   for (const l of lanes.filter((x) => x.from === fr && x.to === to)) {
     console.log(`${l.g}: ref ${f(load(l, cap(REF)).profit)}  big ${f(load(l, cap(BIG)).profit)}  stock ${f(l.stock)}`);
   }
+}
+
+if (args.includes('--regions')) {
+  const by = new Map<string, number[]>();
+  for (const r of ref) { const k = regionOf(r.from); (by.get(k) ?? by.set(k, []).get(k)!).push(r.profit); }
+  console.log('\nSingle-good lanes by source region (reference hold): n, median, p90, max');
+  for (const [k, v] of by) { v.sort((a, b) => a - b); console.log(`${id(k, 10)}${String(v.length).padStart(5)}${f(pct(v, 0.5)).padStart(7)}${f(pct(v, 0.9)).padStart(7)}${f(v[v.length - 1]).padStart(7)}`); }
 }
 
 if (args.includes('--mid')) {

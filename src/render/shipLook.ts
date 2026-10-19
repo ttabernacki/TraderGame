@@ -141,6 +141,8 @@ export function seeded(seed: number): () => number {
 // ---------------------------------------------------------------------------
 
 let plank: THREE.CanvasTexture | null = null;
+let plankNormal: THREE.CanvasTexture | null = null;
+let plankRough: THREE.CanvasTexture | null = null;
 
 /**
  * Planking: strakes of oak with the grain running along them, butt joints
@@ -148,44 +150,79 @@ let plank: THREE.CanvasTexture | null = null;
  * between every strake. Pale and nearly neutral, because the ship's own colour
  * is carried in the vertex colours and this only multiplies it.
  *
- * One texture shared by every ship afloat. It is never disposed.
+ * Three maps come out of the one drawing so they cannot disagree with each
+ * other: the colour; a tangent-space normal map taken from a height field in
+ * which every strake is slightly crowned and the seams are grooves; and a
+ * roughness map in which the tar is dull, the grain a little rougher than the
+ * face, and hand-and-spray polished patches are smoother. The colour is the
+ * only one the old picture used.
+ *
+ * Shared by every ship afloat. Never disposed.
  */
-export function plankTexture(): THREE.CanvasTexture {
-  if (plank) return plank;
+function buildPlankMaps(): void {
   const W = 512, H = 512, rows = 12;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const ctx = c.getContext('2d')!;
+  const mk = () => {
+    const c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    return c;
+  };
+  const cc = mk(), ch = mk(), cr = mk();
+  const ctx = cc.getContext('2d')!;
+  const hx = ch.getContext('2d', { willReadFrequently: true })!;
+  const rx = cr.getContext('2d')!;
   const rnd = seeded(77);
+  const rnd2 = seeded(4093); // roughness only, so the colour draw stays what it was
   const rh = H / rows;
+  rx.fillStyle = 'rgb(0,184,0)'; rx.fillRect(0, 0, W, H);
+  hx.fillStyle = '#808080'; hx.fillRect(0, 0, W, H);
+  const gv = (v: number) => `rgb(${v},${v},${v})`;
   for (let r = 0; r < rows; r++) {
     const y0 = r * rh;
     const tone = 0.84 + rnd() * 0.16;
     ctx.fillStyle = `rgb(${Math.round(236 * tone)},${Math.round(226 * tone)},${Math.round(212 * tone)})`;
     ctx.fillRect(0, y0, W, rh);
+    // Each strake is crowned: grooved at the seams, domed between.
+    const crown = hx.createLinearGradient(0, y0, 0, y0 + rh);
+    crown.addColorStop(0, gv(30)); crown.addColorStop(0.05, gv(40));
+    crown.addColorStop(0.13, gv(168)); crown.addColorStop(0.5, gv(190));
+    crown.addColorStop(0.9, gv(166)); crown.addColorStop(1, gv(60));
+    hx.fillStyle = crown; hx.fillRect(0, y0, W, rh);
+    // Plank faces differ in smoothness: some strakes are worn, some are not.
+    const base = 150 + Math.round((rnd2() - 0.4) * 60);
+    rx.fillStyle = `rgb(0,${base},0)`; rx.fillRect(0, y0, W, rh);
     // Grain: long wavering lines, a few darker, most barely there.
     for (let k = 0; k < 16; k++) {
       const gy = y0 + 2 + rnd() * (rh - 4);
       const amp = 0.6 + rnd() * 1.8;
       const f = 0.004 + rnd() * 0.01;
       const ph = rnd() * 6.28;
-      ctx.strokeStyle = `rgba(70,48,28,${0.05 + rnd() * 0.1})`;
-      ctx.lineWidth = 0.6 + rnd() * 1.1;
-      ctx.beginPath();
-      for (let x = 0; x <= W; x += 16) {
-        const yy = gy + Math.sin(x * f * 6.28 + ph) * amp;
-        if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
-      }
-      ctx.stroke();
+      const a = 0.05 + rnd() * 0.1;
+      const lw = 0.6 + rnd() * 1.1;
+      const path = (g: CanvasRenderingContext2D) => {
+        g.beginPath();
+        for (let x = 0; x <= W; x += 16) {
+          const yy = gy + Math.sin(x * f * 6.28 + ph) * amp;
+          if (x === 0) g.moveTo(x, yy); else g.lineTo(x, yy);
+        }
+        g.stroke();
+      };
+      ctx.strokeStyle = `rgba(70,48,28,${a})`; ctx.lineWidth = lw; path(ctx);
+      hx.strokeStyle = `rgba(0,0,0,${a * 2.4})`; hx.lineWidth = lw; path(hx);
+      rx.strokeStyle = `rgba(0,240,0,${a * 3})`; rx.lineWidth = lw; path(rx);
     }
     // A knot or two.
     if (rnd() < 0.5) {
       const kx = rnd() * W, ky = y0 + rh * (0.3 + rnd() * 0.4);
-      const g = ctx.createRadialGradient(kx, ky, 0, kx, ky, 5 + rnd() * 4);
+      const kr = 5 + rnd() * 4;
+      const g = ctx.createRadialGradient(kx, ky, 0, kx, ky, kr);
       g.addColorStop(0, 'rgba(60,38,20,0.55)');
       g.addColorStop(1, 'rgba(60,38,20,0)');
       ctx.fillStyle = g;
       ctx.beginPath(); ctx.ellipse(kx, ky, 12, 5, 0, 0, Math.PI * 2); ctx.fill();
+      hx.fillStyle = 'rgba(0,0,0,0.3)';
+      hx.beginPath(); hx.ellipse(kx, ky, 9, 3.6, 0, 0, Math.PI * 2); hx.fill();
+      rx.fillStyle = 'rgba(0,225,0,0.55)';
+      rx.beginPath(); rx.ellipse(kx, ky, 12, 5, 0, 0, Math.PI * 2); rx.fill();
     }
     // Butt joints, staggered, with a pair of treenails at each.
     const butts = [rnd() * W, 0];
@@ -193,17 +230,28 @@ export function plankTexture(): THREE.CanvasTexture {
     for (const bx of butts) {
       ctx.fillStyle = 'rgba(38,26,16,0.55)';
       ctx.fillRect(bx, y0 + 1, 2, rh - 2);
+      hx.fillStyle = 'rgba(20,20,20,0.9)'; hx.fillRect(bx - 0.5, y0 + 1, 3, rh - 2);
+      rx.fillStyle = 'rgba(0,245,0,0.9)'; rx.fillRect(bx - 1, y0 + 1, 4, rh - 2);
       ctx.fillStyle = 'rgba(52,36,22,0.7)';
       for (const dx of [-6, 8]) {
         for (const fy of [0.3, 0.7]) {
           ctx.beginPath(); ctx.arc(bx + dx, y0 + rh * fy, 1.6, 0, Math.PI * 2); ctx.fill();
+          hx.fillStyle = 'rgba(30,30,30,0.7)';
+          hx.beginPath(); hx.arc(bx + dx, y0 + rh * fy, 1.7, 0, Math.PI * 2); hx.fill();
+          ctx.fillStyle = 'rgba(52,36,22,0.7)';
         }
       }
     }
-    // Weathering, streaking down the strake.
+    // Weathering, streaking down the strake. Bleached streaks go dry and rough;
+    // dark ones are the ones the wet has stayed in.
     for (let k = 0; k < 6; k++) {
-      ctx.fillStyle = `rgba(${rnd() < 0.5 ? '90,70,50' : '250,244,230'},${0.04 + rnd() * 0.05})`;
-      ctx.fillRect(rnd() * W, y0, 20 + rnd() * 90, rh);
+      const dark = rnd() < 0.5;
+      const a = 0.04 + rnd() * 0.05;
+      const sx = rnd() * W, sw = 20 + rnd() * 90;
+      ctx.fillStyle = `rgba(${dark ? '90,70,50' : '250,244,230'},${a})`;
+      ctx.fillRect(sx, y0, sw, rh);
+      rx.fillStyle = dark ? `rgba(0,90,0,${a * 5})` : `rgba(0,255,0,${a * 7})`;
+      rx.fillRect(sx, y0, sw, rh);
     }
     // The tarred seam along the top of the strake, and the light it throws on
     // the edge of the plank below.
@@ -213,12 +261,55 @@ export function plankTexture(): THREE.CanvasTexture {
     ctx.fillRect(0, y0 + 2.5, W, 1.5);
     ctx.fillStyle = 'rgba(40,28,16,0.18)';
     ctx.fillRect(0, y0 + rh - 4, W, 4);
+    // Tar is the dullest thing on the ship.
+    rx.fillStyle = 'rgb(0,250,0)'; rx.fillRect(0, y0, W, 3);
   }
-  plank = new THREE.CanvasTexture(c);
-  plank.wrapS = plank.wrapT = THREE.RepeatWrapping;
-  plank.colorSpace = THREE.SRGBColorSpace;
-  plank.anisotropy = 8;
-  return plank;
+  // Height field to a tangent-space normal map: central differences, wrapped.
+  const hd = hx.getImageData(0, 0, W, H).data;
+  const nrm = document.createElement('canvas');
+  nrm.width = W; nrm.height = H;
+  const nx = nrm.getContext('2d')!;
+  const out = nx.createImageData(W, H);
+  const hAt = (x: number, y: number) => hd[(((y + H) % H) * W + ((x + W) % W)) * 4] / 255;
+  const strength = 3.2;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const dx = (hAt(x + 1, y) - hAt(x - 1, y)) * strength;
+      const dy = (hAt(x, y + 1) - hAt(x, y - 1)) * strength;
+      const il = 1 / Math.hypot(dx, dy, 1);
+      const i = (y * W + x) * 4;
+      out.data[i] = Math.round((-dx * il * 0.5 + 0.5) * 255);
+      // Canvas y runs down the strake; texture v runs up it, so the green slope is flipped.
+      out.data[i + 1] = Math.round((dy * il * 0.5 + 0.5) * 255);
+      out.data[i + 2] = Math.round((il * 0.5 + 0.5) * 255);
+      out.data[i + 3] = 255;
+    }
+  }
+  nx.putImageData(out, 0, 0);
+
+  const tex = (c: HTMLCanvasElement, srgb: boolean) => {
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    return t;
+  };
+  plank = tex(cc, true);
+  plankNormal = tex(nrm, false);
+  plankRough = tex(cr, false);
+}
+
+export function plankTexture(): THREE.CanvasTexture {
+  if (!plank) buildPlankMaps();
+  return plank!;
+}
+export function plankNormalMap(): THREE.CanvasTexture {
+  if (!plankNormal) buildPlankMaps();
+  return plankNormal!;
+}
+export function plankRoughMap(): THREE.CanvasTexture {
+  if (!plankRough) buildPlankMaps();
+  return plankRough!;
 }
 
 /**
@@ -309,5 +400,5 @@ export function glowTexture(): THREE.CanvasTexture {
 
 /** Textures every ship shares, which a disposed ship must leave alone. */
 export function isShared(t: THREE.Texture | null | undefined): boolean {
-  return !!t && (t === plank || t === glow);
+  return !!t && (t === plank || t === glow || t === plankNormal || t === plankRough);
 }

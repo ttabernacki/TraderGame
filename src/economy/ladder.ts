@@ -16,7 +16,6 @@
  *    a great ship's cargo, and the seas a hull can reach pay what they pay.
  */
 import type { Good } from './goods';
-import { GOODS } from './goods';
 import type { PortDef } from '../world/ports';
 import { regionOf, type Region } from './trade';
 
@@ -26,27 +25,36 @@ export const LOT_TONS: Record<PortDef['size'], number> = {
 };
 
 /**
- * Cruzados of profit a whole port will give a visiting captain in dense goods in a
- * season, by region, spread over the dense goods it trades. The Portuguese
- * and Moroccan side is small on purpose (a coaster's cargo is wine and oil, not
- * silver); the figures climb with the distance from home to the Indian Ocean
- * and fall back in India, where the Casa's share and the long road home eat the
- * rest. Tuned with scripts/econ.ts --ladder.
+ * Cruzados of profit a port will give a visiting captain in each dense good it
+ * holds, in a season, by region (at wealth 1, level 1). The Portuguese and
+ * Moroccan side is small on purpose (a coaster's cargo is wine and oil, not
+ * silver); the figures climb with the distance from home, through the Swahili
+ * coast and Arabia (kept low so a Nau still lands in its band), to India and the
+ * East, where the Carreira pays: a single lane about 3,000, a Malabar tour many
+ * times that. Tuned with scripts/econ.ts --ladder.
  */
 export const PORT_PROFIT: Record<Region, number> = {
-  europe: 210, atlantic: 210, maghreb: 210, guinea: 750, brazil: 5500, kongo: 5500, cape: 5500,
-  swahili: 5000, arabia: 10900, india: 6300, east: 6300,
+  europe: 70, atlantic: 70, maghreb: 70, guinea: 300, brazil: 550, kongo: 550, cape: 550,
+  swahili: 900, arabia: 1300, india: 2900, east: 2900,
 };
 
 /**
  * The same, for what a port will buy: demand. Europe is the end of the line for
- * everything the Carreira brings home, so Lisbon and the ports that buy from it
- * want far more than they sell; elsewhere a port takes about as much as it gives.
+ * everything the Carreira brings home, so it is set above anything one hold can
+ * supply (the supply caps then bind); elsewhere a port takes about as much as it gives.
  */
 export const PORT_DEMAND: Record<Region, number> = {
-  europe: 9000, atlantic: 1050, maghreb: 1050, guinea: 5600, brazil: 8800, kongo: 8800, cape: 8800,
-  swahili: 9600, arabia: 9000, india: 7200, east: 7200,
+  europe: 12000, atlantic: 350, maghreb: 350, guinea: 1800, brazil: 2900, kongo: 2900, cape: 2900,
+  swahili: 3200, arabia: 3000, india: 4000, east: 4000,
 };
+
+/**
+ * What a far market takes of the cheap bulk goods a ship brings from Portugal, as a
+ * fraction of the tons the size of its town would suggest. India has rice and
+ * dates of its own; a cask of Lisbon oil is a curiosity there, not a cargo, so a
+ * hold of it must not out-earn a hold of pepper at the end of the longest road.
+ */
+export const STAPLE_DEMAND: Partial<Record<Region, number>> = { swahili: 0.4, arabia: 0.12, india: 0.08, east: 0.08 };
 
 /**
  * Goods worth less than this per ton of hold (cruzados at Lisbon) are staples:
@@ -58,26 +66,19 @@ export const STAPLE_DENSITY = 30;
 export const MARGIN_PER_LISBON = 1.2;
 
 /** The trade parcel a port always has of any dense good it trades: this many units, or this much Lisbon value, whichever is less. */
-export const PARCEL_UNITS = 10;
-export const PARCEL_VALUE = 60;
+export const PARCEL_UNITS = 6;
+export const PARCEL_VALUE = 36;
 
 /** The least a lot is, as a fraction of the full lot for its size and region. */
 export const SHARE_FLOOR = 0.3;
 
-export const isStaple = (g: Good): boolean => g.lisbon / Math.max(g.bulk, 1e-4) <= STAPLE_DENSITY;
+/**
+ * The Mina gold is the Atlantic's prize (the Casa takes its share of it at Lisbon): a
+ * Guinea port that holds gold holds a good deal more than the region's other goods.
+ */
+export const GOLD_LOT = 1.6;
 
-const denseSums = new Map<string, number>();
-/** The sum of the dense-goods levels a port produces (or wants), cached: the port's definition never changes. */
-function denseSum(def: PortDef, kind: 'produces' | 'wants'): number {
-  const key = `${def.id}:${kind}`;
-  let s = denseSums.get(key);
-  if (s === undefined) {
-    s = 0;
-    for (const g of GOODS) if (!isStaple(g)) s += def[kind][g.id] ?? 0;
-    denseSums.set(key, Math.max(s, 0.5));
-  }
-  return denseSums.get(key)!;
-}
+export const isStaple = (g: Good): boolean => g.lisbon / Math.max(g.bulk, 1e-4) <= STAPLE_DENSITY;
 
 /**
  * Units a port will hold (kind 'produces') or take (kind 'wants') of a good,
@@ -87,13 +88,13 @@ export function lotUnits(def: PortDef, g: Good, kind: 'produces' | 'wants', leve
   const wealth = SHARE_FLOOR + (1 - SHARE_FLOOR) * Math.min((0.5 + def.wealth) / 1.5, 1.2);
   const lvl = SHARE_FLOOR + (1 - SHARE_FLOOR) * Math.min(Math.max(level, 0), 1);
   const byTons = (LOT_TONS[def.size] * lvl * wealth * scale) / Math.max(g.bulk, 1e-4);
-  if (isStaple(g)) return byTons;
+  if (isStaple(g)) return kind === 'wants' ? byTons * (STAPLE_DEMAND[regionOf(def.id)] ?? 1) : byTons;
   // Whatever a port's money, it keeps a trade parcel of the cheap things (brass,
   // beads, cloth) so that barter and presents are never short: a few hundred
   // cruzados' worth at most.
   const parcel = Math.min(PARCEL_UNITS, PARCEL_VALUE / Math.max(g.lisbon, 0.01)) * (SHARE_FLOOR + (1 - SHARE_FLOOR) * Math.min(Math.max(level, 0), 1));
-  // The port's money for dense goods, shared among the ones it trades in proportion to level.
-  const byMoney = ((kind === 'produces' ? PORT_PROFIT : PORT_DEMAND)[regionOf(def.id)] * wealth * scale * (Math.max(level, 0) / denseSum(def, kind)))
+  // The port's money for dense goods, per good in proportion to its level.
+  const byMoney = ((kind === 'produces' ? PORT_PROFIT : PORT_DEMAND)[regionOf(def.id)] * wealth * scale * Math.max(level, 0) * (g.id === 'ouro' && kind === 'produces' && regionOf(def.id) === 'guinea' ? GOLD_LOT : 1))
     / (MARGIN_PER_LISBON * Math.max(g.lisbon, 0.01));
   return Math.max(Math.min(byTons, byMoney), parcel);
 }

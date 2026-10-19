@@ -5,7 +5,7 @@ import type { SailState } from '../ship/physics';
 
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import {
-  bandTexture, glowTexture, isShared, lookFor, plankTexture, seeded, type ShipLook,
+  bandTexture, glowTexture, isShared, lookFor, plankNormalMap, plankRoughMap, plankTexture, seeded, type ShipLook,
 } from './shipLook';
 
 const OAK_DARK = new THREE.Color(0x6d5030);
@@ -67,13 +67,110 @@ function sailTranslucency(m: THREE.MeshLambertMaterial): THREE.MeshLambertMateri
   return m;
 }
 
-/** Planked timber: the shared plank texture, multiplied by the colour given. */
-function timber(color: number | THREE.Color, vertexColors = false): THREE.MeshStandardMaterial {
+/**
+ * What the timber shader needs to know about the day, shared by every ship
+ * afloat and set once a frame by the renderer. `uTimberNew` is 1 for the
+ * upgraded hull and 0 for the old flat one, so the legacy switch really does
+ * give the old picture back.
+ */
+export const HULL_ENV = {
+  uTimberNew: { value: 1 },
+  uTime: { value: 0 },
+  /** How far up the topsides the sea reaches: calm 0.8, a big sea 1.6. */
+  uWet: { value: 1 },
+  uEnvAmt: { value: 1 },
+  uSkyZen: { value: new THREE.Color(0.25, 0.4, 0.7) },
+  uSkyHor: { value: new THREE.Color(0.6, 0.7, 0.8) },
+  uSeaCol: { value: new THREE.Color(0.02, 0.07, 0.1) },
+};
+
+/**
+ * Timber that answers to light the way wood does, rather than the way a
+ * painted board does.
+ *
+ *  - The planks have a real surface: strakes crowned between grooved seams (a
+ *    normal map), tar that is dull and polished patches that are not (a
+ *    roughness map).
+ *  - The hull is wet where the sea reaches. The waterline is not a ruled line
+ *    but a ragged edge that runs higher where a wave has just broken, with
+ *    runnels up the side. Wet oak is darker, richer and glossy: it is the one
+ *    place on the ship that takes a sky reflection.
+ *  - Reflections come from the sky itself rather than a probe: a two-colour dome
+ *    plus the sea below it, blurred by roughness, through the same split-sum
+ *    approximation the lights use, so a dry board shows almost none of it and
+ *    wet varnish at a grazing angle shows a good deal.
+ *  - Above the wet, salt dries out pale in streaks.
+ */
+function patchTimber(m: THREE.MeshStandardMaterial, o: { wet: boolean; legacyRough: number; salt?: boolean }): void {
+  m.onBeforeCompile = (sh) => {
+    for (const k of Object.keys(HULL_ENV)) sh.uniforms[k] = (HULL_ENV as Record<string, { value: unknown }>)[k];
+    sh.vertexShader = 'varying vec3 vHullPos;\n' + sh.vertexShader.replace(
+      '#include <begin_vertex>', '#include <begin_vertex>\n vHullPos = position;');
+    sh.fragmentShader = `
+      uniform float uTimberNew, uTime, uWet, uEnvAmt;
+      uniform vec3 uSkyZen, uSkyHor, uSeaCol;
+      varying vec3 vHullPos;
+      float hh(float x) { return fract(sin(x * 127.1) * 43758.5453); }
+      float vn(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(hh(i), hh(i + 1.0), f); }
+      vec3 hullSky(vec3 r, float rough) {
+        float up = r.y;
+        vec3 sky = mix(uSkyHor, uSkyZen, pow(clamp(up, 0.0, 1.0), 0.45));
+        vec3 avg = mix(uSkyHor, uSkyZen, 0.45);
+        sky = mix(sky, avg, clamp(rough * rough * 1.4, 0.0, 0.9));
+        float w = 0.03 + rough * 0.5;
+        return mix(uSeaCol, sky, smoothstep(-w, w, up));
+      }
+    ` + sh.fragmentShader
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float hullWet = 0.0;
+        ${o.wet ? `{
+          float zz = vHullPos.z, yy = vHullPos.y;
+          float lap = vn(zz * 0.55 + uTime * 0.35) * 0.7 + vn(zz * 1.7 - uTime * 0.9) * 0.45;
+          float runnel = smoothstep(0.3, 1.0, vn(zz * 1.9 + 11.0)) * 0.8;
+          float top = (0.2 + lap * 0.7 + runnel * 0.7) * uWet;
+          hullWet = (1.0 - smoothstep(top - 0.55, top + 0.25, yy)) * uTimberNew;
+          // Weed and slime in the splash zone, where the sun never quite dries it.
+          float slime = hullWet * smoothstep(0.3, 0.0, abs(yy - 0.05)) * vn(zz * 7.0) * 0.5;
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.07, 0.085, 0.035), slime * uTimberNew);
+          diffuseColor.rgb = pow(max(diffuseColor.rgb, vec3(0.002)), vec3(1.0 + 0.26 * hullWet)) * (1.0 - 0.08 * hullWet);
+        }` : ''}
+        ${o.salt ? `{
+          float zz = vHullPos.z, yy = vHullPos.y;
+          float salt = smoothstep(0.45, 1.0, vn(zz * 2.7 + 3.0)) * smoothstep(0.9, 2.6, yy) * (1.0 - hullWet);
+          float l = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(l * 1.25 + 0.03), salt * 0.2 * uTimberNew);
+        }` : ''}
+      `)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(${o.legacyRough.toFixed(2)}, roughnessFactor, uTimberNew);
+        roughnessFactor = mix(roughnessFactor, roughnessFactor * 0.3 + 0.06, hullWet);`)
+      .replace('#include <normal_fragment_maps>', `vec3 n0 = normal;
+        #include <normal_fragment_maps>
+        #if defined( USE_BUMPMAP ) && defined( USE_NORMALMAP_TANGENTSPACE )
+          vec3 nb = perturbNormalArb( - vViewPosition, n0, dHdxy_fwd(), faceDirection );
+          normal = normalize( mix( nb, normal, uTimberNew ) );
+        #endif`)
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        {
+          vec3 Rw = inverseTransformDirection( reflect( - geometryViewDir, geometryNormal ), viewMatrix );
+          vec2 fab = DFGApprox( geometryNormal, geometryViewDir, material.roughness );
+          vec3 F = material.specularColor * fab.x + material.specularF90 * fab.y;
+          reflectedLight.indirectSpecular += hullSky( Rw, material.roughness ) * F * ( uEnvAmt * uTimberNew );
+        }`);
+  };
+  m.customProgramCacheKey = () => `timber-${o.wet ? 'w' : 'd'}${o.salt ? 's' : ''}${o.legacyRough}`;
+}
+
+/** Planked timber: the shared plank maps, multiplied by the colour given. */
+function timber(color: number | THREE.Color, vertexColors = false, hull = false): THREE.MeshStandardMaterial {
   const tex = plankTexture();
-  return new THREE.MeshStandardMaterial({
+  const m = new THREE.MeshStandardMaterial({
     color, vertexColors, map: tex, bumpMap: tex, bumpScale: 1.2,
-    roughness: 0.84, metalness: 0, side: THREE.DoubleSide,
+    normalMap: plankNormalMap(), normalScale: new THREE.Vector2(0.9, 0.9),
+    roughnessMap: plankRoughMap(), roughness: 1, metalness: 0, side: THREE.DoubleSide,
   });
+  patchTimber(m, { wet: hull, legacyRough: hull ? 0.72 : 0.84, salt: hull });
+  return m;
 }
 
 /** Planking UVs in metres: strakes run along u, 12 of them to 3.2 m of v. */
@@ -992,9 +1089,7 @@ function buildHull(L: number, B: number, D: number, kit: Kit): THREE.Mesh {
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   g.setIndex(indices);
   g.computeVertexNormals();
-  const mat = timber(0xffffff, true);
-  mat.roughness = 0.72;
-  return new THREE.Mesh(g, mat);
+  return new THREE.Mesh(g, timber(0xffffff, true, true));
 }
 
 /**
@@ -1034,10 +1129,13 @@ function buildBand(L: number, B: number, D: number, look: ShipLook): THREE.Mesh 
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
   g.setIndex(indices);
   g.computeVertexNormals();
-  return new THREE.Mesh(g, new THREE.MeshStandardMaterial({
-    map: bandTexture(look.band!, look.seed), roughness: 0.62, metalness: 0,
+  // Oil paint on tarred oak, a season old: a sheen, but never plastic.
+  const paint = new THREE.MeshStandardMaterial({
+    map: bandTexture(look.band!, look.seed), roughness: 0.5, metalness: 0,
     side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-  }));
+  });
+  patchTimber(paint, { wet: false, legacyRough: 0.62 });
+  return new THREE.Mesh(g, paint);
 }
 
 function buildDeck(L: number, B: number, D: number): THREE.Mesh {

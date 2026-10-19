@@ -7,12 +7,14 @@ Measured by `scripts/econ.ts` (BUILD_PLAN A2). Baseline taken before any B3/C1 e
 ```
 npx esbuild scripts/econ.ts --bundle --platform=node --format=cjs --outfile=/tmp/econ.cjs && node /tmp/econ.cjs
 node /tmp/econ.cjs --ladder            # price-ladder table next to the B3 targets
-node /tmp/econ.cjs --check             # exit 1 if best:median > 8 or 480 t earns < 2.2x the 140 t on the best lane
+node /tmp/econ.cjs --check             # exit 1 if the ladder, spread (<= 10), hull, risk-reward or India criteria fail (see the India pass)
+node /tmp/econ.cjs --pair lisboa mpinda 2   # the goods of one voyage, leg by leg (hull index 0-5)
+node /tmp/econ.cjs --regions           # single-good lanes by source region
 node /tmp/econ.cjs --burthen           # size hulls by burthen (25/50/70/140/260/480) not hold (14/30/45/105/205/400)
 node /tmp/econ.cjs --lane mina lisboa  # every good on one pair
 ```
 
-Exit code is 0 unless `--check` fails. `--check` fails today; that is expected. It is the pass gate for B3.
+Exit code is 0 unless `--check` fails. `--check` passes after the B3 and India passes.
 
 ## Method
 
@@ -104,3 +106,68 @@ Tiers 4-5 are in band; tier 6 is 8% under, the three small hulls 80-100% over: t
 ### Check criteria changed, and why
 - The median-lane test (>= 1.4x) now runs on **staple lanes**: the median lane over all goods is a dense, money-capped lot, and by value it cannot be hold-bound at any hull, so it is 1.00x by construction. Added: mixed-cargo best pair >= 2.2x; per-tier bands (+-15% for tiers 4-6, within 2x for tiers 1-3), monotone climb, 1.5-6.5 voyages to the next hull, no zero stock, prices in band, pearls hop under 3,000.
 - Tuning hooks: `PP`, `PD`, `LT` env vars override the caps for one run; `--tiers`-style output is `--ladder`; `--pairs`, `--mid`, `--json` for sweeps.
+
+## India pass (reward arc restored)
+
+B3 fixed the 130:1 spread by over-correcting. Measured before touching anything (`scripts/econ.ts --ladder --pairs`, new India/tour lines
+run against the B3 constants):
+
+### Why the Carreira collapsed (the cause, not the numbers)
+1. **Money was shared out, not given.** `lotUnits` divided a port's money (`PORT_PROFIT`, `PORT_DEMAND`) by the sum of the levels of every dense good it trades.
+   Calecute (8 dense goods) gave each about a sixth; Cochim (pepper, ginger, cinnamon, cardamom) about a third. Cochim held **39 quintals of pepper (2.3 t)**,
+   and Lisbon *wanted* 20 of it: the market for the whole point of the road was one small cask.
+2. **Lisbon's demand was the same sharing, 9,000 over ~11 goods:** 20 quintals of pepper, 7 of mace. The best home leg of a full Nau was 929 cruzados.
+3. **The best thing a Nau could carry to India was Lisbon oil.** Staples are tons-capped, and 11 towns (India among them) "want" oil by the spread-demand layer, so
+   400 t of olive oil Lisbon -> Diu netted 7,600 while the pepper leg was 929. The top 20 routes were all `azeite`.
+4. **Small-hull tiers 1-3 were inflated** by trade parcels and cheap-staple margins (Lisbon/Arzila: oil out, cloth/copper/wax parcels back).
+Before: a Malabar tour (Cochim + Calecute, home) netted **-1,230** (a loss), a Lisbon <> Calecute round trip 4,659 only thanks to oil.
+
+### What changed (economy/ladder.ts; price formula untouched)
+- **Per-good money caps, not shared** (`PORT_PROFIT`, `PORT_DEMAND` are now per dense good, at wealth 1 and level 1). A port with six spices is six times the market of one with one.
+- **PORT_PROFIT** (per good): europe/atlantic/maghreb 70, guinea 300, brazil/kongo/cape 550, swahili 900, arabia 1,300, india/east 2,900. The ladder is the distance from home;
+  arabia and swahili are deliberately low so tiers 4-5 stay in band, India/East carry the Carreira. One India lane tops out near 3,000 (that is what holds best:median under 10:1).
+- **PORT_DEMAND** europe 12,000 (above anything a hold can supply, so supply binds: Lisbon now takes 55-200 units of each spice), atlantic/maghreb 350, others ~1,800-4,000.
+- **`STAPLE_DEMAND`**: far markets take a fraction of the tons their size would suggest of Portuguese bulk (swahili 0.4, arabia 0.12, india/east 0.08). Oil to Cambay is a curiosity, not a cargo.
+- **Trade parcel** 10 units / 60 cr -> 6 units / 36 cr (barter and presents still never short; tier 1-3 parcels were the over-band part).
+- **`GOLD_LOT` 1.6** on Guinea gold (the Mina trade is the Atlantic's prize; without it the career bot went bankrupt on the first Guinea voyages and the median lane was too thin).
+- Not touched: Casa share (0.72), commission scale (0.55), wages, dues. Nothing needed them; wages (4 cr/man/month; 150 men on a Nau da India is ~2,000 a round trip) are a real brake on the big hull already.
+
+### Harness changes
+- **Tours.** A Nau da India is not loaded at one yard: `tourNet` models Lisbon -> stops on one coast (5 port days each) -> Lisbon with one cargo, the destination's appetite shared across stops. Cochim alone
+  has four spices and cannot fill 400 t; Cochim + Calecute does. "Typical India round trip" is the median of four Malabar tours; the eight Lisbon <> port pairs are listed as well.
+- New checks: typical India tour in 6,000-12,000; median Cochim tour >= 3x median Atlantic coastal pair (same 400 t hull); >= 14 of the 20 best single lanes are Indian Ocean spice/silk/pearls/gems;
+  pearls hop 800-6,000 (was 66,175, then 372); spread <= 10; tier 6 is a floor (the exceptional voyage is above the band); tiers 1-3 capped at 2x / 1.5x / 1.15x of their bands.
+- The mixed-cargo scale test now picks the best pair that carries bulk (a pair of dense goods is money-bound by design, 1.00x at every hull from a caravela up); the median-staple-lane test excludes far markets (deliberately small).
+
+### Before / after (`--ladder --check`, 105 t reference)
+| Measure | B3 | India pass |
+|---|---|---|
+| best single route | 2,344 (Lisbon -> Angra oil) | 3,058 (Calecute -> Lisbon pepper); top 20 = 14 Carreira, rest calico/anil/oil |
+| median / p90 / p99 | 334 / 1,171 / 1,806 | 318 / 1,674 / 2,674 |
+| best:median | 7.0 | 9.6 |
+| 400 t / 105 t, best lane | 3.81x | 2.85x (best bulk pair 3.40x) |
+| Ormuz -> Cambay pearls, 400 t | 372 | 1,363 |
+| typical Malabar tour, Nau da India | -1,230 | 9,228 (4,511 to 10,766; best Lisbon pair 10,736 Malacca) |
+| Cochim tour / Atlantic coastal (400 t) | -1.06x | 6.87x |
+| Lisbon <> Cochim pair alone | -1,484 | 1,855 |
+
+| Tier | Band | B3 | India pass |
+|---|---|---|---|
+| Barcha | 120-220 | 397 | 373 |
+| Caravela latina | 300-500 | 670 | 734 |
+| Caravela redonda | 500-800 | 918 | 893 |
+| Nau pequena | 1,200-1,800 | 1,872 | 2,057 |
+| Nau | 2,500-3,500 | 3,052 | 3,949 |
+| Nau da India | 6,000-9,000 | 5,547 | 10,736 best; typical tour 9,228 |
+
+### Honest limits (read these before trusting the ladder)
+- **Tiers 1-3 are still over band** (373 / 734 / 893 against 220 / 500 / 800). What is left is the staple margin: oil Lisbon -> Arzila earns ~22 cr per ton of hold at any ship, 200 of the barcha's 373.
+  The price formula sets that and was not touched; parcels were already cut. Fixing it needs harbour dues or a staple spread change, not a stock cap.
+- **Hull size does not matter on the India lanes.** The Carreira's goods are money-capped per port, and the cargo of a full tour is ~40 t. A 3-port Malabar tour nets 5,146 for a barcha,
+  7,934 latina, 10,849 redonda, 12,303 nau pequena, 11,737 nau, 10,002 nau da India (150 men, 80 t of stores). Hull size matters on the bulk lanes (Atlantic, 2.9-3.8x) and in running cost, and what
+  keeps small ships off the India road is not the ladder but the road: the Cape, the monsoon, stores in tons (a redonda's stores for the round trip are 16 of its 45 t), the Casa's licence. The harness
+  caps the reach of each hull (`REACH`) to model that; if the game lets a caravela go to Cochim it will outearn a Nau da India there. Raising the India caps cannot fix this; only making some India goods
+  tons-capped can, and at ~600 cr per ton of pepper that would be 100 times the target.
+- First sale, relation 0, skill 0 (spread 0.30); with a trusted relation and skill the spread narrows to 0.07, so a captain's real margins run well above these numbers: that is where "the exceptional run" lives.
+- Career bot (4 seeds, `career.ts 4 1`): acts 5/3/3/3, no exceptions; B3 constants gave 4/3/5/3 and the A2 baseline 3/4/5+epilogue/3. The bot is noisy (wrecks, thin crews) and not a good income metric; no exception, no regression in the
+  gate scripts (stores, saves, cuts, ledger, charts, tutorial, watchbell, pieces, silent, informer, gifts, hostage, refusal, fleet, between, case, routes, pilot).
