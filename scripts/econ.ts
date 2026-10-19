@@ -60,7 +60,7 @@ const hull = (id: string) => HULLS.find((h) => h.id === id)!;
 const REF = hull('nau-pequena'); // 140 t burthen, 105 t of hold
 const BIG = hull('nau-da-india'); // 480 t
 
-interface Lane { g: string; from: string; to: string; nm: number; margin: number; bulk: number; stock: number; appetite: number; ask: number; lot?: number }
+interface Lane { g: string; from: string; to: string; nm: number; margin: number; bulk: number; stock: number; appetite: number; ask: number; lot?: number; appLot?: number }
 interface Route extends Lane { units: number; cost: number; profit: number }
 
 const lanes: Lane[] = [];
@@ -72,14 +72,16 @@ for (const a of PORTS) for (const b of PORTS) {
     if (!la || !lb || !la.local || la.stock <= 0 || lb.appetite <= 0) continue;
     const margin = lb.bid - la.ask;
     if (margin <= 0) continue;
-    lanes.push({ g: g.id, from: a.id, to: b.id, nm, margin, bulk: g.bulk, stock: la.stock, appetite: lb.appetite, ask: la.ask, lot: la.lot });
+    lanes.push({ g: g.id, from: a.id, to: b.id, nm, margin, bulk: g.bulk, stock: la.stock, appetite: lb.appetite, ask: la.ask, lot: la.lot, appLot: lb.appetiteLot });
   }
 }
 const load = (l: Lane, hold: number): Route => {
   const units = Math.min(l.stock, l.appetite, hold / l.bulk);
   // Where a deeper pool stands behind the first lot (Malabar and the East) the units beyond the lot cost more.
   const extra = l.lot === undefined ? 0 : units * l.ask * (Markets.slippage(units, l.stock, l.lot) - 1);
-  return { ...l, units, cost: units * l.ask + extra, profit: units * l.margin - extra };
+  const bid = l.margin + l.ask;
+  const short = l.appLot === undefined ? 0 : units * bid * (1 - 1 / Markets.sellSlippage(units, l.appetite, l.appLot));
+  return { ...l, units, cost: units * l.ask + extra, profit: units * l.margin - extra - short };
 };
 const routesFor = (hold: number) => lanes.map((l) => load(l, hold)).sort((x, y) => y.profit - x.profit);
 const pct = (sorted: number[], p: number) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
@@ -150,7 +152,7 @@ let TRACE = false;
 const KNOTS_DAY = 4.5 * 24;
 /** Crew wages, cruzados per man per month (game/wages). */
 const WAGE_PER_MAN_MONTH = Number(process.env.WAGE ?? 4);
-const slip = (q: number, avail: number) => (avail <= 0 ? 1 : 1 + Math.min(1, q / avail) ** 2 * 0.55);
+const slip = (q: number, avail: number, lot?: number) => Markets.sellSlippage(q, avail, lot);
 function voyageDays(nm: number): number { return 2 * (nm / KNOTS_DAY) + 12; }
 /** Port dues at the calls of a voyage (economy/dues): none at a Portuguese quay. */
 const callDues = (ports: string[], h: { tons: number }): number => ports.reduce((sum, id) => sum + duesFor(portDef(id), h.tons).dues, 0);
@@ -161,7 +163,7 @@ interface PairNet { net: number; storeT: number; goods: string[]; out: number; b
  */
 function bestLot(l: Lane, umax: number, _was: number, revenue: (u: number) => number): { units: number; net: number } {
   let best = { units: umax, net: revenue(umax) - umax * l.ask * Markets.slippage(umax, l.stock, l.lot) };
-  if (l.lot === undefined) return best;
+  if (l.lot === undefined && l.appLot === undefined) return best;
   for (let i = 1; i < 24; i++) {
     const u = Math.floor((umax * i) / 24);
     const net = revenue(u) - u * l.ask * Markets.slippage(u, l.stock, l.lot);
@@ -178,7 +180,7 @@ function legNet(ls: Lane[], h: { crewFull: number; hold: number; tons: number },
     if (umax <= 0) continue;
     const casa = l.to === 'lisboa' && MONOPOLY.includes(l.g) ? CASA_SHARE : 1;
     const bid = l.margin + l.ask;
-    const { units, net } = bestLot(l, umax, 0, (u) => (u * bid * casa) / slip(u, l.appetite));
+    const { units, net } = bestLot(l, umax, 0, (u) => (u * bid * casa) / slip(u, l.appetite, l.appLot));
     if (net <= 0 || units <= 0) continue;
     if (TRACE) console.log(`  ${l.from}>${l.to} ${l.g}: ${units} units (stock ${Math.round(l.stock)}, appetite ${Math.round(l.appetite)}) ask ${l.ask.toFixed(1)} bid ${bid.toFixed(1)} net ${Math.round(net)}`);
     room -= units * l.bulk;
@@ -221,7 +223,7 @@ function tourNet(stops: string[], h: { crewFull: number; hold: number; tons: num
     if (umax <= 0) continue;
     const casa = MONOPOLY.includes(l.g) ? CASA_SHARE : 1;
     const bid = l.margin + l.ask, was = sold.get(l.g) ?? 0;
-    const { units, net } = bestLot(l, umax, was, (u) => (u * bid * casa) / slip(was + u, l.appetite));
+    const { units, net } = bestLot(l, umax, was, (u) => (u * bid * casa) / slip(was + u, l.appetite, l.appLot));
     if (net <= 0 || units <= 0) continue;
     sold.set(l.g, was + units);
     if (process.env.TT) console.log(`   ${l.from} ${l.g}: ${units}/${umax} (stock ${Math.round(l.stock)} lot ${l.lot === undefined ? '-' : Math.round(l.lot)} app ${Math.round(left)}) ask ${l.ask.toFixed(1)} bid ${bid.toFixed(1)} net ${Math.round(net)} t ${(units * l.bulk).toFixed(1)} room ${room.toFixed(0)}`);

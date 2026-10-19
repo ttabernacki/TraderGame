@@ -254,7 +254,7 @@ function saleUnit(g: Game, port: string, goodId: string, qty: number): number {
   const l = g.markets.listings(port, g.clock.t, g.relationsFor(port).regard, 0.3, [goodId]).find((x) => x.goodId === goodId);
   if (!l) return 0;
   // A master selling on commission does not get what a captain standing on the quay gets.
-  let unit = (l.bid / Markets.slippage(qty, l.appetite)) * 0.75;
+  let unit = (l.bid / Markets.sellSlippage(qty, l.appetite, l.appetiteLot)) * 0.75;
   // The King's goods go straight into the Casa's warehouse at the Casa's price:
   // no agent to pay on the quay, but the Crown's share instead.
   if (port === 'lisboa' && MONOPOLY.includes(goodId)) unit = (unit / 0.75) * 0.92;

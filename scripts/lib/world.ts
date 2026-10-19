@@ -180,7 +180,11 @@ function routeSpread(h: ReturnType<typeof makeHost>, t: number): number {
       if (!la || !lb || !la.local || la.stock <= 0 || lb.appetite <= 0) continue;
       const margin = lb.bid - la.ask;
       if (margin <= 0) continue;
-      profits.push(Math.min(la.stock, lb.appetite, 105 / g.bulk) * margin);
+      const u = Math.min(la.stock, lb.appetite, 105 / g.bulk);
+      // Where a second tier stands behind the first lot, the units beyond it cost more and fetch less.
+      const extra = la.lot === undefined ? 0 : u * la.ask * (Markets.slippage(u, la.stock, la.lot) - 1);
+      const short = lb.appetiteLot === undefined ? 0 : u * lb.bid * (1 - 1 / Markets.sellSlippage(u, lb.appetite, lb.appetiteLot));
+      profits.push(u * margin - extra - short);
     }
   }
   profits.sort((x, y) => x - y);

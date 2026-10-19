@@ -2599,7 +2599,7 @@ export class Game {
     if (take <= 0 || !lot) return { ok: false, text: 'They will not take any more of that.', ...none };
     const edge = this.tradeEdge(goodId);
     const base = quay ? l.rawBid / Math.sqrt(paymentAt(port).coin) : l.bid;
-    const got = (base / Markets.slippage(take, l.appetite)) * (1 + edge) * qualityFactor(lot.q);
+    const got = (base / Markets.sellSlippage(take, l.appetite, l.appetiteLot)) * (1 + edge) * qualityFactor(lot.q);
     const revenue = take * got;
     const costBasis = lot.cost * take;
     this.ship.removeCargo(goodId, take);
@@ -2654,7 +2654,7 @@ export class Game {
       const lot = this.ship.cargo.find((c) => c.goodId === g.goodId);
       if (!l || !lot || g.qty <= 0) continue;
       const q = Math.min(g.qty, lot.quantity, l.appetite);
-      yours += q * (l.rawBid / Markets.slippage(q, l.appetite)) * l.barter * qualityFactor(lot.q);
+      yours += q * (l.rawBid / Markets.sellSlippage(q, l.appetite, l.appetiteLot)) * l.barter * qualityFactor(lot.q);
     }
     for (const t of take) {
       const l = ls.get(t.goodId);

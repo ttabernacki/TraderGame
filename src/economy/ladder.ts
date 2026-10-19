@@ -124,15 +124,27 @@ export const DEEP_PRICE = { base: 1.6, rise: 1.6 };
 /** A deep pool in the wholesale season (the pepper harvest, the clove ships) and out of it. */
 export const DEEP_SEASON = { inSeason: 1.35, out: 0.85 };
 
-/** Units of a dense good the merchant houses of a port will sell to a buyer who can lift them, over and above the first lot. 0 where there is no second tier. */
-export function deepUnits(def: PortDef, g: Good, level: number, month: number, worth = def.wealth): number {
-  const money = DEEP_PROFIT[regionOf(def.id)];
+/**
+ * The same, for what the buyers behind the first lot will take at Lisbon: the Flemish and German houses (the Fuggers, the Welsers,
+ * Antwerp's factors) who come for the autumn sale of the Casa's spice. A great hold of pepper has somewhere to go, at a worse price.
+ */
+export const DEEP_DEMAND: Partial<Record<Region, number>> = { europe: 20000 };
+/** What those buyers pay: the first unit beyond the first lot fetches 1/base of the quoted bid, and a deep pool fully sold 1/(base+rise). */
+export const DEEP_BID = { base: 1.3, rise: 1.5 };
+
+/**
+ * Units of a dense good the merchant houses of a port will sell (kind 'produces') or take (kind 'wants') to a buyer
+ * who can lift them, over and above the first lot. 0 where there is no second tier.
+ */
+export function deepUnits(def: PortDef, g: Good, level: number, month: number, worth = def.wealth, kind: 'produces' | 'wants' = 'produces'): number {
+  const money = (kind === 'produces' ? DEEP_PROFIT : DEEP_DEMAND)[regionOf(def.id)];
   if (!money || isStaple(g) || level <= 0) return 0;
   const wealth = SHARE_FLOOR + (1 - SHARE_FLOOR) * Math.min((0.5 + worth) / 1.5, 1.2);
   const kt = HOUSE_KT[polityOfPort(def.id)?.id ?? ''] ?? 5000;
-  const houses = Math.min(Math.max(kt / 8000, 0.5), 1.5);
-  // The wholesale season: the harvest fair of the port, if it has one for this good.
-  const fairGood = FAIRS.some((f) => f.ports.includes(def.id) && f.goods[g.id] && f.goods[g.id].ask !== undefined);
-  const season = !fairGood ? 1 : fairsAt(def.id, month).some((f) => f.goods[g.id]?.ask !== undefined) ? DEEP_SEASON.inSeason : DEEP_SEASON.out;
+  const houses = kind === 'wants' ? 1 : Math.min(Math.max(kt / 8000, 0.5), 1.5);
+  // The wholesale season: the harvest fair of the port (what is sold) or the autumn sale (what is bought), if it has one for this good.
+  const side = kind === 'produces' ? 'ask' : 'bid';
+  const fairGood = FAIRS.some((f) => f.ports.includes(def.id) && f.goods[g.id]?.[side] !== undefined);
+  const season = !fairGood ? 1 : fairsAt(def.id, month).some((f) => f.goods[g.id]?.[side] !== undefined) ? DEEP_SEASON.inSeason : DEEP_SEASON.out;
   return Math.floor((money * wealth * level * houses * season) / (MARGIN_PER_LISBON * Math.max(g.lisbon, 0.01)));
 }

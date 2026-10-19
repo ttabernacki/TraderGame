@@ -175,8 +175,8 @@ export function stepHouse(host: WorldHost, t: number): void {
       host.worldNote?.(v.to, `${r.name}’s house lost a cargo of ${gd.english.toLowerCase()} on the road to ${portDef(v.to).name}.`);
       continue;
     }
-    const got = (v.qty * l.bid * casa * TAKE_HOME) / slip(v.qty, l.appetite);
-    mk.sell(v.to, v.goodId, Math.min(v.qty, Math.max(1, l.appetite)));
+    const got = (v.qty * l.bid * casa * TAKE_HOME) / slip(v.qty, l.appetiteLot ?? l.appetite);
+    mk.sell(v.to, v.goodId, Math.min(v.qty, Math.max(1, l.appetiteLot ?? l.appetite)));
     h.capital += got;
     h.profit += got - v.cost;
     // Undercut: the margin he sailed for is gone, and the captain's weight is on that quay.
@@ -218,7 +218,7 @@ export function stepHouse(host: WorldHost, t: number): void {
           const casa = b === 'lisboa' && MONOPOLY.includes(gid) ? Math.max(CASA_SHARE, 0.9) : 1;
           const margin = lb.bid * casa - ask.ask;
           if (margin <= 0) continue;
-          const qty = Math.floor(Math.min((ask.lot ?? ask.stock) * 0.4, lb.appetite, HOLD_T / Math.max(gd.bulk, 0.001), (h.capital - RESERVE) / (ask.ask * 1.2)));
+          const qty = Math.floor(Math.min((ask.lot ?? ask.stock) * 0.4, lb.appetiteLot ?? lb.appetite, HOLD_T / Math.max(gd.bulk, 0.001), (h.capital - RESERVE) / (ask.ask * 1.2)));
           if (qty < 2) continue;
           // An ally keeps off the captain's lanes.
           const crowd = mk.volumeOf(a, gid).bought + mk.volumeOf(b, gid).sold;

@@ -3,7 +3,7 @@ import { clamp, lerp } from '../core/math';
 import { fbm1 } from '../core/rng';
 import { GOODS, good, type Good } from './goods';
 import { PORTS, portDef, type PortDef } from '../world/ports';
-import { lotUnits, deepUnits, DEEP_PRICE } from './ladder';
+import { lotUnits, deepUnits, DEEP_PRICE, DEEP_BID } from './ladder';
 import { dateFromDays } from '../core/clock';
 
 export interface Listing {
@@ -15,8 +15,10 @@ export interface Listing {
    * of `stock` on offer at the quoted ask. The rest is sold dearer, and the more of it the dearer (Markets.slippage). Absent where there is one tier.
    */
   lot?: number;
-  /** Units the port still wants to buy before its appetite is satisfied. */
+  /** Units the port still wants to buy before its appetite is satisfied: the first lot and, where there is one, the deeper buyers behind it. */
   appetite: number;
+  /** Where deeper buyers stand behind the first lot (Lisbon's Flemish and German houses): the units of `appetite` at the quoted bid. The rest fetch less (Markets.sellSlippage). Absent where there is one tier. */
+  appetiteLot?: number;
   /** What they ask, per unit, before any bargaining. */
   ask: number;
   /** What they offer, per unit, before any bargaining. */
@@ -414,6 +416,7 @@ export class Markets {
     const season = fbm1(t / (86400 * 40) + hashPort(portId), 2, 3) * 0.14;
     // What the Powers are doing to this place (war, embargo, a Front's stage): read once, applied per good.
     const fx = this.modifiers ? this.modifiers(portId, t) : null;
+    const month = dateFromDays(Math.floor(t / 86400)).month;
 
     for (const g of GOODS) {
       const abundance = def.produces[g.id] ?? 0;
@@ -426,6 +429,7 @@ export class Markets {
       // The houses behind the first lot: what is still in their godowns, over and above it.
       const deepLeft = abundance > 0 ? Math.max(0, this.deepBaseOf(portId, g.id, t) - (s.deep?.[g.id] ?? 0)) : 0;
       const hasDeep = abundance > 0 && deepUnits(def, g, abundance, 1, 1) > 0;
+      const deepWant = hunger > 0 ? deepUnits(def, g, hunger, month, this.wealthOf(def), 'wants') : 0;
       const glut = s.glut[g.id] ?? 0;
 
       let priceFactor: number;
@@ -474,7 +478,8 @@ export class Markets {
         // empty anywhere — which is the thing this whole section exists to
         // prevent. The price at full glut is a fraction of the good's worth, so
         // this is a way to cut a loss and never a way to make money.
-        appetite: fx?.closed ? 0 : Math.max(1, Math.floor(this.appetiteFor(def, g, hunger, abundance) * (1 - glut) * (fx?.appetiteMult[g.id] ?? 1))),
+        appetite: fx?.closed ? 0 : Math.max(1, Math.floor((this.appetiteFor(def, g, hunger, abundance) + deepWant) * (1 - glut) * (fx?.appetiteMult[g.id] ?? 1))),
+        ...(deepWant > 0 ? { appetiteLot: fx?.closed ? 0 : Math.max(1, Math.floor(this.appetiteFor(def, g, hunger, abundance) * (1 - glut) * (fx?.appetiteMult[g.id] ?? 1))) } : {}),
         ask: Math.max(0.4, mid * (1 + spread) * mod.ask * world.ask * (fx?.priceMult[g.id] ?? 1)),
         bid: Math.max(0.2, bid * mod.bid * world.bid * (fx?.priceMult[g.id] ?? 1)),
         local: abundance > 0,
@@ -496,7 +501,7 @@ export class Markets {
    * true and the thing that stops "buy the entire market in one click" from
    * being the optimal play in every port.
    */
-  static slippage(quantity: number, available: number, lot?: number): number {
+  static slippage(quantity: number, available: number, lot?: number, curve: { base: number; rise: number } = DEEP_PRICE): number {
     if (available <= 0) return 1;
     if (lot === undefined || lot >= available || quantity <= 0) {
       const share = clamp(quantity / available, 0, 1);
@@ -507,8 +512,13 @@ export class Markets {
     const q = Math.min(quantity, available);
     const n1 = Math.min(q, Math.max(0, lot)), n2 = q - n1, deep = available - Math.max(0, lot);
     const first = lot > 0 ? n1 * (1 + 0.55 * (n1 / lot) ** 2) : 0;
-    const second = n2 * (DEEP_PRICE.base + DEEP_PRICE.rise * 0.5 * clamp(n2 / deep, 0, 1));
+    const second = n2 * (curve.base + curve.rise * 0.5 * clamp(n2 / deep, 0, 1));
     return (first + second) / q;
+  }
+
+  /** The same for a sale: divide the bid by it. Beyond the first lot the deeper buyers pay less, and less the more they are sold. */
+  static sellSlippage(quantity: number, appetite: number, lot?: number): number {
+    return Markets.slippage(quantity, appetite, lot, DEEP_BID);
   }
 
   /** Record a purchase, which draws down stock and pushes the price up. */
@@ -534,7 +544,11 @@ export class Markets {
     const g = good(goodId);
     const appetite = Math.max(1, this.appetiteFor(
       def, g, def.wants[goodId] ?? 0, def.produces[goodId] ?? 0));
-    s.glut[goodId] = clamp((s.glut[goodId] ?? 0) + quantity / appetite, 0, 3);
+    // Whatever the deeper buyers took is spread over their whole pool, not over the first lot alone.
+    const deepWant = (def.wants[goodId] ?? 0) > 0 ? deepUnits(def, g, def.wants[goodId], dateFromDays(Math.floor(s.lastUpdate / 86400)).month, this.wealthOf(def), 'wants') : 0;
+    const glutNow = s.glut[goodId] ?? 0;
+    const first = Math.min(quantity, Math.max(1, appetite * (1 - glutNow)));
+    s.glut[goodId] = clamp(glutNow + first / appetite + (quantity - first) / (appetite + deepWant), 0, 3);
     this.noteVolume(portId, goodId, 's', quantity);
     if (def.produces[goodId]) {
       const base = this.baseStock(def, g, def.produces[goodId]);
