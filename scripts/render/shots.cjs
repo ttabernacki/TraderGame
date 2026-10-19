@@ -19,7 +19,7 @@ fs.copyFileSync(path.join(__dirname, 'index.html'), build + '/index.html');
 (async () => {
   const w = +(args.w || 960), h = +(args.h || 540);
   const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium', args: ['--headless=new', '--use-gl=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'], ignoreDefaultArgs: ['--headless=old'] });
-  const p = await b.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
+  let p = await b.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
   const errs = [];
   p.on('pageerror', (e) => errs.push('PAGEERR ' + e.message));
   p.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errs.push(m.type() + ' ' + m.text().slice(0, 400)); });
@@ -27,7 +27,18 @@ fs.copyFileSync(path.join(__dirname, 'index.html'), build + '/index.html');
   await p.evaluate((o) => window.setup(o), { w, h });
   const scenes = (args.scenes || 'noon').split(',');
   for (const s of scenes) {
-    const stats = await p.evaluate(([s, o]) => window.shoot(s, o), [s, { tier: args.tier, legacy: args.legacy === '1', cam: args.cam, hull: args.hull, sign: args.sign ? +args.sign : 1, frames: args.frames ? +args.frames : undefined }]);
+    if (args.seq === '1') { await p.close(); p = await b.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 }); p.on('pageerror', (e) => errs.push('PAGEERR ' + e.message)); await p.goto('file://' + build + '/index.html'); await p.evaluate((o) => window.setup(o), { w, h }); }
+    const opts = { tier: args.tier, legacy: args.legacy === '1', cam: args.cam, hull: args.hull, sign: args.sign ? +args.sign : 1, frames: args.frames ? +args.frames : undefined, n: args.n ? +args.n : undefined, w, h, };
+    const fn = args.seq === '1' ? 'seq' : 'shoot';
+    if (fn === 'seq' && args.ref === '1') {
+      // ground truth: the same sequence at 3x, from a fresh page so the water starts from the same state
+      const p2 = await b.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });
+      await p2.goto('file://' + build + '/index.html');
+      await p2.evaluate((o) => window.setup(o), { w, h });
+      const refd = await p2.evaluate(([s, o]) => window.seq(s, o), [s, { ...opts, refOnly: true }]);
+      opts.refLuma = refd.luma; await p2.close();
+    }
+    const stats = await p.evaluate(([s, o, fn]) => window[fn](s, o), [s, opts, fn]);
     await p.locator('#c').screenshot({ path: path.join(outDir, `${s}-${label}.png`), timeout: 240000 });
     console.log(JSON.stringify({ scene: s, label, ...stats }));
   }

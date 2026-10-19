@@ -3,6 +3,7 @@ import { GOOD_BY_ID } from '../economy/goods';
 import { NM, clamp, haversine, wrap360 } from '../core/math';
 import type { Rng } from '../core/rng';
 import { PORTS, portDef } from '../world/ports';
+import { REGION_BY_ID, effectiveLevel, epochAt, regionAtFrontier, type Holding } from '../knowledge/sheetRegions';
 
 /**
  * The other captain.
@@ -49,6 +50,26 @@ export interface RivalState {
   /** His ships' trading: when the last one was decided, and the last few cargoes. */
   tradeT?: number;
   cargoes?: { t: number; port: string; goodId: string; qty: number }[];
+  /**
+   * The survey sheets he holds, by region (D3): bought from the captain, or published to everyone. What he
+   * knows of a coast he has not yet worked sets how fast he works it, so a sheet sold or given is a clock
+   * wound on. Written by knowledge/sheets; read here.
+   */
+  sheets?: Record<string, Holding>;
+}
+
+/** What he is held to know of a region at `year`: 0 (nothing) to 3, after the silting of what he was sold. */
+export function rivalLevel(r: RivalState, region: string, seed: number, year: number): number {
+  return effectiveLevel(r.sheets?.[region], epochAt(seed, region, year));
+}
+
+/** Per grade of the coast ahead of him, the extra pace a sheet gives him. */
+export const SHEET_PACE = 0.15;
+
+/** The grade of the stretch he is working now, which is what a sheet is worth to him. */
+export function rivalFrontierKnowledge(r: RivalState, seed: number, year: number): number {
+  const region = regionAtFrontier(r.frontierLat);
+  return REGION_BY_ID.has(region) ? rivalLevel(r, region, seed, year) : 0;
 }
 
 const RIVALS = [
@@ -94,13 +115,15 @@ export interface RivalNews {
  */
 export function advanceRival(
   r: RivalState, days: number, playerLat: number, playerStanding: number, rng: Rng,
+  /** Grade (0-3) of the coast he is working, from the sheets he holds (rivalFrontierKnowledge). */
+  knowledge = 0,
 ): RivalNews | null {
   if (r.eclipsed) return null;
 
   // Degrees of latitude a year, tapering with distance from home.
   const reach = clamp(1 - Math.abs(r.frontierLat) / 46, 0.25, 1);
   const behind = clamp((r.frontierLat - playerLat) / 25, 0, 1.2);
-  const rate = (3.1 * reach + behind * 1.6) / 365;
+  const rate = (3.1 * reach + behind * 1.6) * (1 + SHEET_PACE * knowledge) / 365;
   const before = r.frontierLat;
   r.frontierLat -= rate * days;
   r.standing += days * 0.035 * reach;

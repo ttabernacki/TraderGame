@@ -54,6 +54,11 @@ export interface MarketState {
    * applied in one lump (a ship arriving) or month by month (the world tick). Absent in older saves.
    */
   disturbed?: number;
+  /**
+   * What outsiders to the lane sim (the player, his Lines, the rival) have bought off this quay and sold onto it lately,
+   * by good, decaying month by month (world/lanes). Absent in older saves.
+   */
+  vol?: { b: Record<string, number>; s: Record<string, number> };
 }
 
 /**
@@ -294,6 +299,62 @@ export class Markets {
     }
   }
 
+  /** The baseline stock of a good a port produces (0 if it does not). */
+  baseOf(portId: string, goodId: string): number {
+    const def = portDef(portId);
+    const abundance = def.produces[goodId] ?? 0;
+    if (abundance <= 0) return 0;
+    return this.baseStock(def, good(goodId), abundance);
+  }
+
+  /** Units a port still wants of a good, before the Powers' multiplier: its appetite less what it is sated with. 0 if it does not want it. */
+  appetiteLeft(portId: string, goodId: string): number {
+    const def = portDef(portId);
+    const hunger = def.wants[goodId] ?? 0;
+    if (hunger <= 0) return 0;
+    return this.baseAppetite(def, good(goodId), hunger) * Math.max(0, 1 - (this.stateFor(portId).glut[goodId] ?? 0));
+  }
+
+  /** A lane's cargo landed: sates a port that wants it, restocks one that makes it. Returns what was taken in. */
+  receive(portId: string, goodId: string, units: number): number {
+    if (units <= 0) return 0;
+    const def = portDef(portId);
+    const g = good(goodId);
+    const s = this.stateFor(portId);
+    const hunger = def.wants[goodId] ?? 0;
+    let took = 0;
+    if (hunger > 0) {
+      const appetite = Math.max(1, this.baseAppetite(def, g, hunger));
+      s.glut[goodId] = clamp((s.glut[goodId] ?? 0) + units / appetite, 0, 3);
+      took = units;
+    } else if ((def.produces[goodId] ?? 0) > 0) {
+      took = this.addStock(portId, goodId, units);
+    }
+    return took;
+  }
+
+  /** What outsiders have bought off and sold onto this quay lately. */
+  volumeOf(portId: string, goodId: string): { bought: number; sold: number } {
+    const v = this.stateFor(portId).vol;
+    return { bought: v?.b[goodId] ?? 0, sold: v?.s[goodId] ?? 0 };
+  }
+
+  /** Let the volume record fade (the lane pass does this once a month). */
+  decayVolume(portId: string, keep: number): void {
+    const v = this.stateFor(portId).vol;
+    if (!v) return;
+    for (const m of [v.b, v.s]) {
+      for (const k of Object.keys(m)) { m[k] *= keep; if (m[k] < 0.05) delete m[k]; }
+    }
+    if (Object.keys(v.b).length === 0 && Object.keys(v.s).length === 0) delete this.stateFor(portId).vol;
+  }
+
+  private noteVolume(portId: string, goodId: string, side: 'b' | 's', quantity: number): void {
+    const st = this.stateFor(portId);
+    const v = (st.vol ??= { b: {}, s: {} });
+    v[side][goodId] = (v[side][goodId] ?? 0) + quantity;
+  }
+
   /**
    * For the lanes pass (D1): move `units` of a good onto (+) or off (-) the quay,
    * within what the port can hold. Returns what actually moved.
@@ -423,6 +484,7 @@ export class Markets {
     const base = this.baseStock(def, g, def.produces[goodId] ?? 0);
     s.stock[goodId] = Math.max(0, (s.stock[goodId] ?? base) - quantity);
     s.disturbed = s.lastUpdate;
+    this.noteVolume(portId, goodId, 'b', quantity);
   }
 
   /** Record a sale, which sates the port's appetite and drives the price down. */
@@ -433,6 +495,7 @@ export class Markets {
     const appetite = Math.max(1, this.appetiteFor(
       def, g, def.wants[goodId] ?? 0, def.produces[goodId] ?? 0));
     s.glut[goodId] = clamp((s.glut[goodId] ?? 0) + quantity / appetite, 0, 3);
+    this.noteVolume(portId, goodId, 's', quantity);
     if (def.produces[goodId]) {
       const base = this.baseStock(def, g, def.produces[goodId]);
       s.stock[goodId] = Math.min(base * 1.4, (s.stock[goodId] ?? base) + quantity * 0.5);

@@ -40,7 +40,7 @@ const SCENES: Record<string, Scene> = {
   whitecap: { lat: 38, lon: -25, hour: 14.0, cloud: 0.6, wind: 26, windFrom: 250, wave: 3.2, vis: 12, heading: 70, pitch: -5 },
 };
 
-declare global { interface Window { shoot: (scene: string, o?: Record<string, unknown>) => Promise<unknown>; setup: (o: Record<string, unknown>) => void } }
+declare global { interface Window { seq: (scene: string, o?: Record<string, unknown>) => Promise<unknown>; shoot: (scene: string, o?: Record<string, unknown>) => Promise<unknown>; setup: (o: Record<string, unknown>) => void } }
 
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 let r: Renderer | null = null;
@@ -117,4 +117,100 @@ window.shoot = async (name, o = {}) => {
   const box = sm ? (sm.geometry.boundingBox ?? (sm.geometry.computeBoundingBox(), sm.geometry.boundingBox)) : null;
   const gp = (rr as any).settlements?.group.position;
   return { ...stats, town: box ? [box.min.x + gp.x, box.max.x + gp.x, box.min.z + gp.z, box.max.z + gp.z].map((n: number) => Math.round(n)) : null };
+};
+
+/**
+ * Temporal flicker harness. Renders N frames of a ship under way at 60 Hz (so the camera and the water
+ * move by what they would in a frame) and measures, over the sea only: the mean absolute change in luma
+ * between consecutive frames (flicker; 0-255), the fraction of sea pixels that differ from their frame
+ * neighbour by more than 24 levels (sparkle), and the mean absolute step between horizontally adjacent
+ * pixels (edge energy, which aliased detail raises). Ship, sky and the wake are masked out.
+ */
+const REF: { frames: Uint8ClampedArray[] } = { frames: [] };
+
+/** Render n frames of the ship under way at 60 Hz, at ss times the resolution, box-filtered back to w x h. */
+async function capture(name: string, o: Record<string, unknown>, w: number, h: number, ss: number): Promise<Uint8ClampedArray[]> {
+  window.setup({ w: w * ss, h: h * ss });
+  await window.shoot(name, o);
+  const s = { ...SCENES[name], ...(o.scene as object) } as Scene;
+  const hull = hullClass((o.hull as string) ?? 'nau');
+  const rr = r as unknown as Renderer;
+  const n = Number(o.n ?? 8);
+  const W = w * ss, H = h * ss;
+  const c2 = document.createElement('canvas'); c2.width = W; c2.height = H;
+  const g = c2.getContext('2d', { willReadFrequently: true })!;
+  const hd = s.heading * Math.PI / 180;
+  const sp = Number(o.speed ?? 3.4);
+  let t = 2e9, lat = s.lat, lon = s.lon;
+  const out: Uint8ClampedArray[] = [];
+  for (let i = 0; i < n + 6; i++) {
+    const dt = 1 / 60;
+    lat += Math.cos(hd) * sp * dt / 111320; lon += Math.sin(hd) * sp * dt / (111320 * Math.cos(lat * Math.PI / 180));
+    rr.render(frameOf({ ...s, lat, lon }, t, hull), dt, dt); t += dt;
+    if (i < 6) continue;
+    g.drawImage(canvas, 0, 0);
+    const d = g.getImageData(0, 0, W, H).data;
+    if (ss === 1) { out.push(d.slice()); continue; }
+    const f = new Uint8ClampedArray(w * h * 4);
+    const inv = 1 / (ss * ss);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let r0 = 0, g0 = 0, b0 = 0;
+      for (let yy = 0; yy < ss; yy++) for (let xx = 0; xx < ss; xx++) {
+        const i4 = ((y * ss + yy) * W + x * ss + xx) * 4; r0 += d[i4]; g0 += d[i4 + 1]; b0 += d[i4 + 2];
+      }
+      const o4 = (y * w + x) * 4; f[o4] = r0 * inv; f[o4 + 1] = g0 * inv; f[o4 + 2] = b0 * inv; f[o4 + 3] = 255;
+    }
+    out.push(f);
+  }
+  window.setup({ w, h });
+  return out;
+}
+
+/**
+ * Temporal flicker harness. Over the sea only (ship column, sky and the lowest rows masked):
+ *   flicker  mean |luma change| between consecutive 60 Hz frames, 0-255
+ *   sparkle  per cent of sea pixels that change by more than 24 levels in one frame
+ *   edge     mean |luma step| between horizontally adjacent pixels (aliased detail raises it)
+ *   err      mean |luma difference| from the same frames rendered at 3x and box-filtered (ground truth); needs ref=1
+ *   refFlicker  the 3x reference's own flicker: the part of the motion that is real water, not aliasing
+ */
+window.seq = async (name, o = {}) => {
+  const w = Number(o.w), h = Number(o.h);
+  if (o.refOnly) {
+    const fr = await capture(name, o, w, h, 3);
+    return { luma: fr.map((f) => Array.from({ length: w * h }, (_, i) => Math.round(0.2126 * f[i * 4] + 0.7152 * f[i * 4 + 1] + 0.0722 * f[i * 4 + 2]))) };
+  }
+  if (o.refLuma) REF.frames = (o.refLuma as number[][]).map((l) => { const f = new Uint8ClampedArray(w * h * 4); for (let i = 0; i < w * h; i++) { f[i * 4] = f[i * 4 + 1] = f[i * 4 + 2] = l[i]; f[i * 4 + 3] = 255; } return f; });
+  const grabs = await capture(name, o, w, h, 1);
+  const y0 = Math.round(h * Number(o.seaTop ?? 0.5)), y1 = Math.round(h * 0.82);
+  const xa = Math.round(w * 0.3), xb = Math.round(w * 0.7);
+  const lum = (d: Uint8ClampedArray, i: number) => 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+  const flick = (fs: Uint8ClampedArray[]) => {
+    let sum = 0, cnt = 0, spark = 0, edge = 0, ecnt = 0;
+    for (let k = 1; k < fs.length; k++) {
+      const a = fs[k - 1], b = fs[k];
+      for (let y = y0; y < y1; y++) for (let x = 0; x < w; x++) {
+        if (x > xa && x < xb) continue;
+        const i = (y * w + x) * 4;
+        const d = Math.abs(lum(a, i) - lum(b, i));
+        sum += d; cnt++; if (d > 24) spark++;
+        if (x + 1 < w && !(x + 1 > xa && x + 1 < xb)) { edge += Math.abs(lum(b, i) - lum(b, i + 4)); ecnt++; }
+      }
+    }
+    return { flicker: sum / cnt, sparkle: 100 * spark / cnt, edge: edge / ecnt };
+  };
+  const m = flick(grabs);
+  const res: Record<string, number> = { flicker: +m.flicker.toFixed(3), sparkle: +m.sparkle.toFixed(3), edge: +m.edge.toFixed(3) };
+  if (REF.frames.length) {
+    const rf = flick(REF.frames);
+    let e = 0, c = 0;
+    for (let k = 0; k < grabs.length && k < REF.frames.length; k++) {
+      for (let y = y0; y < y1; y++) for (let x = 0; x < w; x++) {
+        if (x > xa && x < xb) continue;
+        const i = (y * w + x) * 4; e += Math.abs(lum(grabs[k], i) - lum(REF.frames[k], i)); c++;
+      }
+    }
+    res.refFlicker = +rf.flicker.toFixed(3); res.refEdge = +rf.edge.toFixed(3); res.err = +(e / c).toFixed(3);
+  }
+  return res;
 };

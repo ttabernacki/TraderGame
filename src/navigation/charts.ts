@@ -775,6 +775,25 @@ export class Chart {
     return this.points.size;
   }
 
+  /**
+   * An heir's inheritance of the sheet (D3): the drawing is kept, the confidence is not.
+   *
+   * A father's passes are his, and his reckonings were agreed by him; a son who takes the paper takes it
+   * on trust. Every stretch that has been run keeps its drawn position and is capped at one pass, standing
+   * below the agreed mark, so it reads Sketch where it read Surveyed and a run of soundings in the book is
+   * what lifts it back. Never touches the position, never below Sketch. Returns the points discounted.
+   */
+  discount(cap = 0.8 * AGREED_W): number {
+    let n = 0;
+    for (const p of this.points.values()) {
+      if (p.passes <= 0) continue;
+      if (p.passes > 1 || p.wLon > cap) n++;
+      p.passes = 1;
+      p.wLon = Math.min(p.wLon, cap);
+    }
+    return n;
+  }
+
   /** How well one stretch of coast is drawn, for the chart's own shading. */
   qualityAt(key: string): number {
     const p = this.points.get(key);
