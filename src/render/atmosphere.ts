@@ -129,15 +129,15 @@ export const SKY_K = 28;
 /**
  * Single scattering is paler than a real sky (it has no second bounce to push
  * the blue further and no ground to warm the horizon) and the eye is not a
- * linear sensor. Chroma about the luminance, in linear light, restores it; this
+ * linear sensor. A power-law chroma boost about the luminance (it cannot go negative), in linear light, restores it; this
  * and the exposure are the two numbers the model is calibrated with.
  */
-export const SKY_SAT = 1.6;
+export const SKY_SAT = 1.9;
 export function display(L: Vec3, k = SKY_K): Vec3 {
   const out: Vec3 = [0, 0, 0];
   const lum = 0.2126 * L[0] + 0.7152 * L[1] + 0.0722 * L[2];
   for (let i = 0; i < 3; i++) {
-    const c = Math.max(lum + (L[i] - lum) * SKY_SAT, 0);
+    const c = lum > 1e-9 ? lum * Math.pow(Math.max(L[i], 0) / lum, SKY_SAT) : 0;
     const x = 1 - Math.exp(-k * c);
     out[i] = Math.pow(Math.max(x, 0), 1 / 2.2);
   }
@@ -277,7 +277,7 @@ void main() {
     L += trans * (BETA_R * rR * pr + BETA_M_SCA * rM * pm) * dt;
   }
   float lum = dot(L, vec3(0.2126, 0.7152, 0.0722));
-  vec3 c = max(vec3(lum) + (L - vec3(lum)) * ${SKY_SAT.toFixed(3)}, 0.0);
+  vec3 c = lum > 1.0e-9 ? vec3(lum) * pow(max(L, 0.0) / lum, vec3(${SKY_SAT.toFixed(3)})) : vec3(0.0);
   vec3 x = 1.0 - exp(-uK * c * ${SUN_E.toFixed(3)});
   gl_FragColor = vec4(pow(max(x, 0.0), vec3(1.0 / 2.2)), 1.0);
 }`;

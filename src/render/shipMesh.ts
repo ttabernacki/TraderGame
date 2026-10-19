@@ -21,6 +21,52 @@ const IRON = 0x2f2a24;
  */
 let SHEER = 1;
 
+/** 1 for the upgraded sail (light carried through the cloth, weave in the bump), 0 for the old flat one. */
+export const SAIL_TRANS = { value: 1 };
+
+let weaveTex: THREE.CanvasTexture | null = null;
+/** A fine plain weave, procedural and tiny, tiled over the whole sail through the bump map. */
+function weaveTexture(): THREE.Texture {
+  if (weaveTex) return weaveTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#808080'; g.fillRect(0, 0, 32, 32);
+  for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) {
+    g.fillStyle = (i + j) % 2 ? '#b0b0b0' : '#505050';
+    g.fillRect(i * 4, j * 4, 4, 4);
+  }
+  weaveTex = new THREE.CanvasTexture(c);
+  weaveTex.wrapS = weaveTex.wrapT = THREE.RepeatWrapping;
+  weaveTex.repeat.set(70, 50);
+  weaveTex.anisotropy = 4;
+  return weaveTex;
+}
+
+/**
+ * Canvas is thin: sun on the far side comes through it, warm, which is the
+ * whole of why a square-rigger seen from astern glows. Adds the transmitted
+ * part of the key light for a face lit from behind.
+ */
+function sailTranslucency(m: THREE.MeshLambertMaterial): THREE.MeshLambertMaterial {
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uSailTrans = SAIL_TRANS;
+    sh.fragmentShader = 'uniform float uSailTrans;\n' + sh.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      `#if NUM_DIR_LIGHTS > 0
+      {
+        vec3 Lk = directionalLights[0].direction;
+        float behind = max(-dot(normal, Lk), 0.0);
+        outgoingLight += diffuseColor.rgb * vec3(1.0, 0.86, 0.62) * directionalLights[0].color * (behind * 0.16 * uSailTrans);
+      }
+      #endif
+      #include <opaque_fragment>`,
+    );
+  };
+  m.customProgramCacheKey = () => 'sail-trans';
+  return m;
+}
+
 /** Planked timber: the shared plank texture, multiplied by the colour given. */
 function timber(color: number | THREE.Color, vertexColors = false): THREE.MeshStandardMaterial {
   const tex = plankTexture();
@@ -370,9 +416,10 @@ export class ShipMesh {
 
     const sail = new THREE.Mesh(
       build.geometry,
-      new THREE.MeshLambertMaterial({
+      sailTranslucency(new THREE.MeshLambertMaterial({
         side: THREE.DoubleSide,
         map: makeSailTexture(build, device, this.look, this.masts.length),
+        bumpMap: weaveTexture(), bumpScale: 0.5,
         transparent: true,
         // Canvas is thin enough that the sun glows through it, so a backlit sail
         // is never just a black shape against the sky — and that glow is the
@@ -380,7 +427,7 @@ export class ShipMesh {
         // astern. It was set so low it did nothing. Still short of swamping the
         // shading, because a sail with no shading on it has no shape.
         emissive: 0x3a352a,
-      }),
+      })),
     );
     pivot.add(sail);
 

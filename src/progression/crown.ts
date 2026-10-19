@@ -402,6 +402,9 @@ const PATENT_TEMPLATES: {
   },
 ];
 
+/** Share of the old reward paid for the early commissions (rewards up to 1,500), tuned against the ladder in docs/BALANCE.md. */
+export const COMMISSION_SCALE = 0.55;
+
 export class Crown {
   /**
    * Renown in hand, which the court spends against and the captain can lose.
@@ -642,7 +645,8 @@ export class Crown {
       const ret = this.patent.objectives.find((o) => o.kind === 'return');
       if (ret) { ret.complete = true; ret.progress = 1; }
       this.patent.complete = true;
-      const pay = Math.round(this.patent.reward * kGold);
+      // B3: through Act III the King's commission is about a third of a captain's income, not all of it.
+      const pay = Math.round(this.patent.reward * kGold * (this.patent.reward <= 1500 ? COMMISSION_SCALE : 1));
       const renown = Math.round(this.patent.standingReward * kStanding);
       gold += pay;
       standing += renown;

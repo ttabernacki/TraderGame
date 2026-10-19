@@ -99,7 +99,7 @@ export function fitPlan(g: Game, plan: StoresPlan): StoresPlan {
     spares: clamp(plan.spares, 0, 1),
   };
   // Spares give way last, then victuals, then water: a ship goes short of timber before she goes short of water.
-  for (let guard = 0; guard < 400 && planTons(out, g.crew.complement, hold, fx) > room + 1e-6; guard++) {
+  for (let guard = 0; guard < 3000 && planTons(out, g.crew.complement, hold, fx) > room + 1e-6; guard++) {
     if (out.victuals > 0 && out.victuals >= out.water * 1.1) out.victuals -= 1;
     else if (out.water > 0) out.water -= 1;
     else if (out.victuals > 0) out.victuals -= 1;
@@ -168,3 +168,6 @@ export function trimToHold(g: Game): void {
   if (fit.spares < have.spares) g.crew.spares = fit.spares;
   g.syncStores();
 }
+
+/** Crew wages, cruzados per man per month (B3 upkeep; scripts/econ.ts uses the same figure). */
+export const WAGE_PER_MAN_MONTH = 4;

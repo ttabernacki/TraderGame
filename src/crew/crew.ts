@@ -92,6 +92,8 @@ export interface CrewState {
   provisions: Provisions;
   /** Spares aboard (timber, cordage, canvas): a fraction of a full set, 0-1. See game/stores. */
   spares?: number;
+  /** Wages accrued and not yet paid over, cruzados. */
+  wagesOwed?: number;
   /** The loading she last sailed with, for "same as last leg". */
   lastStores?: { water: number; victuals: number; spares: number };
   /** Rising unrest. Above one, they rise. */

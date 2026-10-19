@@ -10,7 +10,7 @@ import { initialSails } from '../../src/ship/physics';
 
 interface Scene {
   lat: number; lon: number; hour: number; day?: number; cloud: number; rain?: number; storm?: boolean;
-  wind: number; windFrom: number; wave: number; vis?: number; heading: number; cam?: string; moonDay?: number; sunLook?: boolean; pitch?: number;
+  wind: number; windFrom: number; wave: number; vis?: number; heading: number; cam?: string; moonDay?: number; sunLook?: boolean; headSun?: boolean; pitch?: number;
 }
 
 const SCENES: Record<string, Scene> = {
@@ -21,6 +21,7 @@ const SCENES: Record<string, Scene> = {
   night:    { lat: 20, lon: -35, hour: 23.0, cloud: 0.15, wind: 10, windFrom: 60, wave: 1.0, heading: 100, moonDay: 14 },
   overcast: { lat: 40, lon: -20, hour: 11.0, cloud: 0.95, rain: 0.25, wind: 18, windFrom: 220, wave: 2.6, vis: 8, heading: 60 },
   gale:     { lat: 45, lon: -20, hour: 15.0, cloud: 1.0, rain: 0.9, storm: true, wind: 42, windFrom: 250, wave: 7.5, vis: 3, heading: 70 },
+  backlit:  { headSun: true, lat: 20, lon: -35, hour: 16.6, cloud: 0.25, wind: 12, windFrom: 100, wave: 1.2, heading: 270, pitch: -4 },
   // coast / port
   coast:    { lat: 38.60, lon: -9.62, hour: 9.0, cloud: 0.3, wind: 12, windFrom: 330, wave: 1.2, heading: 20 },
   port:     { lat: 32.60, lon: -16.80, hour: 16.8, cloud: 0.3, wind: 8, windFrom: 40, wave: 0.8, heading: 340 },
@@ -74,6 +75,7 @@ window.shoot = async (name, o = {}) => {
   rr.resetEase();
   rr.resize();
   const t0 = 1e9;
+  if (s.headSun) { s.heading = sunPosition(s.lat, s.lon, 0, s.hour, s.day ?? 150).azimuth; }
   let pos = { ...s };
   const hd = s.heading * Math.PI / 180;
   const frames = Number(o.frames ?? 10);
@@ -84,7 +86,7 @@ window.shoot = async (name, o = {}) => {
   }
   const info = rr.renderer.info;
   const stats = {
-    mode: rr.renderMode, tier: rr.quality,
+    mode: rr.renderMode, tier: rr.quality, rtMB: +(((rr as any).post?.bytes ?? 0) / 1048576).toFixed(1), passes: (rr as any).post?.passes ?? 0,
     calls: rr.perf.last.calls, tris: rr.perf.last.triangles,
     geometries: info.memory.geometries, textures: info.memory.textures, programs: info.programs?.length ?? 0,
   };

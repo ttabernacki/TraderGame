@@ -11,6 +11,7 @@ import { QUALITY, loadAutoLevel, loadRenderMode, loadSetting, saveAutoLevel, sav
 import { PostStack, hdrSupported } from './post/stack';
 import { POST_EXPOSURE } from './post/color';
 import { PerfOverlay } from './perfOverlay';
+import { SAIL_TRANS } from './shipMesh';
 import { Spray } from './spray';
 import { depthAt, nearestShore } from '../world/landmass';
 import { hullClass, type HullClass } from '../ship/hull';
@@ -648,6 +649,7 @@ export class Renderer {
     // The ship pushes the water aside: a bow wave forward and a spreading wake
     // astern, both keyed to how hard she is driving.
     this.sky.setPhysical(this.renderMode === 'new' && !!this.post);
+    SAIL_TRANS.value = this.renderMode === 'new' ? 1 : 0;
     const lighting = this.sky.update(
       f.pos.lat, f.pos.lon, f.dayFromEpoch, f.hourLocal,
       f.dayOfYear, f.year, f.cloud, f.simTime,

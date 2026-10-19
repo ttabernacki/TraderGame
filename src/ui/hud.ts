@@ -1,4 +1,5 @@
 import { voyageOf } from '../campaigns/xiyang/imperial';
+import { GRADE_WORD, waterAt } from '../navigation/chartGrade';
 import { angleDelta, bearingTo, clamp, compassPoint, formatBearing, wrap360 } from '../core/math';
 import { ACT_CHARGE } from '../progression/chronicle';
 import { describeStranger, strangerIntentText } from '../game/encounter';
@@ -443,6 +444,7 @@ export class Hud {
           ? hudRow('Land bears', `${g.sounding.shoreBearing.toFixed(0).padStart(3, '0')}° — `
             + `${g.sounding.shoreDistNm > 90 ? 'no bottom' : `${g.sounding.shoreDistNm.toFixed(1)} miles`}`)
           : null,
+        hudRow('The water', waterWord(g)),
         g.helmOrder !== null && dest
           ? hudRow('The mark bears', `${dest.bearing.toFixed(0).padStart(3, '0')}° — H to resume`)
           : null,
@@ -1033,4 +1035,18 @@ function trimBarFor(m: MastTrim): HTMLElement {
         : null,
     ),
   );
+}
+
+let waterCache: { x: number; y: number; h: number; n: number; word: string } | null = null;
+
+/** One word for the water she is in: the grade of the nearest coast, or open sea. Recomputed as she moves. */
+function waterWord(g: Game): string {
+  const p = g.ship.state.pos;
+  const h = Math.floor(g.clock.t / 3600);
+  const n = g.chart.points.size;
+  if (!waterCache || Math.abs(waterCache.x - p.lat) > 0.05 || Math.abs(waterCache.y - p.lon) > 0.05 || waterCache.h !== h || waterCache.n !== n) {
+    const w = waterAt(g, p);
+    waterCache = { x: p.lat, y: p.lon, h, n, word: w.coastal ? GRADE_WORD[w.grade] : 'Open sea' };
+  }
+  return waterCache.word;
 }

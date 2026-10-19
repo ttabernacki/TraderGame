@@ -15,7 +15,7 @@ import {
   rumoursHeard,
 } from '../progression/quests';
 import { cancelPortQuests, migrateEstate, settleFoldedPieces, settleStoresOverflow, migrateFittings } from './saveResolvers';
-import { loadPlan, planOf, recordLeg, storesTons, trimToHold } from './stores';
+import { WAGE_PER_MAN_MONTH, loadPlan, planOf, recordLeg, storesTons, trimToHold } from './stores';
 import { migrateEnterprises, tickLines, type Letter, type Line } from '../progression/network';
 import { deliverFactoryMail, noteSightings, postLetter, tickFactories, transitDays } from '../progression/livingFactory';
 import { ambientAtSea, barkAt } from '../progression/barks';
@@ -115,6 +115,7 @@ import { XIYANG_FLEET } from '../campaigns/xiyang/places';
 import { evaluateImperial, imperialArrival, newImperial, type ImperialState } from '../campaigns/xiyang/imperial';
 import { rollOfficerEvent } from './officerEvents';
 import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty';
+import { gradeAt as gradeAtPos, laneRisk as laneRiskOf, type Grade } from '../navigation/chartGrade';
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
 import { featureNear, type CoastFeature } from '../world/features';
 import { charterDays, daysLeft, offerVentures, ventureLine, type Venture } from '../progression/ventures';
@@ -4142,6 +4143,7 @@ export class Game {
     // Spares in the hold: timber, cordage and canvas. At sea the carpenter and the
     // sailmaker use them to mend what the sea has done, and the rot and the rats
     // take a little of the set every month. See game/stores.
+    this.crew.wagesOwed = (this.crew.wagesOwed ?? 0) + (this.crew.count * WAGE_PER_MAN_MONTH * days) / 30;
     if (!this.dockedAt) this.useSpares(days);
     if (this.ship.effects.morale) this.crew.morale = clamp(this.crew.morale + this.ship.effects.morale * days, 0, 1);
     this.syncStores();
@@ -5959,6 +5961,12 @@ export class Game {
       this.pushAlert(`${v.patron}’s factor has taken his cargo back.`, 'warning');
     }
   }
+
+  /** How well the coast nearest `pos` is known (B4): 0 Rumour .. 3 Sounded. */
+  gradeAt(pos: LatLon): Grade { return gradeAtPos(this, pos); }
+
+  /** The multiplier `(1 - 0.5 * grade / 3)` a lane's risk takes from how well its coast is known. */
+  laneRisk(from: LatLon, to: LatLon): number { return laneRiskOf(this, from, to); }
 
   /** Rumours heard and not yet run down. */
   /** Enter a piece of hearsay about land to seaward. See farLand. */
@@ -8313,6 +8321,7 @@ export class Game {
       else this.pendingEvent = word;
     }
     this.mode = 'port';
+    this.payWages();
     this.checkStory();
     if (this.questOffersHere().length > 0) {
       this.pushAlert('Somebody here wants a word with the captain — see the Town.', 'note');
@@ -8337,6 +8346,21 @@ export class Game {
     this.logEvent('note', short
       ? `Watered and victualled as far as the hold allowed, ${pay} cruzados. The rest of the stores would not stow beside the cargo.`
       : `Watered and victualled for ${days} days at a cost of ${pay} cruzados.`);
+  }
+
+  /** Crew wages, cruzados per man per month, accrued daily and paid over at the next quay. */
+  payWages(): void {
+    const owed = Math.round(this.crew.wagesOwed ?? 0);
+    if (owed <= 0) return;
+    if (this.crown.gold < owed) this.drawCredit(owed);
+    const pay = Math.min(owed, Math.max(0, Math.floor(this.crown.gold)));
+    this.crown.gold -= pay;
+    this.crew.wagesOwed = owed - pay;
+    if (pay > 0) this.logEvent('crew', `Paid the company ${pay} cruzados in wages.`);
+    if (this.crew.wagesOwed > 0) {
+      this.crew.morale = clamp(this.crew.morale - 0.05, 0, 1);
+      this.logEvent('crew', `The purse would not run to the wages: ${this.crew.wagesOwed} cruzados still owed, and the men know it.`, true);
+    }
   }
 
   /** Mend with the spares aboard: sails first, then the seams. Uses what it mends with. */

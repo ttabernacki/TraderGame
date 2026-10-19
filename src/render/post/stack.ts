@@ -339,7 +339,7 @@ export class PostStack {
     (u.uTexel.value as THREE.Vector2).set(1 / this.w, 1 / this.h);
     const dusk = p.twilight;
     // Bloom is a lens, and a lens at night sees lamps: keep it, just a little less on a dull grey day.
-    u.uBloom.value = spec.bloomStrength * (0.16 + 0.10 * p.night + 0.06 * dusk) * (1 - 0.35 * p.overcast);
+    u.uBloom.value = spec.bloomStrength * (0.22 + 0.10 * p.night + 0.06 * dusk) * (1 - 0.35 * p.overcast);
     u.uVignette.value = ((0.30 + p.night * 0.16 + p.overcast * 0.10) * (p.photo ? 0.8 : 1)) * 0.9;
     u.uSat.value = 1.07 - 0.16 * p.overcast - 0.12 * p.night - 0.10 * p.weather;
     u.uContrast.value = 0.20 + 0.10 * dusk - 0.08 * p.overcast;

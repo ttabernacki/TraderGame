@@ -9,6 +9,7 @@ import { standingWord } from '../diplomacy/courts';
 import type { Game } from '../game/state';
 import { append, button, clear, el } from './dom';
 import { AGREED_W } from '../navigation/charts';
+import { GRADE_COLOUR, soundingAnchors, vertexGrade, type Grade } from '../navigation/chartGrade';
 import { REGION, describeSea } from '../game/rutter';
 
 /**
@@ -923,7 +924,8 @@ export class ChartView {
     // The grade is read off what the pilot knows about the stretch and nothing
     // else: how many times he has run it, and what his fixes were worth when
     // he did — never off its real error, which nobody aboard can know.
-    const byLand = new Map<number, { index: number; lat: number; lon: number; grade: number }[]>();
+    const anchors = soundingAnchors(g);
+    const byLand = new Map<number, { index: number; lat: number; lon: number; grade: number; sg: Grade }[]>();
     for (const p of g.chart.points.values()) {
       const idx = Number(p.key.split(':')[1]);
       let arr = byLand.get(p.land);
@@ -937,7 +939,7 @@ export class ChartView {
       // so what he has added to the world stands out from what he inherited.
       const fresh = p.born !== undefined && g.clock.t - p.born < FRESH_INK_S;
       const grade = fresh ? 3 : p.wLon >= AGREED_W ? 2 : p.passes > 0 ? 1 : 0;
-      arr.push({ index: idx, lat: p.lat, lon: p.lon, grade });
+      arr.push({ index: idx, lat: p.lat, lon: p.lon, grade, sg: vertexGrade(g.chart, { land: p.land, index: idx, lat: p.lat, lon: p.lon }, anchors) });
     }
 
     ctx.lineWidth = 1.6;
@@ -947,7 +949,23 @@ export class ChartView {
     for (const [land, pts] of byLand) {
       pts.sort((a, b) => a.index - b.index);
       const ringLength = LANDMASSES[land].ring.length / 2;
-      let run: { index: number; lat: number; lon: number; grade: number }[] = [];
+      let run: { index: number; lat: number; lon: number; grade: number; sg: Grade }[] = [];
+
+      // The coast stripe: each segment in the colour of its grade (the lower
+      // of its two ends), under the ink, so what is known about every stretch
+      // reads at a glance. Rumour, Sketch, Surveyed, Sounded.
+      ctx.save();
+      ctx.lineWidth = 4.5;
+      ctx.lineCap = 'butt';
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i];
+        const b = pts[i + 1] ?? (a.index === ringLength - 1 && pts[0].index === 0 ? pts[0] : null);
+        if (!b || !(b.index - a.index === 1 || (a.index === ringLength - 1 && b.index === 0))) continue;
+        const sa = this.toScreen(a.lat, a.lon), sb = this.toScreen(b.lat, b.lon);
+        ctx.strokeStyle = GRADE_COLOUR[Math.min(a.sg, b.sg) as Grade];
+        ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sb.x, sb.y); ctx.stroke();
+      }
+      ctx.restore();
 
       const flush = () => {
         if (run.length < 2) {
@@ -1597,6 +1615,10 @@ function buildLegend(): HTMLElement {
     item('#4a3520', 'Coast you have surveyed'),
     item('#6b4f30', 'Run once, in one day\u2019s passage'),
     item('rgba(74,53,32,0.42)', 'The Casa\u2019s word for it — nobody aboard has seen it'),
+    item(GRADE_COLOUR[0], 'Coast stripe: Rumour'),
+    item(GRADE_COLOUR[1], 'Coast stripe: Sketch'),
+    item(GRADE_COLOUR[2], 'Coast stripe: Surveyed'),
+    item(GRADE_COLOUR[3], 'Coast stripe: Sounded, the bottom is in the book'),
     item('#a83228', 'Portuguese factory'),
     item('#3c5a8a', 'A padrão of yours'),
     item('rgba(170,130,70,0.55)', 'Where a rumour points'),

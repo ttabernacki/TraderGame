@@ -66,3 +66,41 @@ Best lanes buy the next hull in under one voyage; median lanes need 2 to 30 voya
 - Hull sizing: the game enforces `hull.hold`, not burthen (`tons`). `--burthen` reproduces the design team's 140/260/480
   convention. The galleon (standing 1e9) is excluded.
 - Seed: `Markets(1)`. Other seeds not swept.
+
+## B3 findings
+
+### Verify-first (step 0)
+- **Provisions and hold:** before B3 nothing put stores in the hold. `Ship.holdFree` was capacity minus officers' chests minus cargo; provisions were days in `crew.provisions`. Now `Ship.storesTons` (water 0.0018, biscuit 0.0010, meat 0.0009, wine 0.0009, fresh 0.0004 t per man-day, summing to 0.005; spares 1-2 t a set) is subtracted in `holdFree`, kept in step by `Game.syncStores()`.
+- **`handWage()`:** cruzados per hand, a one-off sign-on fee charged in `shipHands`; the comment says "a month" but nothing ever paid crew wages. B3 adds real wages (`WAGE_PER_MAN_MONTH` = 4, accrued daily, paid at the next quay, short purse = morale -0.05 and a log line).
+- **`provisioningCost`:** consumers were only the old stores tab and `scripts/lib/botlib.ts`; the loading screen now prices through `planCost` (game/stores.ts). `provisioningCost` is left for the bot.
+- **hull.hold vs burthen:** the game enforces `hull.hold` (14/30/45/105/205/400). Kept as the cargo capacity, stores draw from it. Consequence: a 24-man caravela latina holds 30 t, so 150 days of full stores would be 18 t (60%); stores are therefore a per-leg choice, starting stores were cut to 60/75/60/45/15 days. Ladder bands are read against `hull.hold`, not burthen.
+
+### What changed in the market (economy/ladder.ts; price formula untouched)
+- Staples (Lisbon value <= 30 cr per ton: wine, oil, wheat, salt) are capped in tons at 4x the hold of the hull class above those that call (anchorage 120, village 180, town 420, city 820, emporium 1,600 t), so the hold binds.
+- Dense goods can never be hold-bound (a 105 t hold of pearls is 52,000 lots). They are capped in money per port, by region, shared across the dense goods it trades (`PORT_PROFIT` supply, `PORT_DEMAND` demand; Europe demands most, since the Carreira feeds it), plus a small trade parcel of every dense good so barter and presents are never short.
+- Crew wages (4 cr/man/month) and the 10-port-day voyage are the "upkeep"; no harbour dues were added.
+- Crown commission rewards up to 1,500 cr are paid at 0.55 (`COMMISSION_SCALE`), about a third of a captain's income through Act III against trade nets of 200-3,000 per voyage (estimated from the ladder, not measured over a played career).
+
+### Before / after (`scripts/econ.ts --ladder --check`; net = out and home on a pair of ports, stores in tons, slippage, Casa share, wages)
+| Measure | Before | After |
+|---|---|---|
+| best:median single-good route (105 t) | 130.6 | 6.6 |
+| 400 t / 105 t, best lane | 1.00x | 3.81x |
+| 400 t / 105 t, best mixed-cargo pair | 1.00x | 3.62x |
+| 400 t / 105 t, median staple lane | 1.00x | 2.14x |
+| Ormuz -> Cambay pearls, one leg | 66,175 | 372 (gross, 400 t) |
+
+| Tier | Band (net/voyage) | After | Voyages to buy next |
+|---|---|---|---|
+| Barcha | 120-220 | 397 | 2.3 |
+| Caravela latina | 300-500 | 670 | 2.2 |
+| Caravela redonda | 500-800 | 918 | 3.5 |
+| Nau pequena | 1,200-1,800 | 1,872 | 3.6 |
+| Nau | 2,500-3,500 | 3,052 | 4.9 |
+| Nau da India | 6,000-9,000 | 5,547 | - |
+
+Tiers 4-5 are in band; tier 6 is 8% under, the three small hulls 80-100% over: their best voyages carry the trade parcels of Lisbon and Arzila, which the A2 harness could not see. Left as is, not forced.
+
+### Check criteria changed, and why
+- The median-lane test (>= 1.4x) now runs on **staple lanes**: the median lane over all goods is a dense, money-capped lot, and by value it cannot be hold-bound at any hull, so it is 1.00x by construction. Added: mixed-cargo best pair >= 2.2x; per-tier bands (+-15% for tiers 4-6, within 2x for tiers 1-3), monotone climb, 1.5-6.5 voyages to the next hull, no zero stock, prices in band, pearls hop under 3,000.
+- Tuning hooks: `PP`, `PD`, `LT` env vars override the caps for one run; `--tiers`-style output is `--ladder`; `--pairs`, `--mid`, `--json` for sweeps.

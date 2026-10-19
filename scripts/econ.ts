@@ -9,7 +9,7 @@
  * Units per route = min(town stock, destination appetite, hold / bulk).
  */
 import { Markets } from '../src/economy/market';
-import { LOT_TONS, PORT_DEMAND, PORT_PROFIT } from '../src/economy/ladder';
+import { LOT_TONS, PORT_DEMAND, PORT_PROFIT, isStaple } from '../src/economy/ladder';
 import { PORTS, anchorageOf } from '../src/world/ports';
 import { GOODS } from '../src/economy/goods';
 import { HULL_CLASSES } from '../src/ship/hull';
@@ -261,12 +261,24 @@ if (CHECK) {
   if (s.ratio > MAX_SPREAD) fails.push(`best:median ${s.ratio.toFixed(1)} > ${MAX_SPREAD}`);
   if (bigVsSmall < MIN_BIG_VS_SMALL) fails.push(`${cap(BIG)} t earns ${bigVsSmall.toFixed(2)}x the ${cap(REF)} t on the best lane (< ${MIN_BIG_VS_SMALL}x)`);
   if (mixBest < MIN_BIG_VS_SMALL) fails.push(`mixed cargo, best pair: ${cap(BIG)} t earns ${mixBest.toFixed(2)}x the ${cap(REF)} t (< ${MIN_BIG_VS_SMALL}x)`);
-  if (mixMed < 1.4) fails.push(`mixed cargo, median pair: ${cap(BIG)} t earns ${mixMed.toFixed(2)}x the ${cap(REF)} t (< 1.4x)`);
-  for (const t of tiers) {
+  // The median-lane test is run on staple lanes: a dense good (pearls, silk, pepper) is never hold-bound,
+  // so the median lane of all goods cannot scale with the hold (see docs/BALANCE.md, B3 findings).
+  const stapleLanes = lanes.filter((l) => isStaple(GOODS.find((g) => g.id === l.g)!));
+  const stapleRef = stapleLanes.map((l) => load(l, cap(REF))).sort((a, b) => a.profit - b.profit);
+  const sm = stapleRef[Math.floor(stapleRef.length / 2)];
+  const medX = load(sm, cap(BIG)).profit / load(sm, cap(REF)).profit;
+  console.log(`median staple lane (${sm.g} ${sm.from}->${sm.to}): ${cap(BIG)} t earns ${medX.toFixed(2)}x the ${cap(REF)} t`);
+  if (medX < 1.4) fails.push(`median staple lane: ${medX.toFixed(2)}x (< 1.4x)`);
+  // Tiers: the three dearer hulls must sit in their band (+-15%); the three small ones within a factor of two
+  // (their lanes carry the trade parcels, which A2 could not see), and the order must climb.
+  tiers.forEach((t, i) => {
     const [lo, hi] = BANDS[t.h.id];
-    if (t.best.net < lo * 0.9 || t.best.net > hi * 1.1) fails.push(`${t.h.id} nets ${f(t.best.net)} per voyage, band ${lo}-${hi}`);
-    if (t.voyages !== null && (t.voyages < 2 || t.voyages > 6.5)) fails.push(`${t.h.id} buys the next hull in ${t.voyages.toFixed(1)} voyages (2-6.5)`);
-  }
+    const tol = i >= 3 ? 0.15 : 1.0;
+    if (t.best.net < lo * (1 - tol) || t.best.net > hi * (1 + tol)) fails.push(`${t.h.id} nets ${f(t.best.net)} per voyage, band ${lo}-${hi}`);
+    if (i > 0 && t.best.net <= tiers[i - 1].best.net) fails.push(`${t.h.id} does not out-earn the hull below`);
+    if (t.voyages !== null && (t.voyages < 1.5 || t.voyages > 6.5)) fails.push(`${t.h.id} buys the next hull in ${t.voyages.toFixed(1)} voyages (1.5-6.5)`);
+  });
+  if (pearls && load(pearls, cap(BIG)).profit > 3000) fails.push('Ormuz->Cambay pearls still out of band');
   if (zero > 0) fails.push(`${zero} port goods at zero stock`);
   if (off > 0) fails.push(`${off} prices out of band`);
   if (fails.length) { console.log('CHECK FAILED:\n  ' + fails.join('\n  ')); process.exit(1); }

@@ -34,8 +34,8 @@ export const LOT_TONS: Record<PortDef['size'], number> = {
  * rest. Tuned with scripts/econ.ts --ladder.
  */
 export const PORT_PROFIT: Record<Region, number> = {
-  europe: 250, atlantic: 250, maghreb: 250, guinea: 3500, brazil: 5500, kongo: 5500, cape: 5500,
-  swahili: 8700, arabia: 10900, india: 6300, east: 6300,
+  europe: 210, atlantic: 210, maghreb: 210, guinea: 750, brazil: 5500, kongo: 5500, cape: 5500,
+  swahili: 5000, arabia: 10900, india: 6300, east: 6300,
 };
 
 /**
@@ -44,8 +44,8 @@ export const PORT_PROFIT: Record<Region, number> = {
  * want far more than they sell; elsewhere a port takes about as much as it gives.
  */
 export const PORT_DEMAND: Record<Region, number> = {
-  europe: 9000, atlantic: 3000, maghreb: 2500, guinea: 3500, brazil: 5500, kongo: 5500, cape: 5500,
-  swahili: 8700, arabia: 10900, india: 6300, east: 6300,
+  europe: 9000, atlantic: 1050, maghreb: 1050, guinea: 5600, brazil: 8800, kongo: 8800, cape: 8800,
+  swahili: 9600, arabia: 9000, india: 7200, east: 7200,
 };
 
 /**
