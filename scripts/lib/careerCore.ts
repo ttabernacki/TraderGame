@@ -19,7 +19,9 @@ export interface Result {
   ended: string; snaps: number; trades: number; audiences: number; exception: string; wallMs: number;
 }
 
-export interface Opts { maxVoyages: number; maxYears: number; debug: boolean; stopAtLisbon?: (g: Game) => boolean }
+export interface Opts { maxVoyages: number; maxYears: number; debug: boolean; stopAtLisbon?: (g: Game) => boolean;
+  /** Called at the top of each voyage, with the ship at the quay she will sail from. */
+  onVoyage?: (g: Game, n: number) => void }
 
 export function play(seed: number, o: Opts): Result & { game: Game } {
   const { maxVoyages, maxYears } = o;
@@ -46,6 +48,7 @@ export function play(seed: number, o: Opts): Result & { game: Game } {
       if ((g.mode as string) === 'gameover') { ended = `gameover: ${g.gameOverReason}`; break; }
       if (g.clock.t > deadline) { ended = 'year budget'; break; }
       voyages++;
+      o.onVoyage?.(g, voyages);
       // --- At Lisbon: court, trade, stores.
       if (g.dockedAt !== 'lisboa') { ended = `not at Lisbon (${g.dockedAt ?? 'sea'})`; break; }
       const stops = FAR[Math.min(5, g.chronicle.act)];

@@ -33,6 +33,12 @@ export interface MarketState {
   /** Per-good satiation, which rises when you sell and decays over time. */
   glut: Record<string, number>;
   lastUpdate: number;
+  /**
+   * When the quay's stock was last knocked off its baseline (a purchase or a sale). Recovery is a
+   * straight line back over 90 days from that moment, which makes it the same whether it is
+   * applied in one lump (a ship arriving) or month by month (the world tick). Absent in older saves.
+   */
+  disturbed?: number;
 }
 
 /**
@@ -45,6 +51,17 @@ export interface MarketState {
  */
 export class Markets {
   private states = new Map<string, MarketState>();
+
+  /**
+   * A port's prosperity, 0.5 to 1.6 (world/tick). Set by the game; 1 where nothing is
+   * keeping count (the harness). Wealth in every market formula is `wealth0 * P`.
+   */
+  prosperityOf: (portId: string) => number = () => 1;
+
+  /** What the place is worth now: its constant wealth times its prosperity. */
+  wealthOf(def: PortDef): number {
+    return def.wealth * this.prosperityOf(def.id);
+  }
 
   constructor(_seed: number) {
     for (const p of PORTS) {
@@ -94,7 +111,7 @@ export class Markets {
     const bySize = {
       anchorage: 900, village: 2500, town: 7000, city: 16000, emporium: 35000,
     }[def.size];
-    return bySize * (0.5 + def.wealth);
+    return bySize * (0.5 + this.wealthOf(def));
   }
 
   /**
@@ -109,7 +126,7 @@ export class Markets {
     // hands instead of four, so there is simply more of them and the town can
     // pay for more of them. See progression/inland.
     const road = this.roads.has(def.id) ? 1.7 : 1;
-    const units = lotUnits(def, g, 'produces', abundance, road);
+    const units = lotUnits(def, g, 'produces', abundance, road, this.wealthOf(def));
     const affordable = (this.valueCeiling(def) * abundance * road) / Math.max(g.lisbon, 0.01);
     return Math.max(1, Math.round(Math.min(units, affordable)));
   }
@@ -162,7 +179,7 @@ export class Markets {
     const scale = { anchorage: 0.55, village: 0.68, town: 0.85, city: 1, emporium: 1.1 }[def.size];
     // A place that grows the stuff itself has least reason of all to buy yours.
     const glutted = abundance > 0 ? 0.45 : 1;
-    return (0.26 + def.wealth * 0.22) * scale * glutted;
+    return (0.26 + this.wealthOf(def) * 0.22) * scale * glutted;
   }
 
   /**
@@ -181,7 +198,7 @@ export class Markets {
     // six quintais of pepper in a market town — one per cent of a caravel's
     // hold — so a captain with the wrong cargo could technically sell and might
     // as well not have been able to.
-    return Math.max(1, Math.round(scale * bulkiness * 22 * (0.4 + def.wealth) * own));
+    return Math.max(1, Math.round(scale * bulkiness * 22 * (0.4 + this.wealthOf(def)) * own));
   }
 
   private baseAppetite(def: PortDef, g: Good, hunger: number): number {
@@ -192,7 +209,7 @@ export class Markets {
     // scarcity of the entire genre, never once bound on any route. A city that
     // wants a thing badly now wants more of it than one voyage can bring, in
     // tons for the staples and in money for the dense goods (economy/ladder).
-    return Math.max(1, Math.round(lotUnits(def, g, 'wants', hunger)));
+    return Math.max(1, Math.round(lotUnits(def, g, 'wants', hunger, 1, this.wealthOf(def))));
   }
 
   /** Units on the quay now, and that against what the town usually holds (1 = normal). */
@@ -210,22 +227,46 @@ export class Markets {
     return this.stateFor(portId).glut[goodId] ?? 0;
   }
 
-  /** Refresh stocks and let gluts decay. Called when the player arrives. */
+  /**
+   * Refresh stocks and let gluts decay. Called when the player arrives, and by the monthly
+   * world tick (world/tick) as its production and consumption passes.
+   */
   refresh(portId: string, t: number): void {
+    this.produce(portId, t);
+    this.consume(portId, t);
+  }
+
+  /**
+   * Production pass: what the port makes comes back toward its baseline, which is
+   * scaled by prosperity. Reads `lastUpdate`; `consume` is what moves it on, so the
+   * two are always called as a pair.
+   */
+  produce(portId: string, t: number): void {
+    const s = this.stateFor(portId);
+    const days = Math.max(0, (t - s.lastUpdate) / 86400);
+    if (days <= 0) return;
+    s.disturbed ??= s.lastUpdate;
+    // Remaining gap after `days` more, as a fraction of the gap now, on a line that closes in 90 days.
+    const d0 = Math.max(0, (s.lastUpdate - s.disturbed) / 86400);
+    const ratio = d0 >= 90 ? 0 : Math.max(0, 1 - (d0 + days) / 90) / (1 - d0 / 90);
+    const def = portDef(portId);
+    for (const g of GOODS) {
+      const abundance = def.produces[g.id] ?? 0;
+      if (abundance <= 0) continue;
+      const base = this.baseStock(def, g, abundance);
+      const cur = s.stock[g.id] ?? base;
+      // Stocks rebuild toward the baseline over a season.
+      s.stock[g.id] = base + (cur - base) * ratio;
+    }
+  }
+
+  /** Consumption pass: gluts decay as the town works through what it was sold. Moves `lastUpdate` on. */
+  consume(portId: string, t: number): void {
     const s = this.stateFor(portId);
     const days = Math.max(0, (t - s.lastUpdate) / 86400);
     s.lastUpdate = t;
     if (days <= 0) return;
-
-    const def = portDef(portId);
     for (const g of GOODS) {
-      const abundance = def.produces[g.id] ?? 0;
-      if (abundance > 0) {
-        const base = this.baseStock(def, g, abundance);
-        const cur = s.stock[g.id] ?? base;
-        // Stocks rebuild toward the baseline over a season.
-        s.stock[g.id] = lerp(cur, base, clamp(days / 90, 0, 1));
-      }
       const glut = s.glut[g.id] ?? 0;
       // Lisbon remembers a great landing of spice for a year: the whole of
       // Europe's pepper came through one quay, and every cargo put on it
@@ -233,6 +274,23 @@ export class Markets {
       const slow = portId === 'lisboa' && (g.category === 'spice' || g.category === 'precious');
       if (glut > 0) s.glut[g.id] = Math.max(0, glut - days / (slow ? 365 : 120));
     }
+  }
+
+  /**
+   * For the lanes pass (D1): move `units` of a good onto (+) or off (-) the quay,
+   * within what the port can hold. Returns what actually moved.
+   */
+  addStock(portId: string, goodId: string, units: number): number {
+    const def = portDef(portId);
+    const abundance = def.produces[goodId] ?? 0;
+    if (abundance <= 0) return 0;
+    const s = this.stateFor(portId);
+    const base = this.baseStock(def, good(goodId), abundance);
+    const cur = s.stock[goodId] ?? base;
+    const next = clamp(cur + units, 0, base * 1.4);
+    s.stock[goodId] = next;
+    s.disturbed = s.lastUpdate;
+    return next - cur;
   }
 
   /**
@@ -344,6 +402,7 @@ export class Markets {
     const g = good(goodId);
     const base = this.baseStock(def, g, def.produces[goodId] ?? 0);
     s.stock[goodId] = Math.max(0, (s.stock[goodId] ?? base) - quantity);
+    s.disturbed = s.lastUpdate;
   }
 
   /** Record a sale, which sates the port's appetite and drives the price down. */
@@ -357,6 +416,7 @@ export class Markets {
     if (def.produces[goodId]) {
       const base = this.baseStock(def, g, def.produces[goodId]);
       s.stock[goodId] = Math.min(base * 1.4, (s.stock[goodId] ?? base) + quantity * 0.5);
+      s.disturbed = s.lastUpdate;
     }
   }
 

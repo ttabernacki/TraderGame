@@ -140,6 +140,17 @@ const LISBON: Voice[] = [
     },
   },
   {
+    tags: ['companion.bonded', 'companion.estranged', 'companion.left', 'companion.betrayed'],
+    say: (c, es) => {
+      const out: string[] = [];
+      const names = (tag: Tag): string[] => es.filter((e) => e.tag === tag).map((e) => e.target);
+      if (c('companion.bonded') > 0) out.push(`${listOf(names('companion.bonded'))} stayed with him to the end of their stories, which the wardroom does not do for every captain.`);
+      if (c('companion.left') + c('companion.estranged') > 0) out.push(`${listOf([...names('companion.left'), ...names('companion.estranged')])} left his service or stopped serving him in all but name.`);
+      if (c('companion.betrayed') > 0) out.push(`${listOf(names('companion.betrayed'))} took what he knew of the captain to others, and the Casa heard it from them.`);
+      return out;
+    },
+  },
+  {
     tags: ['ship.stopped', 'ship.spared', 'ship.succoured', 'ship.abandoned'],
     say: (c) => {
       const s = c('ship.stopped'), p = c('ship.spared'), h = c('ship.succoured'), a = c('ship.abandoned');

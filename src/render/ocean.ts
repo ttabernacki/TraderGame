@@ -160,11 +160,21 @@ vec3 wakeAt(vec2 rel) {
   // stand on it like a model on a mirror.
   vec2 hull = vec2(along / max(uShipHalfLength, 0.5),
                    across / max(uShipHalfBeam * 0.94, 0.3));
-  float edge = (length(hull) - 1.0) / 0.10;
-  float wetting = exp(-edge * edge) * (0.3 + 0.7 * uWakeStrength);
+  // The planking is not an ellipse: it is full amidships and fine at the ends. A superellipse
+  // sits much closer to the real waterline, and it is the line the foam hangs on.
+  float hl = pow(pow(abs(hull.x), 3.2) + pow(abs(hull.y), 2.2), 1.0 / 2.6);
+  float edge = (hl - 1.0) / 0.10;
+  // Water thrown up the bow runs aft along the topsides and clings to them: the foam is thickest
+  // forward, thins amidships and leaves a boil under the counter. It grows with her speed and
+  // is never wholly absent: even at anchor the sea laps her.
+  float fwd = smoothstep(-0.2, 0.95, hull.x);
+  float aftBoil = smoothstep(-0.55, -1.0, hull.x);
+  float outer = (hl - 1.0) / (0.07 + 0.13 * uWakeStrength * (0.4 + fwd));
+  float wetting = exp(-edge * edge) * (0.3 + 0.7 * uWakeStrength)
+                + step(0.0, outer) * exp(-outer * outer * 1.4) * uWakeStrength * (0.15 + 0.4 * fwd + 0.3 * aftBoil);
 
   float foam = clamp((trail * froth * 0.85 + cusps * 0.10 + bow * 0.8) * uWakeStrength
-                     + wetting * 0.3, 0.0, 1.0);
+                     + wetting * 0.45, 0.0, 1.0);
 
   // She piles water up at the bow, leaves a trough in the trail astern of it,
   // and raises the two cusp lines either side.
@@ -603,6 +613,9 @@ void main() {
   // test is broken up by a moving noise field.
   float crest = vCrest / max(uCrestMax, 0.001);
   float breaking = 0.0;
+  // Whitecaps are a matter of wind: none to speak of below force four, scattered at force five and
+  // six, and by force eight the downwind streaks that mariners call spindrift.
+  float cover = smoothstep(0.5, 1.6, uChop);
   // The noise field is four octaves of hashing and costs more than the rest of
   // the shading put together, so it is only sampled where a crest could possibly
   // break. Most of the sea, most of the time, is nowhere near.
@@ -616,6 +629,26 @@ void main() {
     // Foam sits on the crest and streams down its back, never in the troughs.
     breaking *= smoothstep(0.02, 0.42, n.y * 0.25 + vWorld.y / max(uCrestMax, 0.3));
     breaking *= 1.0 - smoothstep(2500.0, 14000.0, vDist);
+  }
+
+  // Foam does not vanish where the crest does. A breaking wave leaves a raft of bubbles that is
+  // carried downwind and takes half a minute to burst, so behind every whitecap there is a streak:
+  // long along the wind, narrow across it. Drawn as noise stretched along the wind and drifting
+  // with it, biased toward the crests that feed it, and cut into lace by a finer layer.
+  float streakFoam = 0.0;
+  float lacy = 1.0;
+  if (cover > 0.02 && vDist < 6000.0) {
+    vec2 aw = uChopDir;
+    vec2 cw = vec2(-uChopDir.y, uChopDir.x);
+    vec2 sp = vec2(dot(vSurface, aw), dot(vSurface, cw));
+    float field = fbm(vec2(sp.x * 0.026 - uNoiseTime * 0.4, sp.y * 0.17));
+    float feed = clamp(crest * 1.5 - 0.15, 0.0, 1.0);
+    float cut = 0.98 - cover * 0.5;
+    float raft = smoothstep(cut, cut + 0.2, field * 0.8 + feed * 0.32);
+    float fine = fbm(sp * vec2(0.7, 1.4) + vec2(-uNoiseTime * 0.25, 0.0));
+    lacy = 0.45 + 0.55 * smoothstep(0.3, 0.7, fine);
+    // Not below the size the screen can resolve, or it beats against the pixel grid.
+    streakFoam = raft * (0.35 + 0.65 * lacy) * resolvable(2.4, px) * (1.0 - smoothstep(2500.0, 6000.0, vDist));
   }
 
   // Wake and bow foam, textured so it reads as bubbles rather than paint. The
@@ -640,11 +673,16 @@ void main() {
     wake = clamp(max(broken, wk.x * wk.x * 0.95), 0.0, 1.0);
   }
 
-  float foam = clamp(breaking * 0.72 + wake * 0.7, 0.0, 1.0);
-  vec3 foamColor = vec3(0.93, 0.96, 0.98) * (1.0 - uNight * 0.82);
-  // Foam is aerated water, not paint: even a hard-driven wake leaves the sea
-  // showing through it.
-  col = mix(col, foamColor, foam * 0.68);
+  // Active whitecaps are solid and bright at the crest and lacy where they thin out.
+  float whitecap = breaking * mix(0.62, 1.0, lacy);
+  float foam = clamp(whitecap * 0.9 + streakFoam * 0.7 + wake * 0.7, 0.0, 1.0);
+  // Foam is aerated water and takes its colour from the light on it: bright white in sun, grey
+  // under cloud, and in the thin edges a little of the green of the water it floats on.
+  float sunLit = clamp(dot(n, uSunDir) * 0.8 + 0.35, 0.0, 1.0) * (1.0 - uOvercast * 0.5);
+  vec3 foamColor = mix(vec3(0.70, 0.78, 0.82), vec3(0.97, 0.985, 0.975), sunLit) * (1.0 - uNight * 0.82);
+  foamColor = mix(foamColor * vec3(0.78, 0.97, 0.93), foamColor, smoothstep(0.1, 0.7, foam));
+  // Even a hard-driven wake leaves the sea showing through it.
+  col = mix(col, foamColor, foam * 0.74);
 
   // Wind streaks running downwind: the long pale lines a breeze draws on water,
   // spaced tens of metres apart and drifting, not the close regular grating that

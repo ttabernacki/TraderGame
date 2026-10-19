@@ -54,6 +54,21 @@ export interface Officer {
   bonded?: boolean;
   /** Simulated seconds he came aboard, for measuring service. */
   joined?: number;
+  /** C5, src/company: approval of the captain, -100..+100, as last reckoned from the Ledger. */
+  approval?: number;
+  /** The one-line cause of it, in the Ledger's terms. */
+  approvalWhy?: string;
+  /** How his story ended, once it has. Read by the epilogue. */
+  arcEnd?: 'bonded' | 'estranged' | 'ashore' | 'dead' | 'betrayed';
+  /** Id in company/candidates, for the named men courted off a quay. */
+  cand?: string;
+  /** He has said he will go at the next port. */
+  leaving?: boolean;
+  /** He has gone for good: `ashoreAt` is where, and he is not on the beach to be collected. */
+  left?: boolean;
+  /** Promoted out of the fo'c'sle: the hand he was, and whether he stands as mate. */
+  handId?: string;
+  mate?: boolean;
 }
 
 export interface Provisions {

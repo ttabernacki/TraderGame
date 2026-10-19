@@ -84,8 +84,9 @@ export const isStaple = (g: Good): boolean => g.lisbon / Math.max(g.bulk, 1e-4) 
  * Units a port will hold (kind 'produces') or take (kind 'wants') of a good,
  * at `level` (its abundance or its hunger, 0 to 1) and `scale` (roads and the like).
  */
-export function lotUnits(def: PortDef, g: Good, kind: 'produces' | 'wants', level: number, scale = 1): number {
-  const wealth = SHARE_FLOOR + (1 - SHARE_FLOOR) * Math.min((0.5 + def.wealth) / 1.5, 1.2);
+export function lotUnits(def: PortDef, g: Good, kind: 'produces' | 'wants', level: number, scale = 1, worth = def.wealth): number {
+  // `worth` is the port's wealth now: its constant wealth times its prosperity (world/tick); P = 1 is the constant.
+  const wealth = SHARE_FLOOR + (1 - SHARE_FLOOR) * Math.min((0.5 + worth) / 1.5, 1.2);
   const lvl = SHARE_FLOOR + (1 - SHARE_FLOOR) * Math.min(Math.max(level, 0), 1);
   const byTons = (LOT_TONS[def.size] * lvl * wealth * scale) / Math.max(g.bulk, 1e-4);
   if (isStaple(g)) return kind === 'wants' ? byTons * (STAPLE_DEMAND[regionOf(def.id)] ?? 1) : byTons;

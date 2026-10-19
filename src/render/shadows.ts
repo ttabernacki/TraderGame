@@ -52,6 +52,9 @@ function lightsBeginForLand(): string | null {
         if ( receiveShadow && directLight.visible ) {
           ws = getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] );
           ws = mix( 1.0, ws, 1.0 - smoothstep( 0.7, 0.98, edge ) );
+          // Ground at a grazing angle to the light shades itself in stripes however the bias is set;
+          // it is dark enough by its own cosine, so the map has no say in it.
+          ws = mix( 1.0, ws, smoothstep( 0.15, 0.5, dot( normal, directLight.direction ) ) );
         }
         directLight.color = directionalLights[ 0 ].color * ws;
       }
@@ -104,8 +107,8 @@ export class WorldShadow {
     // Texels are about a metre, so the bias is in metres' worth of depth range, not the ship's
     // few centimetres: too little and every slope shades itself in stripes, too much and a
     // house detaches from its shadow.
-    this.light.shadow.bias = -0.00004;
-    this.light.shadow.normalBias = 0.9;
+    this.light.shadow.bias = -0.00008;
+    this.light.shadow.normalBias = 1.2;
     this.light.shadow.radius = 1.5;
   }
 

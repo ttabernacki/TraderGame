@@ -273,9 +273,9 @@ export function buyRate(f: Feitoria, def: PortDef): number {
  * long way short of a spice cargo, which is where a thing you get for free
  * while you are elsewhere belongs.
  */
-export function throughput(f: Feitoria, def: PortDef): number {
+export function throughput(f: Feitoria, def: PortDef, prosperity = 1): number {
   const size = { anchorage: 0.3, village: 0.5, town: 0.8, city: 1.05, emporium: 1.3 }[def.size];
-  let v = 5.3 * size * (0.55 + def.wealth) * (0.6 + f.ability * 0.8)
+  let v = 5.3 * size * (0.55 + def.wealth * prosperity) * (0.6 + f.ability * 0.8)
     * (0.45 + clamp(f.regard, 0, 1) * 0.75);
   if (f.works.includes('batel')) v *= 1.4;
   if (f.works.includes('armazem')) v *= 1.1;
@@ -323,7 +323,7 @@ export interface FactoryNews {
  */
 export function runFactory(
   f: Feitoria, def: PortDef, days: number, rng: Rng, portRegard: number,
-  opts: { sinceVisit?: number; traffic?: number; noBuy?: boolean } = {},
+  opts: { sinceVisit?: number; traffic?: number; noBuy?: boolean; prosperity?: number } = {},
 ): FactoryNews {
   const news: FactoryNews = {
     days, bought: 0, spent: 0, earned: 0, skimmed: 0, spoiled: 0, troubleAdded: 0,
@@ -349,7 +349,8 @@ export function runFactory(
   const order = f.buying.length > 0 ? f.buying : buyable(def);
   const room = Math.max(0, capacityOf(f) - stockTons(f));
   let tonsLeft = Math.min(room, buyRate(f, def) * days);
-  let valueLeft = throughput(f, def) * days;
+  const prosperity = opts.prosperity ?? 1;
+  let valueLeft = throughput(f, def, prosperity) * days;
   const budget = valueLeft;
   const weights = order.map((_, i) => (f.buying.length > 0 ? [0.55, 0.3, 0.15][i] ?? 0.1 : 1));
   const total = weights.reduce((x, y) => x + y, 0) || 1;
@@ -391,7 +392,7 @@ export function runFactory(
   // point of having one; the counter trade is what keeps the chest full enough
   // to go on filling it.
   const gross = days * size * (1.1 + f.ability * 2.2) * (0.4 + clamp(f.regard, 0, 1) * 1.2)
-    * (0.85 + def.wealth * 0.5) * 0.55;
+    * (0.85 + def.wealth * prosperity * 0.5) * 0.55;
   const skim = gross * (1 - f.honesty) * 0.55;
   news.earned = Math.round(gross - skim);
   news.skimmed = Math.round(skim);

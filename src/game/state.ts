@@ -19,6 +19,7 @@ import { WAGE_PER_MAN_MONTH, loadPlan, planOf, recordLeg, storesTons, trimToHold
 import { migrateEnterprises, tickLines, type Letter, type Line } from '../progression/network';
 import { deliverFactoryMail, noteSightings, postLetter, tickFactories, transitDays } from '../progression/livingFactory';
 import { ambientAtSea, barkAt } from '../progression/barks';
+import { noteSeen, prosperityOf, prosperityShock, tickWorldDue, type PortState, type Reason } from '../world/tick';
 import { MILESTONES, checkMilestones } from '../progression/milestones';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
 import { azoresHigh, itczLatitude } from '../world/wind';
@@ -107,6 +108,7 @@ import { polarAt } from '../ship/polars';
 import { migrateTutorial, newTutorial, noteVerb, stepTutorial, type TutorialState, type TutorialStep } from './tutorial';
 import { ringWatchBell } from './watchBell';
 import { legReportOnArrival, noteDeparture, type LegStart } from './legReport';
+import { migrateYear, newYear, yearOnArrival, yearOnDeparture, type YearState } from './year';
 import { decayed as decayedLedger, record as recordDeed, sanitize as sanitizeLedger, type Deed, type Entry as LedgerEntry } from '../ledger/ledger';
 import type { Tag as LedgerTag } from '../ledger/tags';
 import { campaignDef, type CampaignId } from './campaign';
@@ -417,6 +419,7 @@ export class Game {
   private checkWorld(): void {
     if (this.mode === 'gameover' || this.mode === 'title') return;
     noteSightings(this);
+    tickWorldDue(this, this.clock.t);
     tickLines(this);
     if (this.dockedAt) deliverFactoryMail(this, this.dockedAt);
     const bark = barkAt(this);
@@ -431,6 +434,16 @@ export class Game {
       this.noteDeed('milestone.reached', { target: m.id, magnitude: 0.3, note: `${m.title}: ${m.hint.replace(/\.$/, '')}.` });
       this.logEvent('crown', `Milestone — ${line}`, true);
     }
+  }
+
+  /** A quiet line about a port's fortunes, said only of a port the captain knows. See world/tick. */
+  worldNote(portId: string, text: string): void {
+    if (this.visitedPorts.has(portId) || this.feitorias.some((f) => f.portId === portId && !f.lost)) this.logEvent('trade', text, false);
+  }
+
+  /** Something done to a port from outside (a blockade, an embargo, a war): moves its prosperity. See world/tick. */
+  prosperityShock(portId: string, delta: number, reason: Reason): number {
+    return prosperityShock(this, portId, delta, reason);
   }
 
   /** Put whichever quest beat is due. In port, straight onto the screen. */
@@ -769,6 +782,10 @@ export class Game {
   private nextJourneyId = 1;
   /** Ports whose inland road has been opened, which deepens their market. */
   inlandRoads = new Set<string>();
+  /** Per-port world state: prosperity, what has been built. See world/tick. */
+  ports: Record<string, PortState> = {};
+  /** When the monthly world tick last ran (null until the first frame). */
+  worldT: number | null = null;
 
   /** The blow she is in, and what a career of them came to. See game/gale. */
   gale: GaleState = newGale();
@@ -943,6 +960,7 @@ export class Game {
     this.crown = new Crown(seed);
     this.markets = new Markets(seed);
     this.markets.adjust = (p, gid, t) => this.worldAdjust(p, gid, t);
+    this.markets.prosperityOf = (id) => prosperityOf(this, id);
     this.trade = newTrade(this.clock.t);
     this.rival = newRival(this.rng);
     this.rival.lastNews = this.clock.t;
@@ -2368,6 +2386,7 @@ export class Game {
     const now = this.clock.t;
     const d = this.clock.date;
     rollShocks(this.trade, now, d.year, this.rng);
+    noteSeen(this, def.id, now);
     decayAntwerp(this.trade, now);
     const here = regionOf(def.id);
     // News that has reached this coast.
@@ -7552,6 +7571,8 @@ export class Game {
 
   /** Where the current leg began, for the Leg Report. See game/legReport.ts. */
   legStart: LegStart | null = null;
+  /** The career year (C3): baseline at sailing, the homecoming card waiting. See game/year.ts. */
+  year: YearState = newYear();
   /** The Ledger (B1): every consequential act, tagged. Append-only. See ledger/. */
   ledger: LedgerEntry[] = [];
   /** Record a deed in the Ledger and say in one quiet line what it did. */
@@ -7741,6 +7762,7 @@ export class Game {
         }
       }
     }
+    yearOnDeparture(this);
     noteDeparture(this);
     recordLeg(this);
     this.anchored = false;
@@ -8240,6 +8262,7 @@ export class Game {
     // town goes on the chart where it is, and the coast in sight of it is put
     // right and the stretch around bent to meet it (Chart.settleAround).
     legReportOnArrival(this, def.id);
+    yearOnArrival(this, def.id);
     this.nav.applyLandfall(anchorageOf(def), this.clock.t);
     this.chart.chartPort(def, this.nav.estimated, this.ship.state.pos, this.clock.t, true);
     this.chart.settleAround(anchorageOf(def), this.clock.t);
@@ -9516,6 +9539,7 @@ export class Game {
       tutorial: this.tutorial,
       seenChart: this.seenChart,
       legStart: this.legStart,
+      year: this.year,
       ledger: this.ledger,
       encounter: this.encounter,
       seaRecord: this.seaRecord,
@@ -9528,6 +9552,8 @@ export class Game {
       journeyRecord: this.journeyRecord,
       nextJourneyId: this.nextJourneyId,
       inlandRoads: [...this.inlandRoads],
+      ports: this.ports,
+      worldT: this.worldT,
       gale: this.gale,
       galeRecord: this.galeRecord,
       route: this.route,
@@ -9653,6 +9679,7 @@ export class Game {
     // plainly worked it out for himself, so he is not started on lesson one.
     g.tutorial = migrateTutorial(d.tutorial);
     g.legStart = d.legStart ?? null;
+    g.year = migrateYear(d.year);
     g.seenChart = d.seenChart ?? true;
     g.encounter = d.encounter ?? null;
     g.seaRecord = { ...newSeaRecord(), ...(d.seaRecord ?? {}) };
@@ -9665,6 +9692,10 @@ export class Game {
     g.journeyRecord = { ...newJourneyRecord(), ...(d.journeyRecord ?? {}) };
     g.nextJourneyId = d.nextJourneyId ?? 1;
     g.inlandRoads = new Set<string>(d.inlandRoads ?? []);
+    // Prosperity is additive: a save from before it has every port at 1, and the world last ticked now.
+    g.ports = d.ports ?? {};
+    for (const id of Object.keys(g.ports)) { g.ports[id].prosperity ??= 1; }
+    g.worldT = d.worldT ?? g.clock.t;
     for (const id of g.inlandRoads) g.markets.openRoad(id, g.clock.t);
     g.gale = d.gale ?? newGale();
     g.galeRecord = { ...newGaleRecord(), ...(d.galeRecord ?? {}) };

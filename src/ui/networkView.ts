@@ -4,10 +4,11 @@ import { portDef } from '../world/ports';
 import type { Game } from '../game/state';
 import { capacityOf, policyOf, stockTons, stockValue, type Feitoria } from '../progression/feitoria';
 import {
-  POSTURES, amendLine, bestCargo, buildWorks, closeLine, footingOf, footingWord, hullPrice, inSeason, legCost,
+  CIVIC, civicCost, fundCivic, POSTURES, amendLine, bestCargo, buildWorks, closeLine, footingOf, footingWord, hullPrice, inSeason, legCost,
   legDays, lineDestinations, lineHulls, openLine, canOpenLine, postureOf, worksChoices, worksCost, worksName,
   worksOutput, worksUpkeep, sellShare, shareWord, type Line, type Posture,
 } from '../progression/network';
+import { civicGain, civicLevel, prosperityOf, seenProsperity, MAX_CIVIC_LEVEL, type Civic } from '../world/tick';
 import { button, card, el, kv, meter } from './dom';
 
 /**
@@ -43,7 +44,7 @@ export function worksBlock(g: Game, f: Feitoria, rerender: () => void, notify?: 
     const lvl = f.makeLevel ?? 1;
     return el('div', { class: 'net-works' },
       kv(`${worksName(f.make)}${lvl > 1 ? ` (${['', '', 'enlarged', 'great'][lvl]})` : ''}`,
-        `${Math.round(worksOutput(f))} ${gd?.unit ?? 'unit'}s a month, ${worksUpkeep(f)} in wages`),
+        `${Math.round(worksOutput(f, prosperityOf(g, f.portId)))} ${gd?.unit ?? 'unit'}s a month, ${worksUpkeep(f)} in wages`),
       notify && lvl < 3
         ? button(`Enlarge — ${worksCost(def, f.make, lvl + 1)} cruzados`, () => { notify(buildWorks(g, f, f.make!)); rerender(); })
         : null);
@@ -54,6 +55,25 @@ export function worksBlock(g: Game, f: Feitoria, rerender: () => void, notify?: 
     el('p', { class: 'gift-sub' }, 'Works turn the town’s own goods out every month, into the store, for wages out of the chest.'),
     ...choices.map((id) => button(`${worksName(id)} — ${worksCost(def, id)} cruzados`,
       () => { notify(buildWorks(g, f, id)); rerender(); })));
+}
+
+/** The town's fortunes as the captain last saw them, one line; null if he has not been. */
+export function prosperityText(g: Game, portId: string): string | null {
+  return seenProsperity(g, portId)?.line ?? null;
+}
+
+/** A quay or a fort, paid for out of the House's town: the one place the captain can put money into a port itself. */
+export function civicBlock(g: Game, portId: string, rerender: () => void, notify: (t: string) => void): HTMLElement {
+  const def = portDef(portId);
+  return el('div', { class: 'net-works' },
+    el('p', { class: 'gift-sub' }, 'Money put into the town itself. It does not last without upkeep of its own: the town drifts back unless trade keeps coming.'),
+    ...(['quay', 'fort'] as Civic[]).map((k) => {
+      const lvl = civicLevel(g, portId, k);
+      const done = lvl >= MAX_CIVIC_LEVEL;
+      const small = civicGain(g, portId, k) < 0.01;
+      return button(done ? `${CIVIC[k].name} — complete` : `${lvl ? 'Enlarge the' : 'Fund a'} ${CIVIC[k].name.toLowerCase()} — ${civicCost(def, k, lvl)} cruzados${small ? ' (the town can hardly be made richer)' : ''}`,
+        () => { notify(fundCivic(g, portId, k)); rerender(); }, { disabled: done, title: CIVIC[k].blurb });
+    }));
 }
 
 function houseCard(g: Game, f: Feitoria, rerender: () => void): HTMLElement {

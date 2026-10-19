@@ -10,6 +10,7 @@ import { hullAllowed } from './chronicle';
 import type { Feitoria } from './feitoria';
 import { roadMiles } from './road';
 import { polityOfPort } from '../diplomacy/polities';
+import { MAX_CIVIC_LEVEL, civicLevel, fundedCivic, type Civic } from '../world/tick';
 
 /**
  * Houses and Lines.
@@ -70,8 +71,8 @@ export function worksName(goodId: string): string {
 const SIZE = { anchorage: 0.35, village: 0.5, town: 0.8, city: 1, emporium: 1.3 } as const;
 
 /** A town's monthly turnover in one good, at Lisbon value. */
-function monthlyValue(def: PortDef, goodId: string): number {
-  return 160 * SIZE[def.size] * (0.4 + def.wealth) * (def.produces[goodId] ?? 0);
+function monthlyValue(def: PortDef, goodId: string, prosperity = 1): number {
+  return 160 * SIZE[def.size] * (0.4 + def.wealth * prosperity) * (def.produces[goodId] ?? 0);
 }
 
 /** What the Works at a House can be put to making: the town's own goods, dearest first. */
@@ -86,15 +87,27 @@ export function worksCost(def: PortDef, goodId: string, level = 1): number {
   return Math.round(26 * monthlyValue(def, goodId) * [1, 1.6, 2.4][level - 1]);
 }
 
-/** Units a month the Works turn out. */
-export function worksOutput(f: Feitoria): number {
+/**
+ * How well the man running a House gets the most of it, as a multiplier on yield: an officer
+ * of ability 0.5 (the middle) is 1; a good one a fifth better, a poor one a fifth worse.
+ */
+export function factorQuality(f: Feitoria): number {
+  return 0.8 + 0.4 * clamp(f.ability, 0, 1);
+}
+
+/**
+ * Units a month the Works turn out. `prosperity` is the town's (world/tick): the Works turn
+ * out more in a thriving town and less in a struggling one, as well as with a better factor.
+ * Costs and wages stay as they were, so the profit moves with both.
+ */
+export function worksOutput(f: Feitoria, prosperity = 1): number {
   if (!f.make) return 0;
   const def = portDef(f.portId);
   const gd = GOOD_BY_ID.get(f.make);
   if (!gd) return 0;
   const lvl = [1, 1.7, 2.6][(f.makeLevel ?? 1) - 1] ?? 1;
   const posture = postureOf(f) === 'work' ? 2 : 1;
-  return (monthlyValue(def, f.make) * lvl * posture) / (0.9 * gd.lisbon);
+  return (monthlyValue(def, f.make, prosperity) * lvl * posture * factorQuality(f)) / (0.9 * gd.lisbon);
 }
 
 /** Wages for the Works, a month. */
@@ -102,6 +115,41 @@ export function worksUpkeep(f: Feitoria): number {
   if (!f.make) return 0;
   const lvl = [1, 1.7, 2.6][(f.makeLevel ?? 1) - 1] ?? 1;
   return Math.round(0.14 * monthlyValue(portDef(f.portId), f.make) * lvl * (postureOf(f) === 'work' ? 1.6 : 1));
+}
+
+// ---------------------------------------------------------------------------
+// A quay or a fort: money put into the town itself (BUILD_PLAN C1)
+
+export const CIVIC: Record<Civic, { name: string; blurb: string; cost: number }> = {
+  quay: { name: 'Quay', blurb: 'A stone quay and a crane: ships load faster, more of them call, and the town grows richer for it.', cost: 1 },
+  fort: { name: 'Fort', blurb: 'Walls and guns over the anchorage. Nobody blockades a town that can answer, and war does it less harm.', cost: 1.5 },
+};
+
+/**
+ * What a quay or fort costs: the Works formula (26 x monthly value of the town's best good,
+ * at P = 1 so that the price does not move with the fortunes it is meant to improve), dearer
+ * each time (x1, 1.6, 2.4), the fort half as dear again.
+ */
+export function civicCost(def: PortDef, kind: Civic, level: number): number {
+  const best = worksChoices(def)[0];
+  const value = best ? monthlyValue(def, best) : 160 * SIZE[def.size] * (0.4 + def.wealth) * 0.4;
+  return Math.round(26 * value * CIVIC[kind].cost * [1, 1.6, 2.4][Math.min(level, 2)]);
+}
+
+/** Pay for a quay or fort at a port the captain is in. Returns what to say. */
+export function fundCivic(g: Game, portId: string, kind: Civic): string {
+  const def = portDef(portId);
+  const level = civicLevel(g, portId, kind);
+  if (level >= MAX_CIVIC_LEVEL) return `The ${CIVIC[kind].name.toLowerCase()} at ${def.name} is as much as the town needs.`;
+  const cost = civicCost(def, kind, level);
+  if (cost > g.crown.gold + g.creditFree) return `It comes to ${cost} cruzados, and there is not that much.`;
+  if (g.crown.gold < cost) g.drawCredit(cost);
+  g.crown.gold -= cost;
+  const gain = fundedCivic(g, portId, kind);
+  g.logEvent('trade', `${level === 0 ? 'Paid for' : 'Enlarged'} the ${CIVIC[kind].name.toLowerCase()} at ${def.name}: ${cost} cruzados.`, true);
+  return gain > 0.005
+    ? `The ${CIVIC[kind].name.toLowerCase()} is paid for. ${def.name} will be the better for it.`
+    : `The ${CIVIC[kind].name.toLowerCase()} is paid for, but ${def.name} can hardly be made richer than it is.`;
 }
 
 export function buildWorks(g: Game, f: Feitoria, goodId: string): string {

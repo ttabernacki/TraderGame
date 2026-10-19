@@ -11,6 +11,7 @@ import { append, button, clear, el } from './dom';
 import { AGREED_W } from '../navigation/charts';
 import { GRADE_COLOUR, soundingAnchors, vertexGrade, type Grade } from '../navigation/chartGrade';
 import { REGION, describeSea } from '../game/rutter';
+import { seenProsperity } from '../world/tick';
 
 /**
  * How big the hand on the chart is drawn.
@@ -770,6 +771,10 @@ export class ChartView {
           : '',
         el('div', { style: { marginTop: '3px', fontSize: '11.5px' } },
           rel.met ? (rel.mayTrade ? 'Trade permitted here.' : 'Known, but no leave to trade.') : 'Not yet visited.'),
+        // How the town was doing when the captain last put in (what he has seen, not the month's truth).
+        seenProsperity(g, this.selectedPort)
+          ? el('div', { style: { marginTop: '3px', fontSize: '11.5px', fontStyle: 'italic' } }, seenProsperity(g, this.selectedPort)!.line)
+          : '',
       );
     } else if (pointing) {
       nodes.push(el('div', { style: { fontSize: '11.5px', fontStyle: 'italic', opacity: '0.72' } },

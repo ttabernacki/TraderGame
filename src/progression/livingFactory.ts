@@ -2,6 +2,7 @@ import { NM, clamp, haversine } from '../core/math';
 import { GOOD_BY_ID } from '../economy/goods';
 import { PORTS, anchorageOf, portDef } from '../world/ports';
 import type { Game } from '../game/state';
+import { prosperityOf } from '../world/tick';
 import { polityOfPort } from '../diplomacy/polities';
 import { footingOf, letterScene, paydayScene, postureOf, worksName, worksOutput, worksUpkeep, type Letter } from './network';
 import {
@@ -127,7 +128,7 @@ function tickOne(g: Game, f: Feitoria): void {
   // fills its store leaves less on the quay for everybody else, the captain included.
   const posture = postureOf(f);
   const before = { ...f.stock };
-  const news = runFactory(f, def, 30, g.rng, rel.regard, { sinceVisit: since, traffic, noBuy: posture !== 'buy' });
+  const news = runFactory(f, def, 30, g.rng, rel.regard, { sinceVisit: since, traffic, noBuy: posture !== 'buy', prosperity: prosperityOf(g, f.portId) });
   // A House trading all year is the town's business with you, and the court notices.
   const pol = polityOfPort(f.portId);
   if (pol) g.adjustPolity(pol.id, { interest: 0.004 });
@@ -146,7 +147,7 @@ function tickOne(g: Game, f: Feitoria): void {
       f.chest -= wage;
       const gd = GOOD_BY_ID.get(f.make)!;
       const room = Math.max(0, capacityOf(f) - stockTons(f));
-      const units = Math.min(worksOutput(f), room / Math.max(gd.bulk, 1e-6));
+      const units = Math.min(worksOutput(f, prosperityOf(g, f.portId)), room / Math.max(gd.bulk, 1e-6));
       if (units > 0) {
         const held = f.stock[f.make] ?? 0;
         const per = wage / Math.max(units, 1);

@@ -13,7 +13,7 @@ import {
 } from '../ship/upgrades';
 import { hullClass } from '../ship/hull';
 import { shipyardCard } from './shipyard';
-import { houseHead, openLineCard, worksBlock } from './networkView';
+import { civicBlock, houseHead, openLineCard, prosperityText, worksBlock } from './networkView';
 import { footingOf, footingWord, hullPrice, postureOf } from '../progression/network';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../navigation/instruments';
 import { OFFICER_ROLES, enduranceDays } from '../crew/crew';
@@ -35,6 +35,7 @@ import {
 import type { Game, TradeListing } from '../game/state';
 import { MAX_VICTUAL_DAYS, MAX_WATER_DAYS, STORE_TONS, fitPlan, loadPlan, planCost, planOf, planTons, recommendedPlan, roomForStores, sparesSetTons, type StoresPlan } from '../game/stores';
 import { doRefit, fitFitting, quoteRefit, refitPlace, removeFitting, type RefitJob } from '../game/refit';
+import { dismissHomecoming, pendingHomecoming, quartersView } from '../game/year';
 import { append, button, card, clear, el, fold, foldCard, kv, plural } from './dom';
 
 type Tab = 'town' | 'market' | 'freight' | 'money' | 'station' | 'stores' | 'yard';
@@ -109,7 +110,10 @@ export class PortView {
       el('h1', {}, def.name),
       el('div', { class: 'sub' },
         `${pe.name}${def.modern ? ` · ${def.modern}` : ''} · ${g.clock.formatDate()}`),
+      // How the town is doing, in a word, and why: as it stands as the captain comes in.
     );
+    const fortunes = prosperityText(g, def.id);
+    if (fortunes) this.head.append(el('div', { class: 'sub' }, fortunes));
 
     clear(this.foot);
     append(this.foot,
@@ -258,6 +262,21 @@ export class PortView {
 
     const left = el('div', {});
     const right = el('div', {});
+
+    // The Year (game/year.ts): the homecoming card, once, then the quarters panel.
+    const home = pendingHomecoming(g);
+    if (home) {
+      left.append(card(`Home from the sea: year ${home.year}`,
+        ...home.lines.map((l, i) => el('p', i === 0 ? { class: 'epilogue-lede' } : {}, l)),
+        el('div', { class: 'row' }, button('Lay it by', () => { dismissHomecoming(g); this.render(); }, { primary: true }))));
+    }
+    const qv = quartersView(g);
+    if (qv) {
+      left.append(foldCard(card(qv.title,
+        el('p', {}, qv.season),
+        ...qv.items.map((i) => kv(i.label, i.value)),
+        el('p', { class: 'flavour' }, qv.consequence + ' Leaving early is always allowed.')), qv.phase === 'quarters' ? '' : 'The season is open.', qv.phase === 'quarters'));
+    }
 
     // Coming among a people nobody from Europe has met is the single most
     // dramatic thing in the game.
@@ -1125,6 +1144,7 @@ export class PortView {
 
     right.append(card('What the House does', ...houseHead(f, () => this.render())));
     right.append(card('Works', worksBlock(g, f, () => this.render(), (t) => { this.notice = { text: t }; })));
+    right.append(card('The town', civicBlock(g, f.portId, () => this.render(), (t) => { this.notice = { text: t }; })));
     if (postureOf(f) === 'buy') right.append(this.orderCard(g, def, f));
 
     right.append(card('The chest',
