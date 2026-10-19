@@ -25,6 +25,8 @@ export interface PatronView {
   reasons: PatronReason[];
   unlocked: Perk[];
   locked: Perk[];
+  /** The unlocked perks worth listing: those not replaced by a better one in force. */
+  shown: Perk[];
 }
 
 export const stageIndex = (s: Stage): number => STAGES.indexOf(s);
@@ -63,6 +65,7 @@ export function patronOf(g: Game, deep: DeepPort): PatronView {
     patron: p, score, stage, visits,
     nextAt: idx < p.thresholds.length ? p.thresholds[idx] : null,
     reasons, unlocked, locked: p.perks.filter((k) => !atLeast(stage, k.stage)),
+    shown: unlocked.filter((k) => !unlocked.some((o) => o.supersedes === k.id)),
   };
 }
 

@@ -145,7 +145,7 @@ export function contractOffersAt(
     const nm = haversine(anchorageOf(at), anchorageOf(to)) / NM;
     if (nm < 120 || nm > 6500) continue;
     const s = supply(at.id, c.goodId);
-    if (s.ratio < 0.6 || s.stock < c.quantity * 0.5) continue;
+    if (s.ratio < 0.5 || s.stock < 1) continue;
     out.push({ ...c, fromPort: at.id });
   }
   return out.sort((a, b) => b.fee - a.fee).slice(0, 3);

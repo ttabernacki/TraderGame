@@ -86,6 +86,7 @@ function dockedAt(port: string, seed = 7, tweak?: (g: Game) => void): Game {
   g.mode = 'port';
   g.clock.paused = false;
   tweak?.(g);
+  g.ship.state.pos = { ...anchorageOf(portDef(port)) };
   g.enterPort(portDef(port));
   g.mode = 'port';
   return g;
@@ -143,14 +144,31 @@ function renderAll(g: Game, label: string): Set<string> {
     rel.met = true; rel.mayTrade = true; rel.factory = true;
     g.ship.addCargo?.('pimenta', 5, 10);
     try { g.newHouse(p, 'Pêro Vaz', null); } catch { /* a House may not be allowed here */ }
-    g.finance.credit && void g.finance;
+    g.hands[0].alive = false;
+    const aliveOfficer = g.crew.officers.find((o) => o.alive && o.role === 'cirurgiao');
+    if (aliveOfficer) aliveOfficer.alive = false;
+    g.portGossip = 'A pilot at the water stairs says the other captain has been seen off Cape Verde.';
+    g.crew.count = g.crew.complement + 12;
+    g.ship.addCargo?.('pimenta', 8, 10);
     for (const id of renderAll(g, `rich ${p}`)) seen.add(id);
+    n++;
+  }
+  // A second port after a first, with a cargo, so the factor's eye has prices to quote; and a ground for a House.
+  {
+    const g = dockedAt('lisboa', 5, (gg) => { gg.crown.gold = 9000; });
+    g.ship.addCargo?.('pimenta', 6, 10);
+    g.waitDays(1);
+    g.ship.state.pos = { ...anchorageOf(portDef('funchal')) };
+    g.enterPort(portDef('funchal')); g.mode = 'port';
+    const rel = g.relationsFor('funchal'); rel.met = true; rel.mayTrade = true;
+    g.crew.count = g.crew.complement + 12;
+    for (const id of renderAll(g, 'second port')) seen.add(id);
     n++;
   }
   console.log(`rendered ${n} port states; ${seen.size} distinct verbs seen in the DOM`);
   // Every verb that is not conditional on a rare state has been seen at least once somewhere.
   for (const v of VERBS) if (v.quarter !== 'foot' && !seen.has(v.id)) console.log(`   (never rendered in these states: ${v.id})`);
-  const rare = new Set(['hands.degredado', 'hands.returning', 'town.first-contact', 'freight.contracts-open', 'market.antwerp', 'yard.ships-for-sale', 'town.homecoming', 'hands.inland-out', 'hands.inland-send']);
+  const rare = new Set(['town.season-wait', 'hands.degredado', 'hands.returning', 'town.first-contact', 'freight.contracts-open', 'market.antwerp', 'yard.ships-for-sale', 'town.homecoming', 'hands.inland-out', 'hands.inland-send']);
   for (const v of VERBS) if (v.quarter !== 'foot' && !rare.has(v.id)) need(seen.has(v.id), `${v.id} was never rendered, in any state`);
 }
 
@@ -295,7 +313,9 @@ const deed = (g: Game, tag: any, mag = 0.8, extra: Record<string, unknown> = {})
   g.pendingEvent = null; g.pendingScenes = [];
   const s1 = dueDeepScene(g, 'mina');
   need(!!s1 && s1.id === 'place:mina-arc-1', `the first beat is ${s1?.id}`);
+  g.queueScene(s1!);
   need(dueDeepScene(g, 'mina') === null, 'a beat is put twice while unanswered');
+  g.pendingEvent = null; g.pendingScenes = [];
   need((s1!.choices?.length ?? 0) >= 2, 'a beat has no choice');
   const wordLine = resolve(s1, 0);
   need(wordLine.length > 20 && g.powers.seen['mina:word'] !== undefined, 'giving the word leaves no trace');
@@ -387,11 +407,12 @@ const deed = (g: Game, tag: any, mag = 0.8, extra: Record<string, unknown> = {})
   need(mods.duesMult < 1 && mods.reasons.some((r) => /remembers/.test(r)), 'the market modifiers do not carry the memory');
   need(ouro0.duesMult === 1, 'a new game has dues at Mina');
   // It is said once, a day later, on the call.
+  const spoken = (gg: Game, re: RegExp): number => gg.log.entries.filter((e: any) => re.test(e.text)).length;
   g.waitDays(2);
-  const line = placeCallbackAt(g, 'mina');
-  need(!!line, 'the place says nothing a day after the deed');
-  const again = placeCallbackAt(g, 'mina');
-  need(again === null || again !== line, 'the same line is said twice');
+  need(spoken(g, /talk of the day the weights were agreed|Kwesi has heard about the weights/) >= 1, 'the place says nothing a day after the deed');
+  g.waitDays(4);
+  need(spoken(g, /talk of the day the weights were agreed/) === 1, `the town's line is said ${spoken(g, /talk of the day the weights were agreed/)} times`);
+  need(spoken(g, /Kwesi has heard about the weights/) === 1, 'the Patron’s answer is not said exactly once');
   // The deed that goes wrong.
   const b = dockedAt('mina'); deed(b, 'weights.false', 0.9);
   need(placeEffects(b, 'mina', b.clock.t).dues > 1 && (placeEffects(b, 'mina', b.clock.t).price.ouro ?? 1) > 1, 'false weights do not cost at Mina');
@@ -401,7 +422,8 @@ const deed = (g: Game, tag: any, mag = 0.8, extra: Record<string, unknown> = {})
   s.noteDeed('gift.great', { place: 'arguim', target: 'azenegue', magnitude: 0.6, note: 'test', silent: true });
   need(memoryLines(s, 'arguim').some((l) => /gift/i.test(l.text)), 'a stop has no memory line');
   s.waitDays(2);
-  need(!!placeCallbackAt(s, 'arguim'), 'a stop does not say it');
+  need(spoken(s, /At Arguim your gift is still talked of/) === 1, 'a stop does not say it once');
+  need(placeCallbackAt(s, 'arguim') === null, 'a stop says it twice');
   need(Object.keys(placeEffects(s, 'arguim', s.clock.t).price).length === 0, 'a stop has market effects of its own');
   // Shore leave moves morale.
   const l = dockedAt('funchal'); l.crew.morale = 0.4; l.crown.gold = 100;

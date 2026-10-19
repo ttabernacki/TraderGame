@@ -47,7 +47,7 @@ export function audienceSection(ctx: Ctx, host: HTMLElement, g: Game): void {
       kv('To you, he is', stageWord(v.stage)),
       kv('A House here would cost', `${g.foundingCost(def)} cruzados`),
       kv('Credit while you lie here', v.unlocked.some((k) => k.kind === 'credit') ? `${g.creditLimit} cruzados` : 'none yet'),
-      ...v.unlocked.map((k) => el('p', { class: 'perk on' }, el('b', {}, '✓ '), k.text)))));
+      ...v.shown.map((k) => el('p', { class: 'perk on' }, el('b', {}, '✓ '), k.text)))));
   }
 }
 

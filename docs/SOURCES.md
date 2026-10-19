@@ -51,3 +51,29 @@ second informer says is right three times in four against the seed's truth; both
 **Sheets.** Region boxes, prices per grade (Casa 240, Genoese 400, rival 560 cruzados per grade per unit weight), the standing paid and lost,
 the 14%-a-year chance a coast changes and the half-grade a change takes off a buyer's copy are all **invented** balance. The Genoese factors at Lisbon,
 Lagos and Funchal are plausible (Genoese in the Portuguese sugar and Atlantic trade) and unsourced here.
+
+## Mina as a Deep port (C4)
+
+Data and prose in `src/places/deep.ts`; the Quarters in `src/ui/quarters/`. The Patron is Kwesi, the gold-broker who already
+speaks in the Traffic's "Who buys" scene; this deepens him rather than adding a stranger.
+
+| Item | Grade | Note |
+|---|---|---|
+| São Jorge da Mina raised in 1482; named for St George, whose day is 23 April | documented | The Castle's foundation and name. The game keeps the saint's day with a mass and the flag; that observance is **approximate** (inferred, not sourced). |
+| Gold weighed in dust against weights, on the beach, on the Akan buyers' own scales | documented | The practice; no particular weight system or value is claimed. |
+| The dry-season gold trade; two wet seasons on the Gulf of Guinea coast | approximate | The months used (gold Dec-Mar, great rains Apr-Jul, small rains Oct-Nov) are the climate's, not a dated record. |
+| Fever as the Castle's killer | documented | Reflected in the calendar's fever multiplier (x2 in the great rains, x1.5 in the small); the multipliers are **invented**. |
+| Pawnship as a custom of the coast (a person pledged for a debt) | documented | The practice; the Thursday hearing and Kojo's case are the Traffic's (C2), not this build's. |
+| Trade between the Gold Coast and Benin by sea and canoe | documented | The route and goods are generic; that it is Kwesi's house's own practice is **invented**. |
+
+**Invented, marked as such:** Kwesi (an Akan day-name, Sunday-born, of no real man), his house, his sister's son Yaw, the interpreter's
+few words, the factor's new clerk; the Casa's ship "looked for in March and September" and its effect on brass and cloth; every sum,
+multiplier and threshold (the regard track's weights, the credit of 150 and 300 cruzados, the House at 0.7, gold at 0.96, the dues
+effects of honest and false weights); the four beats of the arc (the canoe trade to the Benin creeks, the clerk's question, the letter
+to a broker, the half-ounce weight).
+
+**Deliberately left generic:** the identity of the Captain of the Castle and of the factor; the name of Kwesi's house and of the
+polity beyond "Eguafo's country"; any year but 1482.
+
+**The Quarters' own invented verbs:** shore leave (a day, a few cruzados, morale and the fo'c'sle's regard up, fever risk on a fever
+coast), keeping the day (mass, with or without a chaplain), buying a round at the tavern. All numbers are the game's.

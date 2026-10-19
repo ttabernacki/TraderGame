@@ -5,7 +5,7 @@ import { Markets, type MarketEffects } from '../economy/market';
 import { regionOf, type Region } from '../economy/trade';
 import { polityOfPort } from '../diplomacy/polities';
 import { PORTS, anchorageOf, portDef } from './ports';
-import { MONTH, setLaneModel, type LaneContext, type LaneModel, type LaneResult, type WorldHost } from './tick';
+import { MONTH, onMonthStart, setLaneModel, type LaneContext, type LaneModel, type LaneResult, type WorldHost } from './tick';
 import { postContracts } from './contracts';
 import { laneStateOf, type LaneState } from './laneState';
 export { laneStateOf, newLaneState, type LaneState } from './laneState';
@@ -334,8 +334,6 @@ export const laneModel: LaneModel = (ctx: LaneContext): LaneResult => {
     st.traffic[p.id] = traffic[p.id];
   }
 
-  // Scarcity: a quay that has stood under 30% of its usual stock for two months posts a contract.
-  postContracts(h, t, mi);
   // The rival sells into the same markets.
   stepHouse(h, t);
   // The weight of outsiders fades, and the month is over.
@@ -354,3 +352,6 @@ export function laneTrend(h: Pick<WorldHost, 'lanes' | 'markets'>, portId: strin
 }
 
 setLaneModel(laneModel);
+// Scarcity: a quay that has stood under 30% of its usual stock for two months posts a contract. Counted at the start
+// of the month, before the quays make anything, so that what was drawn off the shelves is seen.
+onMonthStart((h, t) => postContracts(h, t, monthIndex(t)));

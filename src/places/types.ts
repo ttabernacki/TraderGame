@@ -36,6 +36,8 @@ export interface Perk {
   kind: 'rumour' | 'credit' | 'pilot' | 'house' | 'price';
   /** What it is, in a line the Quarters can print. */
   text: string;
+  /** This perk replaces another once it is in force (so the Quarters list only the better). */
+  supersedes?: string;
   /** Credit: cruzados while lying here. House: the multiplier on the founding cost. Price: the multiplier on gold. */
   value?: number;
 }

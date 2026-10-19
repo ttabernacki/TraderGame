@@ -68,6 +68,22 @@ play, ~4 s of CPU per voyage).
 - Not covered: ventures, Lines, Houses, finance instruments, shipbuilding, heirs. `genSaves.ts` builds those
   states and `saves.ts` covers them.
 
+## 3. Quarters and the Deep ports — `scripts/quarters.ts`
+
+The port screen is six quarters (Waterfront, Tavern, Yard, Market, Fort & Court, Faith), each a pure view model
+(`ui/quarters/model.ts`) rendered by small files in `ui/quarters/`. The script runs in node with a 90-line fake DOM
+(`scripts/lib/fakeDom.ts`): the old screen's 67 functions, listed by hand, must each be a verb of a quarter at <= 2 clicks;
+every port in several states, and every golden save at every port, renders every section with every available verb found
+in the DOM by `data-verb`; the Fronts show at the place (an embargo shuts the Market's strip and stock); Mina's Patron
+tracks the Ledger, reacts in a played career, and tells a four-beat arc in order whose reward lies ahead on the road; a
+Ledger entry becomes a line, said once, and moves dues, price and the town's regard; every non-Deep port is a four-line Stop.
+
+```
+npx esbuild scripts/quarters.ts --bundle --platform=node --format=cjs --outfile=/tmp/quarters.cjs && node /tmp/quarters.cjs
+```
+
+About 35 s. Pixels are not checked here; for those, bundle `ui/portView` and screenshot it (see `scripts/render`).
+
 ## Others
 
 `scripts/*.ts` (pieces, silent, hall, ...) are single-system checks; run each with the same esbuild pattern.

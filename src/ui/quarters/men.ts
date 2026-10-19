@@ -8,7 +8,7 @@ import { courtCandidate } from '../../company/company';
 import { backingFor, candidates, errandsAt, journeyWord, outfitCost, outstanding } from '../../progression/inland';
 import type { Game } from '../../game/state';
 import { button, card, el, fold, kv } from '../dom';
-import { tagLast } from './verb';
+import { tagLast, verb } from './verb';
 import type { Ctx } from './ctx';
 
 /**
@@ -107,9 +107,9 @@ export function linguaCard(ctx: Ctx, g: Game, def: PortDef): HTMLElement {
 export function renderInland(ctx: Ctx, right: HTMLElement, g: Game, def: PortDef): void {
   const out = outstanding(g);
   if (out.length > 0) {
-    right.append(card('Men inland',
+    right.append(verb('hands.inland-out', card('Men inland',
       ...out.map((j) => el('p', {}, journeyWord(g, j))),
-    ));
+    )));
   }
 
   const errands = errandsAt(def);
@@ -121,7 +121,7 @@ export function renderInland(ctx: Ctx, right: HTMLElement, g: Game, def: PortDef
     : men[0];
   const backing = backingFor(g, def, chosen);
 
-  right.append(fold('Send a man inland', '', false,
+  right.append(verb('hands.inland-send', fold('Send a man inland', '', false,
     el('p', { class: 'quote' },
       'The Crown did this for sixty years and it was never once a small thing. A man walks '
       + 'away from the coast with a letter and a bag of goods, and either he comes back with '
@@ -158,7 +158,7 @@ export function renderInland(ctx: Ctx, right: HTMLElement, g: Game, def: PortDef
         }, { primary: g.crown.gold >= outfitCost(e) }),
       ),
     )),
-  ));
+  )));
 }
 
 export function menSection(ctx: Ctx, host: HTMLElement, g: Game): void {
@@ -184,8 +184,8 @@ export function menSection(ctx: Ctx, host: HTMLElement, g: Game): void {
         ctx.render();
       }),
     ));
-  }
   tagLast(host, 'hands.degredado');
+  }
 
   // A written officer's return is a scene of its own — he comes off in a canoe
   // as you stand in — so he is not collected off a list here.
@@ -194,7 +194,7 @@ export function menSection(ctx: Ctx, host: HTMLElement, g: Game): void {
       && o.ashoreSince !== undefined && g.clock.t - o.ashoreSince > 300 * 86400,
   );
   for (const o of returning) {
-    host.append(el('div', { class: 'notice' },
+    host.append(verb('hands.returning', el('div', { class: 'notice' },
       `${o.name} is on the beach, thinner and browner and speaking ${pe.language}. `,
       button('Take him back aboard', () => {
         o.ashoreAt = undefined;
@@ -204,6 +204,6 @@ export function menSection(ctx: Ctx, host: HTMLElement, g: Game): void {
         g.logEvent('contact', `${o.name} came off in a canoe, having lived a year among the people of ${def.name}. He has their language, and a good deal else besides.`, true);
         ctx.notice = { text: `${o.name} is aboard again, and is now your interpreter.` };
         ctx.render();
-      })));
+      }))));
   }
 }

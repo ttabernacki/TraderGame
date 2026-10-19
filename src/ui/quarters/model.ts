@@ -5,7 +5,6 @@ import type { Game } from '../../game/state';
 import { deepPort } from '../../places';
 import { outstanding, errandsAt, candidates } from '../../progression/inland';
 import { hullPrice } from '../../progression/network';
-import { people } from '../../world/peoples';
 import { frontsAt, type FrontLine } from './fronts';
 
 /**
@@ -230,7 +229,7 @@ export function quartersModel(g: Game): QuarterModel[] {
     const spec = QUARTERS[q];
     return {
       id: q, label: spec.label, blurb: spec.blurb, badge: badgeOf(g, q), fronts: fronts[q],
-      shut: q === 'market' && !rel.mayTrade && people(def.people) !== undefined && def.people !== 'portuguese',
+      shut: q === 'market' && ((!rel.mayTrade && def.people !== 'portuguese') || (g.markets.modifiers?.(def.id, g.clock.t).closed ?? false)),
       sections: spec.sections.map((s, i) => ({
         id: s.id, title: s.title, open: i === 0,
         verbs: VERBS.filter((v) => v.quarter === q && v.section === s.id).map((v) => ({

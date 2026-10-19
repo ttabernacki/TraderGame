@@ -419,6 +419,17 @@ if (CHECK) {
   const top20 = ref.slice(0, 20).filter((r) => CARREIRA.has(r.g) && ['india', 'east', 'arabia'].includes(regionOf(r.from))).length;
   console.log(`top 20 single-good lanes that are Indian Ocean spice, silk, pearls or gems: ${top20}`);
   if (top20 < 14) fails.push(`only ${top20} of the 20 best lanes are the Carreira's goods from the Indian Ocean (>= 14)`);
+  // The small-hull question (D1): the stores-in-tons rule does NOT keep a small hull off the Indies. Pinned so that it
+  // is not forgotten: only the barcha and the latina cannot carry a round trip's stores from Lisbon (they must renew
+  // them at the ports of the road, which is what the trunk is for); a redonda's loading for the longest leg is a fifth
+  // of her hold, and she nets what a Nau da India does. Dues by tonnage (economy/dues) do not change that.
+  const red = HULLS.find((x) => x.id === 'caravela-redonda')!, barcha = HULLS.find((x) => x.id === 'barcha')!, lat = HULLS.find((x) => x.id === 'caravela-latina')!;
+  if (india3[barcha.id].wholeT <= barcha.hold) fails.push(`the barcha can carry the round trip's stores (${india3[barcha.id].wholeT.toFixed(1)} of ${barcha.hold} t): the stores rule was supposed to limit her`);
+  if (india3[lat.id].wholeT < lat.hold * 0.85) fails.push('the latina has room for cargo after a round trip\'s stores: the stores rule changed');
+  if (india3[red.id].legT > red.hold * 0.25) fails.push(`a redonda's stores for the longest leg are ${india3[red.id].legT.toFixed(1)} t of ${red.hold}: they now bind`);
+  const bigI = india3[BIGH.id], redI = india3[red.id];
+  console.log(`India small-hull question: redonda ${f(redI.legNet)} vs Nau da India ${f(bigI.legNet)} a tour with the stores renewed at the ports (${(redI.legNet / bigI.legNet).toFixed(2)}x); stores for the longest leg ${redI.legT.toFixed(1)} of ${red.hold} t`);
+  if (bigI.legNet < 6000 || bigI.legNet > 12000) fails.push(`a Nau da India's Malabar tour at real sailed days nets ${f(bigI.legNet)} (band 6,000-12,000)`);
   if (zero > 0) fails.push(`${zero} port goods at zero stock`);
   if (off > 0) fails.push(`${off} prices out of band`);
   if (fails.length) { console.log('CHECK FAILED:\n  ' + fails.join('\n  ')); process.exit(1); }

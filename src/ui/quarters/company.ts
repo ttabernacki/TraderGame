@@ -58,8 +58,8 @@ export function companySection(ctx: Ctx, host: HTMLElement, g: Game): void {
           : null,
       )),
     ));
-  }
   tagLast(host, 'hands.focsle');
+  }
 
   const lost = g.hands.filter((h) => !h.alive);
   if (lost.length > 0) {
@@ -69,8 +69,8 @@ export function companySection(ctx: Ctx, host: HTMLElement, g: Game): void {
         el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)' } }, h.fate ?? 'Lost.'),
       ))),
     ));
-  }
   tagLast(host, 'hands.lost');
+  }
 
   // Who you already have, and what they are. A captain knows his own officers.
   const aboard = g.crew.officers.filter((o) => o.alive && !o.ashoreAt);
@@ -125,6 +125,6 @@ export function companySection(ctx: Ctx, host: HTMLElement, g: Game): void {
           r.blurb),
       ))),
     ));
-  }
   tagLast(host, 'hands.berths-empty');
+  }
 }

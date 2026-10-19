@@ -63,9 +63,9 @@ export function patronCard(g: Game, deep: DeepPort): HTMLElement {
     el('div', { class: 'patron-track' }, ...dots),
     kv('To you, he is', stageWord(v.stage)),
     v.reasons.length
-      ? el('ul', { class: 'list patron-reasons' }, ...v.reasons.slice(0, 4).map((r) => el('li', { class: r.delta < 0 ? 'bad' : 'good' }, `${r.delta < 0 ? '−' : '+'} ${r.why}`)))
+      ? el('ul', { class: 'list patron-reasons' }, ...v.reasons.slice(0, 3).map((r) => el('li', { class: r.delta < 0 ? 'bad' : 'good' }, `${r.delta < 0 ? '−' : '+'} ${r.why}`)))
       : el('p', { class: 'flavour' }, 'Nothing you have done on this coast has been weighed yet. Come ashore, and deal.'),
-    ...v.unlocked.map((k) => el('p', { class: 'perk on' }, el('b', {}, '✓ '), k.text)),
+    ...v.shown.map((k) => el('p', { class: 'perk on' }, el('b', {}, '✓ '), k.text)),
     ...v.locked.map((k) => el('p', { class: 'perk off' }, el('b', {}, `(${stageWord(k.stage)}) `), k.text)),
     fold('Who he is', '', false, ...p.bio.map((b) => el('p', {}, b))),
     arc.total > 0

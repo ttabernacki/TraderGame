@@ -351,9 +351,9 @@ export function quartersView(g: Game): QuartersView | null {
   const hull = g.ship.condition;
   const items: { label: string; value: string }[] = [
     { label: 'Hiring', value: short > 0 ? `${short} hands wanted at ${g.handWage()} cruzados a man; the quay is full of men in the off-season.` : 'She is fully manned.' },
-    { label: 'Refit', value: hull.hull < 0.9 || hull.bilge > 1 || hull.leak > 0.02 ? 'The yard can mend and careen her; see the Shipyard.' : 'Sound; the yard is idle. A careening is still cheap in the off-season.' },
-    { label: 'The Casa', value: 'Accounts and the King’s goods are settled at the Casa: see the Market and Money tabs.' },
-    { label: 'Letters', value: g.lettersSeen.length > 0 ? 'Brokers’ letters wait on the Market tab.' : 'No letters waiting.' },
+    { label: 'Refit', value: hull.hull < 0.9 || hull.bilge > 1 || hull.leak > 0.02 ? 'The yard can mend and careen her; see the Yard.' : 'Sound; the yard is idle. A careening is still cheap in the off-season.' },
+    { label: 'The Casa', value: 'Accounts and the King’s goods are settled at the Casa: see the Market quarter (Trade and Money).' },
+    { label: 'Letters', value: g.lettersSeen.length > 0 ? 'Brokers’ letters wait in the Market quarter.' : 'No letters waiting.' },
     { label: 'Patron', value: 'Nothing is asked of you yet. A patron’s business will wait here.' },
   ];
   return {

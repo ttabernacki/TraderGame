@@ -87,7 +87,7 @@ const KWESI: PatronDef = {
     { id: 'second', stage: 'trusted', kind: 'rumour', text: 'His people will say whether a tale about this coast is told the same way at their end. No charge.' },
     { id: 'yaw', stage: 'trusted', kind: 'pilot', text: 'Yaw, his sister’s son, who has run the surf boats and the canoes along this coast since he could lift a paddle, will come as a second pilot if you ask.' },
     { id: 'credit-1', stage: 'trusted', kind: 'credit', value: 150, text: 'His house will let a note run against your name while you lie here: up to 150 cruzados of dust.' },
-    { id: 'credit-2', stage: 'partner', kind: 'credit', value: 300, text: 'His house will let a note run against your name while you lie here: up to 300 cruzados of dust.' },
+    { id: 'credit-2', stage: 'partner', kind: 'credit', value: 300, supersedes: 'credit-1', text: 'His house will let a note run against your name while you lie here: up to 300 cruzados of dust.' },
     { id: 'gold', stage: 'partner', kind: 'price', value: 0.96, text: 'Gold is weighed to you at the price he gives his own.' },
     { id: 'house', stage: 'partner', kind: 'house', value: 0.7, text: 'A House on this beach costs three parts in ten less: his house stands surety for the ground.' },
   ],

@@ -8561,7 +8561,7 @@ export class Game {
     this.payWages();
     this.checkStory();
     if (this.questOffersHere().length > 0) {
-      this.pushAlert('Somebody here wants a word with the captain — see the Town.', 'note');
+      this.pushAlert('Somebody here wants a word with the captain — see the Waterfront.', 'note');
     }
   }
 

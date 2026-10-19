@@ -285,6 +285,16 @@ export function onMonth(hook: MonthHook): void {
   if (!monthHooks.includes(hook)) monthHooks.push(hook);
 }
 
+/**
+ * The same, but at the start of the month, before the quays have produced anything: what the captain, the
+ * rival and the Powers left on the shelves is what the hook sees (world/contracts counts the quays that are
+ * short here, because the production pass would hide it).
+ */
+const startHooks: MonthHook[] = [];
+export function onMonthStart(hook: MonthHook): void {
+  if (!startHooks.includes(hook)) startHooks.push(hook);
+}
+
 /** D1 installs its lane model here (once, at module load). */
 export function setLaneModel(m: LaneModel | null): void {
   laneModel = m ?? noLanes;
@@ -309,6 +319,7 @@ function stepMonth(h: WorldHost, t: number): void {
   // happened is in the world whether or not anyone is looking. Its own generator: the tick never draws on the game's.
   rollShocks(h.trade, t, date.year, Rng.fromString(`world:${h.seed}:${Math.floor(t / MONTH)}`));
 
+  for (const hook of startHooks) hook(h, t);
   // 1. Production.
   for (const p of PORTS) h.markets.produce(p.id, t);
   // 2. Lanes.

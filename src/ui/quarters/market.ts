@@ -23,6 +23,10 @@ export function tradeSection(ctx: Ctx, host: HTMLElement, g: Game): void {
     return;
   }
   const listings = g.marketHere();
+  const shut = g.markets.modifiers?.(def.id, g.clock.t).closed ?? false;
+  if (shut) {
+    host.append(el('div', { class: 'notice grave' }, 'Nothing is for sale and nobody is buying: the market is shut to this ship. The strip above says why.'));
+  }
 
   append(host,
     verb('market.purse', el('div', { class: 'card' },
@@ -38,10 +42,10 @@ export function tradeSection(ctx: Ctx, host: HTMLElement, g: Game): void {
       ),
     )),
     verb('market.info', marketCard(ctx, g, def)),
-    el('div', { class: 'tabs market-mode' },
+    verb('market.barter', el('div', { class: 'tabs market-mode' },
       el('button', { class: ctx.marketMode === 'scales' ? 'active' : '', onclick: () => { ctx.marketMode = 'scales'; ctx.render(); } }, 'At the scales, for coin'),
       el('button', { class: ctx.marketMode === 'barter' ? 'active' : '', onclick: () => { ctx.marketMode = 'barter'; ctx.render(); } }, 'The barter table'),
-    ),
+    )),
   );
 
   if (ctx.marketMode === 'barter') { renderBarter(ctx, host, g, listings); tagLast(host, 'market.barter'); }

@@ -85,8 +85,10 @@ export function quaySection(ctx: Ctx, host: HTMLElement, g: Game): void {
 
   // The place itself: a Deep port, with a Patron and a calendar, or a Stop in four lines.
   left.append(deep ? deepPlaceCard(g, def, deep) : stopCard(g, def));
-  if (deep) left.append(patronCard(g, deep));
   left.append(memoryCard(g, def));
+
+  // A Deep port's Patron sits at the head of the right-hand column, where a call begins.
+  if (deep) right.append(patronCard(g, deep));
 
   // Before you sail: what is wrong with her, first and alone.
   const checks = g.readiness();

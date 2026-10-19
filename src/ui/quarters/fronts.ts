@@ -62,7 +62,7 @@ export function frontsAt(g: Game, port: string): Record<QuarterId, FrontLine[]> 
   const pid: PowerId | null = powerOfName(port);
   if (pid) {
     const a = st.powers[pid].attitude;
-    out.court.push({ text: `${POWER_BY_ID.get(pid)?.name ?? pid} regards you as ${attitudeWord(a)}.`, tone: a <= -0.2 ? 'bad' : a >= 0.2 ? 'ok' : 'ok' });
+    out.court.push({ text: `By the Ledger’s reckoning, ${POWER_BY_ID.get(pid)?.name ?? pid} is ${attitudeWord(a)} toward you.`, tone: a <= -0.2 ? 'bad' : a >= 0.2 ? 'ok' : 'ok' });
     for (const m of st.powers[pid].moves.slice(-1)) out.court.push({ text: m.text, tone: 'warn' });
   }
 

@@ -65,7 +65,7 @@ export function boardSection(ctx: Ctx, host: HTMLElement, g: Game): void {
         age: 0, confidence: 0.8, place: def.id, ref: { store: 'chart', port: def.id },
       };
       host.append(verb('tavern.patron-word', card(`${deep.patron.name}’s word`,
-        el('p', { class: 'flavour' }, word.text),
+        ...v.unlocked.filter((k) => k.kind === 'rumour').map((k) => el('p', { class: 'flavour' }, k.text)),
         factCard(g, fact, hooks),
         v.unlocked.some((k) => k.id === 'second')
           ? button('Ask his people about the tales you have heard', () => {
