@@ -72,6 +72,7 @@ export interface WakeParams {
  * foam that marks it stay registered with one another.
  */
 const wakeGlsl = /* glsl */ `
+uniform float uOceanNew;
 uniform vec2 uWakeDir;
 uniform float uWakeStrength;
 uniform float uShipHalfBeam;
@@ -170,11 +171,13 @@ vec3 wakeAt(vec2 rel) {
   float fwd = smoothstep(-0.2, 0.95, hull.x);
   float aftBoil = smoothstep(-0.55, -1.0, hull.x);
   float outer = (hl - 1.0) / (0.07 + 0.13 * uWakeStrength * (0.4 + fwd));
-  float wetting = exp(-edge * edge) * (0.3 + 0.7 * uWakeStrength)
+  float wettingNew = exp(-edge * edge) * (0.3 + 0.7 * uWakeStrength)
                 + step(0.0, outer) * exp(-outer * outer * 1.4) * uWakeStrength * (0.15 + 0.4 * fwd + 0.3 * aftBoil);
+  float edgeOld = (length(hull) - 1.0) / 0.10;
+  float wetting = mix(exp(-edgeOld * edgeOld) * (0.3 + 0.7 * uWakeStrength), wettingNew, uOceanNew);
 
   float foam = clamp((trail * froth * 0.85 + cusps * 0.10 + bow * 0.8) * uWakeStrength
-                     + wetting * 0.45, 0.0, 1.0);
+                     + wetting * mix(0.3, 0.45, uOceanNew), 0.0, 1.0);
 
   // She piles water up at the bow, leaves a trough in the trail astern of it,
   // and raises the two cusp lines either side.
@@ -615,7 +618,7 @@ void main() {
   float breaking = 0.0;
   // Whitecaps are a matter of wind: none to speak of below force four, scattered at force five and
   // six, and by force eight the downwind streaks that mariners call spindrift.
-  float cover = smoothstep(0.5, 1.6, uChop);
+  float cover = smoothstep(0.5, 1.6, uChop) * uOceanNew;
   // The noise field is four octaves of hashing and costs more than the rest of
   // the shading put together, so it is only sampled where a crest could possibly
   // break. Most of the sea, most of the time, is nowhere near.
@@ -675,14 +678,16 @@ void main() {
 
   // Active whitecaps are solid and bright at the crest and lacy where they thin out.
   float whitecap = breaking * mix(0.62, 1.0, lacy);
-  float foam = clamp(whitecap * 0.9 + streakFoam * 0.7 + wake * 0.7, 0.0, 1.0);
+  float foam = mix(clamp(breaking * 0.72 + wake * 0.7, 0.0, 1.0),
+                   clamp(whitecap * 0.9 + streakFoam * 0.7 + wake * 0.7, 0.0, 1.0), uOceanNew);
   // Foam is aerated water and takes its colour from the light on it: bright white in sun, grey
   // under cloud, and in the thin edges a little of the green of the water it floats on.
   float sunLit = clamp(dot(n, uSunDir) * 0.8 + 0.35, 0.0, 1.0) * (1.0 - uOvercast * 0.5);
   vec3 foamColor = mix(vec3(0.70, 0.78, 0.82), vec3(0.97, 0.985, 0.975), sunLit) * (1.0 - uNight * 0.82);
   foamColor = mix(foamColor * vec3(0.78, 0.97, 0.93), foamColor, smoothstep(0.1, 0.7, foam));
+  foamColor = mix(vec3(0.93, 0.96, 0.98) * (1.0 - uNight * 0.82), foamColor, uOceanNew);
   // Even a hard-driven wake leaves the sea showing through it.
-  col = mix(col, foamColor, foam * 0.74);
+  col = mix(col, foamColor, foam * mix(0.68, 0.74, uOceanNew));
 
   // Wind streaks running downwind: the long pale lines a breeze draws on water,
   // spaced tens of metres apart and drifting, not the close regular grating that
@@ -852,6 +857,7 @@ export class Ocean {
         uEnvMix: { value: 1 },
         uEnvOn: { value: 0 },
         uOvercast: { value: 0 },
+        uOceanNew: { value: 1 },
         uTrack: { value: Array.from({ length: TRACK_POINTS }, () => new THREE.Vector2()) },
         uTrackAge: { value: new Array(TRACK_POINTS).fill(0) },
         uTrackRun: { value: new Array(TRACK_POINTS).fill(0) },
@@ -1139,6 +1145,9 @@ export class Ocean {
   }
 
   /** 0 clear to 1 a full grey deck: the sun goes out of the water. */
+  /** The upgraded foam (wind-driven whitecaps and streaks, hull foam) or the old one. */
+  setUpgraded(on: boolean): void { this.material.uniforms.uOceanNew.value = on ? 1 : 0; }
+
   setOvercast(c: number): void {
     this.material.uniforms.uOvercast.value = clamp(c, 0, 1);
   }

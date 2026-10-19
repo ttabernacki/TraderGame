@@ -657,6 +657,7 @@ export class Renderer {
     // astern, both keyed to how hard she is driving.
     this.sky.setPhysical(this.renderMode === 'new' && !!this.post);
     SAIL_TRANS.value = this.renderMode === 'new' ? 1 : 0;
+    this.ocean.setUpgraded(this.renderMode === 'new');
     const lighting = this.sky.update(
       f.pos.lat, f.pos.lon, f.dayFromEpoch, f.hourLocal,
       f.dayOfYear, f.year, f.cloud, f.simTime,
@@ -1263,6 +1264,7 @@ export class Renderer {
     const on = this.renderMode === 'new' && q.cascades >= 2 && q.worldShadow.size > 0;
     this.worldShadow.configure(on ? q.worldShadow : { size: 0, radius: 0 });
     this.land.setShadows(on);
+    this.land.setDetail(this.renderMode === 'new');
     this.settlements.setShadows(on);
   }
 

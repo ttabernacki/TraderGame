@@ -168,6 +168,68 @@ interface Segment {
   fullBLat: number; fullBLon: number;
 }
 
+
+/**
+ * What the ground shader needs that is not in the mesh: where the band's origin is on the earth
+ * (modulo a large period, so a float can hold it), and whether the upgraded ground is on.
+ */
+const LAND_UNIFORMS = {
+  uLandAnchor: { value: new THREE.Vector2() },
+  uLandK: { value: 1 },
+  uLandNew: { value: 1 },
+};
+
+/**
+ * The ground, close to.
+ *
+ * The coast is built from a height field and coloured from a handful of biome
+ * tones, which from a mile off is a convincing coast and from a cable is a flat
+ * green carpet. Everything here multiplies what the build laid down and is anchored to the
+ * earth (the band's origin on the globe plus the vertex) so it neither crawls as the ship
+ * moves nor jumps when the band is rebuilt: patches of drier and greener ground at three
+ * scales; rock where the ground is steep; and the dark, wet band of beach the last
+ * wave has just left. Octaves finer than the screen can resolve are faded out, as the sea's are.
+ */
+function shadeGround(m: THREE.MeshLambertMaterial): void {
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, LAND_UNIFORMS);
+    sh.vertexShader = 'varying vec3 vLandLocal;\n' + sh.vertexShader.replace(
+      '#include <begin_vertex>', '#include <begin_vertex>\n vLandLocal = position;');
+    sh.fragmentShader = `
+      uniform vec2 uLandAnchor; uniform float uLandK, uLandNew;
+      varying vec3 vLandLocal;
+      float lh(vec2 p) { vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973)); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+      float ln(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(lh(i), lh(i + vec2(1.0, 0.0)), f.x), mix(lh(i + vec2(0.0, 1.0)), lh(i + vec2(1.0, 1.0)), f.x), f.y); }
+    ` + sh.fragmentShader.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      if (uLandNew > 0.5) {
+        vec2 ap = uLandAnchor + vec2(vLandLocal.x * uLandK, -vLandLocal.z);
+        float px = max(length(fwidth(ap)), 1.0e-3);
+        float lo = ln(ap * 0.0105);
+        float md = ln(ap * 0.047 + 17.0);
+        float hi = ln(ap * 0.21 + 53.0);
+        float fm = 1.0 - smoothstep(4.0, 12.0, px);
+        float fh = 1.0 - smoothstep(0.8, 2.6, px);
+        float tone = 0.9 + 0.22 * lo + (md - 0.5) * 0.17 * fm + (hi - 0.5) * 0.11 * fh;
+        // Drier, yellower patches among the green, and the odd darker one.
+        float dry = smoothstep(0.52, 0.8, ln(ap * 0.0062 + 7.0)) * 0.42;
+        vec3 shade = mix(vec3(1.0), vec3(1.12, 1.01, 0.76), dry);
+        // Steep ground sheds its soil. The cut is ragged, not a contour line.
+        float ny = abs(inverseTransformDirection(normal, viewMatrix).y);
+        float rock = smoothstep(0.82, 0.58, ny + (md - 0.5) * 0.16 * fm);
+        vec3 rockCol = vec3(0.50, 0.44, 0.37) * (0.8 + 0.4 * hi);
+        diffuseColor.rgb = mix(diffuseColor.rgb * shade * tone, rockCol * (0.7 + 0.3 * tone), rock * 0.6);
+        // The wet beach: darker and richer where the last wave reached, and only worth
+        // drawing where it can be seen.
+        float near = 1.0 - smoothstep(1500.0, 4000.0, length(vViewPosition));
+        float wet = (1.0 - smoothstep(0.12, 0.8, vLandLocal.y + (lo - 0.5) * 0.7)) * near;
+        diffuseColor.rgb *= mix(1.0, 0.7, wet);
+        diffuseColor.rgb = mix(diffuseColor.rgb, pow(max(diffuseColor.rgb, vec3(0.001)), vec3(1.2)), wet * 0.5);
+      }
+    `);
+  };
+}
+
 /** How far off the trees and cliffs are drawn at all, metres. */
 const SCENERY_RANGE = 21000;
 /**
@@ -208,6 +270,9 @@ export class Land {
     this.scenery.setShadows(on);
   }
 
+  /** The upgraded ground: patchy, rocky where steep, wet at the tide line. Off for the old look. */
+  setDetail(on: boolean): void { LAND_UNIFORMS.uLandNew.value = on ? 1 : 0; }
+
   constructor() {
     this.material = new THREE.MeshLambertMaterial({
       vertexColors: true,
@@ -217,6 +282,7 @@ export class Land {
       transparent: true,
       depthWrite: true,
     });
+    shadeGround(this.material);
     receiveWorldShadow(this.material);
     this.group.add(this.scenery.group);
     this.surfMaterial = new THREE.MeshBasicMaterial({
@@ -265,6 +331,12 @@ export class Land {
     this.lastOrigin = { ...origin };
     this.lastRangeNm = rangeNm;
     this.eyeM = eyeM;
+    // Where the band's origin is on the earth, in a fixed scale (a degree of longitude taken as
+    // 0.9 of a degree of latitude, which is only a ruler for the ground's texture), and the
+    // factor that turns the band's own metres into that ruler's.
+    const abs = (v: number) => ((v % 65536) + 65536) % 65536;
+    LAND_UNIFORMS.uLandAnchor.value.set(abs(origin.lon * 111320 * 0.9), abs(origin.lat * 111320));
+    LAND_UNIFORMS.uLandK.value = 0.9 / Math.max(cosd(origin.lat), 1e-6);
 
     const segments = this.segmentsNear(origin, rangeNm);
     this.clear();

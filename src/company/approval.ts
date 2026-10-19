@@ -73,7 +73,8 @@ function causeOf(parts: Part[], score: number): string {
   if (!best || Math.abs(best.delta) < 2) return 'Nothing has passed between you that he has remarked on.';
   const because = best.because;
   // Memories are written as what the captain did ("shamed him in front of the watch").
-  const lead = /^(you |of |the |a |men |goods |an |your )/.test(because) ? because : `you ${because}`;
+  const lead = /^(you |of |the |a |men |goods |an |your )/.test(because) ? because
+    : /^was /.test(because) ? `he ${because}` : `you ${because}`;
   return `Because ${lead}.`;
 }
 
