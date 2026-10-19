@@ -17,7 +17,8 @@ export function companySection(ctx: Ctx, host: HTMLElement, g: Game): void {
     el('p', { class: 'flavour' }, 'A day on the beach for the company, a few cruzados between them, and whatever the shore does to a ship’s company let loose on it. It is the cheapest morale there is, and the dearest if the shore is a fever coast.'),
     kv('It costs', `about ${Math.round(g.crew.count * LEAVE_COST_EACH)} cruzados and a day`),
     kv('Morale', `${Math.round(g.crew.morale * 100)}%`),
-    button('Give the company a day ashore', () => { ctx.say(shoreLeave(g)); ctx.render(); }, { disabled: !!noLeave, title: noLeave ?? undefined }),
+    el('div', { class: 'row', style: { marginTop: '8px' } },
+      button('Give the company a day ashore', () => { ctx.say(shoreLeave(g)); ctx.render(); }, { disabled: !!noLeave, title: noLeave ?? undefined })),
     noLeave ? el('p', { class: 'gift-sub' }, noLeave) : null)));
   // The officers' chests: a share of the hold for their own trade.
   const officers = g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length;

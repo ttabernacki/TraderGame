@@ -54,6 +54,13 @@ Net: about 1,236 lines deleted, 601 added (resolvers, ambient barks, the folded 
 - Verification: `gifts`, `case` (now including the linguist court), `silent`, `between`, `informer`, `refusal`, `pilot`,
   `hostage`, `pieces` all pass.
 
+## 6. Ventures (`progression/ventures.ts`), replaced by contracts in D1
+- Removed: the charter generator `offerVentures` and its helpers. `ventures.ts` is a shim of the names the screens import
+  (`Venture` = `PortContract`, `ventureLine`, `daysLeft`, `charterDays`). `Game.ventures` is a getter over `Game.contracts`; the save carries `contracts`.
+- A quay that stands under 30% of its stock of a good for two months posts a contract (`world/contracts`); the captain brings the goods himself, nothing is loaded for him.
+- Resolver `migrateVentures`: every charter in an old save, in flight or finished, becomes a contract with `kind: 'venture'`,
+  keeping its date, advance, fee, penalty and any cargo loaded for the merchant (still consigned, still reclaimed when it lapses, paid as it always was and still
+  written to the Ledger as `commission.delivered` / `commission.failed`). One log line. Charters merely on offer at a quay are not carried over. `scripts/lanes.ts` runs it on `05-venture.json`.
+
 ## Not cut
-`neverLose` / `reprieve`, `fleet/*`, finance, upgrades (B3), Xiyang. `progression/ventures.ts` carries a deprecation comment
-(replaced by contracts in D1) and is otherwise untouched.
+`neverLose` / `reprieve`, `fleet/*`, finance, upgrades (B3), Xiyang.

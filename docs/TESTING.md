@@ -84,6 +84,23 @@ npx esbuild scripts/quarters.ts --bundle --platform=node --format=cjs --outfile=
 
 About 35 s. Pixels are not checked here; for those, bundle `ui/portView` and screenshot it (see `scripts/render`).
 
+## 4. Lanes, contracts, the weigh-house, dues, the rival's house — `scripts/lanes.ts`, `econ.ts --world`
+
+`lanes.ts` (about 60 s): the lane table (about 150 lanes, 6 goods at most, the five trunks); goods conserved, counted at the
+`Markets` door (units out of the quays = units in); determinism and a long catch-up equal to stepping; trend arrows;
+the player's weight crowds a lane out and six hulls on one lane earn under four times one; prosperity reaches `thriving`;
+the contract life (post, offered only behind it on the road, sign, deliver, restock, miss and forfeit, cooldown); old
+ventures migrate; the run price, heat, inspection at Lisbon, no cooling by waiting; dues; the rival's house moves a price
+and is bought out or allied with; the save round trip and every golden save through two years of lanes.
+`econ.ts --world` adds the 24-month lane world: stock floor, price band, spread, thriving reachable, a war at two Malabar
+ports closing and reopening the lanes through `marketModifiers`, heat not laundered by waiting, dues scaled by tonnage.
+`econ.ts --india-hulls` prints the small-hull table (docs/BALANCE.md).
+
+```
+npx esbuild scripts/lanes.ts --bundle --platform=node --format=cjs --outfile=/tmp/lanes.cjs && node /tmp/lanes.cjs
+node /tmp/econ.cjs --world        # after bundling scripts/econ.ts
+```
+
 ## Others
 
 `scripts/*.ts` (pieces, silent, hall, ...) are single-system checks; run each with the same esbuild pattern.

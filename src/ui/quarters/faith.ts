@@ -38,6 +38,7 @@ export function faithSection(ctx: Ctx, host: HTMLElement, g: Game): void {
   host.append(verb('faith.keep-day', card(feast ? feast.name : 'Hear mass, or keep the day',
     el('p', {}, feast ? feast.text : 'A day given to the company’s devotions: a little heart for the men, more if there is a priest, and more again on the place’s own feast.'),
     kv('Morale', `${Math.round(g.crew.morale * 100)}%`),
-    button(feast ? `Keep ${feast.name}` : 'Keep the day', () => { ctx.say(keepTheDay(g)); ctx.render(); }, { disabled: !!why, title: why ?? undefined }),
+    el('div', { class: 'row', style: { marginTop: '8px' } },
+      button(feast ? `Keep ${feast.name}` : 'Keep the day', () => { ctx.say(keepTheDay(g)); ctx.render(); }, { disabled: !!why, title: why ?? undefined })),
     why ? el('p', { class: 'gift-sub' }, why) : null)));
 }

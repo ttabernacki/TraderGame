@@ -26,6 +26,7 @@ import { addEffect, announce, MONTH, marketModifiers } from '../src/world/powers
 import { Rng } from '../src/core/rng';
 import { DEEP_PORTS, MINA, activeEntries, arcProgress, beatOffered, deepPort, dueDeepScene, feverFactor, memoryLines, nextEntry, patronOf, perkOf, placeCallbackAt, placeEffects, shoreLeave, stopOf } from '../src/places';
 import { candidatesAt } from '../src/company/candidates';
+import { dueTrafficScene } from '../src/progression/trafficScenes';
 import { courtCandidate } from '../src/company/company';
 import { PortView } from '../src/ui/portView';
 import { QUARTERS, QUARTER_IDS, SECTION_VIEWS, Ctx, VERBS, VERB_BY_ID, availableVerbs, clicksFor, quartersModel } from '../src/ui/quarters';
@@ -153,6 +154,20 @@ function renderAll(g: Game, label: string): Set<string> {
     for (const id of renderAll(g, `rich ${p}`)) seen.add(id);
     n++;
   }
+  // The states that are rare: a homecoming card, a contract to deliver, a man inland, a man back off the beach.
+  {
+    const g = dockedAt('lisboa', 3, (gg) => { gg.crown.gold = 9000; });
+    g.year.pending = { year: 1, from: 0, to: 1, days: 300, purseDelta: 100, sold: 10, bought: 5, deaths: 1, raised: 0, sounded: 0, coverageGain: 0, discoveries: 0, families: [], highlights: [], lines: ['Home from the first year.'] };
+    g.trade.contracts.push({ id: 1, house: 'x', houseName: 'A House on the Rua Nova', goodId: 'pimenta', qty: 10, price: 30, advance: 100, made: g.clock.t, due: g.clock.t + 90 * 86400, status: 'open' } as any);
+    for (const id of renderAll(g, 'homecoming')) seen.add(id);
+    const h = dockedAt('mina', 3, (gg) => { gg.crown.gold = 9000; });
+    h.journeys.push({ id: 'j1', errand: 'passage', officerId: 'x', officerName: 'Pêro', fromPortId: 'mina', peopleId: 'akan', sentT: h.clock.t - 86400 * 400, dueT: h.clock.t + 86400 * 400, backing: 0.5 } as any);
+    const o = h.crew.officers.find((x) => x.alive)!;
+    o.arc = undefined;
+    o.ashoreAt = 'mina'; o.ashoreSince = h.clock.t - 400 * 86400;
+    for (const id of renderAll(h, 'inland')) seen.add(id);
+    n += 2;
+  }
   // A second port after a first, with a cargo, so the factor's eye has prices to quote; and a ground for a House.
   {
     const g = dockedAt('lisboa', 5, (gg) => { gg.crown.gold = 9000; });
@@ -168,7 +183,7 @@ function renderAll(g: Game, label: string): Set<string> {
   console.log(`rendered ${n} port states; ${seen.size} distinct verbs seen in the DOM`);
   // Every verb that is not conditional on a rare state has been seen at least once somewhere.
   for (const v of VERBS) if (v.quarter !== 'foot' && !seen.has(v.id)) console.log(`   (never rendered in these states: ${v.id})`);
-  const rare = new Set(['town.season-wait', 'hands.degredado', 'hands.returning', 'town.first-contact', 'freight.contracts-open', 'market.antwerp', 'yard.ships-for-sale', 'town.homecoming', 'hands.inland-out', 'hands.inland-send']);
+  const rare = new Set(['town.season-wait', 'hands.degredado', 'town.first-contact', 'market.antwerp', 'yard.ships-for-sale', 'hands.inland-send']);
   for (const v of VERBS) if (v.quarter !== 'foot' && !rare.has(v.id)) need(seen.has(v.id), `${v.id} was never rendered, in any state`);
 }
 
@@ -358,6 +373,18 @@ const deed = (g: Game, tag: any, mag = 0.8, extra: Record<string, unknown> = {})
   b.clock.t += 200 * 86400;
   need(dueDeepScene(b, 'mina') === null, 'the third beat is offered to a man who was betrayed');
   console.log('mina: arc offered in order, gated by regard and time, reward lies ahead');
+}
+
+// The Traffic scenes at Mina still work beside the Patron's.
+{
+  const g = dockedAt('mina', 7, (gg) => { gg.powers.fronts.traffic.stage = 2; });
+  g.pendingEvent = null; g.pendingScenes = [];
+  const t = dueTrafficScene(g, 'mina');
+  need(!!t && t.id === 'traffic:mina-buyers', `the Traffic's first Mina scene is ${t?.id}`);
+  const r = t!.choices![0].resolve(g);
+  need(r.length > 20 && g.powers.rumours.some((x) => x.event === 'scene:mina-buyers'), 'Kwesi’s answer about Benin leaves no rumour');
+  need(dueDeepScene(g, 'mina') === null, 'the Patron’s arc is offered to a stranger beside the Traffic');
+  console.log('traffic: Mina scenes still offered');
 }
 
 // The Patron reacts to a Ledger tag in a played career.

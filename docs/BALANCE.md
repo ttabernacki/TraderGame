@@ -171,3 +171,69 @@ Before: a Malabar tour (Cochim + Calecute, home) netted **-1,230** (a loss), a L
 - First sale, relation 0, skill 0 (spread 0.30); with a trusted relation and skill the spread narrows to 0.07, so a captain's real margins run well above these numbers: that is where "the exceptional run" lives.
 - Career bot (4 seeds, `career.ts 4 1`): acts 5/3/3/3, no exceptions; B3 constants gave 4/3/5/3 and the A2 baseline 3/4/5+epilogue/3. The bot is noisy (wrecks, thin crews) and not a good income metric; no exception, no regression in the
   gate scripts (stores, saves, cuts, ledger, charts, tutorial, watchbell, pieces, silent, informer, gifts, hostage, refusal, fleet, between, case, routes, pilot).
+
+## D1/D2: lanes, contracts, the weigh-house, dues, the rival's house
+
+`scripts/econ.ts --world` (24 months, no player, 20 seeds) and `scripts/lanes.ts` (the falsifiers). The lane knobs are
+`TUNE` in `src/world/lanes.ts` (`LANES='{"draw":0.03}'` overrides them for one run): a lane draws at most 4% of the origin's
+baseline a month above a floor of 55%, a destination takes 12% of what it still wants and never lets its glut climb past 0.15.
+
+| Measure (24-month no-player world) | C1, no lanes | D1 lanes on |
+|---|---|---|
+| directed lanes / trunks / goods per lane | none | 159 / 10 (five trunks both ways) / 1-6 |
+| prosperity range seen | 0.69 - 1.15 | 0.70 - 1.18 |
+| port-months `thriving` | 0 (at P > 1.2) | 2,810 of 24,960; 34% of ports are thriving at month 24 |
+| port-months `struggling` | 614 | 500 (shocks only) |
+| ports at zero stock / prices out of band | 0 / 0 | 0 / 0 |
+| best:median route spread (month 24, 105 t) | 10.0 median seed, 13.2 worst | 10.3 median seed, 14.3 worst |
+| `--check` (first-sale harness; best:median) | 9.6 | 9.6 (the harness has no lanes), dues now in the nets |
+
+Lanes tuned down from 0.08 / 0.30 (spread 16 with the lanes on, because the monthly glut they put on a destination
+was 1.2 at equilibrium) to the figures above (equilibrium glut 0.15). The 24-month world without lanes already drifts
+to 10 (median) and 13 (worst) because prosperity lifts the money caps of the great ports; the lanes add 0.3 to that.
+
+**Dues** (`economy/dues.ts`): 2-6% of an assessment of 5 cruzados a ton of burthen, by the court's temper, times
+`marketModifiers().duesMult`; hostile courts (dues x1.15, or regard below -0.3) add presents of 8-12%. Portuguese quays
+charge nothing. At Arzila: barcha 5, nau pequena 28, Nau da India 96 a call. Ladder after dues (`--ladder`): barcha 363,
+latina 729, redonda 887, nau pequena 2,022, nau 3,923, Nau da India 10,688 best / 9,012 typical Malabar tour (was 373 /
+734 / 893 / 2,057 / 3,949 / 10,736 / 9,228); `--check` still passes.
+
+**Monopoly loop** (`economy/contraband.ts`): a King's good sold to a foreign buyer that wants it and does not make it
+pays 1.4-2.2x the Casa's price (richer buyers pay more), and puts heat (1 per 600 cruzados at the Casa's price) on the
+region it was bought in. Lines at 4 (a word), 8 (a fine of 20-60% of what was run), 14 (the fine and every King's good in the
+hold); each inspection takes the heat down by half or 60%. Heat comes off only by activity (gift, sold Fact, favour, declared
+parcel, promise kept, chart given), at most 3 points in 30 days; time takes off only the part below 4, a tenth a month. Ten
+years waited: 14.4 -> 14.4.
+
+**The rival** (`progression/rivalHouse.ts`): a purse of 1,800, one to three hulls, goes where the listed margin is best,
+buys and sells through the same `Markets` doors (so he glut-prices and drains like anybody), keeps 78% of what he sells,
+loses a cargo in twelve, pays 0.8% + 24 men + 55 a hull a month and spends 5% of the purse above 4,000 on his household
+(capital 5,400 after 12 months, 16,000 after 24, three hulls from month 6). With him in the world, 6 of 630 listings are
+more than 3% different after a year (Lisbon oil 41%). `frontierLat` is a reading of the log of discovery voyages his house
+paid for (350 each, one per ~100 days), so a poor house explores slowly.
+
+### The small-hull question (does the stores rule keep a redonda off the Indies?)
+
+**No.** `econ.ts --india-hulls` with the real sailed distance (10,277 nm Lisbon-Cochim by `roadMiles`, the Lines' pace per
+hull, ~290-320 days for a Malabar tour, the harness had assumed 103), `game/stores` (0.005 t a man-day, spares 1-2 t),
+wages and dues:
+
+| hull (hold) | stores for the whole round trip carried from Lisbon | pilot's loading for the longest leg (Benguela-Moçambique), renewed at each port | 3-port tour net, whole-trip stores / per-leg |
+|---|---|---|---|
+| barcha (14) | 16.0 t: cannot | 3.8 t | -538 / 6,170 |
+| latina (30) | 27.8 t: no room for cargo | 6.1 t | 1,858 / 9,347 |
+| redonda (45) | 38.0 t: 7 t of cargo left | 8.3 t | 4,299 / 11,883 |
+| nau pequena (105) | 67.4 t | 14.3 t | 10,845 / 10,845 |
+| nau (205) | 113 t | 23.4 t | 9,229 / 9,229 |
+| Nau da India (400) | 191 t | 39.3 t | 6,469 / 6,469 |
+
+Only a barcha or a latina cannot carry a round trip's stores from Lisbon, and the road has eleven ports to renew them at, so
+the rule limits nobody. Spices are so dense that 7 t of mace and cloves fills every money cap on a tour. The measurement is
+worse than BALANCE assumed: **a redonda out-earns a Nau da India on the Malabar tour, 1.84x**, because 150 men for 300 days
+cost 5,800 in wages and 1,200 in dues and the cargo is money-capped at every hull. Dues by tonnage (done, and required by
+D1) cannot fix that: they move the Nau da India from 7,633 to 6,469 on the grand tour. The levers that would are not
+stores or dues but (a) a second, dearer tier of Malabar lots that only a great hold can lift (it moves the 10:1 spread and the
+ladder, so a decision, not a tuning), or (b) a Casa rule that only hulls of 140 t and up may load the Carreira's pepper.
+Neither is built. `--check` now pins what was measured (the barcha and the latina cannot carry the round trip's stores, a redonda's
+longest-leg loading is under a quarter of her hold, a Nau da India's Malabar tour at real days nets 6,000-12,000) so that a
+later change to stores or wages cannot silently change the answer.
