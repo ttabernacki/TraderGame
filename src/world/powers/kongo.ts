@@ -27,7 +27,7 @@ export const NDONGO_PORTS = ['luanda', 'benguela'];
 /** Monthly chances; see the falsifier for what they do to a 20-year run. */
 export const K = {
   embargoBase: 0.07, war: 0.011, truce: 0.12, curb: 0.035, push: 0.035, succession: 0.2,
-  drift: 0.02,
+  drift: 0.04,
 } as const;
 
 const months = (rng: Rng, a: number, b: number): number => Math.round(rng.range(a, b));
@@ -52,7 +52,7 @@ export function kongoTick(st: PowersState, t: number, rng: Rng, out: KongoOut = 
   const year = dateFromDays(Math.floor(t / 86400)).year;
 
   // The court's lean follows the trade: as the Traffic grows, the traders gain on the elders.
-  const lean = traffic >= 4 ? 0.5 : traffic === 3 ? 0.25 : traffic === 2 ? 0.0 : -0.1;
+  const lean = traffic >= 4 ? 0.6 : traffic === 3 ? 0.3 : traffic === 2 ? -0.15 : -0.35;
   bal = clamp(bal + (lean - bal) * K.drift, -1, 1);
   k.balance = bal;
 
@@ -116,7 +116,7 @@ export function kongoTick(st: PowersState, t: number, rng: Rng, out: KongoOut = 
     return;
   }
 
-  if (traffic >= 2 && !register && bal < -0.15 && rng.chance(K.curb)) {
+  if (traffic >= 2 && !register && bal < -0.1 && rng.chance(K.curb)) {
     const dur = months(rng, 8, 16);
     const e = addEffect(st, {
       kind: 'register', power: 'kongo', ports: KONGO_PORTS, start: t, end: t + dur * MONTH, duesMult: 1.15,

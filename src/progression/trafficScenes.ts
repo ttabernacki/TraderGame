@@ -89,7 +89,7 @@ const refused = (st: PowersState): number => st.fronts.traffic.pulled.brake;
 const arguimBook: TrafficScene = {
   id: 'arguim-book', ports: ['arguim'],
   needs: () => true,
-  build: (g, st) => {
+  build: (_g, st) => {
     const n = [41, 90, 160, 230][stageOf(st) - 1];
     const price = 30;
     return scene('arguim-book', 'The factor’s book',
@@ -134,7 +134,7 @@ const arguimBook: TrafficScene = {
 const arguimParcel: TrafficScene = {
   id: 'arguim-parcel', ports: ['arguim'], after: ['arguim-book'], repeatDays: 200,
   needs: (g, st) => parcelsAboard(st).length === 0 && g.ship.holdFree >= 2.5,
-  build: (g, st) => {
+  build: (g) => {
     const day = Math.floor(g.clock.t / DAY);
     const n = Math.min(14, 8 + (day % 7));
     const rng = Rng.fromString(`arguim-parcel:${g.seed}:${day}`);
@@ -187,7 +187,7 @@ const arguimParcel: TrafficScene = {
 const arguimQuota: TrafficScene = {
   id: 'arguim-quota', ports: ['arguim'], stages: [3, 4], after: ['arguim-book'],
   needs: () => true,
-  build: (g, st) => {
+  build: (_g, st) => {
     const n = 12;
     return scene('arguim-quota', 'A number in the licence',
       'The factor has a letter from the Casa, and it is not addressed to him but he reads it to you in full. Every ship licensed for the Mina road is to take on the coast '
@@ -314,7 +314,7 @@ function settleParcel(g: Game, p: Parcel, alive: number, lost: number, dead: str
 const minaBuyers: TrafficScene = {
   id: 'mina-buyers', ports: ['mina'], stages: [2, 4],
   needs: () => true,
-  build: (g, st) => scene('mina-buyers', 'Who buys',
+  build: (_g, st) => scene('mina-buyers', 'Who buys',
     'Kwesi, who deals in gold for a house in Eguafo’s country, comes down the beach to meet your boat. He is polite and a little amused. '
     + 'He buys people from the Castle’s factor because the pits behind the town flood every wet season, and the men who work them do not live long, and he says this plainly, as a man speaking of a cost. '
     + 'He does not buy from the factor because he likes the factor. He buys because the factor’s price is lower than the interlopers’, and he says that twice. '
@@ -361,7 +361,7 @@ const minaBuyers: TrafficScene = {
 const minaHearing: TrafficScene = {
   id: 'mina-hearing', ports: ['mina'], stages: [2, 4], after: ['mina-buyers'],
   needs: (_g, st) => carried(st) + refused(st) > 0 || st.seen['quotaProtest'] !== undefined || st.seen['landing'] !== undefined,
-  build: (g, st) => scene('mina-hearing', 'Thursday in the yard',
+  build: (_g, st) => scene('mina-hearing', 'Thursday in the yard',
     'The Captain of the Castle hears petitions on Thursdays in the yard under the flag. This week a woman has walked in from a village near Axim with the Castle’s interpreter, a patient man called Pêro who is paid for it. '
     + 'Her brother Kojo, a fisherman, was pawned for a debt by their uncle. She says he was never the uncle’s to pawn, and the creditor sold the pawn on to a factor for the list that goes north. '
     + 'The Captain says that the book is the book. He looks around the yard for somebody who might say otherwise, and finds that you are the only captain present whose name the Casa knows.'
@@ -407,7 +407,7 @@ const minaHearing: TrafficScene = {
 const mpindaElders: TrafficScene = {
   id: 'mpinda-elders', ports: ['mpinda'], stages: [2, 4],
   needs: () => true,
-  build: (g, st) => scene('mpinda-elders', 'Elders and traders',
+  build: (_g, st) => scene('mpinda-elders', 'Elders and traders',
     'The Mani Soyo’s council meets under a tree above the landing at Mpinda, and he has asked you to sit at the edge of it. '
     + 'Nsaku, an elder of the king’s household, says that the king alone may dispose of those taken in war and of those condemned, and that no free person of Kongo may be sold. '
     + 'He says it in the voice of a man reading a law, and he is. The trader beside him, Mavungu, says that the Portuguese will buy from somebody, and that the king’s right is a right to a share. '
@@ -533,7 +533,7 @@ const mpindaAfter: TrafficScene = {
 const mpindaSplit: TrafficScene = {
   id: 'mpinda-split', ports: ['mpinda'], stages: [3, 4], after: ['mpinda-elders'],
   needs: () => true,
-  build: (g, st) => scene('mpinda-split', 'Two papers',
+  build: (_g, st) => scene('mpinda-split', 'Two papers',
     'Two men claim the beach at Mpinda this season. Nsaku’s man has a paper from the council in the Mani Soyo’s mark: only what the king has condemned or taken in war may be sold. '
     + 'The trader Mavungu has a paper from a house in the Casa’s favour and a licence from the factor on São Tomé, who needs hands for the mills and will pay in cloth, iron and sugar. '
     + 'Each asks you to put your name to his.\n\n'
@@ -574,7 +574,7 @@ const mpindaSplit: TrafficScene = {
 const shipBook: TrafficScene = {
   id: 'ship-book', ports: ['mpinda', 'mina'], after: ['landing'],
   needs: (_g, st) => st.parcels.some((p) => p.status === 'landed'),
-  build: (g, st) => {
+  build: (_g, st) => {
     const landed = st.parcels.filter((p) => p.status === 'landed');
     const total = landed.reduce((s, p) => s + p.n, 0);
     const dead = landed.reduce((s, p) => s + (p.n - p.alive), 0);

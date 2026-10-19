@@ -884,7 +884,7 @@ export class Game {
    * second one is never seen. They queue, and are handed out one at a time as
    * the previous one is answered.
    */
-  private pendingScenes: SeaEvent[] = [];
+  pendingScenes: SeaEvent[] = [];
   private lastLat = 0;
   private lastSurveyT = -1e9;
   /** Miles of coast drawn or corrected since she last lay in a port. */

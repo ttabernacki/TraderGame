@@ -2,6 +2,7 @@ import { regionOf } from '../economy/trade';
 import { portDef } from '../world/ports';
 import type { Game } from '../game/state';
 import type { Fact } from './information';
+import { secondOpinion } from '../world/powers/rumours';
 
 /**
  * The informers: clerks, brokers and pilots in any port who will buy a copy of
@@ -36,7 +37,7 @@ export function sellOffer(g: Game, f: Fact): Offer {
     const n = Object.keys(sh.quotes).length;
     return { ok: true, price: Math.max(1, Math.round(n * 1.2 * f.confidence * (sh.source === 'seen' ? 1 : 0.5))), why: 'A copy of the sheet, sold quietly.' };
   }
-  if (f.ref.store === 'lead') {
+  if (f.ref.store === 'lead' || f.ref.store === 'rumour') {
     return { ok: true, price: Math.max(1, Math.round(4 + 8 * f.confidence)), why: 'What you were told, passed on.' };
   }
   if (f.ref.store === 'rutter') {
@@ -51,13 +52,13 @@ export function sellOffer(g: Game, f: Fact): Offer {
 export function checkOffer(g: Game, f: Fact): Offer {
   if (!g.dockedAt) return no('The informers are ashore; you must lie in a port.');
   if (f.checked) return no('A second man has already been asked.');
-  if (f.ref.store !== 'sheet' && f.ref.store !== 'lead') return no('No informer can speak to this.');
+  if (f.ref.store !== 'sheet' && f.ref.store !== 'lead' && f.ref.store !== 'rumour') return no('No informer can speak to this.');
   if (!knowsHere(g, f)) return no('Nobody here knows that coast.');
   if (f.ref.store === 'sheet') {
     const sh = g.trade.sheets[f.ref.port];
     return { ok: !!sh, price: 6 + Math.round(Object.keys(sh?.quotes ?? {}).length * 0.5), why: 'A clerk who has been to market this week.' };
   }
-  return { ok: true, price: 14, why: 'A pilot who has heard the same tale, or not.' };
+  return { ok: true, price: f.ref.store === 'rumour' ? 18 : 14, why: 'A pilot who has heard the same tale, or not.' };
 }
 
 function pay(g: Game, price: number): boolean {
@@ -83,6 +84,10 @@ export function sellFact(g: Game, f: Fact): string {
     const l = g.leads.find((x) => x.id === (f.ref as { id: string }).id);
     if (!l) return 'That tale is gone.';
     l.soldAt = g.clock.t;
+  } else if (f.ref.store === 'rumour') {
+    const r = g.powers.rumours.find((x) => x.id === (f.ref as { id: number }).id);
+    if (!r) return 'That tale is gone.';
+    r.soldAt = g.clock.t;
   }
   g.crown.gold += o.price;
   g.noteDeed('fact.sold', {
@@ -113,6 +118,13 @@ export function checkFact(g: Game, f: Fact): string {
     said = sh.falseGood || off >= 2 ? 'disputed' : 'agrees';
     sh.checked = said;
     sh.checkedAt = now;
+  } else if (f.ref.store === 'rumour') {
+    const r = g.powers.rumours.find((x) => x.id === (f.ref as { id: number }).id);
+    if (!r) return 'That tale is gone.';
+    // He says what he has heard, not what is so; a stale tale is told again less often than a true one.
+    said = secondOpinion(r, g.seed);
+    r.checked = said;
+    r.checkedAt = now;
   } else {
     const l = g.leads.find((x) => x.id === (f.ref as { id: string }).id);
     if (!l) return 'That tale is gone.';

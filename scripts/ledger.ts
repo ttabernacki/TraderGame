@@ -71,7 +71,7 @@ const synth = (tag: Tag, n = 1, over: Partial<Entry> = {}): Entry[] => Array.fro
   const files: string[] = [];
   const walk = (d: string): void => { for (const f of readdirSync(d)) { const p = join(d, f); statSync(p).isDirectory() ? walk(p) : p.endsWith('.ts') && files.push(p); } };
   walk('src');
-  const READ_ONLY = /src\/ledger\/(tags|chronicle|life)\.ts$|src\/ui\//;
+  const READ_ONLY = /src\/ledger\/(tags|tagsPowers|chronicle|life)\.ts$|src\/world\/powers\/deltas\.ts$|src\/ui\//;
   const text = files.filter((f) => !READ_ONLY.test(f)).map((f) => readFileSync(f, 'utf8')).join('\n');
   const dead = ALL_TAGS.filter((t) => !text.includes(`'${t}'`));
   check('every tag has an emitter in the game code', dead.length === 0, dead.join(','));
