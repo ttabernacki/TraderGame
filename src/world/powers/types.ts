@@ -181,6 +181,9 @@ export interface Parcel {
   status: 'aboard' | 'landed' | 'refused';
   /** Who gave it to him. */
   by: string;
+  /** Names the clerk wrote down, and of those, who died on the passage. */
+  names?: string[];
+  dead?: string[];
 }
 
 export interface LocalFight {

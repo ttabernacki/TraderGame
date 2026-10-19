@@ -19,7 +19,7 @@ import { daysLeft, ventureLine } from './ventures';
  */
 
 /** The trunk, in the order a voyage meets it. */
-const TRUNK: string[] = [
+export const TRUNK: string[] = [
   'lisboa', 'lagos', 'funchal', 'las-palmas', 'arguim', 'mina', 'mpinda', 'benguela',
   'mocambique', 'melinde', 'calecute', 'cochim',
 ];

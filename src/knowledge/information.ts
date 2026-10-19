@@ -8,6 +8,7 @@ import {
 } from '../game/rutter';
 import { portDef } from '../world/ports';
 import type { Game } from '../game/state';
+import { rumourFacts } from '../world/powers/rumours';
 
 /**
  * The Information object (B2, decision D3): everything the captain holds about
@@ -40,7 +41,8 @@ export type FactRef =
   | { store: 'sheet'; port: string }
   | { store: 'lead'; id: string }
   | { store: 'rutter'; entry: string; note: string }
-  | { store: 'chart'; port: string };
+  | { store: 'chart'; port: string }
+  | { store: 'rumour'; id: number };
 
 /** What a second source made of it, once asked. Never what is true. */
 export type Corroboration = 'agrees' | 'disputed';
@@ -209,6 +211,7 @@ export function knownFacts(g: Game): Fact[] {
   for (const l of g.leads) out.push(leadFact(l, now));
   for (const e of g.rutter.entries) for (const n of e.notes) out.push(rutterFact(e, n, now));
   for (const p of g.chart.ports.values()) out.push(chartPortFact(p, now));
+  out.push(...rumourFacts(g.powers, now));
   return out.sort((a, b) => a.age - b.age);
 }
 

@@ -257,6 +257,16 @@ export type LaneModel = (ctx: LaneContext) => LaneResult;
 const noLanes: LaneModel = () => ({ traffic: {} });
 let laneModel: LaneModel = noLanes;
 
+/**
+ * Things that run once a month after the markets and prosperity have moved: the Powers engine (world/powers)
+ * registers here, once, at module load. A host that carries nothing for a hook to act on is left alone.
+ */
+export type MonthHook = (h: WorldHost, t: number) => void;
+const monthHooks: MonthHook[] = [];
+export function onMonth(hook: MonthHook): void {
+  if (!monthHooks.includes(hook)) monthHooks.push(hook);
+}
+
 /** D1 installs its lane model here (once, at module load). */
 export function setLaneModel(m: LaneModel | null): void {
   laneModel = m ?? noLanes;
@@ -329,6 +339,7 @@ function stepMonth(h: WorldHost, t: number): void {
     if (blight === 0 && !grows && Math.abs(s.prosperity - anchor) < 0.03) s.cause = undefined;
     settleBand(h, def.id, s);
   }
+  for (const hook of monthHooks) hook(h, t);
 }
 
 /** Run `months` monthly ticks from where the world was last left. */

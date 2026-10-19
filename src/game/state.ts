@@ -7,7 +7,7 @@ import {
 } from '../diplomacy/courts';
 import { POLITIES, POLITY_BY_ID, polityOfPort, politiesOfPeople, type PolityDef } from '../diplomacy/polities';
 import {
-  ACT_CHARGE, chronicleAnswered, chronicleDue, chronicleFromProgress, hullAllowed, newChronicle, patentAllowed,
+  ACT_CHARGE, HISTORY, chronicleAnswered, chronicleDue, chronicleFromProgress, hullAllowed, newChronicle, patentAllowed,
   type ChronicleState,
 } from '../progression/chronicle';
 import {
@@ -20,6 +20,8 @@ import { migrateEnterprises, tickLines, type Letter, type Line } from '../progre
 import { deliverFactoryMail, noteSightings, postLetter, tickFactories, transitDays } from '../progression/livingFactory';
 import { ambientAtSea, barkAt } from '../progression/barks';
 import { noteSeen, prosperityOf, prosperityShock, tickWorldDue, type PortState, type Reason } from '../world/tick';
+import { arriveAt, foldLedger, marketModifiers, migratePowers, newPowers, setHistorySource, type PowersState } from '../world/powers';
+import { dueTrafficScene } from '../progression/trafficScenes';
 import { MILESTONES, checkMilestones } from '../progression/milestones';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
 import { azoresHigh, itczLatitude } from '../world/wind';
@@ -227,6 +229,9 @@ export type ShoreAction = 'water' | 'wood' | 'food' | 'meet';
 /** How far a town's own memory of you can stand from its court's opinion. */
 const LOCAL_REGARD = 0.6;
 
+// The Powers' history schedule reads the chronicle's dated events once, here (world/powers/core).
+setHistorySource(() => HISTORY);
+
 export class Game {
   /** Which campaign this voyage belongs to. See game/campaign. */
   campaign: CampaignId = 'carreira';
@@ -425,6 +430,7 @@ export class Game {
     tickWorldDue(this, this.clock.t);
     tickLines(this);
     if (this.dockedAt) deliverFactoryMail(this, this.dockedAt);
+    if (this.dockedAt) this.powersArrive(this.dockedAt);
     const bark = barkAt(this);
     if (bark) { this.pushAlert(bark, 'note'); this.logEvent('note', bark, false); }
     if (this.dockedAt) {
@@ -459,7 +465,7 @@ export class Game {
       const id = `quest:${q.id}:${q.step}`;
       if (this.pendingEvent?.id !== id && !this.pendingScenes.some((x) => x.id === id)) q.fired = false;
     }
-    const s = dueScene(this, this.dockedAt);
+    const s = dueScene(this, this.dockedAt) ?? dueTrafficScene(this, this.dockedAt);
     if (!s) return;
     this.easeTheClock(1);
     if (!this.pendingEvent) this.pendingEvent = s;
@@ -789,6 +795,8 @@ export class Game {
   ports: Record<string, PortState> = {};
   /** When the monthly world tick last ran (null until the first frame). */
   worldT: number | null = null;
+  /** The Powers and the Fronts (world/powers): additive, defaulted at the load boundary. */
+  powers: PowersState = newPowers();
 
   /** The blow she is in, and what a career of them came to. See game/gale. */
   gale: GaleState = newGale();
@@ -964,6 +972,7 @@ export class Game {
     this.markets = new Markets(seed);
     this.markets.adjust = (p, gid, t) => this.worldAdjust(p, gid, t);
     this.markets.prosperityOf = (id) => prosperityOf(this, id);
+    this.markets.modifiers = (p, t) => marketModifiers(p, t, this.powers);
     this.trade = newTrade(this.clock.t);
     this.rival = newRival(this.rng);
     this.rival.lastNews = this.clock.t;
@@ -5907,6 +5916,7 @@ export class Game {
     // hull can take them; the hull and keel work stays with the old ship.
     next.upgrades = carried;
     next.reservedTons = old.reservedTons;
+    next.passengerTons = old.passengerTons;
     next.applyRigConversion();
     next.refreshDerived();
     for (const lot of old.cargo) next.addCargo(lot.goodId, lot.quantity, lot.cost, lot.q);
@@ -7585,7 +7595,33 @@ export class Game {
   /** The Ledger (B1): every consequential act, tagged. Append-only. See ledger/. */
   ledger: LedgerEntry[] = [];
   /** Record a deed in the Ledger and say in one quiet line what it did. */
-  noteDeed(tag: LedgerTag, d: Deed = {}): LedgerEntry { return recordDeed(this, tag, d); }
+  noteDeed(tag: LedgerTag, d: Deed = {}): LedgerEntry {
+    const e = recordDeed(this, tag, d);
+    foldLedger(this); // the Fronts and the Powers read what he has just done, not next month
+    return e;
+  }
+
+  /** A quiet line from the Powers: a Front changed stage, a Power made a move he would know of. */
+  powersNote(text: string): void {
+    this.pushAlert(text, 'note');
+    this.logEvent('note', text, false);
+  }
+
+  /** Put into a port: the rumours that have reached it are heard, and what is there to see is seen. */
+  private powersArrive(port: string): void {
+    const key = `${port}:${Math.floor(this.clock.t / 86400)}`;
+    if (this.lastPowersArrival === key) return;
+    this.lastPowersArrival = key;
+    const a = arriveAt(this, port, this.clock.t);
+    for (const { rumour } of a.heard.slice(0, 2)) this.pushAlert(`Word at ${portDef(port).name}: ${rumour.vague}`, 'note');
+    for (const r of a.settled) {
+      this.noteDeed(r.truth === 'true' ? 'rumour.true' : 'rumour.false', {
+        target: port, place: port, magnitude: 0.2,
+        note: r.truth === 'true' ? 'What I was told of this place was so.' : 'What I was told of this place was not so, or was so once.',
+      });
+    }
+  }
+  private lastPowersArrival = '';
 
   /** The instruction standing at the moment, or null once he has stopped. */
   tutorialStep(): TutorialStep | null {
@@ -9566,6 +9602,7 @@ export class Game {
       inlandRoads: [...this.inlandRoads],
       ports: this.ports,
       worldT: this.worldT,
+      powers: this.powers,
       gale: this.gale,
       galeRecord: this.galeRecord,
       route: this.route,
@@ -9709,6 +9746,9 @@ export class Game {
     g.ports = d.ports ?? {};
     for (const id of Object.keys(g.ports)) { g.ports[id].prosperity ??= 1; }
     g.worldT = d.worldT ?? g.clock.t;
+    // The Powers are additive: a save from before them starts the Fronts on the history line, at today's date.
+    g.powers = migratePowers(d.powers);
+    g.ship.passengerTons = g.powers.parcels.filter((p) => p.status === 'aboard').reduce((sum, p) => sum + p.alive * p.tons / Math.max(1, p.n), 0);
     for (const id of g.inlandRoads) g.markets.openRoad(id, g.clock.t);
     g.gale = d.gale ?? newGale();
     g.galeRecord = { ...newGaleRecord(), ...(d.galeRecord ?? {}) };

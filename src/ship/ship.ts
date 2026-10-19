@@ -109,8 +109,11 @@ export class Ship {
   /** Tons of the hold taken by water, victuals and spares. Kept in step by Game.syncStores. */
   storesTons = 0;
 
+  /** Tons of the hold taken by people carried for sale (world/powers/traffic): off the price list, not off the hold. */
+  passengerTons = 0;
+
   get holdFree(): number {
-    return Math.max(0, this.holdCapacity - this.reservedTons - this.storesTons - this.cargoTons);
+    return Math.max(0, this.holdCapacity - this.reservedTons - this.passengerTons - this.storesTons - this.cargoTons);
   }
 
   get sailArea(): number {

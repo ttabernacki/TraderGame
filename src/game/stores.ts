@@ -85,7 +85,7 @@ export function planCost(def: PortDef, g: Game, plan: StoresPlan): number {
 
 /** The most the hold can give to stores: what is free now, plus what the stores already take. */
 export function roomForStores(g: Game): number {
-  return Math.max(0, g.ship.holdCapacity - g.ship.reservedTons - g.ship.cargoTons);
+  return Math.max(0, g.ship.holdCapacity - g.ship.reservedTons - g.ship.passengerTons - g.ship.cargoTons);
 }
 
 /** Largest water days that fit alongside the other two sliders as set. */

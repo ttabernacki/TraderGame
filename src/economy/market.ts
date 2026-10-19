@@ -26,6 +26,21 @@ export interface Listing {
   wanted: boolean;
 }
 
+/**
+ * What the Powers are doing to a port, as the economy sees it (world/powers `marketModifiers`: the one
+ * door they have). A missing good is 1. With nothing in force nothing is applied and nothing changes.
+ */
+export interface MarketEffects {
+  priceMult: Record<string, number>;
+  stockMult: Record<string, number>;
+  appetiteMult: Record<string, number>;
+  duesMult: number;
+  /** The market is shut to the ship (never a trunk port: there the mods carry a toll). */
+  closed: boolean;
+  laneClosed: boolean;
+  reason: string;
+}
+
 export interface MarketState {
   portId: string;
   /** Per-good stock, which depletes when you buy and recovers over time. */
@@ -136,6 +151,9 @@ export class Markets {
    * other buyers. Set by the game; see economy/trade.
    */
   adjust: ((portId: string, goodId: string, t: number) => { ask: number; bid: number; stock: number }) | null = null;
+
+  /** The Powers' door: war, embargo, cartaz and a Front's stage as multipliers. Set by the game; absent in the harness. */
+  modifiers: ((portId: string, t: number) => MarketEffects) | null = null;
 
   /** Ports whose inland road has been opened. */
   roads = new Set<string>();
@@ -311,6 +329,8 @@ export class Markets {
 
     // Slow seasonal drift so prices are never quite the same twice.
     const season = fbm1(t / (86400 * 40) + hashPort(portId), 2, 3) * 0.14;
+    // What the Powers are doing to this place (war, embargo, a Front's stage): read once, applied per good.
+    const fx = this.modifiers ? this.modifiers(portId, t) : null;
 
     for (const g of GOODS) {
       const abundance = def.produces[g.id] ?? 0;
@@ -360,16 +380,16 @@ export class Markets {
 
       out.push({
         goodId: g.id,
-        stock: Math.floor(stock * world.stock),
+        stock: fx?.closed ? 0 : Math.floor(stock * world.stock * (fx?.stockMult[g.id] ?? 1)),
         // Never quite zero. A market sated to the eyebrows still has somebody
         // who will take a little more if the price is bad enough, and a hard
         // stop at nought is how a captain ends up with a hold he can never
         // empty anywhere — which is the thing this whole section exists to
         // prevent. The price at full glut is a fraction of the good's worth, so
         // this is a way to cut a loss and never a way to make money.
-        appetite: Math.max(1, Math.floor(this.appetiteFor(def, g, hunger, abundance) * (1 - glut))),
-        ask: Math.max(0.4, mid * (1 + spread) * mod.ask * world.ask),
-        bid: Math.max(0.2, bid * mod.bid * world.bid),
+        appetite: fx?.closed ? 0 : Math.max(1, Math.floor(this.appetiteFor(def, g, hunger, abundance) * (1 - glut) * (fx?.appetiteMult[g.id] ?? 1))),
+        ask: Math.max(0.4, mid * (1 + spread) * mod.ask * world.ask * (fx?.priceMult[g.id] ?? 1)),
+        bid: Math.max(0.2, bid * mod.bid * world.bid * (fx?.priceMult[g.id] ?? 1)),
         local: abundance > 0,
         wanted: hunger > 0,
       });
