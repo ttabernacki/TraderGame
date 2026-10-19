@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { receiveWorldShadow } from './shadows';
+import { receiveWorldShadow, worldOnly } from './shadows';
 import { clamp } from '../core/math';
 
 /**
@@ -394,6 +394,7 @@ export class CoastScenery {
       mesh.frustumCulled = false;
       mesh.renderOrder = 2;
       this.meshes.set(k, mesh);
+      worldOnly(mesh);
       this.group.add(mesh);
     }
   }

@@ -2,6 +2,9 @@ import { clamp } from '../core/math';
 import type { Officer } from '../crew/crew';
 import type { SeaEvent } from '../game/seaEvents';
 import type { Game } from '../game/state';
+import { CODAS } from '../company/codas';
+import { flag, regard, setFlag, strike } from '../company/arcKit';
+import { NEW_ARCS } from '../company/arcsNew';
 
 /**
  * The company.
@@ -34,7 +37,10 @@ export type BondId =
   | 'theTongue'
   | 'theRemedy'
   | 'theDraughtsman'
-  | 'cureOfSouls';
+  | 'cureOfSouls'
+  | 'theWitness'
+  | 'theBridge'
+  | 'theMuallim';
 
 export interface Bond {
   id: BondId;
@@ -64,6 +70,18 @@ export const BONDS: Record<BondId, Bond> = {
     id: 'theDraughtsman', name: 'The draughtsman',
     effect: 'His coastal views are the best in the kingdom. Every sheet you bring home is worth half again what it was.',
   },
+  theWitness: {
+    id: 'theWitness', name: 'The witness',
+    effect: 'His books are the best the Casa has seen, and he has certified them as yours. A weigh-house search turns up half as much, and the Casa’s clerks believe your count.',
+  },
+  theBridge: {
+    id: 'theBridge', name: 'The bridge',
+    effect: 'He has been through every door you went through and is not a hired mouth any more. A blundered courtesy costs half what it did, and he is owed a debt in every town he has spoken in.',
+  },
+  theMuallim: {
+    id: 'theMuallim', name: 'The mu’allim',
+    effect: 'He has put your name beside his in the pilots’ books of the coast. In the monsoon seas and along the coast of Africa his reckoning is yours: the board drifts less, and the pilots there will take your pilot’s word.',
+  },
   cureOfSouls: {
     id: 'cureOfSouls', name: 'Cure of souls',
     effect: 'He has made his peace with a world larger than the one he was taught. The men are steadier than any chaplain has made them, and no coast is closed to you for his sake.',
@@ -80,6 +98,8 @@ export interface ArcContext {
 export interface ArcBeat {
   /** Fires the first time this is true, once the previous beat has resolved. */
   when: (c: ArcContext) => boolean;
+  /** Fires at a quay on arrival, not at sea (the codas that need a port to end in). */
+  port?: boolean;
   build: (c: ArcContext) => SeaEvent;
 }
 
@@ -98,37 +118,31 @@ export interface Arc {
   wage: number;
   beats: ArcBeat[];
   bond: BondId;
+  /** False for the men who are not aboard at the start: the clerk's arc is laid on him, the others are courted. */
+  start?: boolean;
 }
 
 // --- helpers ---------------------------------------------------------------
 
-function flag(o: Officer, f: string): boolean {
-  return (o.arcFlags ?? []).includes(f);
-}
-
-function setFlag(o: Officer, f: string): void {
-  o.arcFlags = [...(o.arcFlags ?? []), f];
-}
-
-/** Move a man's regard for the captain, and give him something to remember. */
-function regard(o: Officer, delta: number, memory: string): void {
-  o.loyalty = Math.max(0, Math.min(1, o.loyalty + delta));
-  o.memory = [memory, ...(o.memory ?? [])].slice(0, 6);
-}
-
-/** End the arc well: he is yours, and the bond is struck. */
+/** End the arc well: he is yours, and the bond is struck. A coda, if there is one, is next. */
 function bond(g: Game, o: Officer, arc: Arc): string {
-  o.bonded = true;
-  o.arcStage = arc.beats.length;
-  o.loyalty = Math.min(1, o.loyalty + 0.25);
-  g.awardBond(arc.bond, o);
+  strike(g, o, arc.bond);
   return `${BONDS[arc.bond].name}. ${BONDS[arc.bond].effect}`;
 }
 
-/** End the arc badly: he is still aboard, but the thread is cut. */
-function breakArc(o: Officer, why: string): string {
+/**
+ * End the arc badly: the thread is cut. An 'ashore' ending means it was a
+ * parting and not a quarrel, and he goes at the next port with his leave.
+ */
+function breakArc(o: Officer, why: string, end: 'estranged' | 'ashore' = 'estranged', g?: Game): string {
   o.arcStage = 99;
+  o.arcEnd = end;
   o.memory = [why, ...(o.memory ?? [])].slice(0, 6);
+  if (end === 'ashore' && !o.ashoreAt) o.leaving = true;
+  if (g) {
+    if (end === 'estranged') g.noteDeed('companion.estranged', { target: o.name, magnitude: 0.5, note: `${o.name}: ${why}.` });
+    else if (o.ashoreAt) g.noteDeed('companion.left', { target: o.name, magnitude: 0.4, note: `${o.name}: ${why}.` });
+  }
   return why;
 }
 
@@ -205,7 +219,7 @@ export const ARCS: Arc[] = [
               detail: 'Kindly meant and finally done. A blind pilot will kill this ship.',
               resolve: (g) => {
                 void g;
-                return breakArc(o, 'told him his sight was gone and paid him off');
+                return breakArc(o, 'told him his sight was gone and paid him off', 'ashore', g);
               },
             },
             {
@@ -339,7 +353,7 @@ export const ARCS: Arc[] = [
               resolve: (g) => {
                 regard(o, -0.5, 'put him in irons for an offer he refused');
                 g.crew.morale = Math.max(0, g.crew.morale - 0.1);
-                return breakArc(o, 'was put in irons for an offer he had already turned down');
+                return breakArc(o, 'was put in irons for an offer he had already turned down', 'estranged', g);
               },
             },
           ],
@@ -487,7 +501,7 @@ export const ARCS: Arc[] = [
               resolve: (g) => {
                 o.alive = true;
                 g.crown.standing += 8;
-                return breakArc(o, 'gave him his pardon and let him stay with his wife');
+                return breakArc(o, 'gave him his pardon and let him stay with his wife', 'ashore', g);
               },
             },
           ],
@@ -605,7 +619,7 @@ export const ARCS: Arc[] = [
                 g.crown.gold += 400;
                 g.crown.standing += 25;
                 regard(o, -0.3, 'sold his book to the Casa to be locked in a cupboard');
-                return breakArc(o, 'saw his life\'s work locked in a cupboard at the Casa da Mina');
+                return breakArc(o, 'saw his life\'s work locked in a cupboard at the Casa da Mina', 'estranged', g);
               },
             },
           ],
@@ -731,7 +745,7 @@ export const ARCS: Arc[] = [
               resolve: (g) => {
                 void g;
                 regard(o, -0.25, 'told him what he already knew about what he was allowed to be');
-                return breakArc(o, 'was told there was no rating in the fleet for what he could do');
+                return breakArc(o, 'was told there was no rating in the fleet for what he could do', 'estranged', g);
               },
             },
           ],
@@ -851,7 +865,7 @@ export const ARCS: Arc[] = [
               resolve: (g) => {
                 g.crown.standing += 20;
                 regard(o, -0.6, 'reported his own chaplain to the Casa for what he said on a Sunday');
-                return breakArc(o, 'was reported to the Casa by his own captain');
+                return breakArc(o, 'was reported to the Casa by his own captain', 'estranged', g);
               },
             },
           ],
@@ -860,6 +874,14 @@ export const ARCS: Arc[] = [
     ],
   },
 ];
+
+// The fourth beat of each of the six, which decides how the story ends; and the arcs for the
+// clerk, the interpreter and the Swahili pilot. See src/company.
+for (const a of ARCS) {
+  const coda = CODAS[a.id];
+  if (coda) a.beats.push(coda);
+}
+ARCS.push(...NEW_ARCS);
 
 export const ARC_BY_ID = new Map(ARCS.map((a) => [a.id, a]));
 
@@ -870,12 +892,13 @@ export const ARC_BY_ID = new Map(ARCS.map((a) => [a.id, a]));
  * cut thread: the man stays aboard and goes on doing his work, and nothing
  * further is ever offered.
  */
-export function dueBeat(c: ArcContext): { arc: Arc; beat: ArcBeat; index: number } | null {
+export function dueBeat(c: ArcContext, where: 'sea' | 'port' = 'sea'): { arc: Arc; beat: ArcBeat; index: number } | null {
   const arc = c.o.arc ? ARC_BY_ID.get(c.o.arc) : undefined;
   if (!arc) return null;
   const stage = c.o.arcStage ?? 0;
   if (stage >= arc.beats.length) return null;
   const beat = arc.beats[stage];
+  if ((beat.port ? 'port' : 'sea') !== where) return null;
   if (!beat.when(c)) return null;
   return { arc, beat, index: stage };
 }

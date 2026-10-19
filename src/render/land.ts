@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { receiveWorldShadow } from './shadows';
+import { receiveWorldShadow, worldOnly } from './shadows';
 import { NM, clamp, cosd, lerp, smoothstep, wrap180, type LatLon } from '../core/math';
 import { LANDMASSES, elevationAt, isLand } from '../world/landmass';
 import { CoastScenery, hash3, regionAt } from './coastScenery';
@@ -602,6 +602,7 @@ export class Land {
     this.mesh = new THREE.Mesh(geo, this.material);
     this.mesh.renderOrder = 1;
     this.mesh.castShadow = this.mesh.receiveShadow = this.shadows;
+    worldOnly(this.mesh);
     this.group.add(this.mesh);
 
     const surfGeo = new THREE.BufferGeometry();

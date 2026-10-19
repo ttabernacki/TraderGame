@@ -1,5 +1,5 @@
 import { Clock, dateFromDays, formatDateAt, monthName } from '../core/clock';
-import { counselFor, type Counsel } from './counsel';
+import { counselFor, rollConflict, type Counsel } from './counsel';
 import { characterOf } from '../world/portCharacter';
 import {
   crisisFor, newDiplomacy, newPolityState, rulerName, spreadWord,
@@ -74,6 +74,8 @@ export interface TradeListing extends Listing {
 }
 import { Crown, commissionPoints, portName, type Patent } from '../progression/crown';
 import { ARCS, ARC_BY_ID, BONDS, dueBeat, type BondId } from '../progression/arcs';
+import { auditCover, bondByApproval, coastPilotBonus, companyOnArrival, migrateCompany, newCompany, officerFromCandidate, tickCompany, type CompanyState } from '../company/company';
+import { linguaCandidate } from '../company/candidates';
 import { newRelations, type Relations } from '../diplomacy/contact';
 import { entriesFromMarks, markCounts, newMarks } from '../diplomacy/marks';
 import { startPiece, tickPieces } from '../diplomacy/table';
@@ -419,6 +421,7 @@ export class Game {
   private checkWorld(): void {
     if (this.mode === 'gameover' || this.mode === 'title') return;
     noteSightings(this);
+    tickCompany(this);
     tickWorldDue(this, this.clock.t);
     tickLines(this);
     if (this.dockedAt) deliverFactoryMail(this, this.dockedAt);
@@ -1539,6 +1542,8 @@ export class Game {
    * held here and not on the officer.
    */
   bonds = new Set<BondId>();
+  /** Approval, exits, courted men and conflicts played (C5). See company/. */
+  company: CompanyState = newCompany();
 
   /**
    * The men forward the captain knows by name. See crew/hands.
@@ -1573,7 +1578,7 @@ export class Game {
   }
 
   has(id: BondId): boolean {
-    return this.bonds.has(id);
+    return this.bonds.has(id) || bondByApproval(this, id);
   }
 
   /**
@@ -1612,7 +1617,7 @@ export class Game {
   get effectiveSkill(): SkillSet {
     const s = { ...this.skills };
     for (const k of Object.keys(s) as (keyof SkillSet)[]) {
-      s[k] = clamp(s[k] + officerBonus(this.crew, k) * 100, 0, 100);
+      s[k] = clamp(s[k] + (officerBonus(this.crew, k) + (k === 'navegacao' ? coastPilotBonus(this) : 0)) * 100, 0, 100);
     }
     return s;
   }
@@ -2553,7 +2558,7 @@ export class Game {
     this.markets.sell(port, goodId, take);
     this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
     if (quay) {
-      const caught = this.rng.chance(clamp(0.2 - skill(this.effectiveSkill, 'comercio') * 0.08, 0.06, 0.25) * (this.can('licences') ? 0.5 : 1));
+      const caught = this.rng.chance(clamp(0.2 - skill(this.effectiveSkill, 'comercio') * 0.08, 0.06, 0.25) * (this.can('licences') ? 0.5 : 1) * auditCover(this));
       if (caught) {
         const fine = Math.round(revenue * 0.25);
         this.crown.gold = Math.max(0, this.crown.gold - fine);
@@ -4629,6 +4634,7 @@ export class Game {
     const event = rollGaleScene(this)
       ?? this.pendingScenes.shift()
       ?? this.rollArcBeat()
+      ?? rollConflict(this, days)
       ?? rollRivalMeeting(this, days)
       ?? rollOfficerEvent(this, days)
       ?? rollSeaEvent(this, days);
@@ -4706,7 +4712,7 @@ export class Game {
    * and he writes to them.
    */
   private shipTheCompany(): void {
-    for (const a of ARCS) this.recruitArc(a.id);
+    for (const a of ARCS) if (a.start !== false) this.recruitArc(a.id);
     // The Crown's own clerk. Not hired, not refusable, and not your friend.
     const clerk = makeOfficer('escrivao', this.rng, 0.58);
     clerk.name = 'Diogo Pais';
@@ -4758,6 +4764,10 @@ export class Game {
     }
     if (!can && this.linguaFor(pe.language)) {
       can = `You already carry a man who has ${pe.language}.`;
+    }
+    // The generator is retired: a língua is a named man or nobody. See company/candidates.
+    if (!can && def.people !== 'portuguese' && !linguaCandidate(this, pe.language, false)) {
+      can = `Nobody on this quay who has ${pe.language} is known to anybody who would vouch for him, and you will not engage a stranger off a beach.`;
     }
     if (!can && this.linguas().length >= 3) {
       can = 'Three interpreters is as many as the wardroom will hold and as many as are any use.';
@@ -4816,22 +4826,21 @@ export class Game {
 
     // What he actually is varies a great deal, and the captain cannot tell
     // which he has got until somebody important is being spoken to.
-    const ability = clamp(this.rng.normal(0.52, 0.17), 0.14, 0.93);
-    const o = makeOfficer('lingua', this.rng, ability, [language]);
-    o.joined = this.clock.t;
+    // A named man (company/candidates), with his own terms: there is no dice here any more.
+    const cand = linguaCandidate(this, language, def.people === 'portuguese');
+    if (!cand) {
+      if (this.crown.gold < cost) this.crown.gold += cost; // not taken
+      return `Nobody known to the pilots of the quay has ${language}.`;
+    }
+    const o = officerFromCandidate(this, cand);
     // He has signed with a foreign ship going somewhere he may not come back
     // from, and he knows the terms better than the crew do.
-    o.loyalty = clamp(this.rng.normal(0.46, 0.13), 0.12, 0.9);
-    // He goes on the muster under a Portuguese name, because that is what
-    // happened: a man engaged on that coast was baptised before he was entered
-    // in the book, and the name in the book is the only one the record kept.
-    this.crew.officers.push(o);
+    o.loyalty = 0.46;
     this.wardroomCache = null;
     this.logEvent('contact',
       `Engaged ${o.name} at ${def.name} as língua, for ${cost} cruzados down and ${o.wage} the `
-      + `month. He has ${language} and, as far as anybody aboard can tell, nothing else. `
-      + 'Whether he is any good will be found out in front of somebody who matters.', true);
-    return `${o.name} is aboard as your língua. He has ${language}.`;
+      + `month. He has ${cand.languages.join(', ')}. ${cand.backstory}`, true);
+    return `${o.name} is aboard as your língua. He has ${cand.languages.join(', ')}.`;
   }
 
   recruitArc(arcId: string): Officer | null {
@@ -7941,6 +7950,7 @@ export class Game {
       paidOut: 0,
     };
     this.feitorias.push(f);
+    if (o.mate) this.noteDeed('companion.promoted', { target: o.name, place: def.id, magnitude: 0.6, note: `Posted ${o.name}, raised from the fo'c'sle, to the House at ${def.name}.` });
     this.noteDeed('port.funded', { target: def.id, place: def.id, magnitude: 0.7, note: `Founded a House at ${def.name}.` });
     this.relationsFor(def.id).factorySettled = this.clock.t;
     this.crown.standing += 12;
@@ -8263,6 +8273,7 @@ export class Game {
     // right and the stretch around bent to meet it (Chart.settleAround).
     legReportOnArrival(this, def.id);
     yearOnArrival(this, def.id);
+    companyOnArrival(this, def.id);
     this.nav.applyLandfall(anchorageOf(def), this.clock.t);
     this.chart.chartPort(def, this.nav.estimated, this.ship.state.pos, this.clock.t, true);
     this.chart.settleAround(anchorageOf(def), this.clock.t);
@@ -9456,6 +9467,7 @@ export class Game {
       casa: this.casa,
       captain: this.captain,
       bonds: [...this.bonds],
+      company: this.company,
       origin: this.origin,
       generation: this.generation,
       aimOffNm: this.aimOffNm,
@@ -9609,6 +9621,7 @@ export class Game {
       g.pushAlert(`The captain's book has been redrawn: ${refunded} points returned to spend again.`, 'note');
     }
     g.bonds = new Set<BondId>(d.bonds ?? []);
+    g.company = migrateCompany(d.company);
     g.origin = d.origin ?? 'segundo';
     g.generation = d.generation ?? 1;
     g.aimOffNm = d.aimOffNm ?? 0;

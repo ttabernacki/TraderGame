@@ -58,7 +58,7 @@ export const QUALITY: Record<QualityLevel, QualitySpec> = {
     post: { msaa: 4, bloomLevels: 5, bloomStrength: 1, fxaa: false, grade: true }, cascades: 2, worldShadow: { size: 2048, radius: 1100 },
   },
   ultra: {
-    pixelRatio: 2.75, shadowSize: 4096, softShadows: true, envEvery: 4, envSize: 256, cloudOctaves: 6, life: 1,
+    pixelRatio: 2.75, shadowSize: 2048, softShadows: true, envEvery: 4, envSize: 256, cloudOctaves: 6, life: 1,
     post: { msaa: 4, bloomLevels: 6, bloomStrength: 1.15, fxaa: false, grade: true }, cascades: 2, worldShadow: { size: 3072, radius: 1400 },
   },
 };

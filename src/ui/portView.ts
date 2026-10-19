@@ -20,6 +20,8 @@ import { OFFICER_ROLES, enduranceDays } from '../crew/crew';
 import { loyaltyWord, officerTitle, traitDef } from '../progression/officers';
 import { RATING_LABEL, TEMPER, regardWord as handRegardWord } from '../crew/hands';
 import { ARC_BY_ID } from '../progression/arcs';
+import { candidatesAt, linguaCandidate } from '../company/candidates';
+import { courtCandidate } from '../company/company';
 import {
   backingFor, candidates, errandsAt, journeyWord, outfitCost, outstanding,
 } from '../progression/inland';
@@ -1696,6 +1698,7 @@ export class PortView {
     // nobody carried a fixed interpreter down that coast, they picked men up,
     // and a captain who cannot do that is reduced to shouting at strangers.
     right.append(this.linguaCard(g, def));
+    right.append(...this.courtCard(g, def));
 
     const empty = OFFICER_ROLES.filter(
       (r) => r.role !== 'lingua' && r.role !== 'degredado'
@@ -1753,6 +1756,34 @@ export class PortView {
     host.append(el('div', { class: 'cols two' }, left, right));
   }
 
+  /**
+   * Named men on this quay for a berth that stands empty (and the Melinde pilot, who is asked, not
+   * hired). The random-hire generator is gone: each of them has a name and a line of where he is from.
+   */
+  private courtCard(g: Game, def: PortDef): HTMLElement[] {
+    const here = candidatesAt(g, def.id);
+    if (here.length === 0) return [];
+    return [card('Men on the quay',
+      el('p', { class: 'quote' },
+        'Nobody is engaged off a list. Each of these has a name, and a reason for being on this quay, '
+        + 'and will tell you what he thinks of the ship before he takes service in her.'),
+      el('ul', { class: 'list' }, ...here.map((c) => {
+        const why = c.gate?.(g) ?? null;
+        const role = OFFICER_ROLES.find((r) => r.role === c.role);
+        return el('li', {},
+          el('div', { style: { display: 'flex', justifyContent: 'space-between' } },
+            el('span', {}, `${c.name} \u2014 ${role?.english ?? c.role}`),
+            el('span', { class: 'tag' }, `${c.cost} cruzados, ${c.wage} a month`)),
+          el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', margin: '4px 0', lineHeight: '1.55' } }, c.backstory),
+          why ? el('div', { class: 'notice', style: { fontSize: '12.5px' } }, why) : null,
+          button(c.id === 'hamisi' ? 'Ask him to take service' : 'Court him',
+            () => { this.notice = { text: courtCandidate(g, c.id) }; this.render(); },
+            { disabled: !!why || g.crown.gold + g.creditFree < c.cost, ghost: true }),
+        );
+      })),
+    )];
+  }
+
   /** Interpreters: the ones aboard, and the one this quay can supply. */
   private linguaCard(g: Game, def: PortDef): HTMLElement {
     const aboard = g.linguas();
@@ -1779,8 +1810,8 @@ export class PortView {
                   'There are men on this waterfront who were brought home off that coast and have '
                   + 'been here long enough to be useful in both directions.'),
                 el('div', { class: 'row', style: { flexWrap: 'wrap' } },
-                  ...langs.slice(0, 5).map((lang) => button(
-                    `${lang} — ${offer.cost}`,
+                  ...langs.filter((lang) => linguaCandidate(g, lang, true)).slice(0, 5).map((lang) => button(
+                    `${lang} (${linguaCandidate(g, lang, true)!.name}) — ${offer.cost}`,
                     () => { this.notice = { text: g.engageLingua(def, lang) }; this.render(); },
                     { disabled: g.crown.gold + g.creditFree < offer.cost },
                   )),
@@ -1793,8 +1824,12 @@ export class PortView {
           ? el('p', { class: 'notice' }, offer.can)
           : el('div', {},
               el('p', { style: { fontSize: '13px' } },
-                `A man of this place will take service and has ${offer.language}. What else he is `
-                + 'will be found out in front of somebody who matters.'),
+                (() => {
+                  const cand = linguaCandidate(g, offer.language, false);
+                  return cand
+                    ? `${cand.name} will take service and has ${cand.languages.join(', ')}. ${cand.backstory}`
+                    : `A man of this place has ${offer.language}.`;
+                })()),
               el('div', { class: 'row' },
                 button(`Engage him — ${offer.cost} cruzados`, () => {
                   this.notice = { text: g.engageLingua(def, offer.language) };

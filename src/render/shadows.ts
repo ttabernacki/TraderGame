@@ -79,6 +79,38 @@ export function receiveWorldShadow(m: THREE.MeshLambertMaterial): void {
   m.customProgramCacheKey = () => `${key.call(m)}|world-shadow`;
 }
 
+/** The two shadow cameras, so a mesh can tell which of them is drawing it. */
+export const SHADOW_CAMS: { tight: THREE.Camera | null; wide: THREE.Camera | null; wideHasShip: boolean } = {
+  tight: null, wide: null, wideHasShip: true,
+};
+
+/**
+ * Leave a mesh out of one of the shadow passes. Three renders every shadow-casting object into every
+ * shadow-casting light's map, whatever the map is for, and the ground drawn again into the ship's
+ * box (where it falls outside the box and is thrown away by the GPU) and the ship's seventy-odd
+ * meshes drawn again into the world's map are most of what a second cascade would cost. A mesh may
+ * veto its own draw in the hook before it: a negative draw range is refused before any GL call.
+ */
+function skipWhen(m: THREE.Object3D, skip: (shadowCamera: THREE.Camera) => boolean): void {
+  let saved = Infinity;
+  m.onBeforeShadow = (_r, _o, _c, shadowCamera, geometry) => {
+    if (skip(shadowCamera)) { saved = geometry.drawRange.count; geometry.drawRange.count = -1; }
+  };
+  m.onAfterShadow = (_r, _o, _c, shadowCamera, geometry) => {
+    if (skip(shadowCamera)) geometry.drawRange.count = saved;
+  };
+}
+
+/** Ground, buildings and trees: in the world's map, not the ship's. */
+export function worldOnly(m: THREE.Object3D): void {
+  skipWhen(m, (c) => c === SHADOW_CAMS.tight);
+}
+
+/** A ship's parts: always in her own map; in the world's only when she is near enough to land to shade it. */
+export function shipParts(root: THREE.Object3D): void {
+  root.traverse((o) => { if ((o as THREE.Mesh).isMesh) skipWhen(o, (c) => c === SHADOW_CAMS.wide && !SHADOW_CAMS.wideHasShip); });
+}
+
 export interface WorldShadowSpec {
   /** Edge of the map, texels; 0 turns the world shadow off. */
   size: number;
@@ -110,6 +142,7 @@ export class WorldShadow {
     this.light.shadow.bias = -0.00008;
     this.light.shadow.normalBias = 1.2;
     this.light.shadow.radius = 1.5;
+    SHADOW_CAMS.wide = this.light.shadow.camera;
   }
 
   get active(): boolean { return this.onScene; }

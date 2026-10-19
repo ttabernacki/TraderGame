@@ -203,6 +203,20 @@ Gift Table says "received without comment" and "laughed at" only as outcomes
 of play. The Tupi do not herd cattle: the silent trade there is baskets of
 fruit, feathers and dye-wood.
 
+Sources checked for the company (C5). Every companion added in C5 is invented: the clerk's
+arc, the interpreter's, the pilot Hamisi bin Nasir, his kin and the family of the berth he is
+offered, and the twelve candidates in `src/company/candidates.ts`. What is not: the Casa appointed
+a scrivener to every ship and he reported to it; the Crown's licensed physicians of the 1480s-90s
+were largely Jewish; the Kongo court sent young men to Lisbon to be schooled; boys taken on the
+Guinea coast were baptised, given Portuguese names and used as interpreters (the Casa's practice);
+a Saint Thomas Christian of Malabar and a Cambay broker are the kind of men the Portuguese engaged
+in India; Gama took a pilot at Melinde in 1498 (Gujarati by most accounts; the Malemo thread is
+that man, and Hamisi is not). Indian Ocean pilots used the kamal (knotted cord and horn plate for
+the altitude of Polaris) and a star compass of thirty-two houses, and the two monsoons have Swahili
+names (kaskazi, north-east; kusi, south-west); Melinde was the friend of whoever Mombaça hated.
+Approval, exits and ends are mechanics, not history. The Rule (the cartaz) dates from 1502; the
+dhow scene is offered from act three and names no pass.
+
 ## Sailing a fleet (engine)
 
 `src/fleet/formation.ts`: slots in the flagship's frame (column, line, crescent;

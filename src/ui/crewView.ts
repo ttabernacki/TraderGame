@@ -12,6 +12,8 @@ import type { Officer } from '../crew/crew';
 import { UPGRADE_BY_ID } from '../ship/upgrades';
 import { sailHandRate } from '../ship/physics';
 import { loyaltyWord, traitDef } from '../progression/officers';
+import { approvalOf, eligibleHands, endStateOf, promoteHand } from '../company/company';
+import { regardWord } from '../crew/hands';
 import { DIFFICULTIES, difficultyDef } from '../game/difficulty';
 import type { Game } from '../game/state';
 import { button, card, clear, el, kv, meter } from './dom';
@@ -110,7 +112,7 @@ export class CrewView {
               const def = OFFICER_ROLES.find((r) => r.role === o.role)!;
               return el('li', { style: { opacity: o.alive ? '1' : '0.42' } },
                 el('div', { style: { display: 'flex', justifyContent: 'space-between' } },
-                  el('span', {}, `${o.name} — ${def.english}`),
+                  el('span', {}, `${o.name} — ${o.mate ? 'Mate' : def.english}`),
                   el('span', { class: o.bonded ? 'tag good' : 'tag' },
                     !o.alive ? 'dead' : o.ashoreAt ? 'ashore' : o.bonded ? 'yours' : rankOf(o.ability * 100)),
                 ),
@@ -120,6 +122,7 @@ export class CrewView {
                   ? el('div', { style: { fontSize: '12px', marginTop: '3px', color: 'var(--ink-soft)' } },
                       `Toward you: ${loyaltyWord(o.loyalty)}.`)
                   : null,
+                o.alive && !o.left && o.arcEnd !== 'ashore' ? approvalLine(g, o) : null,
                 o.languages.length > 0
                   ? el('div', { style: { fontSize: '12px', marginTop: '3px' } }, `Speaks: ${o.languages.join(', ')}`)
                   : null,
@@ -128,6 +131,26 @@ export class CrewView {
             }),
           ),
     ));
+
+    // The fo'c'sle's own: a man well regarded, with a rating that counts, can be raised to mate and
+    // later posted to a House. See company/company.
+    const raise = eligibleHands(g);
+    if (raise.length > 0) {
+      right.append(card('Raised from the fo\u2019c\u2019sle',
+        el('p', { style: { fontStyle: 'italic', color: 'var(--ink-soft)' } },
+          'A man the hands think well of, who can do his work and a little of other men\u2019s. A mate stands with the officers, '
+          + 'is judged as they are, and can be left in charge of a House.'),
+        el('ul', { class: 'list' }, ...raise.slice(0, 4).map((h) => el('li', {},
+          el('div', {}, `${h.name} of ${h.from}`),
+          el('div', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '3px' } },
+            `${h.rating === 'marinheiro' ? 'Able seaman' : h.rating === 'carpinteiro' ? 'Carpenter' : h.rating === 'bombardeiro' ? 'Gunner' : 'Caulker'} \u00b7 ${regardWord(h.regard)}`),
+          button('Raise him to mate', () => {
+            g.pushAlert(promoteHand(g, h.id), 'note');
+            this.render();
+          }, { ghost: true }),
+        ))),
+      ));
+    }
 
     right.append(card('Ration',
       el('p', {}, 'Cutting the ration extends the stores and costs you the crew\'s goodwill. Increasing it does the reverse.'),
@@ -418,16 +441,30 @@ function arcLine(o: Officer): HTMLElement | null {
   const arc = ARC_BY_ID.get(o.arc);
   if (!arc) return null;
   const stage = o.arcStage ?? 0;
-  const text = o.bonded
+  const end = endStateOf(o);
+  const text = end === 'bonded'
     ? `${BONDS[arc.bond].name} \u2014 he is yours.`
-    : stage >= 99
-      ? 'Whatever there was between you is finished. He does his work.'
-      : stage === 0
-        ? 'You have not sailed far enough with him to know him.'
-        : `You are ${stage / Math.max(1, arc.beats.length) < 0.4 ? 'a little way'
-          : stage / Math.max(1, arc.beats.length) < 0.75 ? 'about half way'
-            : 'most of the way'} into whatever this is.`;
+    : end === 'ashore'
+      ? 'He has gone, with your leave, and what he gave you stays.'
+      : end === 'betrayed'
+        ? 'He sold what he knew. It is over.'
+        : end === 'estranged' || stage >= 99
+          ? 'Whatever there was between you is finished. He does his work.'
+          : stage === 0
+            ? 'You have not sailed far enough with him to know him.'
+            : `You are ${stage / Math.max(1, arc.beats.length) < 0.4 ? 'a little way'
+              : stage / Math.max(1, arc.beats.length) < 0.75 ? 'about half way'
+                : 'most of the way'} into whatever this is.`;
   return el('div', {
     style: { fontSize: '12px', marginTop: '4px', color: o.bonded ? 'var(--green)' : 'var(--ink-soft)' },
   }, text);
+}
+
+/** One word, and the one thing that moved it. No meter. */
+function approvalLine(g: Game, o: Officer): HTMLElement {
+  const a = approvalOf(g, o);
+  const tone = a.score >= 40 ? 'var(--green)' : a.score <= -40 ? 'var(--red, #a33)' : 'var(--ink-soft)';
+  return el('div', { style: { fontSize: '12.5px', marginTop: '4px', color: tone } },
+    el('b', {}, a.word), ` \u2014 ${a.why}`,
+    o.leaving && o.arcEnd !== 'ashore' ? ' He has said he will leave at the next port.' : '');
 }

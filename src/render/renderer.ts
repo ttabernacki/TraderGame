@@ -12,7 +12,7 @@ import { PostStack, hdrSupported } from './post/stack';
 import { POST_EXPOSURE } from './post/color';
 import { PerfOverlay } from './perfOverlay';
 import { HULL_ENV, SAIL_TRANS } from './shipMesh';
-import { WorldShadow } from './shadows';
+import { SHADOW_CAMS, WorldShadow, shipParts } from './shadows';
 const SEA_DEEP = new THREE.Color(0.004, 0.022, 0.03);
 import { Spray } from './spray';
 import { depthAt, nearestShore } from '../world/landmass';
@@ -346,6 +346,8 @@ export class Renderer {
     this.scene.add(this.ambient);
     this.sun.position.set(0, 1000, 0);
     this.worldShadow = new WorldShadow(this.scene);
+    SHADOW_CAMS.tight = this.sun.shadow.camera;
+    shipParts(this.ship.group);
 
     // The shadow frustum is kept tight around the ship, which is the only thing
     // in the scene that casts anything worth seeing.
@@ -444,6 +446,7 @@ export class Renderer {
         held.dispose();
       }
       mesh = makeHullModel(hullClass(s.hullId));
+      shipParts(mesh.group);
       this.scene.add(mesh.group);
       slot.mesh = mesh;
       slot.hullId = s.hullId;
@@ -505,6 +508,7 @@ export class Renderer {
     this.ship.dispose();
     this.hullClass = hull;
     this.ship = makeHullModel(hull, { lamp: true });
+    shipParts(this.ship.group);
     this.scene.add(this.ship.group);
   }
 
@@ -860,6 +864,8 @@ export class Renderer {
     // than riding along with her and then jumping. See Land.follow.
     this.land.follow(f.pos);
     this.settlements.follow(f.pos);
+    // Her own shadow is drawn into the world's map only when there is ground near enough to take it.
+    SHADOW_CAMS.wideHasShip = this.landNm < 0.12;
     // The ship in the coast's own frame, which is what the world shadow is snapped in.
     this.wsLocal.set(-this.land.group.position.x, -this.land.group.position.z);
     this.worldShadow.update(

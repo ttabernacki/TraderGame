@@ -9,6 +9,7 @@ import { casaEnding } from '../progression/casa';
 import { portName } from '../progression/crown';
 import type { Game } from '../game/state';
 import { chronicles, muster } from '../ledger/chronicle';
+import { companyEndLines } from '../company/company';
 import { button, card, el, kv } from './dom';
 
 /**
@@ -31,7 +32,7 @@ export class EpilogueView {
     const home = g.crew.count;
     const years = ((g.clock.t - g.startT) / 86400 / 365.25);
     const officersLost = g.crew.officers.filter((o) => !o.alive);
-    const ashore = g.crew.officers.filter((o) => o.alive && o.ashoreAt);
+    const ashore = g.crew.officers.filter((o) => o.alive && o.ashoreAt && !o.left);
     const trueLeads = g.leads.filter((l) => l.followed && !l.false);
     const falseLeads = g.leads.filter((l) => l.followed && l.false);
     const delivered = g.ventures.filter((v) => v.delivered);
@@ -70,6 +71,8 @@ export class EpilogueView {
             `${o.name}, ${officerTitle(o).toLowerCase()} — died on the passage.`)),
           ...ashore.map((o) => el('p', {},
             `${o.name} was put ashore among strangers and has not been heard of since.`)),
+          // How each written man's story ended: bonded, ashore with leave, estranged, betrayed. See company/.
+          ...companyEndLines(g).map((line) => el('p', {}, line)),
         ),
 
         // The same career told twice, and then once more by each court that

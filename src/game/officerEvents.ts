@@ -177,6 +177,7 @@ const EVENTS: OfficerEventDef[] = [
           detail: 'Honest books. The Crown takes its share of the freight.',
           resolve: (g) => {
             regard(c.o, 0.18, 'had the private freight entered honestly');
+            g.noteDeed('books.honest', { target: c.o.name, magnitude: 0.5, note: 'Had the private freight entered honestly in the King\u2019s book.' });
             const cut = Math.round(g.ventures.reduce((s, v) => s + (v.delivered ? 0 : v.fee), 0) * 0.12);
             g.crown.gold -= cut;
             g.crown.standing += 4;
@@ -190,6 +191,7 @@ const EVENTS: OfficerEventDef[] = [
           detail: 'Keeps the freight. If it is ever discovered it is a hanging matter.',
           resolve: (g) => {
             regard(c.o, -0.2, 'made him write a lie into the King’s book');
+            g.noteDeed('books.cooked', { target: c.o.name, magnitude: 0.6, note: 'Had the private freight entered as ship\u2019s stores.' });
             g.noteDeed('companion.lied_to', { target: c.o.name, magnitude: 0.6, note: `Made ${c.o.name} enter private freight as ship\u2019s stores in the King\u2019s book.` });
             g.crew.morale = clamp(g.crew.morale + 0.01, 0, 1);
             return 'He wrote what he was told, and drew a small mark beside it that he thinks '

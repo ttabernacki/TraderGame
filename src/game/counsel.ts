@@ -2,6 +2,9 @@ import { clamp } from '../core/math';
 import type { Officer, OfficerRole } from '../crew/crew';
 import type { SeaEvent } from './seaEvents';
 import type { Game } from './state';
+import { dissenters, dissentLine } from '../company/company';
+
+export { rollConflict } from '../company/conflicts';
 
 /**
  * The wardroom's opinion, put to the captain before he commits.
@@ -642,7 +645,7 @@ function judgement(o: Officer): number {
 /** What the wardroom says about this decision. Empty when nobody has a view. */
 export function counselFor(g: Game, e: SeaEvent, askedT: number): Counsel[] {
   const rule = ruleFor(e.id);
-  if (!rule || !e.choices || e.choices.length < 2) return [];
+  if (!rule || !e.choices || e.choices.length < 2) return dissent(g, e, []);
   const right = rule.right(g, e);
   const aboard = g.crew.officers.filter((o) => o.alive && !o.ashoreAt);
   const out: Counsel[] = [];
@@ -664,5 +667,31 @@ export function counselFor(g: Game, e: SeaEvent, askedT: number): Counsel[] {
     if (!says) continue;
     out.push({ who: o.name, office: OFFICE[voice], says, backs: indexOf(e, pick) });
   }
-  return out;
+  return dissent(g, e, out);
+}
+
+/**
+ * The men who have stopped holding their tongues.
+ *
+ * At approval of -40 or less a companion argues against the captain whether or
+ * not the question was his: he backs the course the others did not, or, when
+ * nobody has a view, the one the captain is least likely to take, and says why in
+ * his own voice. Never on a scene he is the subject of (his own arc, a dispute
+ * between two of them): those are already about him.
+ */
+function dissent(g: Game, e: SeaEvent, out: Counsel[]): Counsel[] {
+  if (!e.choices || e.choices.length < 2) return out;
+  if (e.id.startsWith('arc:') || e.id.startsWith('conflict:')) return out;
+  const mine = out.slice();
+  for (const o of dissenters(g)) {
+    if (mine.some((c) => c.who === o.name)) continue;
+    if (mine.length >= 4) break;
+    const tally = new Map<number, number>();
+    for (const c of mine) if (c.backs !== null) tally.set(c.backs, (tally.get(c.backs) ?? 0) + 1);
+    const favoured = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
+    const others = e.choices.map((_, i) => i).filter((i) => i !== favoured);
+    const backs = others[Math.floor(steady(`dis:${e.id}:${o.id}`) * others.length) % others.length];
+    mine.push({ who: o.name, office: OFFICE[o.role], says: dissentLine(o, steady(`say:${e.id}:${o.id}`)), backs });
+  }
+  return mine;
 }
