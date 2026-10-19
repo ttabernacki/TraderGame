@@ -17,6 +17,10 @@ import { haversine, NM } from '../src/core/math';
 import { CASA_SHARE, MONOPOLY, regionOf, type Region } from '../src/economy/trade';
 import { runWorld } from './lib/world';
 import { TUNE } from '../src/world/lanes';
+import { duesFor } from '../src/economy/dues';
+import { roadMiles, TRUNK } from '../src/progression/road';
+import { STORE_TONS, sparesSetTons } from '../src/game/stores';
+import { portDef } from '../src/world/ports';
 
 const args = process.argv.slice(2);
 // Tuning hooks for sweeps: PP='{"europe":900}' and LT='{"city":600}' override the caps for one run.
@@ -143,6 +147,8 @@ const KNOTS_DAY = 4.5 * 24;
 const WAGE_PER_MAN_MONTH = Number(process.env.WAGE ?? 4);
 const slip = (q: number, avail: number) => (avail <= 0 ? 1 : 1 + Math.min(1, q / avail) ** 2 * 0.55);
 function voyageDays(nm: number): number { return 2 * (nm / KNOTS_DAY) + 12; }
+/** Port dues at the calls of a voyage (economy/dues): none at a Portuguese quay. */
+const callDues = (ports: string[], h: { tons: number }): number => ports.reduce((sum, id) => sum + duesFor(portDef(id), h.tons).dues, 0);
 interface PairNet { net: number; storeT: number; goods: string[]; out: number; back: number }
 /** One leg with a mixed cargo, best profit per ton first; returns the money and the goods. */
 function legNet(ls: Lane[], h: { crewFull: number; hold: number; tons: number }, storeT: number): { total: number; goods: string[] } {
@@ -172,7 +178,7 @@ function pairNet(a: string, b: string, h: { crewFull: number; hold: number; tons
   const days = voyageDays(nm);
   const storeT = 0.005 * h.crewFull * days;
   const o = legNet(out, h, storeT), r = legNet(back, h, storeT);
-  return { net: o.total + r.total - days * h.crewFull * (0.012 + WAGE_PER_MAN_MONTH / 30), storeT, goods: [...o.goods.slice(0, 3), '|', ...r.goods.slice(0, 3)], out: o.total, back: r.total };
+  return { net: o.total + r.total - days * h.crewFull * (0.012 + WAGE_PER_MAN_MONTH / 30) - callDues([a, b, a], h), storeT, goods: [...o.goods.slice(0, 3), '|', ...r.goods.slice(0, 3)], out: o.total, back: r.total };
 }
 /**
  * A tour: out from Lisbon to the first stop, along the coast to the others (5 port
@@ -181,11 +187,11 @@ function pairNet(a: string, b: string, h: { crewFull: number; hold: number; tons
  * the same pepper three times. This is how a Nau da India is actually loaded: one
  * Cochim yard does not fill 400 t.
  */
-function tourNet(stops: string[], h: { crewFull: number; hold: number; tons: number }): PairNet {
+function tourNet(stops: string[], h: { crewFull: number; hold: number; tons: number }, over: { days?: number; storeT?: number } = {}): PairNet {
   const first = byPair.get('lisboa>' + stops[0]) ?? [];
   const nm = (first[0] ?? byPair.get(stops[0] + '>lisboa')![0]).nm;
-  const days = voyageDays(nm) + 5 * (stops.length - 1);
-  const storeT = 0.005 * h.crewFull * days;
+  const days = over.days ?? voyageDays(nm) + 5 * (stops.length - 1);
+  const storeT = over.storeT ?? 0.005 * h.crewFull * days;
   const o = legNet(first, h, storeT);
   const homeLanes = stops.flatMap((x) => byPair.get(x + '>lisboa') ?? []);
   let room = Math.max(0, cap(h) - storeT), total = 0;
@@ -201,7 +207,7 @@ function tourNet(stops: string[], h: { crewFull: number; hold: number; tons: num
     sold.set(l.g, was + units);
     room -= units * l.bulk; total += net; goods.push(l.g);
   }
-  return { net: o.total + total - days * h.crewFull * (0.012 + WAGE_PER_MAN_MONTH / 30), storeT, goods: [...o.goods.slice(0, 3), '|', ...goods.slice(0, 4)], out: o.total, back: total };
+  return { net: o.total + total - days * h.crewFull * (0.012 + WAGE_PER_MAN_MONTH / 30) - callDues(['lisboa', ...stops, 'lisboa'], h), storeT, goods: [...o.goods.slice(0, 3), '|', ...goods.slice(0, 4)], out: o.total, back: total };
 }
 const undirected = (() => {
   const seen = new Set<string>(), out: [string, string][] = [];
@@ -327,6 +333,55 @@ if (args.includes('--json')) {
     ratio: s.ratio, bigVsSmall, mixBest, mixMed, median: s.median, top: s.top,
     tiers: tiers.map((t) => ({ id: t.h.id, net: Math.round(t.best.net), vy: t.voyages, lane: t.best.k })),
   }));
+}
+
+// ---------------------------------------------------------------------------
+// India by hull: can a small hull run the Carreira? (BUILD_PLAN D1, the small-hull question)
+// ---------------------------------------------------------------------------
+// BALANCE.md noted a caravela redonda earns what a Nau da India does on a Malabar tour, because spices are
+// money-capped per port, so the hold never binds. Is that a flaw, or does the stores-in-tons rule (game/stores)
+// already keep small hulls off the road? Measured here with the real sailed distance (road.ts roadMiles, the Lines'
+// pace per hull), the real stores rule (0.005 t a man-day, spares 1-2 t) and dues, two ways: every ton of stores
+// for the whole round trip carried from Lisbon (the harshest reading), and a pilot's loading for the longest leg
+// between two ports on the road (Benguela - Moçambique) with the stores renewed at each port, which is how the
+// game plays it.
+const PACE_NM_DAY: Record<string, number> = { barcha: 120, 'caravela-latina': 115, 'caravela-redonda': 110, 'nau-pequena': 104, nau: 100, 'nau-da-india': 98 };
+const anch = (id: string) => anchorageOf(portDef(id));
+const GRAND = ['cochim', 'coulao', 'calecute', 'cananor', 'goa', 'chaul'];
+interface IndiaRow { days: number; wholeT: number; legT: number; wholeNet: number; legNet: number }
+function indiaByHull(stops: string[], h: (typeof HULLS)[number]): IndiaRow {
+  const pace = PACE_NM_DAY[h.id] ?? 100;
+  const out = roadMiles(anch('lisboa'), anch(stops[0]));
+  let hop = 0;
+  for (let i = 1; i < stops.length; i++) hop += (haversine(anch(stops[i - 1]), anch(stops[i])) / NM) * 1.25;
+  // The trunk's eleven calls each way cost three days apiece; the stops on the coast five.
+  const days = (2 * out + hop) / pace + 2 * 3 * (TRUNK.length - 2) + 5 * stops.length + 10;
+  const spares = 0.6 * sparesSetTons(h.hold);
+  const perManDay = STORE_TONS.water + STORE_TONS.biscuit + STORE_TONS.saltMeat * 0.9 + STORE_TONS.wine * 0.7 + 18 * STORE_TONS.fresh / days;
+  const wholeT = perManDay * h.crewFull * days + spares;
+  let longest = 0;
+  for (let i = 2; i < TRUNK.length; i++) longest = Math.max(longest, roadMiles(anch(TRUNK[i - 1]), anch(TRUNK[i])));
+  const need = Math.ceil((longest / pace) * 1.25 + 14);
+  const legT = (STORE_TONS.water * (need + 10) + (STORE_TONS.biscuit + STORE_TONS.saltMeat * 0.9 + STORE_TONS.wine * 0.7) * need + 18 * STORE_TONS.fresh) * h.crewFull + spares;
+  return {
+    days, wholeT, legT,
+    wholeNet: tourNet(stops, h, { days, storeT: wholeT }).net,
+    legNet: tourNet(stops, h, { days, storeT: legT }).net,
+  };
+}
+const india3 = Object.fromEntries(HULLS.map((h) => [h.id, indiaByHull(TOURS[2], h)]));
+const indiaG = Object.fromEntries(HULLS.map((h) => [h.id, indiaByHull(GRAND, h)]));
+if (args.includes('--india-hulls') || CHECK) {
+  const row = (t: Record<string, IndiaRow>, h: (typeof HULLS)[number]) => {
+    const r = t[h.id];
+    return `${id(h.id, 18)}${f(cap(h)).padStart(6)}${f(r.days).padStart(6)}${r.wholeT.toFixed(1).padStart(9)}${r.legT.toFixed(1).padStart(8)}${f(r.wholeNet).padStart(10)}${f(r.legNet).padStart(10)}`;
+  };
+  const head = `${id('hull', 18)}${'hold'.padStart(6)}${'days'.padStart(6)}${'stores*'.padStart(9)}${'/leg'.padStart(8)}${'net*'.padStart(10)}${'net/leg'.padStart(10)}`;
+  console.log(`\nIndia by hull, real sailed days and the stores rule (* = every ton of stores for the round trip carried from Lisbon; /leg = a pilot's loading renewed at each port; dues and wages in)`);
+  console.log(`3-port Malabar tour (${TOURS[2].join(', ')}):\n${head}`);
+  for (const h of HULLS) console.log(row(india3, h));
+  console.log(`Grand tour (${GRAND.join(', ')}):\n${head}`);
+  for (const h of HULLS) console.log(row(indiaG, h));
 }
 
 if (CHECK) {

@@ -4,6 +4,7 @@ import { prosperityText } from './networkView';
 import { recommendedPlan } from '../game/stores';
 import type { Game } from '../game/state';
 import { append, button, clear, el } from './dom';
+import { verb } from './quarters/verb';
 import { Ctx, QUARTERS, QUARTER_IDS, quartersModel, renderQuarter, type QuarterId } from './quarters';
 
 /**
@@ -80,16 +81,16 @@ export class PortView {
     append(this.foot,
       el('div', { style: { marginRight: 'auto', fontSize: '13.5px' } },
         `${g.crown.gold.toFixed(0)} cruzados · ${g.crown.title.name} · ${g.crown.lifetimeStanding} renown`),
-      def.id === 'lisboa' ? button('To court', () => this.onCourt()) : null,
-      def.people === 'han' ? button('To the Admiral', () => this.onCourt()) : null,
-      button('Seek an audience', () => this.onAudience(), {
+      def.id === 'lisboa' ? verb('foot.court-lisboa', button('To court', () => this.onCourt())) : null,
+      def.people === 'han' ? verb('foot.admiral', button('To the Admiral', () => this.onCourt())) : null,
+      verb('foot.audience', button('Seek an audience', () => this.onAudience(), {
         disabled: def.people === 'portuguese',
         title: def.people === 'portuguese' ? 'These are your own people.' : undefined,
         // Until you have leave to trade, the audience is the only thing at this anchorage worth doing.
         primary: def.people !== 'portuguese' && !rel.mayTrade,
-      }),
+      })),
       g.can('homeward') && def.id !== 'lisboa'
-        ? button(this.homeArmed
+        ? verb('foot.sail-home', button(this.homeArmed
           ? `Sail home: ${g.homewardPassage()?.miles ?? 0} miles, ${g.homewardPassage()?.days ?? 0} days — confirm`
           : 'Sail her home', () => {
           const road = g.homewardPassage();
@@ -102,10 +103,10 @@ export class PortView {
           ctx.notice = { text: res.text, grave: !res.ok };
           this.quarter = 'waterfront'; this.section = 'quay';
           this.render();
-        }, { primary: this.homeArmed, title: 'The road home: skip the passage and come into Lisbon in the days it takes' })
+        }, { primary: this.homeArmed, title: 'The road home: skip the passage and come into Lisbon in the days it takes' }))
         : null,
-      button(this.waitOpen ? 'Close' : 'Wait…', () => { this.waitOpen = !this.waitOpen; this.render(); }),
-      button('Weigh anchor  (Space)', () => {
+      verb('foot.wait', button(this.waitOpen ? 'Close' : 'Wait…', () => { this.waitOpen = !this.waitOpen; this.render(); })),
+      verb('foot.weigh', button('Weigh anchor  (Space)', () => {
         const why = g.cannotWeigh();
         if (why) { ctx.notice = { text: why, grave: true }; this.render(); return; }
         // The pilot's word on the stores comes once, before she weighs, and only if he has one.
@@ -122,7 +123,7 @@ export class PortView {
         }
         g.weighAnchor(); this.onClose();
       },
-        { primary: def.people === 'portuguese' || rel.mayTrade }),
+        { primary: def.people === 'portuguese' || rel.mayTrade })),
     );
 
     clear(this.body);
