@@ -3,10 +3,9 @@ import { type PortDef } from '../../world/ports';
 import { civicBlock, houseHead, worksBlock } from '../networkView';
 import { footingOf, footingWord, postureOf } from '../../progression/network';
 import { loyaltyWord, officerTitle } from '../../progression/officers';
-import { type House } from '../../economy/finance';
 import { WORKS, buyable, capacityOf, residentPrice, stockTons, stockValue, type Feitoria } from '../../progression/feitoria';
 import type { Game } from '../../game/state';
-import { append, button, card, el, kv, plural } from '../dom';
+import { button, card, el, kv, plural } from '../dom';
 import type { Ctx } from './ctx';
 import { verb } from './verb';
 

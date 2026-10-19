@@ -16,6 +16,7 @@ import { HULL_CLASSES } from '../src/ship/hull';
 import { haversine, NM } from '../src/core/math';
 import { CASA_SHARE, MONOPOLY, regionOf, type Region } from '../src/economy/trade';
 import { runWorld } from './lib/world';
+import { TUNE } from '../src/world/lanes';
 
 const args = process.argv.slice(2);
 // Tuning hooks for sweeps: PP='{"europe":900}' and LT='{"city":600}' override the caps for one run.
@@ -23,6 +24,7 @@ if (process.env.PP) Object.assign(PORT_PROFIT, JSON.parse(process.env.PP));
 if (process.env.PD) Object.assign(PORT_DEMAND, JSON.parse(process.env.PD));
 if (process.env.SD) Object.assign(STAPLE_DEMAND, JSON.parse(process.env.SD));
 if (process.env.LT) Object.assign(LOT_TONS, JSON.parse(process.env.LT));
+if (process.env.LANES) Object.assign(TUNE, JSON.parse(process.env.LANES));
 if (args.includes('--world')) {
   // The 24-month no-player world sim and the prosperity falsifiers (BUILD_PLAN C1). Separate from the ladder pass.
   process.exit(runWorld() ? 0 : 1);

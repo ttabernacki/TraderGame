@@ -1,10 +1,8 @@
 import { clamp } from '../../core/math';
-import { good } from '../../economy/goods';
 import { postureOf } from '../../progression/network';
-import { house } from '../../economy/finance';
 import type { Game } from '../../game/state';
 import { MAX_VICTUAL_DAYS, MAX_WATER_DAYS, STORE_TONS, fitPlan, loadPlan, planCost, planOf, planTons, recommendedPlan, roomForStores, sparesSetTons, type StoresPlan } from '../../game/stores';
-import { append, button, card, el, kv } from '../dom';
+import { button, card, el, kv } from '../dom';
 import type { Ctx } from './ctx';
 import { verb } from './verb';
 

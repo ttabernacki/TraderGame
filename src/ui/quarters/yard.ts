@@ -1,11 +1,10 @@
-import { good } from '../../economy/goods';
 import { SLOTS, UPGRADE_BY_ID, describeEffects, nodeStatus, ordnanceResale, slotFittings, type Upgrade } from '../../ship/upgrades';
 import { hullClass } from '../../ship/hull';
 import { shipyardCard } from '../shipyard';
 import { ALMANACS, ALTITUDE_INSTRUMENTS, COMPASSES, SPEED_INSTRUMENTS } from '../../navigation/instruments';
 import type { Game } from '../../game/state';
 import { doRefit, fitFitting, quoteRefit, refitPlace, removeFitting, type RefitJob } from '../../game/refit';
-import { append, button, card, el, fold, foldCard, kv } from '../dom';
+import { button, card, el, fold, foldCard, kv } from '../dom';
 import type { Ctx } from './ctx';
 import { verb } from './verb';
 

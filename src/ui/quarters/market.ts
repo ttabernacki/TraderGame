@@ -1,10 +1,10 @@
 import { good, unitOf } from '../../economy/goods';
 import { ANTWERP, ANTWERP_DAYS, CASA_SHARE, COMPETITION, MONOPOLY, REGION_NAME, antwerpBid, fairsAt, gradeWord, paymentAt } from '../../economy/trade';
 import { formatDateAt } from '../../core/clock';
-import { people } from '../../world/peoples';
 import { type PortDef } from '../../world/ports';
 import type { Game, TradeListing } from '../../game/state';
 import { append, button, card, el, fold, foldCard, kv } from '../dom';
+import { renderBarter } from './barter';
 import type { Ctx } from './ctx';
 import { tagLast, verb } from './verb';
 
@@ -63,7 +63,7 @@ export function tradeSection(ctx: Ctx, host: HTMLElement, g: Game): void {
 }
 
 /** What kind of market this is: what it takes, who else is buying, what is happening to it. */
-export function marketCard(ctx: Ctx, g: Game, def: PortDef): HTMLElement {
+export function marketCard(_ctx: Ctx, g: Game, def: PortDef): HTMLElement {
   const pay = paymentAt(def.id);
   const comp = COMPETITION[def.id];
   const level = g.competitionAt(def.id);
@@ -167,7 +167,7 @@ export function renderScales(ctx: Ctx, host: HTMLElement, g: Game, listings: Tra
  * the letters your factors wrote, and whatever a broker sold you. All of them
  * as old as they are.
  */
-export function factorsEye(ctx: Ctx, g: Game): HTMLElement | null {
+export function factorsEye(_ctx: Ctx, g: Game): HTMLElement | null {
   const here = g.portHere!.id;
   const rows: HTMLElement[] = [];
   for (const lot of g.ship.cargo) {

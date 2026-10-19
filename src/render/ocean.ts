@@ -418,6 +418,29 @@ float fbm(vec2 p) {
 }
 
 /**
+ * The same, with each octave taken out as the pixel outgrows it. `pxN` is how many noise-space units
+ * one pixel spans; an octave of frequency f has cells 1/f across and is gone (replaced by its own
+ * average, so the overall level does not shift) when a pixel is half a cell. Four octaves of hash noise
+ * thresholded into foam is exactly the kind of detail that no multisampling touches, because it is
+ * made inside the fragment shader, and sampled once per pixel it beats against the pixel grid.
+ */
+float fbmF(vec2 p, float pxN) {
+  float v = 0.0;
+  float amp = 0.52;
+  float per = 64.0;
+  float f = 1.0;
+  for (int i = 0; i < 4; i++) {
+    float keep = 1.0 - smoothstep(0.18, 0.5, pxN * uOceanNew * f);
+    v += amp * mix(0.5, vnoise(p, per), keep);
+    p *= 2.0;
+    per *= 2.0;
+    amp *= 0.5;
+    f *= 2.0;
+  }
+  return v;
+}
+
+/**
  * How much of a feature of the given size survives at this pixel footprint.
  *
  * One at a comfortable several pixels across, nothing once it is down to about
@@ -579,7 +602,7 @@ void main() {
     vec3 envDir = normalize(vec3(reflDir.x, max(reflDir.y, 0.015), reflDir.z));
     // Blurred by the sea's own roughness: the sky a rough surface shows is the average of the sky
     // over the spread of its facets, not a pin-sharp picture of one point in it.
-    float lod = clamp(log2(max(sqrt(2.0 * sigma2) / uEnvTexel, 1.0)), 0.0, 4.0) * uEnvMips;
+    float lod = clamp(log2(max(sqrt(2.0 * sigma2) / uEnvTexel, 1.0)), 0.0, 4.0) * uEnvMips * smoothstep(0.03, 0.3, reflDir.y);
     vec3 env = mix(textureCubeLodEXT(uEnvPrev, envDir, lod).rgb, textureCubeLodEXT(uEnv, envDir, lod).rgb, uEnvMix);
     sky = min(env, vec3(1.25));
   }
@@ -681,9 +704,9 @@ void main() {
     // Broken up across four scales, and drifting downwind, because whitecaps do:
     // the patch that is breaking now was being blown to leeward a moment ago.
     vec2 drift = uChopDir * uNoiseTime * 0.8;
-    float mottle = 0.55 + 0.92 * fbm((vSurface + drift) * 0.09);
+    float mottle = 0.55 + 0.92 * fbmF((vSurface + drift) * 0.09, px * 0.09);
     // A short ramp, so a crest breaks rather than dissolving.
-    breaking = smoothstep(uFoamThreshold, uFoamThreshold + 0.06, crest * mottle);
+    breaking = smoothstep(uFoamThreshold, uFoamThreshold + 0.06 + px * 0.02 * uOceanNew, crest * mottle);
     // Foam sits on the crest and streams down its back, never in the troughs.
     breaking *= smoothstep(0.02, 0.42, n.y * 0.25 + vWorld.y / max(uCrestMax, 0.3));
     breaking *= 1.0 - smoothstep(2500.0, 14000.0, vDist);
@@ -699,11 +722,11 @@ void main() {
     vec2 aw = uChopDir;
     vec2 cw = vec2(-uChopDir.y, uChopDir.x);
     vec2 sp = vec2(dot(vSurface, aw), dot(vSurface, cw));
-    float field = fbm(vec2(sp.x * 0.026 - uNoiseTime * 0.4, sp.y * 0.17));
+    float field = fbmF(vec2(sp.x * 0.026 - uNoiseTime * 0.4, sp.y * 0.17), px * 0.17);
     float feed = clamp(crest * 1.5 - 0.15, 0.0, 1.0);
     float cut = 0.98 - cover * 0.5;
     float raft = smoothstep(cut, cut + 0.2, field * 0.8 + feed * 0.32);
-    float fine = fbm(sp * vec2(0.7, 1.4) + vec2(-uNoiseTime * 0.25, 0.0));
+    float fine = fbmF(sp * vec2(0.7, 1.4) + vec2(-uNoiseTime * 0.25, 0.0), px * 1.4);
     lacy = 0.45 + 0.55 * smoothstep(0.3, 0.7, fine);
     // Not below the size the screen can resolve, or it beats against the pixel grid.
     streakFoam = raft * (0.35 + 0.65 * lacy) * resolvable(2.4, px) * (1.0 - smoothstep(2500.0, 6000.0, vDist));
@@ -722,7 +745,7 @@ void main() {
     // into streaks in the direction the water was dragged, not round blobs.
     vec2 w = vec2(dot(vSurface, uWakeDir) * 0.34,
                   dot(vSurface, vec2(uWakeDir.y, -uWakeDir.x)));
-    float bubbles = 0.28 + 1.5 * fbm(w * 0.42 + uNoiseTime * 0.11)
+    float bubbles = 0.28 + 1.5 * fbmF(w * 0.42 + uNoiseTime * 0.11, px * 0.42)
                   + 0.35 * (vnoise(w * 2.6 - uNoiseTime * 0.6, 512.0) - 0.5) * grain;
     // A soft threshold, so froth either covers a patch of water or it does not —
     // except close under the counter, where the water she is actually

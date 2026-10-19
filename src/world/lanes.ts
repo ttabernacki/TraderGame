@@ -53,14 +53,16 @@ export interface LaneDef {
 // ---------------------------------------------------------------------------
 // The numbers
 
-/** A lane draws at most this share of the origin's baseline stock in a month. */
-export const DRAW = 0.08;
-/** The origin keeps this share of its baseline; only what is above is surplus. */
-export const FLOOR = 0.55;
-/** A destination takes this share of what it still wants in a month. */
-export const TAKE = 0.3;
-/** A port is "usual" when its traffic is this share of the median port's. */
-export const USUAL = 0.7;
+/**
+ * The knobs, tuned with scripts/econ.ts (`LANES='{"draw":0.05}'` overrides them for one run).
+ *  draw   a lane takes at most this share of the origin's baseline stock in a month;
+ *  floor  the origin keeps this share of its baseline, only what is above is surplus;
+ *  take   a destination takes this share of what it still wants in a month;
+ *  glut   but never lets its glut of the good (0 hungry .. 3 drowning) climb past this, so the lanes cannot sink a price;
+ *  usual  a port's traffic is "usual" when it is this share of the median port's;
+ *  small  a good whose baseline stock is under this is too small a lot for a lane to carry.
+ */
+export const TUNE = { draw: 0.05, floor: 0.55, take: 0.15, glut: 0.2, usual: 0.7, small: 6 };
 /** Annual tons the carrying polity can spare, order of magnitude (BUILD_PLAN D1), by polity then by network. */
 const POLITY_KT: Record<string, number> = { gujarat: 12000, calicut: 8000, kilwa: 2000, malindi: 1000, hormuz: 5000, aden: 5000, malacca: 8000 };
 const NETWORK_KT: Record<Region, number> = {
@@ -203,10 +205,10 @@ function referenceTable(): Map<string, Nominal> {
   for (const l of lanes()) {
     for (const gid of l.goods) {
       const base = m.baseOf(l.from, gid);
-      if (base <= 0) continue;
+      if (base < TUNE.small) continue;
       const want = m.appetiteLeft(l.to, gid);
-      const need = want > 0 ? TAKE * want : 0.25 * 0.5 * m.baseOf(l.to, gid);
-      const units = Math.min(DRAW * base, need, capUnits(l, gid));
+      const need = want > 0 ? TUNE.take * want : 0.25 * 0.5 * m.baseOf(l.to, gid);
+      const units = Math.min(TUNE.draw * base, need, capUnits(l, gid));
       if (units <= 0) continue;
       const value = units * good(gid).lisbon * (1 - l.baseRisk);
       reference.set(`${l.id}:${gid}`, { units, value });
@@ -287,14 +289,16 @@ export const laneModel: LaneModel = (ctx: LaneContext): LaneResult => {
     let moved = 0;
     for (const gid of l.goods) {
       const baseA = mk.baseOf(l.from, gid);
-      if (baseA <= 0) continue;
+      if (baseA < TUNE.small) continue;
       const stockA = mk.supply(l.from, gid).stock;
-      const surplus = Math.max(0, stockA - FLOOR * baseA);
+      const surplus = Math.max(0, stockA - TUNE.floor * baseA);
       const want = mk.appetiteLeft(l.to, gid) * (mb?.appetiteMult[gid] ?? 1);
       const baseB = mk.baseOf(l.to, gid);
-      const need = want > 0 ? TAKE * want : Math.max(0, 0.9 * baseB - mk.supply(l.to, gid).stock) * 0.5;
+      const glut = mk.glutOf(l.to, gid);
+      const room = Math.max(0, TUNE.glut - glut) * (want / Math.max(0.05, 1 - glut));
+      const need = want > 0 ? Math.min(TUNE.take * want, room) : Math.max(0, 0.9 * baseB - mk.supply(l.to, gid).stock) * 0.5;
       const nominal = reference.get(`${l.id}:${gid}`)?.units ?? 0;
-      const raw = Math.min(surplus, need, capUnits(l, gid), DRAW * baseA);
+      const raw = Math.min(surplus, need, capUnits(l, gid), TUNE.draw * baseA);
       if (raw <= 0.01) continue;
       // The player's, his Lines' and the rival's weight on either quay crowds the lane.
       const crowd = (mk.volumeOf(l.from, gid).bought + mk.volumeOf(l.to, gid).sold) / Math.max(nominal, 1);
@@ -322,7 +326,7 @@ export const laneModel: LaneModel = (ctx: LaneContext): LaneResult => {
 
   // The traffic each port saw, against what is usual for a port of its kind.
   const traffic: Record<string, number> = {};
-  const usual = USUAL * typical;
+  const usual = TUNE.usual * typical;
   for (const p of PORTS) {
     if (lanesAt(p.id).length === 0) continue;
     const r = (realized[p.id] ?? 0) / Math.max(usual, 1e-6);

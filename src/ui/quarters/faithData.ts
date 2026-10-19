@@ -11,7 +11,7 @@ export function ledgerFaith(g: Game, port: string): FrontLine[] {
 }
 
 /** The people's faith in a word, for the quarter's head. */
-export function faithOf(g: Game, port: string): string {
+export function faithOf(_g: Game, port: string): string {
   const pe = people(portDef(port).people);
   return ({ catholic: 'Catholic', muslim: 'Muslim', hindu: 'Hindu', traditional: 'their own gods', buddhist: 'Buddhist', confucian: 'of the Ming order' } as Record<string, string>)[pe.faith] ?? pe.faith;
 }

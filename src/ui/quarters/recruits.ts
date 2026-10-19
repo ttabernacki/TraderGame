@@ -1,6 +1,5 @@
-import { people } from '../../world/peoples';
 import type { Game } from '../../game/state';
-import { append, button, card, el, kv } from '../dom';
+import { button, card, el, kv } from '../dom';
 import { tagLast } from './verb';
 import type { Ctx } from './ctx';
 

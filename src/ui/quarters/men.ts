@@ -1,5 +1,4 @@
 import { clamp } from '../../core/math';
-import { good } from '../../economy/goods';
 import { people } from '../../world/peoples';
 import { type PortDef } from '../../world/ports';
 import { OFFICER_ROLES } from '../../crew/crew';
@@ -8,7 +7,7 @@ import { candidatesAt, linguaCandidate } from '../../company/candidates';
 import { courtCandidate } from '../../company/company';
 import { backingFor, candidates, errandsAt, journeyWord, outfitCost, outstanding } from '../../progression/inland';
 import type { Game } from '../../game/state';
-import { append, button, card, el, fold, kv } from '../dom';
+import { button, card, el, fold, kv } from '../dom';
 import { tagLast } from './verb';
 import type { Ctx } from './ctx';
 

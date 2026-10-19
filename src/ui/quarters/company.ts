@@ -2,15 +2,23 @@ import { clamp } from '../../core/math';
 import { CHEST_TONS } from '../../economy/trade';
 import { OFFICER_ROLES } from '../../crew/crew';
 import { loyaltyWord, officerTitle, traitDef } from '../../progression/officers';
-import { RATING_LABEL, TEMPER } from '../../crew/hands';
+import { RATING_LABEL, TEMPER, regardWord as handRegardWord } from '../../crew/hands';
 import { ARC_BY_ID } from '../../progression/arcs';
 import type { Game } from '../../game/state';
-import { append, button, card, el, fold, kv } from '../dom';
-import { tagLast } from './verb';
+import { button, card, el, fold, kv } from '../dom';
+import { tagLast, verb } from './verb';
+import { LEAVE_COST_EACH, canGiveLeave, shoreLeave } from '../../places';
 import type { Ctx } from './ctx';
 
 export function companySection(ctx: Ctx, host: HTMLElement, g: Game): void {
   const def = g.portHere!;
+  const noLeave = canGiveLeave(g);
+  host.append(verb('waterfront.shore-leave', card('Shore leave',
+    el('p', { class: 'flavour' }, 'A day on the beach for the company, a few cruzados between them, and whatever the shore does to a ship’s company let loose on it. It is the cheapest morale there is, and the dearest if the shore is a fever coast.'),
+    kv('It costs', `about ${Math.round(g.crew.count * LEAVE_COST_EACH)} cruzados and a day`),
+    kv('Morale', `${Math.round(g.crew.morale * 100)}%`),
+    button('Give the company a day ashore', () => { ctx.say(shoreLeave(g)); ctx.render(); }, { disabled: !!noLeave, title: noLeave ?? undefined }),
+    noLeave ? el('p', { class: 'gift-sub' }, noLeave) : null)));
   // The officers' chests: a share of the hold for their own trade.
   const officers = g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length;
   host.append(fold('The officers\u2019 chests', '', false,

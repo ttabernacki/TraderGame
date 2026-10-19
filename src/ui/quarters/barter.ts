@@ -2,7 +2,7 @@ import { clamp } from '../../core/math';
 import { good } from '../../economy/goods';
 import { gradeWord, paymentAt } from '../../economy/trade';
 import type { Game, TradeListing } from '../../game/state';
-import { append, button, card, clear, el } from '../dom';
+import { button, card, el } from '../dom';
 import type { Ctx } from './ctx';
 
 /** Goods across a cloth: yours on one side, his on the other, until he nods. */

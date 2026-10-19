@@ -1,7 +1,7 @@
 import { HOUSES, creditWord, house, kindBlurb, kindName, quinhaoPrice, standingLine, type DebtKind, type House } from '../../economy/finance';
 import { portName } from '../../progression/crown';
 import type { Game } from '../../game/state';
-import { append, button, card, el, fold, kv } from '../dom';
+import { button, card, el, fold, kv } from '../dom';
 import type { Ctx } from './ctx';
 import { regardWord } from './quay';
 import { tagLast, verb } from './verb';
