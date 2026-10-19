@@ -191,3 +191,15 @@ Yes, they can run in parallel with a small number of rules.
 - Exact draw-call attribution per pass (counts are real GL draws, but I could not cleanly label env-cube vs shadow vs main passes).
 - WebGPU browser-support figures and Three r170 WebGPURenderer behaviour are from my knowledge, not tested; check current release notes before relying on them.
 - Bundle-size deltas for each package are estimates.
+
+---
+
+## Priority note from the user (water aliasing)
+
+The user still sees a lot of **aliasing on the water** and wants it addressed **definitively**, not mitigated. Treat this as the top
+render task before any further packages. Look at every source, not just edge AA: shimmering/crawling specular and sun glitter on
+sub-pixel wave normals (needs normal filtering / roughness from slope variance, mip-mapped or LEAN/Toksvig-style normals, fading
+high-frequency octaves with distance), sparkle in the sky/sea reflection, foam and whitecap noise textures that alias with distance,
+the horizon line and the sea/sky seam, temporal flicker when the ship moves, and MSAA not covering shader-generated high-frequency
+detail (FXAA cannot fix specular aliasing). Verify with a deterministic multi-frame harness (same scene, ship moving, N frames) and
+measure temporal flicker (frame-to-frame pixel variance on the sea region) at every tier, including low/medium, before and after.
