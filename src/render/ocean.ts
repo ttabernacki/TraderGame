@@ -418,7 +418,7 @@ float fbm(vec2 p) {
 }
 
 /**
- * The same, with each octave taken out as the pixel outgrows it. `pxN` is how many noise-space units
+ * The same, with each octave taken out as the pixel outgrows it. pxN is how many noise-space units
  * one pixel spans; an octave of frequency f has cells 1/f across and is gone (replaced by its own
  * average, so the overall level does not shift) when a pixel is half a cell. Four octaves of hash noise
  * thresholded into foam is exactly the kind of detail that no multisampling touches, because it is
