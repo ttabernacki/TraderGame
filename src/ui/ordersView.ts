@@ -2,7 +2,7 @@ import { marksOf } from '../diplomacy/marks';
 import { entriesOf } from '../diplomacy/book';
 import { ACTS, ACT_CHARGE, HISTORY, actGoal, roman } from '../progression/chronicle';
 import { QUESTS, goalOf, markerOf, rumoursHeard } from '../progression/quests';
-import { NM, compassPoint, formatLat, formatLon, haversine } from '../core/math';
+import { formatLat } from '../core/math';
 import { OFFICER_ROLES } from '../crew/crew';
 import { rivalStanding } from '../progression/rival';
 import { daysLeft, ventureLine } from '../progression/ventures';
@@ -20,7 +20,7 @@ import { measureWord, rulerName, standingWord } from '../diplomacy/courts';
 import { house, kindName } from '../economy/finance';
 import { portDef } from '../world/ports';
 
-type Tab = 'chronicle' | 'missions' | 'trade' | 'courts' | 'reports' | 'network' | 'wardroom';
+type Tab = 'chronicle' | 'missions' | 'trade' | 'courts' | 'network' | 'wardroom';
 
 /**
  * The captain's orders.
@@ -71,12 +71,11 @@ export class OrdersView {
         + g.quests.filter((q) => !q.outcome).length + g.activeVentures.length,
       trade: g.trade.contracts.filter((c) => c.status === 'open').length,
       courts: g.diplomacy.agreements.filter((a) => a.status === 'open').length,
-      reports: g.openLeads.length,
       network: g.liveFactories.length + g.lines.filter((l) => !l.lost).length,
       wardroom: g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length,
     };
     const names: Record<Tab, string> = {
-      chronicle: 'Chronicle', missions: 'Missions', trade: 'Trade', courts: 'Courts', reports: 'Hearsay',
+      chronicle: 'Chronicle', missions: 'Missions', trade: 'Trade', courts: 'Courts',
       network: 'Houses & Lines', wardroom: 'Wardroom',
     };
 
@@ -107,7 +106,6 @@ export class OrdersView {
     }
     else if (this.tab === 'trade') this.renderTrade(g);
     else if (this.tab === 'courts') this.renderCourts(g);
-    else if (this.tab === 'reports') this.renderLeads(g);
     else if (this.tab === 'network') for (const c of networkCards(g, () => this.render(), (t) => g.pushAlert(t, 'note'))) this.body.append(c);
     else this.renderWardroom(g);
   }
@@ -266,47 +264,6 @@ export class OrdersView {
           `${v.patron} — ${ventureLine(v)}. Not delivered.`)),
         el('p', { class: 'flavour' },
           'The Rua Nova dos Mercadores is one street and everybody on it talks.'),
-      ));
-    }
-  }
-
-  // -------------------------------------------------------------------------
-
-  private renderLeads(g: Game): void {
-    const open = g.openLeads;
-    if (open.length === 0) {
-      this.body.append(card('Nothing to go on',
-        el('p', {}, 'You have heard nothing worth writing down. Lie in a port a while and talk '
-          + 'to pilots, and to men who have talked to pilots.'),
-      ));
-    }
-
-    const from = g.nav.estimated;
-    for (const l of open) {
-      const distNm = haversine(from, { lat: l.lat, lon: l.lon }) / NM;
-      const bearing = bearingTo(from, l);
-      this.body.append(card(kindTitle(l.kind),
-        el('p', { class: 'flavour' }, l.text),
-        kv('Told you', l.source),
-        kv('The position named', `${formatLat(l.lat)}, ${formatLon(l.lon)}`),
-        kv('From your reckoning', `${distNm.toFixed(0)} miles, ${compassPoint(bearing)}`),
-        kv('How far he may be out', `${l.errorNm.toFixed(0)} miles`),
-        kv('Worth', `${l.value} renown if it is true`),
-        el('div', { class: 'row' },
-          button('Lay a course for it', () => {
-            g.setDestination(shortName(l.source), l.lat, l.lon);
-            this.onLayCourse();
-          }),
-          button('Forget it', () => { l.followed = true; l.false = true; this.render(); }, { ghost: true }),
-        ),
-      ));
-    }
-
-    const run = g.leads.filter((l) => l.followed);
-    if (run.length > 0) {
-      this.body.append(card('Run down',
-        ...run.map((l) => el('p', { class: l.false ? 'bad' : 'good' },
-          `${l.source} — ${l.false ? 'nothing there.' : 'it was where he said.'}`)),
       ));
     }
   }
@@ -639,27 +596,5 @@ function abilityWord(a: number): string {
   if (a > 0.45) return 'competent';
   if (a > 0.28) return 'adequate at a pinch';
   return 'not much use';
-}
-
-function kindTitle(kind: string): string {
-  switch (kind) {
-    case 'goods': return 'A report of trade';
-    case 'water': return 'A report of an anchorage';
-    case 'passage': return 'A report of a passage';
-    case 'peril': return 'A warning';
-    default: return 'A report of a place';
-  }
-}
-
-/** The teller's name out of "a pilot at Malindi", for a chart label. */
-function shortName(source: string): string {
-  const at = source.lastIndexOf(' at ');
-  return at > 0 ? `Report from ${source.slice(at + 4)}` : 'Reported place';
-}
-
-function bearingTo(from: { lat: number; lon: number }, to: { lat: number; lon: number }): number {
-  const dLat = to.lat - from.lat;
-  const dLon = (to.lon - from.lon) * Math.cos((from.lat * Math.PI) / 180);
-  return (((Math.atan2(dLon, dLat) * 180) / Math.PI) % 360 + 360) % 360;
 }
 

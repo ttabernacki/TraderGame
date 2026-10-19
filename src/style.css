@@ -2982,6 +2982,14 @@ body:has(.pilot.ashore) .screen-body { padding-bottom: 90px; }
 .life-line.for { border-left-color: rgba(70, 120, 60, 0.55); }
 .life-line.against { border-left-color: rgba(168, 50, 40, 0.5); }
 .life-meta { font-size: 11px; color: var(--ink-faint); margin-bottom: 3px; }
+.fact { padding: 8px 0 10px; border-bottom: 1px solid rgba(74, 53, 32, 0.15); }
+.fact:last-child { border-bottom: 0; }
+.fact-claim { margin: 0 0 3px; }
+.fact-note { font-size: 12px; margin: 2px 0; }
+.fact.stale { opacity: 0.62; }
+.fact.stale .fact-claim { font-style: italic; }
+.fact-stale { color: var(--bad, #8a3a2a); font-weight: 600; }
+.fact-actions { margin-top: 6px; gap: 6px; flex-wrap: wrap; }
 .life-said { font-size: 14.5px; line-height: 1.55; }
 .life-did { font-size: 12.5px; line-height: 1.45; opacity: 0.7; font-style: italic; margin-top: 2px; }
 .life-none { font-size: 13px; opacity: 0.6; }

@@ -1,10 +1,10 @@
 import type { Game, GameMode } from '../game/state';
 import { entriesOf } from '../diplomacy/book';
 import { POLITY_BY_ID } from '../diplomacy/polities';
-import { sheetAgeWord, sheetConfidence } from '../economy/trade';
+import { KIND_ORDER, KIND_TITLE, byKind, knownFacts, type FactKind } from '../knowledge/information';
 import { life } from '../ledger/life';
-import { portDef } from '../world/ports';
-import { button, card, clear, el, kv } from './dom';
+import { button, card, clear, el, fold } from './dom';
+import { factCard } from './factCard';
 
 /**
  * O Livro do Capitão: the one book everything is kept in.
@@ -47,9 +47,9 @@ export const SECTIONS: Section[] = [
 ];
 
 /**
- * Screens bound into the book that no longer have a tab of their own: the
- * Rutter and the Logbook are reached from the Book's Known and Log pages
- * until they are absorbed into it (B2). They keep the Book's tab lit.
+ * Screens bound into the book that have no tab of their own: the Rutter
+ * (its pages, to publish or annotate) and the Logbook are reached from the
+ * Book's Known and Log pages. They keep the Book's tab lit.
  */
 const UNDER_BOOK: GameMode[] = ['rutter', 'logbook'];
 
@@ -97,6 +97,15 @@ export class BookView {
 // The knowledge screen
 // ---------------------------------------------------------------------------
 
+const KNOWN_SHOWN = 8;
+const EMPTY: Record<FactKind, string> = {
+  price: 'You hold no price sheets yet. A port you have walked, or a letter, gives one.',
+  rumour: 'Nothing you have been told is waiting to be run down. Lie in a port and talk to pilots.',
+  chart: 'Nothing has been drawn yet.',
+  hazard: 'Nothing has been written about the dangers of the sea.',
+  politics: 'Nothing has been written about the peoples you have met.',
+};
+
 export type KnowledgeTab = 'life' | 'known' | 'courtesies' | 'log';
 
 const TABS: [KnowledgeTab, string][] = [
@@ -109,9 +118,9 @@ const TABS: [KnowledgeTab, string][] = [
  *
  *  - Life is the Ledger told as an autobiography, voyage by voyage, in the
  *    plain voice: what was done and, under it in small type, what it did.
- *  - Known is what he holds about the world: price sheets and hearsay as they
- *    stand today. B2 puts them under one roof as dated, sourced facts; for now
- *    it lists them and sends the reader to the Rutter and the Hearsay page.
+ *  - Known is what he holds about the world, every item of it a dated, sourced
+ *    Fact (knowledge/information) shown by the one fact card: price sheets,
+ *    hearsay, the pages of the rutter, the chart's towns. Never the truth.
  *  - Courtesies is the Book of Courtesies, by people.
  *  - Log is the raw ring buffer, an appendix.
  */
@@ -120,6 +129,7 @@ export class KnowledgeView {
   private body = el('div', { class: 'screen-body' });
   private tab: KnowledgeTab = 'life';
   private logAll = false;
+  private knownAll = new Set<FactKind>();
   private game: Game | null = null;
 
   constructor(private onClose: () => void, private goTo: (mode: GameMode) => void) {
@@ -181,36 +191,32 @@ export class KnowledgeView {
 
   private renderKnown(host: HTMLElement, g: Game): void {
     host.append(el('p', { class: 'quote' },
-      'What you hold about the world, with how old it is. Treat the oldest with the least respect. '
-      + 'This page will bring prices, hearsay and the chart together as dated, sourced facts; '
-      + 'for now it lists the two you can act on, and the older pages are one click away.'));
-
-    const now = g.clock.t;
-    const sheets = Object.entries(g.trade.sheets)
-      .map(([port, sh]) => ({ port, sh, days: Math.max(0, (now - sh.t) / 86400) }))
-      .sort((a, b) => a.days - b.days);
-    host.append(card('Price sheets',
-      sheets.length === 0 ? el('p', {}, 'You hold no price sheets yet. A port you have walked, or a letter, gives one.') : null,
-      ...sheets.map(({ port, sh, days }) => {
-        let name = port;
-        try { name = portDef(port).name; } catch { /* a port the table does not know */ }
-        const conf = sheetConfidence(days);
-        return kv(name, `${Object.keys(sh.quotes).length} goods \u00b7 ${sheetAgeWord(days)} \u00b7 from ${sh.source === 'seen' ? 'your own eyes' : sh.source === 'letter' ? 'a letter' : 'a broker'} \u00b7 ${Math.round(conf * 100)}% worth believing`,
-          conf < 0.4 ? 'bad' : '');
-      })));
-
-    const leads = g.openLeads;
-    host.append(card('Hearsay',
-      leads.length === 0 ? el('p', {}, 'Nothing you have been told is still waiting to be run down.') : null,
-      ...leads.map((l) => el('p', {},
-        `${l.text} `,
-        el('span', { class: 'life-meta' }, `${l.source}, ${sheetAgeWord(Math.max(0, (now - l.heard) / 86400))}, out by perhaps ${Math.round(l.errorNm)} miles`)))));
-
-    host.append(card('The older pages',
-      el('p', {}, `The Rutter holds ${g.rutter.entries.length} entries; the chart covers ${(g.chart.coverage() * 100).toFixed(1)}% of the route.`),
+      'Everything you hold about the world, each with who told you and how old it is. '
+      + 'Nothing here says whether it is true: that is settled by going, or by asking a second man. '
+      + 'Treat the oldest with the least respect.'));
+    if (g.dockedAt) {
+      host.append(el('p', { class: 'life-meta' },
+        'You lie in port, so the informers will buy a copy of what you know, or say whether they would tell it the same way.'));
+    }
+    const hooks = { changed: () => this.render(), goTo: this.goTo };
+    const groups = byKind(knownFacts(g));
+    for (const kind of KIND_ORDER) {
+      let facts = groups.get(kind) ?? [];
+      if (kind === 'rumour') facts = [...facts.filter((f) => !f.settled), ...facts.filter((f) => f.settled)];
+      const all = this.knownAll.has(kind);
+      const shown = all ? facts : facts.slice(0, KNOWN_SHOWN);
+      const open = kind === 'price' || kind === 'rumour';
+      host.append(fold(KIND_TITLE[kind], `${facts.length}`, open,
+        facts.length === 0 ? el('p', { class: 'life-none' }, EMPTY[kind]) : null,
+        ...shown.map((f) => factCard(g, f, hooks)),
+        facts.length > shown.length
+          ? button(`Show all ${facts.length}`, () => { this.knownAll.add(kind); this.render(); }, { ghost: true })
+          : null));
+    }
+    host.append(fold('The older pages', '', false,
+      el('p', {}, `The Rutter holds ${g.rutter.entries.length} pages; the chart covers ${(g.chart.coverage() * 100).toFixed(1)}% of the route.`),
       el('div', { class: 'foot-actions' },
         button('Open the Rutter', () => this.goTo('rutter')),
-        button('Hearsay and reports, in Orders', () => this.goTo('orders')),
         button('The chart', () => this.goTo('chart')))));
   }
 

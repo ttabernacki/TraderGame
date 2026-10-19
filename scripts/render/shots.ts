@@ -5,18 +5,19 @@
  */
 import { Renderer, type RenderFrame } from '../../src/render/renderer';
 import { hullClass } from '../../src/ship/hull';
+import { sunPosition } from '../../src/navigation/celestial';
 import { initialSails } from '../../src/ship/physics';
 
 interface Scene {
   lat: number; lon: number; hour: number; day?: number; cloud: number; rain?: number; storm?: boolean;
-  wind: number; windFrom: number; wave: number; vis?: number; heading: number; cam?: string; moonDay?: number;
+  wind: number; windFrom: number; wave: number; vis?: number; heading: number; cam?: string; moonDay?: number; sunLook?: boolean; pitch?: number;
 }
 
 const SCENES: Record<string, Scene> = {
   // open sea, mid Atlantic
-  dawn:     { lat: 20, lon: -35, hour: 5.9,  cloud: 0.3, wind: 14, windFrom: 60, wave: 1.4, heading: 100 },
+  dawn:     { sunLook: true, lat: 20, lon: -35, hour: 5.9,  cloud: 0.3, wind: 14, windFrom: 60, wave: 1.4, heading: 100 },
   noon:     { lat: 20, lon: -35, hour: 12.2, cloud: 0.25, wind: 14, windFrom: 60, wave: 1.4, heading: 100 },
-  dusk:     { lat: 20, lon: -35, hour: 18.3, cloud: 0.35, wind: 12, windFrom: 60, wave: 1.2, heading: 250 },
+  dusk:     { sunLook: true, lat: 20, lon: -35, hour: 18.3, cloud: 0.35, wind: 12, windFrom: 60, wave: 1.2, heading: 250 },
   night:    { lat: 20, lon: -35, hour: 23.0, cloud: 0.15, wind: 10, windFrom: 60, wave: 1.0, heading: 100, moonDay: 14 },
   overcast: { lat: 40, lon: -20, hour: 11.0, cloud: 0.95, rain: 0.25, wind: 18, windFrom: 220, wave: 2.6, vis: 8, heading: 60 },
   gale:     { lat: 45, lon: -20, hour: 15.0, cloud: 1.0, rain: 0.9, storm: true, wind: 42, windFrom: 250, wave: 7.5, vis: 3, heading: 70 },
@@ -63,6 +64,13 @@ window.shoot = async (name, o = {}) => {
   rr.setRenderMode(o.legacy ? 'legacy' : 'new');
   if (o.tier) rr.setQuality(o.tier as 'low');
   if (o.cam) rr.cameraMode = o.cam as 'chase';
+  rr.lookYaw = 0; rr.lookPitch = s.pitch ?? -8;
+  if (s.sunLook) {
+    const sp = sunPosition(s.lat, s.lon, 0, s.hour, s.day ?? 150);
+    let d = sp.azimuth - s.heading; d = ((d + 540) % 360) - 180;
+    rr.lookYaw = d * (Number(o.sign ?? 1));
+    rr.lookPitch = s.pitch ?? -2;
+  }
   rr.resetEase();
   rr.resize();
   const t0 = 1e9;

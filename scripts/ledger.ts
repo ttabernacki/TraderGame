@@ -16,6 +16,10 @@ import { chronicles, chronicleTags, muster, MUSTER_TAGS } from '../src/ledger/ch
 import { life, lifeText } from '../src/ledger/life';
 import { decayed, didLine, record, weightAt, type Entry } from '../src/ledger/ledger';
 import { play } from './lib/careerCore';
+import { NM, haversine } from '../src/core/math';
+import { portDef } from '../src/world/ports';
+import { byKind, isStale, knownFacts, leadFact, sheetFact, type Fact } from '../src/knowledge/information';
+import { checkFact, checkOffer, sellFact, sellOffer } from '../src/knowledge/informers';
 
 let fails = 0;
 const check = (name: string, ok: boolean, extra = ''): void => { console.log(`${ok ? 'ok  ' : 'FAIL'} ${name} ${extra}`); if (!ok) fails++; };
@@ -173,6 +177,99 @@ const synth = (tag: Tag, n = 1, over: Partial<Entry> = {}): Entry[] => Array.fro
     texts.push(JSON.stringify(ch) + JSON.stringify(m));
   }
   check('the epilogue differs between two careers', texts[0] !== texts[1]);
+}
+
+const leadDistanceNm = (g: Game, id: string): number => {
+  const l = g.leads.find((x) => x.id === id)!;
+  const d = portDef(l.targetPort!);
+  return haversine({ lat: l.lat, lon: l.lon }, { lat: d.lat, lon: d.lon }) / NM;
+};
+
+// 6. The Information object (B2): one Fact shape, source and age but never truth; informers sell and check.
+{
+  const g = new Game(5);
+  g.mode = 'port';
+  g.dockedAt = 'lisboa';
+  (g as any).noteSheet('lisboa', 'seen');
+  const honest = g.trade.sheets['lisboa'];
+  g.trade.sheets['funchal'] = { ...JSON.parse(JSON.stringify(honest)), t: g.clock.t - 200 * 86400, source: 'broker' };
+  g.trade.sheets['arguim'] = { ...JSON.parse(JSON.stringify(honest)), t: g.clock.t - 3 * 86400, source: 'broker', falseGood: Object.keys(honest.quotes)[0] };
+  const mk = (id: string, over: object = {}) => ({ id, kind: 'port', text: `Told of ${id}.`, source: 'a pilot at Lisboa', lat: 20, lon: -17, errorNm: 100, targetPort: 'arguim', value: 8, heard: g.clock.t - 5 * 86400, followed: false, false: false, ...over });
+  g.leads.push(mk('t1') as any, mk('t2', { phantom: true, targetPort: undefined }) as any);
+  const { entry } = g.rutter.open('coast', 'coast:test', 'Cabo Teste', { lat: 20, lon: -17 }, g.clock.t);
+  g.rutter.note(entry, 'The water shoals a league off.', 'observed', g.clock.t);
+
+  const facts = knownFacts(g);
+  const kinds = byKind(facts);
+  check('price sheets, hearsay, a rutter page and the chart all come out as Facts', (['price', 'rumour', 'chart'] as const).every((k) => kinds.get(k)!.length > 0),
+    [...kinds].map(([k, v]) => `${k}:${v.length}`).join(' '));
+  const shape = facts.every((f) => typeof f.claim === 'string' && f.claim.length > 0 && typeof f.source === 'string' && f.source.length > 0
+    && Number.isFinite(f.age) && f.age >= 0 && f.confidence >= 0 && f.confidence <= 1 && ['price', 'politics', 'hazard', 'chart', 'rumour'].includes(f.kind));
+  check('every Fact has a claim, a source, an age and a confidence in 0..1', shape);
+  check('no Fact carries the truth', facts.every((f) => !('truth' in f) && !('errorNm' in f) && !('falseGood' in f)));
+  const lie = sheetFact('arguim', g.trade.sheets['arguim'], g.clock.t), clean = sheetFact('arguim', { ...g.trade.sheets['arguim'], falseGood: undefined }, g.clock.t);
+  check('a lying sheet reads exactly like an honest one until a second source is asked', lie.claim === clean.claim && lie.confidence === clean.confidence);
+  const old = facts.find((f) => f.id === 'price:funchal')!, fresh = facts.find((f) => f.id === 'price:lisboa')!;
+  check('a stale fact is visibly stale and worth less', isStale(old) && !isStale(fresh) && old.confidence < fresh.confidence && old.age > 190);
+
+  // Selling.
+  const gold0 = g.crown.gold, n0 = g.ledger.length;
+  const sellOffered = sellOffer(g, fresh);
+  const said = sellFact(g, fresh);
+  check('selling a sheet pays, and is a Ledger entry', sellOffered.ok && g.crown.gold === gold0 + sellOffered.price && g.ledger.length === n0 + 1
+    && g.ledger[g.ledger.length - 1].tag === 'fact.sold', said);
+  check('a sold sheet cannot be sold twice, and stays in the book', !sellOffer(g, sheetFact('lisboa', g.trade.sheets['lisboa'], g.clock.t)).ok && !!g.trade.sheets['lisboa']);
+  check('selling hearsay is a Ledger entry', (() => { const f = leadFact(g.leads.find((x) => x.id === 't1')!, g.clock.t); const n = g.ledger.length; sellFact(g, f); return g.ledger.length === n + 1 && g.ledger[n].tag === 'fact.sold'; })());
+  g.dockedAt = null as any;
+  check('the informers are ashore: nothing is offered at sea', !sellOffer(g, old).ok && !checkOffer(g, old).ok);
+  g.dockedAt = 'lisboa';
+
+  // Checking.
+  const g0 = g.crown.gold;
+  const nl = g.ledger.length;
+  checkFact(g, sheetFact('lisboa', g.trade.sheets['lisboa'], g.clock.t));
+  check('an honest fresh sheet is borne out by a second informer, for a fee, and entered', g.trade.sheets['lisboa'].checked === 'agrees' && g.crown.gold < g0
+    && g.ledger[nl]?.tag === 'fact.checked');
+  check('and a second question is refused', !checkOffer(g, sheetFact('lisboa', g.trade.sheets['lisboa'], g.clock.t)).ok);
+  const wasConf = lie.confidence;
+  g.dockedAt = 'arguim';
+  const arg = sheetFact('arguim', g.trade.sheets['arguim'], g.clock.t);
+  const offered = checkOffer(g, arg);
+  g.crown.gold += 100;
+  checkFact(g, arg);
+  check('a lying sheet is disputed by a second source, whose word lowers belief in it',
+    offered.ok && g.trade.sheets['arguim'].checked === 'disputed' && sheetFact('arguim', g.trade.sheets['arguim'], g.clock.t).confidence < wasConf, offered.why);
+  check('informers only speak to their own coast', !checkOffer(g, sheetFact('funchal', { ...g.trade.sheets['funchal'] }, g.clock.t)).ok);
+  const l1 = g.leads.find((x) => x.id === 't1')!;
+  const e0 = l1.errorNm;
+  const d0 = leadDistanceNm(g, 't1');
+  const lo = checkOffer(g, leadFact(l1, g.clock.t));
+  checkFact(g, leadFact(l1, g.clock.t));
+  check('a real tale told twice is nearer the second time', lo.ok && l1.checked === 'agrees' && l1.errorNm < e0 && leadDistanceNm(g, 't1') < d0);
+  const lp = g.leads.find((x) => x.id === 't2')!;
+  const lo2 = checkOffer(g, leadFact(lp, g.clock.t));
+  checkFact(g, leadFact(lp, g.clock.t));
+  check('the phantom tale no second informer has heard is disputed and fades', lo2.ok && lp.checked === 'disputed' && leadFact(lp, g.clock.t).confidence <= 0.15);
+  g.dockedAt = 'lisboa';
+
+  // A page of the rutter sells through the existing publish, now entered in the Ledger.
+  const nr = g.ledger.length;
+  const rf = knownFacts(g).find((f) => f.ref.store === 'rutter')!;
+  const rs = sellOffer(g, rf);
+  sellFact(g, rf);
+  check('selling a rutter page enters chart.sold', rs.ok && g.ledger.slice(nr).some((e) => e.tag === 'chart.sold'));
+
+  // Persistence and the corpus.
+  const g2 = Game.deserialize(g.serialize());
+  check('sold and checked marks survive a save', g2.trade.sheets['lisboa'].soldAt !== undefined && g2.trade.sheets['lisboa'].checked === 'agrees'
+    && g2.leads.find((x) => x.id === 't1')!.soldAt !== undefined && g2.leads.find((x) => x.id === 't1')!.checked === 'agrees');
+  let ok = 0;
+  const all = readdirSync('fixtures/saves').filter((f) => f.endsWith('.json'));
+  for (const f of all) {
+    const fs: Fact[] = knownFacts(Game.deserialize(JSON.stringify(load(f))));
+    if (fs.every((x) => Number.isFinite(x.age) && x.confidence >= 0 && x.confidence <= 1)) ok++;
+  }
+  check('every golden save yields well-formed Facts', ok === all.length, `${ok}/${all.length}`);
 }
 
 console.log(fails === 0 ? '\nledger: all ok' : `\nledger: ${fails} FAILED`);

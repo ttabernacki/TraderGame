@@ -5305,6 +5305,7 @@ export class Game {
         `Laid the page on ${e.title} before the Casa. ${worth.crown} renown, and a clerk `
         + 'was copying it before I was out of the building. Every pilot on the Guinea run '
         + 'will have it by the spring.', true);
+      this.noteDeed('chart.shared', { target: 'portugal', magnitude: 0.5, note: `Laid the page on ${e.title} before the Casa.` });
       return `${worth.crown} renown. The Casa has it now, and so will everybody.`;
     }
     if (to === 'merchants') {
@@ -5314,6 +5315,7 @@ export class Game {
         `Sold what I know of ${e.title} on the Rua Nova for ${worth.merchants} cruzados. `
         + 'The Casa will hear that I sold it, and the Casa does not forget that sort of thing.',
         true);
+      this.noteDeed('chart.sold', { target: 'the Rua Nova', magnitude: 0.5, note: `Sold the page on ${e.title} for ${worth.merchants} cruzados.` });
       return `${worth.merchants} cruzados. The Casa will hear of it.`;
     }
     this.crown.standing += Math.round(worth.atlas * 0.6);

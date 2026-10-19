@@ -72,6 +72,11 @@ export interface PriceSheet {
   quotes: Record<string, Quote>;
   /** A good whose price on this sheet is a lie, until you go and find out. */
   falseGood?: string;
+  /** A second informer was asked (knowledge/informers), when, and what he made of it. */
+  checked?: 'agrees' | 'disputed';
+  checkedAt?: number;
+  /** A copy was sold to the houses, when. */
+  soldAt?: number;
 }
 
 export function sheetAgeWord(days: number): string {

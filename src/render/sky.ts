@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { clamp, smoothstep, DEG } from '../core/math';
 import { STARS, moonPosition, starPosition, sunPosition } from '../navigation/celestial';
 import { postUniforms, wrapPostOut } from './post/color';
+import { LUT_E0, SkyLut, skyColours } from './atmosphere';
 
 const SKY_RADIUS = 11000;
 
@@ -65,8 +66,24 @@ uniform vec2 uCloudOffset;
 uniform vec3 uCloudLit;
 uniform vec3 uCloudShade;
 uniform float uCloudOn;
+// The physical sky, when it is in use (see atmosphere.ts): radiance indexed by
+// elevation and by azimuth from the sun.
+uniform sampler2D tSky;
+uniform vec3 uNightHorizon;
+uniform vec3 uNightZenith;
 
 varying vec3 vDir;
+
+#ifdef ATMOS
+const float PI_ = 3.14159265359;
+vec3 skyAt(vec3 d, float e) {
+  float v = sqrt(clamp((e - (${LUT_E0.toFixed(3)})) / (${(Math.PI / 2 - LUT_E0).toFixed(5)}), 0.0, 1.0));
+  vec2 h = normalize(d.xz + vec2(1.0e-5));
+  vec2 sh = normalize(uSunDisc.xz + vec2(1.0e-5));
+  float u = acos(clamp(dot(h, sh), -1.0, 1.0)) / PI_;
+  return texture2D(tSky, vec2((u * 63.0 + 0.5) / 64.0, (v * 63.0 + 0.5) / 64.0)).rgb;
+}
+#endif
 
 float hash21(vec2 p) {
   vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.1030, 0.0973));
@@ -109,7 +126,16 @@ void main() {
 
   // The dome reaches its zenith colour slowly: a sky over open ocean stays pale
   // for a long way up from the horizon.
+#ifdef ATMOS
+  vec3 col = skyAt(d, asin(clamp(d.y, -1.0, 1.0)));
+  // What the physical model does not make: the last of the light after the sun
+  // has gone, the airglow and the moon's wash.
+  col += mix(uNightHorizon, uNightZenith, pow(clamp(up, 0.0, 1.0), 0.82)) * smoothstep(0.25, 1.0, uNight);
+  vec3 hazeHere = skyAt(d, 0.015);
+#else
   vec3 col = mix(uHorizon, uZenith, pow(clamp(up, 0.0, 1.0), 0.82));
+  vec3 hazeHere = uHorizon;
+#endif
 
   // Twilight is not one colour round the whole horizon. The sun's side burns
   // orange and gold; the opposite side carries the pink band and the blue-grey
@@ -121,13 +147,21 @@ void main() {
   vec3 warm = uDuskWarm * pow(toward, 2.2) * low;
   vec3 belt = vec3(0.55, 0.32, 0.42) * pow(1.0 - toward, 3.0)
             * smoothstep(0.02, 0.10, d.y) * (1.0 - smoothstep(0.10, 0.30, d.y));
+#ifndef ATMOS
   col += (warm * 0.9 + belt * 0.35) * uTwilight;
+#endif
 
   // Glow about the key light (the sun, or the moon at night).
   float sunDot = max(dot(d, uSunDir), 0.0);
+#ifdef ATMOS
+  // The aureole is in the table; only the hot core is added here, and it is what the bloom works on.
+  float halo = pow(sunDot, 90.0) * 0.5 + pow(sunDot, 900.0) * 2.0;
+  col += uSunGlow * halo * 0.6;
+#else
   float halo = pow(sunDot, 6.0) * 0.45 + pow(sunDot, 90.0) * 1.2 + pow(sunDot, 900.0) * 2.0;
   float lowSun = 1.0 - smoothstep(-0.05, 0.35, uSunDir.y);
   col += uSunGlow * halo * (0.45 + lowSun * 1.5);
+#endif
 
   // The sun's own disc, drawn here so the clouds can pass in front of it.
   float discDot = dot(d, uSunDisc);
@@ -135,7 +169,9 @@ void main() {
   col += mix(uSunColor, vec3(1.0, 0.98, 0.92), 0.6) * disc * 6.0 * uSunVis;
 
   // The haze band, reaching the horizon colour exactly at eye level.
+#ifndef ATMOS
   col = mix(col, uHorizon, smoothstep(0.30, 0.0, d.y));
+#endif
 
   // Clouds, on a flat deck a long way up, seen through the haze.
   if (uCloudOn > 0.5 && d.y > 0.02) {
@@ -160,7 +196,7 @@ void main() {
     cc += uSunGlow * lining;
     // Clouds far off sink into the haze and lose their contrast.
     float far = smoothstep(0.02, 0.22, d.y);
-    cc = mix(uHorizon, cc, 0.35 + 0.65 * far);
+    cc = mix(hazeHere, cc, 0.35 + 0.65 * far);
     // And gone entirely in the last few degrees, where every row of the sky
     // maps to nearly the same distance on the deck and the noise can only vary
     // sideways — which draws as vertical streaks.
@@ -172,7 +208,7 @@ void main() {
   // grey underside of the weather from one horizon to the other.
   if (uCloudOn > 0.5) {
     float lid = smoothstep(0.72, 0.98, uCover) * smoothstep(-0.02, 0.12, d.y);
-    col = mix(col, mix(uCloudShade, uHorizon, 0.25), lid * 0.85);
+    col = mix(col, mix(uCloudShade, hazeHere, 0.25), lid * 0.85);
   }
 
   // Overcast flattens what is left toward a uniform grey.
@@ -259,6 +295,9 @@ export class Sky {
   /** A soft disc of light behind the moon, which is how a bright moon reads. */
   private moonGlow: THREE.Mesh;
 
+  private physical = false;
+  private lut: SkyLut | null = null;
+  private sunAlt = 0.5;
   private lastUpdate = -1e9;
   private lastLat = 999;
 
@@ -295,6 +334,9 @@ export class Sky {
         uCloudLit: { value: new THREE.Color(1, 1, 1) },
         uCloudShade: { value: new THREE.Color(0.6, 0.65, 0.72) },
         uCloudOn: { value: 1 },
+        tSky: { value: null as THREE.Texture | null },
+        uNightHorizon: { value: new THREE.Color(0.055, 0.085, 0.16) },
+        uNightZenith: { value: new THREE.Color(0.016, 0.028, 0.075) },
       }),
     });
     this.dome = new THREE.Mesh(new THREE.SphereGeometry(SKY_RADIUS, 40, 24), this.domeMaterial);
@@ -383,6 +425,24 @@ export class Sky {
     this.group.add(this.moonSprite);
   }
 
+  /** Use the physical sky (atmosphere.ts) or the hand-tuned one this started as. */
+  setPhysical(on: boolean): void {
+    if (on === this.physical) return;
+    this.physical = on;
+    const d = this.domeMaterial.defines as Record<string, number | string>;
+    if (on) d.ATMOS = 1; else delete d.ATMOS;
+    this.domeMaterial.needsUpdate = true;
+    if (on && !this.lut) {
+      this.lut = new SkyLut();
+      this.domeMaterial.uniforms.tSky.value = this.lut.target.texture;
+    }
+  }
+
+  /** Redraw the sky table if the sun has moved. Call before anything draws the dome. */
+  renderLut(gl: THREE.WebGLRenderer): void {
+    if (this.physical && this.lut) this.lut.update(gl, this.sunAlt);
+  }
+
   /** Carry the cloud deck downwind. `dt` in real seconds. */
   drift(windFromDeg: number, knots: number, dt: number): void {
     const to = (windFromDeg + 180) * DEG;
@@ -451,6 +511,28 @@ export class Sky {
       .lerp(new THREE.Color(1, 0.62, 0.34), twilight)
       .lerp(new THREE.Color(0.32, 0.40, 0.62), night);
 
+    // The physical sky replaces the hand-picked day and dusk colours; only the
+    // night floor (airglow, moon wash) stays hand-set, because single scattering
+    // has nothing to say about it. Everything downstream — the fog, the sea's far
+    // colour, the hemisphere light, the cloud tints — reads these same numbers.
+    const nightZ = nightZenith.clone().lerp(new THREE.Color(0.04, 0.08, 0.20), moonlight * 0.85);
+    const nightH = nightHorizon.clone().lerp(new THREE.Color(0.11, 0.16, 0.28), moonlight * 0.85);
+    this.sunAlt = sun.altitude * DEG;
+    let sunPhys: THREE.Color | null = null;
+    if (this.physical) {
+      const pc = skyColours(this.sunAlt);
+      const nf = smoothstep(0.25, 1.0, night);
+      zenith.setRGB(pc.zenith[0], pc.zenith[1], pc.zenith[2]).add(nightZ.clone().multiplyScalar(nf));
+      horizon.setRGB(pc.horizon[0], pc.horizon[1], pc.horizon[2]).add(nightH.clone().multiplyScalar(nf));
+      // Effective extinction is a little under the single-scattering figure
+      // (light that is scattered out of the beam is partly scattered back in).
+      const m = Math.max(pc.sun[0], pc.sun[1], pc.sun[2], 1e-6);
+      sunPhys = new THREE.Color(Math.pow(pc.sun[0] / m, 0.7), Math.pow(pc.sun[1] / m, 0.7), Math.pow(pc.sun[2] / m, 0.7));
+      sunColor.copy(sunPhys).lerp(new THREE.Color(0.32, 0.40, 0.62), night);
+      (this.domeMaterial.uniforms.uNightZenith.value as THREE.Color).copy(nightZ);
+      (this.domeMaterial.uniforms.uNightHorizon.value as THREE.Color).copy(nightH);
+    }
+
     // More light off the sky dome. The shaded side of a hull under a bright sky
     // is not black — it is lit by the whole upper hemisphere — and at 0.55 the
     // ship's lee side and the underside of every sail were crushed to mud.
@@ -504,7 +586,9 @@ export class Sky {
     u.uCover.value = clamp(0.22 + clamp(cloud, 0, 1) * 0.78, 0, 1);
     // The cloud is lit by whatever lights everything else, and its underside by
     // the sky; at night both go almost to nothing, and the moon silvers it.
-    const dayLit = new THREE.Color(1, 0.99, 0.97).lerp(new THREE.Color(1.0, 0.62, 0.38), twilight);
+    const dayLit = sunPhys
+      ? new THREE.Color(1, 1, 1).lerp(sunPhys, 0.55)
+      : new THREE.Color(1, 0.99, 0.97).lerp(new THREE.Color(1.0, 0.62, 0.38), twilight);
     (u.uCloudLit.value as THREE.Color).copy(dayLit)
       .multiplyScalar(0.25 + 0.75 * (1 - night))
       .lerp(new THREE.Color(0.30, 0.34, 0.44), night * (1 - moonlight * 0.4))

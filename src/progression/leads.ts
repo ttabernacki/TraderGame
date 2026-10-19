@@ -48,6 +48,11 @@ export interface Lead {
   phantom?: boolean;
   /** The rumoured spot has been sailed and nothing was in sight. */
   searched?: boolean;
+  /** A second informer was asked (knowledge/informers), when, and what he made of it. */
+  checked?: 'agrees' | 'disputed';
+  checkedAt?: number;
+  /** A copy was sold, when. */
+  soldAt?: number;
 }
 
 /** How much a teller can be relied on, which sets how far out his rumour is. */

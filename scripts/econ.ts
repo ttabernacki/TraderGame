@@ -9,7 +9,7 @@
  * Units per route = min(town stock, destination appetite, hold / bulk).
  */
 import { Markets } from '../src/economy/market';
-import { LOT_TONS, PORT_PROFIT } from '../src/economy/ladder';
+import { LOT_TONS, PORT_DEMAND, PORT_PROFIT } from '../src/economy/ladder';
 import { PORTS, anchorageOf } from '../src/world/ports';
 import { GOODS } from '../src/economy/goods';
 import { HULL_CLASSES } from '../src/ship/hull';
@@ -19,6 +19,7 @@ import { CASA_SHARE, MONOPOLY, regionOf, type Region } from '../src/economy/trad
 const args = process.argv.slice(2);
 // Tuning hooks for sweeps: PP='{"europe":900}' and LT='{"city":600}' override the caps for one run.
 if (process.env.PP) Object.assign(PORT_PROFIT, JSON.parse(process.env.PP));
+if (process.env.PD) Object.assign(PORT_DEMAND, JSON.parse(process.env.PD));
 if (process.env.LT) Object.assign(LOT_TONS, JSON.parse(process.env.LT));
 const LADDER = args.includes('--ladder');
 const CHECK = args.includes('--check');
@@ -130,14 +131,12 @@ const BANDS: Record<string, [number, number, string]> = {
 };
 const KNOTS_DAY = 4.5 * 24;
 /** Crew wages, cruzados per man per month (game/wages). */
-const WAGE_PER_MAN_MONTH = 5;
+const WAGE_PER_MAN_MONTH = Number(process.env.WAGE ?? 4);
 const slip = (q: number, avail: number) => (avail <= 0 ? 1 : 1 + Math.min(1, q / avail) ** 2 * 0.55);
 function voyageDays(nm: number): number { return 2 * (nm / KNOTS_DAY) + 12; }
-interface PairNet { net: number; storeT: number; goods: string[] }
-/** One voyage on a pair of ports with a mixed cargo, best profit per ton first. */
-function pairNet(ls: Lane[], h: { crewFull: number; hold: number; tons: number }): PairNet {
-  const days = voyageDays(ls[0].nm);
-  const storeT = 0.005 * h.crewFull * days;
+interface PairNet { net: number; storeT: number; goods: string[]; out: number; back: number }
+/** One leg with a mixed cargo, best profit per ton first; returns the money and the goods. */
+function legNet(ls: Lane[], h: { crewFull: number; hold: number; tons: number }, storeT: number): { total: number; goods: string[] } {
   let room = Math.max(0, cap(h) - storeT), total = 0;
   const goods: string[] = [];
   for (const l of [...ls].sort((a, b) => b.margin / b.bulk - a.margin / a.bulk)) {
@@ -151,13 +150,34 @@ function pairNet(ls: Lane[], h: { crewFull: number; hold: number; tons: number }
     total += net;
     goods.push(l.g);
   }
-  return { net: total - days * h.crewFull * (0.012 + WAGE_PER_MAN_MONTH / 30), storeT, goods };
+  return { total, goods };
 }
+/**
+ * A voyage is out and home again on a pair of ports: a cargo each way, the
+ * stores for both legs and the port days between, and the crew's wages for all of it.
+ */
+function pairNet(a: string, b: string, h: { crewFull: number; hold: number; tons: number }): PairNet {
+  const out = byPair.get(a + '>' + b) ?? [], back = byPair.get(b + '>' + a) ?? [];
+  const nm = (out[0] ?? back[0]).nm;
+  const days = voyageDays(nm);
+  const storeT = 0.005 * h.crewFull * days;
+  const o = legNet(out, h, storeT), r = legNet(back, h, storeT);
+  return { net: o.total + r.total - days * h.crewFull * (0.012 + WAGE_PER_MAN_MONTH / 30), storeT, goods: [...o.goods.slice(0, 3), '|', ...r.goods.slice(0, 3)], out: o.total, back: r.total };
+}
+const undirected = (() => {
+  const seen = new Set<string>(), out: [string, string][] = [];
+  for (const k of byPair.keys()) {
+    const [x, y] = k.split('>');
+    const key = x < y ? x + '>' + y : y + '>' + x;
+    if (!seen.has(key)) { seen.add(key); out.push([x < y ? x : y, x < y ? y : x]); }
+  }
+  return out;
+})();
 const tiers = HULLS.map((h, i) => {
   const ok = new Set(REACH[h.id]);
-  const rs = [...byPair.entries()]
-    .filter(([, ls]) => ok.has(regionOf(ls[0].from)) && ok.has(regionOf(ls[0].to)))
-    .map(([k, ls]) => ({ k, ...pairNet(ls, h) }))
+  const rs = undirected
+    .filter(([x, y]) => ok.has(regionOf(x)) && ok.has(regionOf(y)))
+    .map(([x, y]) => ({ k: `${x}<>${y}`, ...pairNet(x, y, h) }))
     .sort((a, b) => b.net - a.net);
   const best = rs[0];
   const nets = rs.map((r) => r.net).filter((n) => n > 0).sort((a, b) => a - b);
@@ -218,6 +238,16 @@ for (const p of PORTS) for (const g of GOODS) {
   if (!(l.ask > 0) || !(l.bid > 0) || l.bid > g.lisbon * 4 || l.ask > g.lisbon * 4) off++;
 }
 console.log(`ports/goods at zero stock: ${zero}; prices out of band: ${off}`);
+
+if (args.includes('--pairs')) {
+  const h = BIG;
+  const all = undirected.map(([x, y]) => ({ k: `${x}<>${y}`, x, y, ...pairNet(x, y, h) }));
+  const indian = all.filter((r) => ['india', 'east'].includes(regionOf(r.x)) || ['india', 'east'].includes(regionOf(r.y))).sort((a, b) => b.net - a.net).slice(0, 8);
+  console.log('\nTop India-lane voyages (out and home) for the ' + h.id + ':');
+  for (const r of indian) console.log(`${id(r.k, 26)}${f(r.net).padStart(8)} out ${f(r.out).padStart(6)} back ${f(r.back).padStart(6)}  ${r.goods.join(',')}`);
+  console.log('\nTop voyages overall:');
+  for (const r of all.sort((a, b) => b.net - a.net).slice(0, 10)) console.log(`${id(r.k, 26)}${f(r.net).padStart(8)} out ${f(r.out).padStart(6)} back ${f(r.back).padStart(6)}  ${r.goods.join(',')}`);
+}
 
 if (args.includes('--json')) {
   console.log('JSON ' + JSON.stringify({

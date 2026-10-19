@@ -27,12 +27,25 @@ export const LOT_TONS: Record<PortDef['size'], number> = {
 
 /**
  * Cruzados of profit a whole port will give a visiting captain in dense goods in a
- * season, by region, spread over the dense goods it trades. This is where the
- * tier ladder's bands for the dearer seas live.
+ * season, by region, spread over the dense goods it trades. The Portuguese
+ * and Moroccan side is small on purpose (a coaster's cargo is wine and oil, not
+ * silver); the figures climb with the distance from home to the Indian Ocean
+ * and fall back in India, where the Casa's share and the long road home eat the
+ * rest. Tuned with scripts/econ.ts --ladder.
  */
 export const PORT_PROFIT: Record<Region, number> = {
-  europe: 1200, atlantic: 1200, maghreb: 1200, guinea: 2200, brazil: 3400, kongo: 3400, cape: 3400,
-  swahili: 5400, arabia: 6800, india: 7800, east: 7800,
+  europe: 250, atlantic: 250, maghreb: 250, guinea: 3500, brazil: 5500, kongo: 5500, cape: 5500,
+  swahili: 8700, arabia: 10900, india: 6300, east: 6300,
+};
+
+/**
+ * The same, for what a port will buy: demand. Europe is the end of the line for
+ * everything the Carreira brings home, so Lisbon and the ports that buy from it
+ * want far more than they sell; elsewhere a port takes about as much as it gives.
+ */
+export const PORT_DEMAND: Record<Region, number> = {
+  europe: 9000, atlantic: 3000, maghreb: 2500, guinea: 3500, brazil: 5500, kongo: 5500, cape: 5500,
+  swahili: 8700, arabia: 10900, india: 6300, east: 6300,
 };
 
 /**
@@ -43,6 +56,10 @@ export const STAPLE_DENSITY = 30;
 
 /** A dense lot's margin per unit, as a fraction of its Lisbon price, on the lanes that pay (0.4 to 2). */
 export const MARGIN_PER_LISBON = 1.2;
+
+/** The trade parcel a port always has of any dense good it trades: this many units, or this much Lisbon value, whichever is less. */
+export const PARCEL_UNITS = 10;
+export const PARCEL_VALUE = 60;
 
 /** The least a lot is, as a fraction of the full lot for its size and region. */
 export const SHARE_FLOOR = 0.3;
@@ -71,8 +88,12 @@ export function lotUnits(def: PortDef, g: Good, kind: 'produces' | 'wants', leve
   const lvl = SHARE_FLOOR + (1 - SHARE_FLOOR) * Math.min(Math.max(level, 0), 1);
   const byTons = (LOT_TONS[def.size] * lvl * wealth * scale) / Math.max(g.bulk, 1e-4);
   if (isStaple(g)) return byTons;
+  // Whatever a port's money, it keeps a trade parcel of the cheap things (brass,
+  // beads, cloth) so that barter and presents are never short: a few hundred
+  // cruzados' worth at most.
+  const parcel = Math.min(PARCEL_UNITS, PARCEL_VALUE / Math.max(g.lisbon, 0.01)) * (SHARE_FLOOR + (1 - SHARE_FLOOR) * Math.min(Math.max(level, 0), 1));
   // The port's money for dense goods, shared among the ones it trades in proportion to level.
-  const byMoney = (PORT_PROFIT[regionOf(def.id)] * wealth * scale * (Math.max(level, 0) / denseSum(def, kind)))
+  const byMoney = ((kind === 'produces' ? PORT_PROFIT : PORT_DEMAND)[regionOf(def.id)] * wealth * scale * (Math.max(level, 0) / denseSum(def, kind)))
     / (MARGIN_PER_LISBON * Math.max(g.lisbon, 0.01));
-  return Math.min(byTons, byMoney);
+  return Math.max(Math.min(byTons, byMoney), parcel);
 }

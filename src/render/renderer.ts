@@ -647,11 +647,13 @@ export class Renderer {
 
     // The ship pushes the water aside: a bow wave forward and a spreading wake
     // astern, both keyed to how hard she is driving.
+    this.sky.setPhysical(this.renderMode === 'new' && !!this.post);
     const lighting = this.sky.update(
       f.pos.lat, f.pos.lon, f.dayFromEpoch, f.hourLocal,
       f.dayOfYear, f.year, f.cloud, f.simTime,
     );
     this.easeKey(lighting, realDt);
+    this.sky.renderLut(this.renderer);
     this.applyLighting(lighting, f.visibilityNm);
     this.sky.drift(f.windFrom, f.windKnots, realDt);
     const overcast = clamp((f.cloud - 0.45) / 0.5, 0, 1);
