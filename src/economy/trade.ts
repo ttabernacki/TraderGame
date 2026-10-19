@@ -63,7 +63,31 @@ export function newsDelayDays(from: Region, to: Region): number {
 // ---------------------------------------------------------------------------
 // Price knowledge
 
-export interface Quote { ask: number; bid: number; stock: number; wanted: boolean; local: boolean }
+export interface Quote {
+  ask: number; bid: number; stock: number; wanted: boolean; local: boolean;
+  /** Which way the price was going when it was taken down: 1 rising, -1 falling, 0 steady (D1). Absent on older sheets. */
+  trend?: -1 | 0 | 1;
+}
+
+export const TREND_ARROW: Record<-1 | 0 | 1, string> = { '-1': '\u2193', '0': '\u2192', '1': '\u2191' };
+
+/**
+ * The arrow on a quote. What the captain saw last time against what he sees now, when he has a sheet to compare
+ * (a move of more than 4%); otherwise what the quay says of its own traffic, from the lane sim: ships
+ * arriving glut it, ships leaving drain it.
+ */
+export function quoteTrend(prev: Quote | undefined, bid: number, ask: number, lane: -1 | 0 | 1): -1 | 0 | 1 {
+  if (prev && prev.bid > 0 && prev.ask > 0) {
+    const mid = (bid + ask) / 2, was = (prev.bid + prev.ask) / 2;
+    const d = mid / was - 1;
+    if (Math.abs(d) > 0.04) return d > 0 ? 1 : -1;
+    return lane;
+  }
+  return lane;
+}
+
+/** 'cloves 74 \u2191'. */
+export const withArrow = (text: string, q: Pick<Quote, 'trend'>): string => (q.trend ? `${text} ${TREND_ARROW[q.trend]}` : text);
 
 export interface PriceSheet {
   /** When the prices on it were true. */
@@ -414,7 +438,7 @@ export interface Contract {
 // ---------------------------------------------------------------------------
 // The books of a voyage
 
-export type EntryKind = 'buy' | 'sell' | 'barter' | 'spoiled' | 'shares' | 'casa' | 'fine' | 'contract' | 'antwerp' | 'licence' | 'report';
+export type EntryKind = 'buy' | 'sell' | 'barter' | 'spoiled' | 'shares' | 'casa' | 'fine' | 'contract' | 'antwerp' | 'licence' | 'report' | 'dues';
 
 export interface Entry { t: number; kind: EntryKind; text: string; amount: number }
 

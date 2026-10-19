@@ -5,6 +5,7 @@ import { ISLES, PHANTOMS, RUMOUR_SOURCES, isleByLand, landIndexOf, type OceanIsl
 import { portDef } from '../world/ports';
 import { sightingRangeNm } from '../navigation/charts';
 import type { Lead } from '../progression/leads';
+import { CLAIMED_IDS, claimTakenByHistory } from '../knowledge/claims';
 import type { SeaEvent } from './seaEvents';
 import type { Game } from './state';
 
@@ -188,7 +189,7 @@ export function hearOfIsland(g: Game, portId: string): Lead | null {
   const src = RUMOUR_SOURCES.find((s) => s.ports.includes(portId));
   if (!src) return null;
   st.heard[portId] = year;
-  const open = src.tells.filter((id) => !st.found[id] && !g.leads.some((l) => l.isle === id));
+  const open = src.tells.filter((id) => !st.found[id] && !CLAIMED_IDS.has(id) && !g.leads.some((l) => l.isle === id));
   if (open.length === 0 || g.rng.next() > 0.65) return null;
   const id = open[Math.floor(g.rng.next() * open.length)];
   const isle = ISLES.find((i) => i.id === id);
@@ -284,7 +285,7 @@ export function searchRumours(g: Game): string | null {
   const hour = localHour(g);
   if (hour < 7 || hour > 18 || g.weatherNow.visibility < 10) return null;
   for (const l of g.leads) {
-    if (!l.isle || l.followed || l.searched) continue;
+    if (!l.isle || l.claim || l.followed || l.searched) continue;
     if (haversine(at, l) / NM > 20) continue;
     l.searched = true;
     const name = PHANTOMS.find((p) => p.id === l.isle)?.name ?? 'the island';
@@ -323,6 +324,7 @@ export function historyCatchesUp(g: Game): OceanIsle[] {
     if (g.isles.found[isle.id] || year <= isle.year) continue;
     g.isles.found[isle.id] = { name: isle.suggested, t: g.clock.t, landed: false, by: isle.by };
     closeIsleLeads(g, isle.id);
+    claimTakenByHistory(g, isle.id, isle.by);
     const li = landIndexOf(isle);
     if (li >= 0) g.chart.seedLand(li);
     out.push(isle);

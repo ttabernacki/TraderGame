@@ -1,5 +1,7 @@
 import { clamp } from '../core/math';
 import type { Game } from '../game/state';
+import { feverFactor } from '../places/calendar';
+import { MINA } from '../places/deep';
 
 /**
  * What makes a port itself.
@@ -80,7 +82,8 @@ export const CHARACTER: Record<string, PortCharacter> = {
     custom: 'The gold is the King’s. The captain of the castle adds the royal fifth to every ounce.',
     prices: { ouro: { ask: 1.2 }, manilhas: { bid: 1.2 }, panos: { bid: 1.15 } },
     danger: 'The castle is healthy. The beach below it is not.',
-    arrive: (g) => fever(0.03)(g),
+    // The rains are the fever season (the calendar in places/deep.ts).
+    arrive: (g) => fever(0.03 * feverFactor(MINA, g.clock.t))(g),
   },
   ugoton: {
     signature: 'The Oba’s city, and the Oba’s coral',

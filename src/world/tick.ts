@@ -5,6 +5,11 @@ import type { Markets } from '../economy/market';
 import { fairsAt, rollShocks, type TradeState } from '../economy/trade';
 import type { Feitoria } from '../progression/feitoria';
 import { PORTS, portDef, type PortDef } from './ports';
+import type { LatLon } from '../core/math';
+import type { LaneState } from './laneState';
+import type { Contract } from './contracts';
+import type { HeatState } from '../economy/contraband';
+import type { RivalState } from '../progression/rival';
 
 /**
  * The monthly world tick (BUILD_PLAN C1) and port prosperity.
@@ -13,7 +18,7 @@ import { PORTS, portDef, type PortDef } from './ports';
  * x 42 goods, microseconds):
  *
  *   1. production   stock comes back toward the port's baseline, which is scaled by prosperity;
- *   2. lanes        a stub until D1: traffic and flows between ports (see `LaneModel`);
+ *   2. lanes        NPC traffic and flows between ports (world/lanes, installed with `setLaneModel`);
  *   3. consumption  gluts decay; appetite is scaled by prosperity wherever it is read.
  *
  * then prosperity itself moves. The tick is deterministic given the seed and the date (its
@@ -60,6 +65,19 @@ export interface WorldHost {
   trade: TradeState;
   feitorias: Feitoria[];
   visitedPorts?: Set<string>;
+  /** The lane sim's memory (world/lanes). Made on first use. */
+  lanes?: LaneState;
+  /** How well the coast between two points is known, as a multiplier on a lane's risk (Game.laneRisk). Absent: 1. */
+  laneRisk?: (from: LatLon, to: LatLon) => number;
+  /** Contracts posted by quays and not yet signed (world/contracts), and the next id. */
+  postings?: Contract[];
+  nextContractId?: number;
+  /** What the captain carries with the weigh-house (economy/contraband). */
+  heat?: HeatState;
+  /** The other captain, whose house trades in the lane sim (progression/rivalHouse). */
+  rival?: RivalState;
+  /** Something the rival's house did that the captain is owed a line on ('undercut': he sold into a lane the house works). */
+  rivalEvent?: (kind: 'undercut', portId: string, goodId: string) => void;
   /** A quiet line for the log (only said for a port the captain knows). */
   worldNote?: (portId: string, text: string) => void;
 }
@@ -253,7 +271,7 @@ export interface LaneResult {
 
 export type LaneModel = (ctx: LaneContext) => LaneResult;
 
-/** The stub: no NPC ships yet. */
+/** The stub: used until `world/lanes` is loaded. */
 const noLanes: LaneModel = () => ({ traffic: {} });
 let laneModel: LaneModel = noLanes;
 

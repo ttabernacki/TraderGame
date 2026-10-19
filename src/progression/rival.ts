@@ -3,6 +3,7 @@ import { GOOD_BY_ID } from '../economy/goods';
 import { NM, clamp, haversine, wrap360 } from '../core/math';
 import type { Rng } from '../core/rng';
 import { PORTS, portDef } from '../world/ports';
+import { EXPLORE_COST, bindRival, frontierOf, houseOf, setFrontier, type RivalHouse } from './rivalHouse';
 import { REGION_BY_ID, effectiveLevel, epochAt, regionAtFrontier, type Holding } from '../knowledge/sheetRegions';
 
 /**
@@ -22,8 +23,14 @@ import { REGION_BY_ID, effectiveLevel, epochAt, regionAtFrontier, type Holding }
 export interface RivalState {
   name: string;
   ship: string;
-  /** How far down the coast he has worked, as a latitude. Falls southward. */
+  /**
+   * How far down the coast his house has worked, as a latitude. Falls southward. Not a stored number:
+   * it reads the log of the discovery voyages his house has paid for (progression/rivalHouse), and
+   * writing to it records one (or strikes out the ones a set-back undoes).
+   */
   frontierLat: number;
+  /** His trading house (D2): purse, hulls, voyages in flight, the discovery log. Absent in saves from before it. */
+  house?: RivalHouse;
   /** Places he has taken the credit for. */
   claimed: string[];
   /** Simulated seconds of his last reported return to Lisbon. */
@@ -81,10 +88,10 @@ const RIVALS = [
 
 export function newRival(rng: Rng): RivalState {
   const r = rng.pick(RIVALS);
-  return {
+  // He starts where Portuguese knowledge already stood in 1482 (rivalHouse START_LAT).
+  return bindRival({
     name: r.name,
     ship: r.ship,
-    // He starts where Portuguese knowledge already stood in 1482.
     frontierLat: -6,
     claimed: [],
     lastNews: 0,
@@ -93,7 +100,7 @@ export function newRival(rng: Rng): RivalState {
     regard: 0,
     met: false,
     metEvents: [],
-  };
+  });
 }
 
 export interface RivalNews {
@@ -119,21 +126,31 @@ export function advanceRival(
   knowledge = 0,
 ): RivalNews | null {
   if (r.eclipsed) return null;
+  const house = houseOf(r);
 
   // Degrees of latitude a year, tapering with distance from home.
-  const reach = clamp(1 - Math.abs(r.frontierLat) / 46, 0.25, 1);
-  const behind = clamp((r.frontierLat - playerLat) / 25, 0, 1.2);
+  const front = frontierOf(r);
+  const reach = clamp(1 - Math.abs(front) / 46, 0.25, 1);
+  const behind = clamp((front - playerLat) / 25, 0, 1.2);
   const rate = (3.1 * reach + behind * 1.6) * (1 + SHEET_PACE * knowledge) / 365;
-  const before = r.frontierLat;
-  r.frontierLat -= rate * days;
   r.standing += days * 0.035 * reach;
+
+  // His house sends a discovery voyage every hundred days or so, if the purse will bear it. A poor house explores slowly.
+  house.expDays += days;
+  if (house.expDays < 100) return null;
+  if (house.capital < EXPLORE_COST) { house.expDays = 70; return null; }
+  const gone = house.expDays;
+  house.expDays = 0;
+  house.capital -= EXPLORE_COST;
+  const before = front;
+  setFrontier(r, before - rate * gone);
 
   // Anything he has passed and the player has not yet reached is his.
   const taken: string[] = [];
   for (const p of PORTS) {
     if (p.known || p.discovery <= 0) continue;
     if (r.claimed.includes(p.id)) continue;
-    if (p.lat > before || p.lat < r.frontierLat) continue;
+    if (p.lat > before || p.lat < frontierOf(r)) continue;
     // Only the Atlantic coast: he is not crossing to India by accident.
     if (p.lon > 25 || p.lon < -45) continue;
     if (rng.chance(0.55)) { r.claimed.push(p.id); taken.push(p.id); }

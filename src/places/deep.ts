@@ -24,8 +24,6 @@ import type { CalendarEntry, DeepPort, MemoryDef, PatronDef } from './types';
  *               the factor, the name of the house, the year of anything but the foundation.
  */
 
-const DAY = 86400;
-const seen = (g: Game, id: string): boolean => g.powers.seen[`place:${id}`] !== undefined;
 const mark = (g: Game, id: string): void => { g.powers.seen[`place:${id}`] = g.clock.t; delete g.powers.seen[`fired:place:${id}`]; };
 
 // ---------------------------------------------------------------------------------------------
@@ -284,7 +282,6 @@ export const MINA_ARC: DeepPort['arc'] = [
   },
   {
     id: ARC4, stage: 'partner', after: [ARC3], wait: 120,
-    needs: (g) => g.powers.seen['mina:letter'] !== undefined || g.powers.seen[`place:${ARC3}`] !== undefined,
     build: (g) => {
       const carried = g.powers.seen['mina:letter'] !== undefined;
       return scene(ARC4, 'The half-ounce',
@@ -338,4 +335,3 @@ export const DEEP_PORTS: Record<string, DeepPort> = { mina: MINA };
 
 export const deepPort = (port: string | null | undefined): DeepPort | null => (port ? DEEP_PORTS[port] ?? null : null);
 
-export const ARC_DAY = DAY;

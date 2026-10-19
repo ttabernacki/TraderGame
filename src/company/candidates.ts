@@ -1,5 +1,7 @@
 import type { OfficerRole } from '../crew/crew';
 import type { Game } from '../game/state';
+import { MINA } from '../places/deep';
+import { atLeast, patronOf } from '../places/patron';
 
 /**
  * The men on the quay who can be courted.
@@ -40,6 +42,8 @@ export interface Candidate {
   gate?: (g: Game) => string | null;
   /** Arc he carries, if any. */
   arc?: string;
+  /** Joins beside the man who holds the berth rather than in his place (a second pilot, as Hamisi is). */
+  second?: boolean;
 }
 
 export const CANDIDATES: Candidate[] = [
@@ -119,6 +123,14 @@ export const CANDIDATES: Candidate[] = [
       return null;
     },
   },
+  // A Deep port's Patron gives a pilot (BUILD_PLAN C4). Invented: see places/deep.ts. Not an arc of his own.
+  {
+    id: 'yaw-eguafo', name: 'Yaw of Eguafo’s coast', role: 'piloto', ability: 0.58, trait: 'curious', languages: ['Akan', 'Edo'],
+    wage: 20, cost: 60, standing: 0, at: ['mina'], second: true,
+    backstory: 'Kwesi’s sister’s son. Has run the surf boats from the Castle to Axim since he could lift a paddle, and the canoes east to the Benin creeks since he could be trusted with the cargo. Has never been out of sight of land, and wants to see what is beyond it.',
+    gate: (g) => (atLeast(patronOf(g, MINA).stage, 'trusted') ? null
+      : 'Kwesi has not offered him. The boy does not take service in a ship his uncle has not weighed.'),
+  },
 ];
 
 export const CANDIDATE_BY_ID = new Map(CANDIDATES.map((c) => [c.id, c]));
@@ -129,7 +141,7 @@ export function candidatesAt(g: Game, portId: string): Candidate[] {
   return CANDIDATES.filter((c) => c.role !== 'lingua'
     && c.at.includes(portId)
     && !g.company.hired.includes(c.id)
-    && (c.id === 'hamisi' || empty(c.role)));
+    && (c.id === 'hamisi' || c.second || empty(c.role)));
 }
 
 /**

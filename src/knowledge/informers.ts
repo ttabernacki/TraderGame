@@ -3,6 +3,7 @@ import { portDef } from '../world/ports';
 import type { Game } from '../game/state';
 import type { Fact } from './information';
 import { secondOpinion } from '../world/powers/rumours';
+import { claimSecondOpinion } from './claims';
 
 /**
  * The informers: clerks, brokers and pilots in any port who will buy a copy of
@@ -130,10 +131,11 @@ export function checkFact(g: Game, f: Fact): string {
     if (!l) return 'That tale is gone.';
     // A phantom is a tale nobody else tells. A real one is told again, and the
     // second telling is a little nearer.
-    said = l.phantom ? 'disputed' : 'agrees';
+    // A claim on the Casa's sheet is asked about by a roll fixed in the seed: right three times in four.
+    said = l.claim ? claimSecondOpinion(g, l.claim) : l.phantom ? 'disputed' : 'agrees';
     l.checked = said;
     l.checkedAt = now;
-    if (said === 'agrees') {
+    if (said === 'agrees' && !l.claim) {
       l.errorNm = Math.max(10, l.errorNm * 0.6);
       if (l.targetPort) {
         const def = portDef(l.targetPort);

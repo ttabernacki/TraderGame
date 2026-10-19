@@ -11,6 +11,7 @@ import { good, unitOf } from '../economy/goods';
 import { PORTS, anchorageOf, portDef } from '../world/ports';
 import { haversine } from '../core/math';
 import { trimToHold } from './stores';
+import { migrateVenture, type Contract } from '../world/contracts';
 
 /** Full price of each level of each estate holding, as the old estate sold them. */
 const HOLDING_COST: Record<string, number[]> = {
@@ -171,5 +172,25 @@ export function settleStoresOverflow(g: Game): void {
     g.logEvent('trade',
       `Her hold was measured again with the stores in it, and would not take all of the cargo. `
       + `${parts.join(', ')} (${tons.toFixed(1)} tons) went ashore at ${portDef(port).name} for ${gold} cruzados.`, true);
+  }
+}
+
+/**
+ * D1: ventures are gone; merchants' charters are contracts (world/contracts). A save that still has a `ventures`
+ * list and no `contracts` has every entry carried over as a contract with `kind: 'venture'`: the same date,
+ * advance, fee and penalty, and any cargo loaded for the merchant stays consigned, so nothing in flight is
+ * dropped or settled behind the captain's back. Delivered and failed ones come across as history (the
+ * epilogue counts them). Charters merely on offer at a quay were never commitments and are not carried. One
+ * log line says what happened. Idempotent: a save that has `contracts` is left alone.
+ */
+export function migrateVentures(g: Game, oldVentures: unknown, contracts: unknown): void {
+  if (Array.isArray(contracts)) { g.contracts = contracts as Contract[]; return; }
+  if (!Array.isArray(oldVentures)) return;
+  g.contracts = (oldVentures as Record<string, unknown>[]).map(migrateVenture);
+  const live = g.contracts.filter((c) => !c.delivered && !c.failed).length;
+  if (live > 0) {
+    g.logEvent('trade',
+      `${live === 1 ? 'A merchant’s charter' : `${live} merchants’ charters`} in your book ${live === 1 ? 'is' : 'are'} now written up as `
+      + `${live === 1 ? 'a plain contract' : 'plain contracts'}: the same goods, the same quay, the same date and the same fee.`, true);
   }
 }

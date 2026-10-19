@@ -328,7 +328,7 @@ export function officerFromCandidate(g: Game, c: Candidate): Officer {
     giveLinguaArc(g, o);
   }
   g.company.hired.push(c.id);
-  g.crew.officers = g.crew.officers.filter((x) => x.role !== c.role || !x.alive || c.id === 'hamisi' || x.arc === 'hamisi');
+  g.crew.officers = g.crew.officers.filter((x) => x.role !== c.role || !x.alive || c.id === 'hamisi' || c.second || x.arc === 'hamisi');
   g.crew.officers.push(o);
   return o;
 }

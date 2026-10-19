@@ -112,7 +112,7 @@ export const epochNow = (g: Game, region: string): number => epochAt(g.seed, reg
 /** What a buyer can steer by in a region now: his own copy after silting, or the published one if better. */
 export function buyerLevel(g: Game, buyer: Buyer, region: string): number {
   const e = epochNow(g, region);
-  const world = effectiveLevel(g.sheets.world[region], e);
+  const world = effectiveLevel(g.sheets.held.world[region], e);
   if (buyer === 'world') return world;
   const own = buyer === 'rival' ? rivalLevel(g.rival, region, g.seed, yearNow(g)) : effectiveLevel(g.sheets.held[buyer][region], e);
   return Math.max(own, world);
@@ -218,7 +218,7 @@ export function sellSheet(g: Game, regionId: string, kind: SaleKind): string {
       note: `Sold ${g.rival.name} my sheet of ${r.name} for ${o.money} cruzados.`,
     });
   } else {
-    hold(g.sheets.world, regionId, mine, epoch, t);
+    hold(g.sheets.held.world, regionId, mine, epoch, t);
     g.rival.standing += Math.round(o.gain * r.weight * 3);
     g.logEvent('discovery', `Published the ${where} (${grade}) under my own name. ${o.standing} standing and no money, and every pilot on that coast has it, ${g.rival.name} among them.`, true);
     g.noteDeed('chart.shared', {

@@ -11,7 +11,7 @@ import {
   type ChronicleState,
 } from '../progression/chronicle';
 import {
-  QUESTS, callbackAt, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
+  QUESTS, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
   rumoursHeard,
 } from '../progression/quests';
 import { cancelPortQuests, migrateEstate, settleFoldedPieces, settleStoresOverflow, migrateFittings } from './saveResolvers';
@@ -20,6 +20,7 @@ import { migrateEnterprises, tickLines, type Letter, type Line } from '../progre
 import { deliverFactoryMail, noteSightings, postLetter, tickFactories, transitDays } from '../progression/livingFactory';
 import { ambientAtSea, barkAt } from '../progression/barks';
 import { noteSeen, prosperityOf, prosperityShock, tickWorldDue, type PortState, type Reason } from '../world/tick';
+import { dueDeepScene, placeCallbackAt, placeCredit, placeHouseFactor, placeMods, rememberDeed } from '../places';
 import { arriveAt, foldLedger, marketModifiers, migratePowers, newPowers, setHistorySource, type PowersState } from '../world/powers';
 import { dueTrafficScene } from '../progression/trafficScenes';
 import { MILESTONES, checkMilestones } from '../progression/milestones';
@@ -125,7 +126,9 @@ import { gradeAt as gradeAtPos, laneRisk as laneRiskOf, type Grade } from '../na
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
 import { featureNear, type CoastFeature } from '../world/features';
 import { charterDays, daysLeft, offerVentures, ventureLine, type Venture } from '../progression/ventures';
-import { advanceRival, newRival, rivalGossip, rivalTrade, rivalWasHere, type RivalState } from '../progression/rival';
+import { advanceRival, newRival, rivalFrontierKnowledge, rivalGossip, rivalTrade, rivalWasHere, type RivalState } from '../progression/rival';
+import { advanceClaims, claimOnIsle, hearClaims, migrateClaims, newClaims, seedClaims, siteDiscount, useSite, watchClaims, type ClaimsState } from '../knowledge/claims';
+import { inheritChart, migrateSheets, newSheets, rivalMeanLevel, surveyRate, type SheetsState } from '../knowledge/sheets';
 import { rollRivalMeeting } from '../progression/rivalEvents';
 import { beyondScene, featureScene, landmarkScene } from './discovery';
 import { castLead, landfallScene, type LeadCast } from './soundings';
@@ -434,7 +437,7 @@ export class Game {
     const bark = barkAt(this);
     if (bark) { this.pushAlert(bark, 'note'); this.logEvent('note', bark, false); }
     if (this.dockedAt) {
-      const cb = callbackAt(this, this.dockedAt);
+      const cb = placeCallbackAt(this, this.dockedAt);
       if (cb) { this.pushAlert(cb, 'note'); this.logEvent('note', cb, false); }
     }
     for (const m of checkMilestones(this)) {
@@ -465,7 +468,7 @@ export class Game {
       const id = `quest:${q.id}:${q.step}`;
       if (this.pendingEvent?.id !== id && !this.pendingScenes.some((x) => x.id === id)) q.fired = false;
     }
-    const s = dueScene(this, this.dockedAt) ?? dueTrafficScene(this, this.dockedAt);
+    const s = dueScene(this, this.dockedAt) ?? dueTrafficScene(this, this.dockedAt) ?? dueDeepScene(this, this.dockedAt);
     if (!s) return;
     this.easeTheClock(1);
     if (!this.pendingEvent) this.pendingEvent = s;
@@ -972,10 +975,11 @@ export class Game {
     this.markets = new Markets(seed);
     this.markets.adjust = (p, gid, t) => this.worldAdjust(p, gid, t);
     this.markets.prosperityOf = (id) => prosperityOf(this, id);
-    this.markets.modifiers = (p, t) => marketModifiers(p, t, this.powers);
+    this.markets.modifiers = (p, t) => placeMods(this, p, t, marketModifiers(p, t, this.powers));
     this.trade = newTrade(this.clock.t);
     this.rival = newRival(this.rng);
     this.rival.lastNews = this.clock.t;
+    this.claims = seedClaims(seed);
     // She begins at a quay, which is as much in sight of land as it gets.
     this.lastLandSeenT = this.clock.t;
     this.hands = musterHands(this.rng);
@@ -1215,6 +1219,8 @@ export class Game {
     if (p && !p.complete && !p.failed) limit += Math.round(p.reward * 0.4) + 90;
     if (this.can('credit')) limit += this.ship.manifestValue() * 0.8 + 120;
     if (this.can('ownAccount')) limit += 400 + this.crown.lifetimeStanding * 3;
+    // A Deep port's Patron lets a note run while she lies there (places/).
+    limit += placeCredit(this);
     return Math.round(limit);
   }
 
@@ -3749,7 +3755,7 @@ export class Game {
     this.watchTheTide();
 
     // Chart whatever the lookout can see, at intervals.
-    if (this.clock.t - this.lastSurveyT > 900) {
+    if (this.clock.t - this.lastSurveyT > 900 / surveyRate(this)) {
       this.lastSurveyT = this.clock.t;
       const range = sightingRangeNm(this.ship.mastHeight, this.weatherNow.visibility)
         * (this.can('farSight') ? 1.33 : 1);
@@ -4917,7 +4923,7 @@ export class Game {
     this.crown.standing += name;
     this.crown.lifetimeStanding += name;
     this.captain.points += Math.min(4, Math.floor(old.crown.lifetimeStanding / 250));
-    this.chart = old.chart;
+    inheritChart(this, old);
     this.rutter = old.rutter;
     let kept = 0;
     for (const f of old.liveFactories) {
@@ -6098,8 +6104,12 @@ export class Game {
       const gd = good(cargo.goodId);
       this.logEvent('trade', `${this.rival.name}'s caravel came up the Tagus from ${portDef(cargo.port).name} with ${cargo.qty} ${gd.unit}s of ${gd.english.toLowerCase()}. The price of it on the quay went down the same afternoon.`, true);
     }
+    for (const name of advanceClaims(this, days, rivalMeanLevel(this))) {
+      this.pushAlert(`${this.rival.name} has been before you at ${name}.`, 'warning');
+    }
     const news = advanceRival(
       this.rival, days, this.ship.state.pos.lat, this.crown.lifetimeStanding, this.rng,
+      rivalFrontierKnowledge(this.rival, this.seed, this.clock.date.year),
     );
     if (!news) return;
     this.rival.lastNews = this.clock.t;
@@ -6167,6 +6177,10 @@ export class Game {
   /** Islands found, tales heard on the quay, and the signs the sea has given. See farLand. */
   isles: IsleState = newIsleState();
 
+  /** The Casa's claims for this run (10-15), and the survey sheets bought, sold and published. See knowledge/claims, knowledge/sheets. */
+  claims: ClaimsState = newClaims();
+  sheets: SheetsState = newSheets();
+
   /** Turn the view to something on the horizon. */
   cueLook(bearing: number): void {
     this.lookCue = { bearing, id: ++this.lookCueId };
@@ -6196,10 +6210,11 @@ export class Game {
       + `${formatLat(this.nav.estimated.lat)}, ${formatLon(this.nav.estimated.lon)} by the reckoning.`, true);
     this.announceDiscovery('named', 'An island on no chart', name,
       given ? 'Found and named' : 'Found', `By the ${this.ship.name}, ${this.clock.formatDate()} \u00b7 ${worth} renown at court`);
+    const claimed = claimOnIsle(this, isle.id, landed, !!given);
     if (!landed) {
-      return given
+      return (given
         ? `${given}. On the chart under your hand, and she stands on.`
-        : 'A position in the book. The pilot does not like the blank against it and says so.';
+        : 'A position in the book. The pilot does not like the blank against it and says so.') + claimed;
     }
     this.clock.t += 86400;
     const p = this.crew.provisions;
@@ -6215,7 +6230,7 @@ export class Game {
     return `${given}. ${isle.landing}\n\n`
       + `${water > 4 ? `${water} days of water in the casks` : 'Not a cask filled'}, `
       + `${fresh > 4 ? `${fresh} days of fresh food` : 'nothing green'}, and bearings off three points of it `
-      + 'on the sheet.';
+      + 'on the sheet.' + claimed;
   }
 
   /** The sea read, rumours searched, and islands raised: every tick at sea. */
@@ -6226,7 +6241,7 @@ export class Game {
       this.pushAlert(sign.text.split('. ')[0] + '.', 'note');
       this.logEvent('note', sign.text, false);
     }
-    const found = searchRumours(this);
+    const found = searchRumours(this) ?? watchClaims(this);
     if (found) this.pushAlert(found.split('. ')[0] + '.', 'note');
     if (this.clock.t - this.isles.lastSightT < 600) return;
     this.isles.lastSightT = this.clock.t;
@@ -7597,6 +7612,7 @@ export class Game {
   /** Record a deed in the Ledger and say in one quiet line what it did. */
   noteDeed(tag: LedgerTag, d: Deed = {}): LedgerEntry {
     const e = recordDeed(this, tag, d);
+    rememberDeed(this, e);
     foldLedger(this); // the Fronts and the Powers read what he has just done, not next month
     return e;
   }
@@ -7926,12 +7942,15 @@ export class Game {
   /** Timber, tools, trade goods to start the chest, and a year's victuals for the men. */
   foundingCost(def: PortDef | null = this.portHere): number {
     // Ground granted at an audience is most of the price of a House.
-    const base = def && (def.people === 'portuguese' || this.can('ambassador') || this.relationsFor(def.id).factory) ? 320 : 640;
+    const base = (def && (def.people === 'portuguese' || this.can('ambassador') || this.relationsFor(def.id).factory) ? 320 : 640)
+      * (1 - siteDiscount(this, def?.id));
     // What the court thinks of you shows in what a House costs: a friend is let off a little, one who gave offence pays for it.
     const pol = def ? polityOfPort(def.id) : null;
-    if (!pol) return base;
+    // And a Patron who vouches for the ground (places/).
+    const vouch = placeHouseFactor(this, def?.id);
+    if (!pol) return Math.round(base * vouch / 10) * 10;
     const m = markCounts(this.diplomacy.marks, pol.id, this.clock.t);
-    return Math.round(base * (1 - 0.06 * Math.min(3, m.for) + 0.1 * Math.min(2, m.against)) / 10) * 10;
+    return Math.round(base * vouch * (1 - 0.06 * Math.min(3, m.for) + 0.1 * Math.min(2, m.against)) / 10) * 10;
   }
 
   /**
@@ -7986,6 +8005,7 @@ export class Game {
       paidOut: 0,
     };
     this.feitorias.push(f);
+    useSite(this, def.id);
     if (o.mate) this.noteDeed('companion.promoted', { target: o.name, place: def.id, magnitude: 0.6, note: `Posted ${o.name}, raised from the fo'c'sle, to the House at ${def.name}.` });
     this.noteDeed('port.funded', { target: def.id, place: def.id, magnitude: 0.7, note: `Founded a House at ${def.name}.` });
     this.relationsFor(def.id).factorySettled = this.clock.t;
@@ -8322,7 +8342,7 @@ export class Game {
       this.logEvent('discovery', `News on the quay: ${isle.by} has found an island and called it `
         + `${isle.suggested}. The Casa has it on the sheet now.`, true);
     }
-    if (hearOfIsland(this, def.id)) this.pushAlert('A tale on the quay of land to seaward. It is on the chart with a query.', 'note');
+    if (hearOfIsland(this, def.id) || hearClaims(this, def.id) > 0) this.pushAlert('A tale on the quay of land to seaward. It is on the chart with a query.', 'note');
 
     // Pillars are the King's business and the Casa ships them: every sailing
     // from the Tagus carries three, and nobody has to remember to ask.
@@ -9573,6 +9593,8 @@ export class Game {
       namedFeatures: this.namedFeatures,
       foundFeatures: this.foundFeatures,
       isles: this.isles,
+      claims: this.claims,
+      sheets: this.sheets,
       secretsHeard: this.secretsHeard,
       milestones: this.milestones,
       remittances: this.remittances,
@@ -9708,6 +9730,8 @@ export class Game {
     g.namedFeatures = d.namedFeatures ?? {};
     g.foundFeatures = d.foundFeatures ?? [];
     g.isles = { ...newIsleState(), ...(d.isles ?? {}) };
+    g.claims = migrateClaims(d.claims, g.seed);
+    g.sheets = migrateSheets(d.sheets);
     g.secretsHeard = d.secretsHeard ?? [];
     g.milestones = d.milestones ?? [];
     g.remittances = d.remittances ?? [];

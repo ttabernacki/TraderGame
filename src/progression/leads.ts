@@ -45,6 +45,8 @@ export interface Lead {
   false: boolean;
   /** An ocean island (or a phantom) this tale is about. See game/farLand. */
   isle?: string;
+  /** The Casa's-sheet claim this tale is (knowledge/claims); its resolution is that module's. */
+  claim?: string;
   phantom?: boolean;
   /** The rumoured spot has been sailed and nothing was in sight. */
   searched?: boolean;
