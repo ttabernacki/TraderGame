@@ -289,7 +289,7 @@ export function chronicleTags(voice: 'lisbon' | 'polity'): Tag[] {
 }
 
 /** The roll of the dead reads these. */
-export const MUSTER_TAGS: Tag[] = ['hand.died', 'hand.hanged', 'officer.died', 'journey.lost'];
+export const MUSTER_TAGS: Tag[] = ['hand.died', 'hand.hanged', 'officer.died', 'journey.lost', 'passenger.died'];
 
 // -- Putting them together ---------------------------------------------------
 
@@ -393,7 +393,7 @@ export function muster(ledger: Entry[]): Muster {
     named.push({ name, fate: e.note, t: e.t, place: e.place });
   };
   for (const e of ledger) {
-    if (e.tag === 'hand.died') {
+    if (e.tag === 'hand.died' || e.tag === 'passenger.died') {
       total += Math.round(e.magnitude);
       for (const n of e.actors) if (n !== 'captain') add(n, e);
     } else if (e.tag === 'hand.hanged') {

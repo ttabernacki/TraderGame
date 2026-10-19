@@ -36,6 +36,8 @@ export interface StageEffect {
   stock?: Record<string, number>;
   appetite?: Record<string, number>;
   duesMult?: number;
+  /** Closes the lane while in force (a trunk port stays open to the flagship, at a toll). */
+  closes?: boolean;
   /** P moved each month while this is in force (small, and through `prosperityShock`). */
   prosperity?: number;
   /** One plain line for the Book: what this stage is doing to this place. */

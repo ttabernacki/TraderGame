@@ -15,6 +15,8 @@
  * Voice is the ship's: short, level, no exclamation.
  */
 
+import { POWERS_TAGS } from './tagsPowers';
+
 export interface TagDef {
   /** What the tag means, for whoever has to emit or read it. */
   doc: string;
@@ -48,6 +50,7 @@ function t(
 }
 
 export const TAGS = {
+  ...POWERS_TAGS,
   // --- Word given and kept -------------------------------------------------
   'promise.kept': t(0.8, 'A word given to a court or a person, and honoured.',
     '{target} will remember that you kept your word.', BOTH, { planned: ['powers', 'company', 'titles'] }),

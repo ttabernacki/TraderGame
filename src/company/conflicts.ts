@@ -142,7 +142,7 @@ export const CONFLICTS: Conflict[] = [
               : `Nothing came. ${b.name} loses an afternoon and says so, civilly, and ${a.name} says that a front that does not come is the best kind.`;
           }),
           choice('Carry sail, as the master says', 'The passage made. If he is wrong it is the ship that pays.', (gg) => {
-            regard(b, pilotRight ? 0.04 : 0.14, pilotRight ? 'carried sail against the pilot and was lucky' : 'was backed on the weather, and nothing came');
+            regard(b, pilotRight ? 0.06 : 0.14, pilotRight ? 'carried sail against the pilot and was lucky' : 'was backed on the weather, and nothing came');
             regard(a, pilotRight ? -0.16 : -0.08, 'was overruled on the weather');
             if (pilotRight) {
               gg.ship.condition.hull = clamp(gg.ship.condition.hull - 0.05, 0, 1);
@@ -279,7 +279,7 @@ export const CONFLICTS: Conflict[] = [
         }),
         choice('Back the chaplain: put them ashore at the next port, and enter the parcel as refused', 'The book is true and the people are not carried. The factor will ask why.', (gg) => {
           regard(a, 0.18, 'was backed in refusing to carry a woman and a boy as freight');
-          regard(b, 0.06, 'had the parcel refused and entered as refused, which is a proper entry');
+          regard(b, -0.05, 'was overruled on carrying the parcel, though it was entered as refused');
           gg.noteDeed('parcel.refused', { target: 'the factor', magnitude: 0.6, note: 'Refused the factor’s parcel and had it entered as refused.' });
           return `${b.name} enters it as refused, with the date and the seal, and says that this is a correct form. ${a.name} says the office for them that evening in the waist, and the woman, who cannot understand it, listens.`;
         }),
