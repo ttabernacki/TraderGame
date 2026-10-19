@@ -194,6 +194,7 @@ vec3 wakeAt(vec2 rel) {
 const vertexShader = /* glsl */ `
 uniform vec2 uNoiseOrigin;
 uniform float uEyeM;
+uniform float uPix;
 uniform vec2 uDir[${WAVE_COUNT}];
 uniform float uAmp[${WAVE_COUNT}];
 uniform float uLen[${WAVE_COUNT}];
@@ -208,6 +209,7 @@ varying float vCrest;
 varying float vDist;
 varying vec2 vSurface;
 varying vec2 vLocal;
+varying float vLost;
 
 void main() {
   vec3 pos = position;
@@ -241,6 +243,21 @@ void main() {
   // easily at a hundred metres has barely a vertex per crest at five kilometres.
   float spacing = max(d * ${(GRID_GROWTH).toFixed(4)}, ${(1.9).toFixed(1)});
 
+  // How big a pixel is on the water here, along the view and across it. A wave the mesh carries
+  // perfectly well can still be finer than the screen can sample: at a grazing angle one pixel
+  // covers many metres of sea in the direction of the view, and a fourteen-metre swell a
+  // quarter of a mile off is under two pixels from crest to crest. Drawn anyway it is not
+  // resolved but sampled, and which of its crests land on a pixel centre changes with every
+  // metre the ship makes. That is the shimmer. The mesh test above cannot see it, because it
+  // measures vertices and not pixels.
+  vec3 toCam = cameraPosition - vec3(pos.x, 0.0, pos.z);
+  float dist3 = max(length(toCam), 1.0);
+  float sinEl = clamp(abs(cameraPosition.y) / dist3, 0.015, 1.0);
+  vec2 vdir = toCam.xz / max(length(toCam.xz), 1.0e-4);
+  float lat = dist3 * uPix;
+  float along = lat / sinEl;
+  float lostVar = 0.0;
+
   for (int i = 0; i < ${WAVE_COUNT}; i++) {
     float k = 6.28318530718 / uLen[i];
     vec2 dir = uDir[i];
@@ -254,6 +271,14 @@ void main() {
     // is geometry in the far field, and the fragment stage pays that back with
     // filtered slope, which can be resolved per pixel however far off it is.
     float carry = 1.0 - smoothstep(uLen[i] * 0.30, uLen[i] * 0.85, spacing);
+    // Footprint of a pixel measured along this wave's own direction of travel.
+    float cth = dot(dir, vdir);
+    float foot = sqrt(along * along * cth * cth + lat * lat * (1.0 - cth * cth));
+    carry *= mix(1.0, 1.0 - smoothstep(uLen[i] / 6.0, uLen[i] / 2.6, foot), uOceanNew);
+    // What is taken out of the surface is not thrown away: its slope still scatters light
+    // within the pixel, and is carried to the fragment stage as variance (see vLost).
+    float gone = k * uAmp[i] * (1.0 - carry);
+    lostVar += 0.5 * gone * gone;
     float a = uAmp[i] * carry;
     float s = uSteep[i];
 
@@ -292,6 +317,7 @@ void main() {
   vLocal = position.xz;
 
   vNormal = normalize(cross(binormal, tangent));
+  vLost = lostVar;
   vWorld = pos;
   vCrest = crest;
   vDist = d;
@@ -344,6 +370,9 @@ varying float vCrest;
 varying float vDist;
 varying vec2 vSurface;
 varying vec2 vLocal;
+varying float vLost;
+uniform float uEnvTexel;
+uniform float uEnvMips;
 
 /**
  * Tiling value noise.
@@ -464,6 +493,16 @@ void main() {
   // roughness and used to widen the sun's reflection instead — which is what
   // stops a distant sea from breaking into a field of hard white sparks.
   float lost = (1.0 - o1) * 0.55 + (1.0 - o2) * 0.3 + (1.0 - o3) * 0.15;
+  // The same thing measured, not guessed: the variance of the slope the pixel could not carry.
+  // Three parts. The swell the vertex stage took out because a pixel is wider than half its
+  // wavelength (vLost, exact). The ripple octaves that fell below the grid, each with its own
+  // amplitude (the squares of the sums in chopNormal, 0.61 between the two axes). And whatever the
+  // shading normal still changes by across the pixel, read straight off the screen-space
+  // derivatives, which catches what neither of those knows about (Tokuyoshi and Kaplanyan's
+  // specular anti-aliasing). Their total, turned into a wider and dimmer highlight, is what takes a
+  // glitter that crawled from pixel to pixel and makes it a steady glow.
+  float rippleVar = 0.61 * pow(0.125 * clamp(uChop + 0.22, 0.22, 1.5) * graze, 2.0)
+                  * ((1.0 - o1) + 0.67 * (1.0 - o2) + 0.49 * (1.0 - o3) + 0.9 * (1.0 - o4));
 
   // The slick astern flattens the ripple as well as the swell, which is what
   // makes a wake visible on a calm day when there is no foam left in it at all.
@@ -473,8 +512,17 @@ void main() {
   float roughness = clamp(uChop + 0.22, 0.22, 1.5);
   n = normalize(n + vec3(detail.x, 0.0, detail.y) * 0.125 * roughness * smoothed * graze);
   n = normalize(mix(n, vec3(0.0, 1.0, 0.0), wk.z * 0.35));
+  vec3 dnx = dFdx(n);
+  vec3 dny = dFdy(n);
+  float derivVar = min(0.25 * (dot(dnx, dnx) + dot(dny, dny)), 0.08);
+  float sigma2 = (vLost + rippleVar + derivVar) * uOceanNew;
+  // The normal a pixel really sees is the average over its footprint, which leans less than any
+  // one facet in it: the more variance, the nearer to level. Fresnel and the sky reflection are
+  // far steeper functions of the angle than the shading is, and at a grazing view they are the part
+  // that flickered, because a facet's tilt swings the mirror direction by twice as much.
+  vec3 nr = normalize(mix(n, vec3(0.0, 1.0, 0.0), clamp(sigma2 * 5.0, 0.0, 0.65)));
 
-  float ndv = max(dot(n, viewDir), 0.0);
+  float ndv = max(dot(nr, viewDir), 0.0);
   float fresnel = mix(0.02, 1.0, pow(1.0 - ndv, 5.0));
 
   float slope = clamp(n.y, 0.0, 1.0);
@@ -518,7 +566,7 @@ void main() {
     }
   }
 
-  vec3 reflDir = reflect(-viewDir, n);
+  vec3 reflDir = reflect(-viewDir, nr);
   float up = clamp(reflDir.y * 0.5 + 0.5, 0.0, 1.0);
   vec3 sky = mix(uHorizonColor, uSkyColor, pow(up, 0.7));
   // The sky itself, photographed a few times a second (Renderer.envCamera):
@@ -529,7 +577,10 @@ void main() {
     // through the interval between them we are: the water's reflection of the
     // sunset changes continuously instead of in steps every few frames.
     vec3 envDir = normalize(vec3(reflDir.x, max(reflDir.y, 0.015), reflDir.z));
-    vec3 env = mix(textureCube(uEnvPrev, envDir).rgb, textureCube(uEnv, envDir).rgb, uEnvMix);
+    // Blurred by the sea's own roughness: the sky a rough surface shows is the average of the sky
+    // over the spread of its facets, not a pin-sharp picture of one point in it.
+    float lod = clamp(log2(max(sqrt(2.0 * sigma2) / uEnvTexel, 1.0)), 0.0, 4.0) * uEnvMips;
+    vec3 env = mix(textureCubeLodEXT(uEnvPrev, envDir, lod).rgb, textureCubeLodEXT(uEnv, envDir, lod).rgb, uEnvMix);
     sky = min(env, vec3(1.25));
   }
 
@@ -547,9 +598,13 @@ void main() {
   // a mirror-sharp reflection sampled once per pixel either hits the sun or
   // misses it entirely, and which of the two changes with every step the ship
   // takes. Spreading it is both physically right and the cure.
-  float rough = clamp(lost, 0.0, 1.0);
-  float tight = mix(110.0, 9.0, rough);
-  float gain = mix(0.85, 0.16, rough);
+  float roughOld = clamp(lost, 0.0, 1.0);
+  // The highlight's width in the half-angle it was built on (a Gaussian lobe of 1/tight), widened by the
+  // reflected spread of everything the pixel averages, and kept to the same total energy.
+  float tightNew = 1.0 / (1.0 / 110.0 + 2.0 * sigma2);
+  float rough = mix(roughOld, clamp(1.0 - (tightNew - 9.0) / 101.0, 0.0, 1.0), uOceanNew);
+  float tight = mix(mix(110.0, 9.0, roughOld), max(tightNew, 6.0), uOceanNew);
+  float gain = mix(mix(0.85, 0.16, roughOld), 0.85 * pow(clamp(tightNew / 110.0, 0.0, 1.0), 0.85) + 0.03, uOceanNew);
   float spec = pow(sunDot, tight) * gain
              * mix(0.35, sparkle, clamp(uChop, 0.0, 1.0) * (1.0 - rough * 0.8));
   // The broad sheen either side of the sun's track is what blows out to a white
@@ -858,6 +913,9 @@ export class Ocean {
         uEnvOn: { value: 0 },
         uOvercast: { value: 0 },
         uOceanNew: { value: 1 },
+        uPix: { value: 0.002 },
+        uEnvTexel: { value: 0.0123 },
+        uEnvMips: { value: 0 },
         uTrack: { value: Array.from({ length: TRACK_POINTS }, () => new THREE.Vector2()) },
         uTrackAge: { value: new Array(TRACK_POINTS).fill(0) },
         uTrackRun: { value: new Array(TRACK_POINTS).fill(0) },
@@ -1147,6 +1205,13 @@ export class Ocean {
   /** 0 clear to 1 a full grey deck: the sun goes out of the water. */
   /** The upgraded foam (wind-driven whitecaps and streaks, hull foam) or the old one. */
   setUpgraded(on: boolean): void { this.material.uniforms.uOceanNew.value = on ? 1 : 0; }
+
+  /** Radians one pixel subtends, and the size of the sky photographs the sea reflects (0 for none worth blurring). */
+  setPixel(radPerPixel: number, envSize: number, mips: boolean): void {
+    this.material.uniforms.uPix.value = radPerPixel;
+    this.material.uniforms.uEnvTexel.value = (Math.PI / 2) / Math.max(envSize, 1);
+    this.material.uniforms.uEnvMips.value = mips ? 1 : 0;
+  }
 
   setOvercast(c: number): void {
     this.material.uniforms.uOvercast.value = clamp(c, 0, 1);

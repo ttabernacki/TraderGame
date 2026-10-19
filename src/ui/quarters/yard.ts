@@ -7,13 +7,14 @@ import type { Game } from '../../game/state';
 import { doRefit, fitFitting, quoteRefit, refitPlace, removeFitting, type RefitJob } from '../../game/refit';
 import { append, button, card, el, fold, foldCard, kv } from '../dom';
 import type { Ctx } from './ctx';
+import { verb } from './verb';
 
-export function renderYard(ctx: Ctx, host: HTMLElement, g: Game): void {
+function yardParts(ctx: Ctx, g: Game): { top: HTMLElement | null; left: HTMLElement; right: HTMLElement; instruments: HTMLElement } {
   const def = g.portHere!;
-  if (def.refit < 0.5) {
-    host.append(el('div', { class: 'notice grave' },
-      'There is no yard here worth the name. You can careen on a beach if you must, and mend what the spares in the hold will mend, and nothing more.'));
-  }
+  const top = def.refit < 0.5
+    ? el('div', { class: 'notice grave' },
+      'There is no yard here worth the name. You can careen on a beach if you must, and mend what the spares in the hold will mend, and nothing more.')
+    : null;
 
   const left = el('div', {});
   const place = refitPlace(g);
@@ -34,7 +35,7 @@ export function renderYard(ctx: Ctx, host: HTMLElement, g: Game): void {
           ? `${q.does} ${q.days} days${q.fromHold > 0 ? `, ${(q.fromHold * 100).toFixed(0)}% of a set of spares from the hold` : ''}${q.bought > 0.001 ? `, ${(q.bought * 100).toFixed(0)}% bought here` : ''}.`
           : q.why));
   };
-  left.append(card('The yard\u2019s work',
+  left.append(verb('yard.work', card('The yard\u2019s work',
     kv('Hull', `${(g.ship.condition.hull * 100).toFixed(0)}%`),
     kv('Fouling', `${(g.ship.condition.fouling * 100).toFixed(0)}%`),
     kv('Spares in the hold', `${((g.crew.spares ?? 0) * 100).toFixed(0)}% of a set`),
@@ -43,7 +44,7 @@ export function renderYard(ctx: Ctx, host: HTMLElement, g: Game): void {
     jobRow('rig', 'Re-mast and re-canvas'),
     el('p', { style: { fontSize: '12.5px', marginTop: '8px' } },
       'Parts come out of the spares in the hold first; what is short is bought here. The work takes days, and she eats nothing from the sea stores while she lies alongside.'),
-  ));
+  )));
 
   // Six slots, one fitting in each. See ship/upgrades.
   const yard = place.kind === 'yard' ? place.level : 0;
@@ -78,7 +79,7 @@ export function renderYard(ctx: Ctx, host: HTMLElement, g: Game): void {
     );
   };
   const fx = g.ship.effects;
-  const right = el('div', {});
+  const right = verb('yard.fittings', el('div', {}));
   right.append(card(`Her fittings \u2014 the yard here can do ${['nothing', 'the simple work', 'a real refit', 'anything'][yard]}`,
     el('div', { class: 'sys-profile' },
       el('span', {}, `Points ${Math.round(g.noGoAngle)}\u00b0 off the wind`),
@@ -113,10 +114,10 @@ export function renderYard(ctx: Ctx, host: HTMLElement, g: Game): void {
   // A ship to your own lines, at the Ribeira: folded until wanted, open
   // while one is on the stocks.
   if (def.id === 'lisboa') {
-    left.append(fold('The Ribeira das Naus',
+    left.append(verb('yard.ribeira', fold('The Ribeira das Naus',
       g.building ? 'a ship of yours on the stocks' : 'a ship built to your own lines',
       !!g.building || ctx.ribeiraOpen,
-      shipyardCard(g, (text, grave) => { ctx.ribeiraOpen = true; ctx.notice = { text, grave }; ctx.render(); })));
+      shipyardCard(g, (text, grave) => { ctx.ribeiraOpen = true; ctx.notice = { text, grave }; ctx.render(); }))));
   }
 
   // A larger ship, once the Crown thinks you are worth one.
@@ -124,7 +125,7 @@ export function renderYard(ctx: Ctx, host: HTMLElement, g: Game): void {
   if (def.id === 'lisboa' && hulls.length > 0) {
     const tradeIn = g.tradeInValue();
     const tons = g.ship.cargoTons;
-    left.append(fold('Ships lying in the river', `${hulls.length} for sale, ${tradeIn} allowed for yours`, false,
+    left.append(verb('yard.ships-for-sale', fold('Ships lying in the river', `${hulls.length} for sale, ${tradeIn} allowed for yours`, false,
       el('p', { class: 'quote' },
         `The yard will allow ${tradeIn} cruzados against the ${hullClass(g.ship.hullId).name} `
         + 'and her hull and keel work. Her rig, stores, quarters, instruments and arms come across '
@@ -149,13 +150,29 @@ export function renderYard(ctx: Ctx, host: HTMLElement, g: Game): void {
             : null,
         );
       })),
-    ));
+    )));
   }
 
   // Instruments.
-  left.append(foldCard(instrumentCard(ctx, g), 'what is aboard, and what may be bought'));
+  const instruments = verb('yard.instruments', foldCard(instrumentCard(ctx, g), 'what is aboard, and what may be bought'));
+  return { top, left, right, instruments };
+}
 
-  host.append(el('div', { class: 'cols two' }, left, right));
+/** The yard's work, the Ribeira and the ships for sale. */
+export function refitSection(ctx: Ctx, host: HTMLElement, g: Game): void {
+  const p = yardParts(ctx, g);
+  if (p.top) host.append(p.top);
+  host.append(p.left);
+}
+
+/** Her fittings, slot by slot. */
+export function fittingsSection(ctx: Ctx, host: HTMLElement, g: Game): void {
+  host.append(yardParts(ctx, g).right);
+}
+
+/** What is aboard for finding her way, and what may be bought. */
+export function instrumentsSection(ctx: Ctx, host: HTMLElement, g: Game): void {
+  host.append(yardParts(ctx, g).instruments);
 }
 
 export function instrumentCard(ctx: Ctx, g: Game): HTMLElement {

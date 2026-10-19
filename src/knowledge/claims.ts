@@ -180,13 +180,13 @@ export const CLAIM_DEFS: ClaimDef[] = [
   },
   // -- Prester John, at three latitudes: exactly one is the real place each run ---------------------------------------
   {
-    id: 'prester-guinea', name: 'Prester John, behind Benin', rule: 'prester', mode: 'coast', at: { lat: 4.3, lon: 6.1 }, truth: { lat: 6.3, lon: 5.6 }, off: [0.8, 1.6],
+    id: 'prester-guinea', name: 'Prester John, behind Benin', rule: 'prester', mode: 'coast', at: { lat: 4.3, lon: 6.1 }, truth: { lat: 5.6, lon: 5.1 }, off: [0.8, 1.6],
     tell: ['mina', 'arguim'], end: 'mpinda', from: 1485, value: 55, rival: 6, core: true,
     say: 'tell of a great Christian king behind the Benin river, {where}, whom they call the Ogané, who sends a staff and a cross to his vassals when they are crowned.',
     source: 'documented: João Afonso de Aveiro at Benin (c. 1486) was told of the Ogané and took him for Prester John (Pacheco Pereira, Esmeraldo). The 1485 rumour and its teller are invented.',
   },
   {
-    id: 'prester-ethiopia', name: 'Prester John, in Ethiopia', rule: 'prester', mode: 'coast', at: { lat: 13.0, lon: 43.0 }, truth: { lat: 15.6, lon: 39.4 }, off: [1.5, 2.5],
+    id: 'prester-ethiopia', name: 'Prester John, in Ethiopia', rule: 'prester', mode: 'coast', at: { lat: 13.0, lon: 43.0 }, truth: { lat: 16.9, lon: 41.1 }, off: [1.5, 2.5],
     tell: ['mocambique', 'melinde'], end: 'calecute', from: 1485, value: 75, rival: 8, core: true,
     say: 'say that the Christian king of the Abyssinians keeps court behind the Red Sea coast, {where}, and that his priests come to Jerusalem by the Nile.',
     source: 'documented: Pêro da Covilhã and Afonso de Paiva sent overland in 1487; Covilhã reached the Ethiopian court. The rumour is invented.',

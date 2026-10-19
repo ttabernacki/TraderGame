@@ -1,5 +1,6 @@
 import { weightAt, type Entry } from '../ledger/ledger';
 import type { Game } from '../game/state';
+import { secondOpinion } from '../world/powers/rumours';
 import type { DeepPort, PatronDef, Perk, Stage } from './types';
 import { STAGES } from './types';
 
@@ -114,4 +115,39 @@ export function patronArrival(g: Game, deep: DeepPort): string | null {
   seen[tKey(deep.port)] = heardBy;
   seen[sKey(deep.port)] = idx;
   return said;
+}
+
+// -- The perks that are verbs ----------------------------------------------------------
+
+const askKey = (port: string) => `place:asked:${port}`;
+
+/** Whether his people have been asked today (they are asked once a call, not once a day: a day is enough to keep it honest). */
+export function canAskHisPeople(g: Game, deep: DeepPort): boolean {
+  const v = patronOf(g, deep);
+  if (!perkOf(v, 'rumour') || !v.unlocked.some((k) => k.id === 'second')) return false;
+  const last = g.powers.seen[askKey(deep.port)];
+  return last === undefined || g.clock.t - last >= 14 * 86400;
+}
+
+/**
+ * The Patron's people say whether a tale about their coast is told the same way at their end: a free second opinion on
+ * every unchecked rumour the captain has heard that concerns the Mina coast. Never the truth, as with any informer.
+ */
+export function askHisPeople(g: Game, deep: DeepPort, regionOf: (p: string) => string): string {
+  if (!canAskHisPeople(g, deep)) return 'His people have been asked this fortnight already.';
+  const here = regionOf(deep.port);
+  const asked = g.powers.rumours.filter((r) => r.heard && !r.checked && regionOf(r.place) === here);
+  if (asked.length === 0) return `${deep.patron.name} says there is nothing on this coast you have heard that his people have not heard told the same way.`;
+  let agree = 0;
+  for (const r of asked) {
+    r.checked = secondOpinion(r, g.seed);
+    r.checkedAt = g.clock.t;
+    if (r.checked === 'agrees') agree++;
+  }
+  g.powers.seen[askKey(deep.port)] = g.clock.t;
+  g.noteDeed('fact.checked', {
+    target: deep.port, place: deep.port, magnitude: 0.2,
+    note: `${deep.patron.name}'s people were asked about ${asked.length} tale${asked.length === 1 ? '' : 's'} of this coast; ${agree} told the same way.`,
+  });
+  return `${deep.patron.name}'s people go over ${asked.length === 1 ? 'the tale' : `${asked.length} tales`}. ${agree} told the same way at their end, and ${asked.length - agree} not.`;
 }

@@ -7,7 +7,7 @@ import { polityOfPort } from '../diplomacy/polities';
 import { PORTS, anchorageOf, portDef } from './ports';
 import { MONTH, setLaneModel, type LaneContext, type LaneModel, type LaneResult, type WorldHost } from './tick';
 import { postContracts } from './contracts';
-import { laneStateOf } from './laneState';
+import { laneStateOf, type LaneState } from './laneState';
 export { laneStateOf, newLaneState, type LaneState } from './laneState';
 import { stepHouse } from '../progression/rivalHouse';
 
@@ -74,8 +74,8 @@ const TRUNKS: [string, string, number][] = [
 ];
 /** Region order along the road, for the bridges between networks. */
 const BRIDGES: Region[] = ['europe', 'atlantic', 'maghreb', 'guinea', 'kongo', 'cape', 'swahili', 'arabia', 'india', 'east'];
-/** Neighbours each port reaches within its own network. */
-const NEAREST = 2;
+/** Lanes each port sends out to its best neighbours (plus the bridges and trunks). */
+const NEAREST = 3;
 const MAX_GOODS = 6;
 
 const isEast = (id: string): boolean => portDef(id).lon > 60;
@@ -88,8 +88,8 @@ function hash(s: string): number {
 
 const nmBetween = (a: string, b: string): number => haversine(anchorageOf(portDef(a)), anchorageOf(portDef(b))) / NM;
 
-/** What a lane from a to b would carry: goods the origin makes and the destination wants or is short of. */
-function goodsFor(a: string, b: string): string[] {
+/** What a lane from a to b would carry, best first: goods the origin makes and the destination wants or is short of. */
+function goodsFor(a: string, b: string): [string, number][] {
   const A = portDef(a), B = portDef(b);
   const scored: [string, number][] = [];
   for (const g of GOODS) {
@@ -99,10 +99,10 @@ function goodsFor(a: string, b: string): string[] {
     const bp = B.produces[g.id] ?? 0;
     let score = 0;
     if (hunger > 0) score = ab * hunger * Math.pow(g.lisbon, 0.3);
-    else if (bp > 0 && ab > bp + 0.15) score = (ab - bp) * 0.35 * Math.pow(g.lisbon, 0.3);
-    if (score > 0.3) scored.push([g.id, score]);
+    else if (bp > 0 && ab > bp + 0.1) score = (ab - bp) * 0.4 * Math.pow(g.lisbon, 0.3);
+    if (score > 0.15) scored.push([g.id, score]);
   }
-  return scored.sort((x, y) => y[1] - x[1]).slice(0, MAX_GOODS).map(([id]) => id);
+  return scored.sort((x, y) => y[1] - x[1]).slice(0, MAX_GOODS);
 }
 
 let table: LaneDef[] | null = null;
@@ -112,40 +112,45 @@ let byPort: Map<string, LaneDef[]> | null = null;
 export function lanes(): LaneDef[] {
   if (table) return table;
   const pairs = new Map<string, boolean>(); // 'a>b' to trunk
-  const link = (a: string, b: string, trunk = false): void => {
+  const link = (a: string, b: string, trunk = false, both = false): void => {
     if (a === b) return;
-    for (const k of [`${a}>${b}`, `${b}>${a}`]) pairs.set(k, (pairs.get(k) ?? false) || trunk);
+    for (const k of both ? [`${a}>${b}`, `${b}>${a}`] : [`${a}>${b}`]) pairs.set(k, (pairs.get(k) ?? false) || trunk);
   };
-  const byRegion = new Map<Region, string[]>();
-  for (const p of PORTS) {
-    const r = regionOf(p.id);
-    (byRegion.get(r) ?? byRegion.set(r, []).get(r)!).push(p.id);
-  }
-  // Neighbours within a network.
-  for (const ids of byRegion.values()) {
-    for (const a of ids) {
-      ids.filter((b) => b !== a).sort((x, y) => nmBetween(a, x) - nmBetween(a, y)).slice(0, NEAREST).forEach((b) => link(a, b));
+  const regions = new Map<string, Region>(PORTS.map((p) => [p.id, regionOf(p.id)]));
+  const order = (r: Region): number => { const i = BRIDGES.indexOf(r); return i < 0 ? 2.5 : i; };
+  // Neighbours: each port's best few within its own network and the next one along the road, by what they would trade and how far.
+  for (const A of PORTS) {
+    const cands: [string, number][] = [];
+    for (const B of PORTS) {
+      if (A.id === B.id || Math.abs(order(regions.get(A.id)!) - order(regions.get(B.id)!)) > 1) continue;
+      const gs = goodsFor(A.id, B.id);
+      if (gs.length === 0) continue;
+      const value = gs.reduce((sum, [, sc]) => sum + sc, 0);
+      cands.push([B.id, value / (1 + nmBetween(A.id, B.id) / 900)]);
     }
+    cands.sort((x, y) => y[1] - x[1] || (x[0] < y[0] ? -1 : 1)).slice(0, NEAREST).forEach(([b]) => link(A.id, b));
   }
-  // Bridges: the nearest pair of ports in networks next along the road, and a port alone in its network joins the nearest port at all.
+  // Bridges: the nearest pair of ports in networks next along the road, both ways, so no network is cut off.
+  const byRegion = new Map<Region, string[]>();
+  for (const p of PORTS) (byRegion.get(regions.get(p.id)!) ?? byRegion.set(regions.get(p.id)!, []).get(regions.get(p.id)!)!).push(p.id);
   for (let i = 1; i < BRIDGES.length; i++) {
     const A = byRegion.get(BRIDGES[i - 1]) ?? [], B = byRegion.get(BRIDGES[i]) ?? [];
     let best: [string, string, number] | null = null;
     for (const a of A) for (const b of B) { const d = nmBetween(a, b); if (!best || d < best[2]) best = [a, b, d]; }
-    if (best) link(best[0], best[1]);
+    if (best) link(best[0], best[1], false, true);
   }
   for (const [r, ids] of byRegion) {
     if (ids.length > 1 || BRIDGES.includes(r)) continue;
     const a = ids[0];
     const near = PORTS.filter((p) => p.id !== a).sort((x, y) => nmBetween(a, x.id) - nmBetween(a, y.id))[0];
-    if (near) link(a, near.id);
+    if (near) link(a, near.id, false, true);
   }
-  for (const [a, b] of TRUNKS) link(a, b, true);
+  for (const [a, b] of TRUNKS) link(a, b, true, true);
 
   const out: LaneDef[] = [];
   for (const [k, trunk] of pairs) {
     const [from, to] = k.split('>');
-    const goods = goodsFor(from, to);
+    const goods = goodsFor(from, to).map(([id]) => id);
     if (goods.length === 0) continue;
     const nm = nmBetween(from, to);
     const carrier = polityOfPort(from) ?? polityOfPort(to);

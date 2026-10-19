@@ -11,6 +11,7 @@ import type { Game } from '../game/state';
 import { chronicles, muster } from '../ledger/chronicle';
 import { companyEndLines } from '../company/company';
 import { button, card, el, kv } from './dom';
+import { fameBlock, fameLines } from './fameMap';
 
 /**
  * The end of the carreira.
@@ -46,6 +47,11 @@ export class EpilogueView {
           + 'this country will ever again have to buy an eastern spice from a man who bought it '
           + 'from a man who bought it in Alexandria. That is what the voyage was for, and it is '
           + 'now done, and it will not need doing again.'),
+
+        // Fame, not a score: the map of what the career found, claimed, lost and sold.
+        card('Your fame',
+          fameBlock(g),
+          ...fameLines(g).map((l) => el('p', {}, l))),
 
         card('The ship',
           kv('Sailed from Lisbon', '12 July 1482'),

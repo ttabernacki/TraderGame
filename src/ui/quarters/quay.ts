@@ -1,23 +1,24 @@
-import { characterOf } from '../../world/portCharacter';
-import { good } from '../../economy/goods';
 import { people } from '../../world/peoples';
-import { type House } from '../../economy/finance';
 import type { Game } from '../../game/state';
 import { dismissHomecoming, pendingHomecoming, quartersView } from '../../game/year';
-import { append, button, card, el, fold, foldCard, kv } from '../dom';
+import { deepPort } from '../../places';
+import { button, card, el, fold, foldCard, kv } from '../dom';
 import type { Ctx } from './ctx';
+import { deepPlaceCard, memoryCard, patronCard, stopCard } from './place';
+import { verb } from './verb';
 
-export function renderTown(ctx: Ctx, host: HTMLElement, g: Game, rel: ReturnType<Game['relationsFor']>): void {
+/** The quay: who is here, what the place is, and what is wrong with her before she sails. */
+export function quaySection(ctx: Ctx, host: HTMLElement, g: Game): void {
   const def = g.portHere!;
+  const rel = g.relationsFor(def.id);
   const pe = people(def.people);
   const unknown = !g.peopleKnown(def) && !rel.met;
+  const deep = deepPort(def.id);
 
-  // The facts of the place, in one line: who they are, how they take you,
-  // and what the harbour is. These were two tables of their own at the side
-  // of the page, every visit.
+  // The facts of the place, in one line: who they are, how they take you, and what the harbour is.
   const faith = { catholic: 'Catholic', muslim: 'Muslim', hindu: 'Hindu', traditional: 'their own gods', buddhist: 'Buddhist', confucian: 'of the Ming order' }[pe.faith];
   const chip = (k: string, v: string, cls = '') => el('span', { class: cls }, el('b', {}, k), v);
-  host.append(el('div', { class: 'port-strip' },
+  host.append(verb('town.strip', el('div', { class: 'port-strip' },
     chip('', `${pe.name} · ${pe.language} · ${faith}`),
     def.people === 'portuguese' ? null : chip('Regard', regardWord(rel.regard), rel.regard > 0.2 ? 'good' : rel.regard < -0.2 ? 'bad' : ''),
     def.people === 'portuguese' ? null : chip('Trade', rel.mayTrade ? 'leave granted' : 'no leave yet', rel.mayTrade ? 'good' : 'bad'),
@@ -26,7 +27,7 @@ export function renderTown(ctx: Ctx, host: HTMLElement, g: Game, rel: ReturnType
     chip('Shelter', qualityWord(def.anchorage)),
     chip('Victuals', qualityWord(def.refit)),
     chip('', { anchorage: 'a bare roadstead', village: 'a village', town: 'a town', city: 'a city', emporium: 'a great emporium' }[def.size]),
-  ));
+  )));
 
   const left = el('div', {});
   const right = el('div', {});
@@ -34,101 +35,93 @@ export function renderTown(ctx: Ctx, host: HTMLElement, g: Game, rel: ReturnType
   // The Year (game/year.ts): the homecoming card, once, then the quarters panel.
   const home = pendingHomecoming(g);
   if (home) {
-    left.append(card(`Home from the sea: year ${home.year}`,
+    left.append(verb('town.homecoming', card(`Home from the sea: year ${home.year}`,
       ...home.lines.map((l, i) => el('p', i === 0 ? { class: 'epilogue-lede' } : {}, l)),
-      el('div', { class: 'row' }, button('Lay it by', () => { dismissHomecoming(g); ctx.render(); }, { primary: true }))));
+      el('div', { class: 'row' }, button('Lay it by', () => { dismissHomecoming(g); ctx.render(); }, { primary: true })))));
   }
   const qv = quartersView(g);
   if (qv) {
-    left.append(foldCard(card(qv.title,
+    left.append(verb('town.year-quarters', foldCard(card(qv.title,
       el('p', {}, qv.season),
       ...qv.items.map((i) => kv(i.label, i.value)),
-      el('p', { class: 'flavour' }, qv.consequence + ' Leaving early is always allowed.')), qv.phase === 'quarters' ? '' : 'The season is open.', qv.phase === 'quarters'));
+      el('p', { class: 'flavour' }, qv.consequence + ' Leaving early is always allowed.')), qv.phase === 'quarters' ? '' : 'The season is open.', qv.phase === 'quarters')));
   }
 
-  // Coming among a people nobody from Europe has met is the single most
-  // dramatic thing in the game.
+  // Coming among a people nobody from Europe has met is the single most dramatic thing in the game.
   if (unknown) {
-    left.append(el('div', { class: 'first-contact' },
+    left.append(verb('town.first-contact', el('div', { class: 'first-contact' },
       el('div', { class: 'first-contact-eyebrow' }, 'No Portuguese has stood here before'),
       el('h2', {}, `The ${pe.name}`),
       el('p', {}, firstContactLine(pe)),
       el('p', { class: 'first-contact-do' },
         'Nothing may be bought or sold until whoever governs the place has seen you '
         + 'and decided what you are. Seek an audience.'),
-    ));
+    )));
   } else if (!rel.mayTrade && def.people !== 'portuguese') {
     left.append(el('div', { class: 'notice' },
       'You have no leave to trade here. Seek an audience with whoever governs the place before you open the hold.'));
   }
 
   // Somebody on the quay with a story. See progression/quests.
-  for (const offer of g.questOffersHere()) {
-    const o = offer.offer(g);
-    left.append(el('div', { class: 'quest-offer' },
-      el('div', { class: 'quest-offer-eyebrow' }, o.who),
-      el('h2', {}, offer.title),
-      el('p', {}, o.text),
-      el('div', { class: 'row' },
-        button(o.accept, () => {
-          ctx.notice = { text: g.acceptQuest(offer.id) };
-          ctx.render();
-        }, { primary: true }),
-      ),
-    ));
+  const offers = g.questOffersHere();
+  if (offers.length) {
+    const box = verb('town.quest-offers', el('div', {}));
+    for (const offer of offers) {
+      const o = offer.offer(g);
+      box.append(el('div', { class: 'quest-offer' },
+        el('div', { class: 'quest-offer-eyebrow' }, o.who),
+        el('h2', {}, offer.title),
+        el('p', {}, o.text),
+        el('div', { class: 'row' },
+          button(o.accept, () => {
+            ctx.notice = { text: g.acceptQuest(offer.id) };
+            ctx.render();
+          }, { primary: true }),
+        ),
+      ));
+    }
+    left.append(box);
   }
 
-  // The place itself: the blurb and what it is known for, as one card.
-  const ch = characterOf(def.id);
-  left.append(el('div', { class: 'port-character' },
-    el('div', { class: 'port-character-eyebrow' }, ch ? 'Known for' : def.name),
-    ch ? el('h2', {}, ch.signature) : null,
-    el('p', {}, def.blurb),
-    ch?.custom ? el('p', {}, ch.custom) : null,
-    ch?.danger ? el('p', { class: 'port-character-danger' }, ch.danger) : null,
-  ));
+  // The place itself: a Deep port, with a Patron and a calendar, or a Stop in four lines.
+  left.append(deep ? deepPlaceCard(g, def, deep) : stopCard(g, def));
+  if (deep) left.append(patronCard(g, deep));
+  left.append(memoryCard(g, def));
 
-  if (g.portGossip) {
-    left.append(card('What they say ashore',
-      el('p', { style: { fontStyle: 'italic', lineHeight: '1.7' } }, g.portGossip)));
-  }
-
-  // Before you sail: what is wrong with her, first and alone. When nothing
-  // is, one line says so and the full list waits behind it.
+  // Before you sail: what is wrong with her, first and alone.
   const checks = g.readiness();
   const wrong = checks.filter((c) => c.state !== 'good');
   const row = (c: typeof checks[number]) => el('div', { class: `ready-row ${c.state}` },
     el('div', { class: 'ready-line' }, el('span', {}, c.label), el('em', {}, c.value)),
     c.note ? el('div', { class: 'ready-note' }, c.note) : null);
-  right.append(wrong.length
+  right.append(verb('town.readiness', wrong.length
     ? card(wrong.some((c) => c.state === 'bad') ? 'Before you sail — she is not ready' : 'Before you sail',
       ...wrong.map(row),
       checks.length > wrong.length
         ? el('div', { class: 'ready-note', style: { marginTop: '6px' } },
           `${checks.filter((c) => c.state === 'good').map((c) => c.label.toLowerCase()).join(', ')}: all well.`)
         : null)
-    : fold('Before you sail', 'She is ready for sea.', false, ...checks.map(row)));
+    : fold('Before you sail', 'She is ready for sea.', false, ...checks.map(row))));
 
-  // Soundings, which are what make the lead line worth heaving on a coast
-  // nobody from Lisbon has sounded. See Game.knowsGroundAt.
+  // Soundings, which are what make the lead line worth heaving on a coast nobody from Lisbon has sounded.
   const soundPrice = g.localSoundingsPrice();
   if (soundPrice !== null) {
-    right.append(card('The local pilots',
+    right.append(verb('town.soundings', card('The local pilots',
       el('p', {}, 'A pilot here knows the bottom for a hundred and fifty miles each way. With it in the '
         + 'book, the lead tells you how far off the land you are, not just how deep the water is.'),
-      button(`Buy his soundings \u2014 ${soundPrice} cruzados`, () => {
+      button(`Buy his soundings — ${soundPrice} cruzados`, () => {
         ctx.notice = { text: g.buyLocalSoundings() };
         ctx.render();
       }, { disabled: g.crown.gold < soundPrice }),
-    ));
+    )));
   }
 
   // The people at length, for a captain who wants to read about them.
-  if (!unknown) right.append(fold(`About the ${pe.name}`, '', false, el('p', {}, pe.blurb)));
+  if (!unknown) right.append(verb('town.about-people', fold(`About the ${pe.name}`, '', false, el('p', {}, pe.blurb))));
 
   const monsoon = g.monsoonNow();
   if (monsoon) {
-    right.append(card('The season',
+    right.append(verb('town.season-wait', card('The season',
       el('p', { style: { fontSize: '13.5px' } }, `${monsoon.name}. ${monsoon.carries}`),
       el('p', { style: { fontSize: '13px', fontStyle: 'italic', color: 'var(--ink-soft)' } }, monsoon.against),
       el('div', { class: 'row', style: { alignItems: 'center' } },
@@ -139,7 +132,7 @@ export function renderTown(ctx: Ctx, host: HTMLElement, g: Game, rel: ReturnType
           ctx.render();
         }),
       ),
-    ));
+    )));
   }
 
   host.append(el('div', { class: 'cols side' }, left, right));
@@ -172,7 +165,7 @@ function firstContactLine(pe: ReturnType<typeof people>): string {
   return `${pe.blurb} ${tongue} ${faith} ${world}${rival}`;
 }
 
-function qualityWord(q: number): string {
+export function qualityWord(q: number): string {
   if (q > 0.8) return 'Excellent';
   if (q > 0.6) return 'Good';
   if (q > 0.4) return 'Fair';
@@ -180,7 +173,7 @@ function qualityWord(q: number): string {
   return 'Wretched';
 }
 
-function regardWord(r: number): string {
+export function regardWord(r: number): string {
   if (r > 0.6) return 'Warm';
   if (r > 0.25) return 'Friendly';
   if (r > -0.1) return 'Neutral';

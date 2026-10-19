@@ -22,7 +22,7 @@ import { laneStateOf } from './laneState';
  * (see `migrateVenture`), keeping its consigned cargo.
  */
 
-export interface Contract {
+export interface PortContract {
   id: string;
   /** Who posted it, for the line and for holding a grudge. */
   patron: string;
@@ -102,7 +102,7 @@ export function postContracts(h: WorldHost, t: number, mi: number): void {
   }
 }
 
-function makePosting(h: WorldHost, def: PortDef, gid: string, stock: number, t: number, mi: number): Contract | null {
+function makePosting(h: WorldHost, def: PortDef, gid: string, stock: number, t: number, mi: number): PortContract | null {
   const mk = h.markets;
   const g = good(gid);
   const base = mk.baseOf(def.id, gid);
@@ -130,11 +130,11 @@ function makePosting(h: WorldHost, def: PortDef, gid: string, stock: number, t: 
  * The contracts on offer at a port: those posted by a quay further along the road that this port makes the
  * good for, and that the captain knows the way to. `alongOf` is the road (progression/road `along`).
  */
-export function offersAt(
-  board: Contract[], at: PortDef, known: Set<string>, alongOf: (p: PortDef) => number,
+export function contractOffersAt(
+  board: PortContract[], at: PortDef, known: Set<string>, alongOf: (p: PortDef) => number,
   supply: (portId: string, goodId: string) => { stock: number; ratio: number }, now: number,
-): Contract[] {
-  const out: Contract[] = [];
+): PortContract[] {
+  const out: PortContract[] = [];
   const here = alongOf(at);
   for (const c of board) {
     if (c.taken || (c.expires ?? Infinity) <= now || c.toPort === at.id) continue;
@@ -152,12 +152,12 @@ export function offersAt(
 }
 
 /** A contract once signed: the clock starts, the advance is the captain's. */
-export function sign(c: Contract, now: number): Contract {
+export function sign(c: PortContract, now: number): PortContract {
   return { ...c, taken: true, dueBy: now + (c.days ?? 90) * 86400 };
 }
 
 /** A charter in a save, as a contract. Active ones keep their date, advance and consigned cargo. */
-export function migrateVenture(v: Record<string, unknown>): Contract {
+export function migrateVenture(v: Record<string, unknown>): PortContract {
   const fee = Number(v.fee) || 0;
   return {
     id: String(v.id ?? ''), patron: String(v.patron ?? 'a merchant'), fromPort: String(v.fromPort ?? ''), toPort: String(v.toPort ?? ''),
@@ -181,17 +181,17 @@ function unitPlural(unit: string, n: number): string {
 }
 
 /** A one-line description of what a contract asks. */
-export function contractLine(c: Contract): string {
+export function contractLine(c: PortContract): string {
   const g = good(c.goodId);
   return `${c.quantity} ${unitPlural(g.unit, c.quantity)} of ${g.name} to ${portDef(c.toPort).name}`;
 }
 
 /** Tons the contract's goods stow. */
-export function contractTons(c: Contract): number {
+export function contractTons(c: PortContract): number {
   return c.quantity * good(c.goodId).bulk;
 }
 
 /** How long is left, in days, or negative when it is already overdue. */
-export function daysLeft(c: Contract, t: number): number {
+export function daysLeft(c: PortContract, t: number): number {
   return (c.dueBy - t) / 86400;
 }

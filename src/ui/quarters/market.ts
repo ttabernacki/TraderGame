@@ -6,23 +6,26 @@ import { type PortDef } from '../../world/ports';
 import type { Game, TradeListing } from '../../game/state';
 import { append, button, card, el, fold, foldCard, kv } from '../dom';
 import type { Ctx } from './ctx';
+import { tagLast, verb } from './verb';
 
-export function renderMarket(ctx: Ctx, host: HTMLElement, g: Game, rel: ReturnType<Game['relationsFor']>): void {
+/** The Market's open section: trade at the scales or the barter table. */
+export function tradeSection(ctx: Ctx, host: HTMLElement, g: Game): void {
   const def = g.portHere!;
+  const rel = g.relationsFor(def.id);
   if (!rel.mayTrade) {
-    host.append(el('div', { class: 'notice grave' },
+    host.append(verb('market.closed', el('div', { class: 'notice grave' },
       'The market is closed to you. Nobody will deal until the governor says they may.',
       el('div', { style: { marginTop: '9px' } },
         button('Seek an audience', () => ctx.onAudience(), {
           primary: true,
           disabled: def.people === 'portuguese',
-        }))));
+        })))));
     return;
   }
   const listings = g.marketHere();
 
   append(host,
-    el('div', { class: 'card' },
+    verb('market.purse', el('div', { class: 'card' },
       el('div', { class: 'purse-row' },
         el('div', {}, kv('Purse', `${g.crown.gold.toFixed(0)} cruzados`)),
         el('div', {}, kv('Hold free', `${g.ship.holdFree.toFixed(1)} of ${g.ship.holdCapacity} tons`
@@ -33,27 +36,27 @@ export function renderMarket(ctx: Ctx, host: HTMLElement, g: Game, rel: ReturnTy
               `${g.creditFree.toFixed(0)} to draw` + (g.crown.debt > 0 ? ` · ${g.crown.debt.toFixed(0)} owed` : '')))
           : null,
       ),
-    ),
-    marketCard(ctx, g, def),
+    )),
+    verb('market.info', marketCard(ctx, g, def)),
     el('div', { class: 'tabs market-mode' },
       el('button', { class: ctx.marketMode === 'scales' ? 'active' : '', onclick: () => { ctx.marketMode = 'scales'; ctx.render(); } }, 'At the scales, for coin'),
       el('button', { class: ctx.marketMode === 'barter' ? 'active' : '', onclick: () => { ctx.marketMode = 'barter'; ctx.render(); } }, 'The barter table'),
     ),
   );
 
-  if (ctx.marketMode === 'barter') renderBarter(ctx, host, g, listings);
-  else renderScales(ctx, host, g, listings);
+  if (ctx.marketMode === 'barter') { renderBarter(ctx, host, g, listings); tagLast(host, 'market.barter'); }
+  else { renderScales(ctx, host, g, listings); tagLast(host, 'market.scales'); }
 
   const extras = el('div', { class: 'cols two' });
   const l2 = el('div', {}), r2 = el('div', {});
   const eye = factorsEye(ctx, g);
-  if (eye) l2.append(eye);
+  if (eye) l2.append(verb('market.factors-eye', eye));
   const letters = lettersCard(ctx, g);
-  if (letters) l2.append(foldCard(letters));
+  if (letters) l2.append(verb('market.letters', foldCard(letters)));
   if (def.id === 'lisboa') {
-    r2.append(foldCard(kingsGoodsCard(ctx, g)));
+    r2.append(verb('market.kings-goods', foldCard(kingsGoodsCard(ctx, g))));
     const ant = antwerpCard(ctx, g);
-    if (ant) r2.append(foldCard(ant));
+    if (ant) r2.append(verb('market.antwerp', foldCard(ant)));
   }
   extras.append(l2, r2);
   host.append(extras);

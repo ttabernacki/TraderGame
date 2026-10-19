@@ -5,6 +5,10 @@ import { KIND_ORDER, KIND_TITLE, byKind, knownFacts, type FactKind } from '../kn
 import { life } from '../ledger/life';
 import { button, card, clear, el, fold } from './dom';
 import { factCard } from './factCard';
+import { fameBlock, fameLines } from './fameMap';
+import { fameOf } from '../knowledge/fame';
+import { claimName } from '../knowledge/claims';
+import { sellSheet, sheetOffer, sheetRows, levelWord, type SaleKind } from '../knowledge/sheets';
 
 /**
  * O Livro do Capitão: the one book everything is kept in.
@@ -106,10 +110,10 @@ const EMPTY: Record<FactKind, string> = {
   politics: 'Nothing has been written about the peoples you have met.',
 };
 
-export type KnowledgeTab = 'life' | 'known' | 'courtesies' | 'log';
+export type KnowledgeTab = 'life' | 'fame' | 'known' | 'courtesies' | 'log';
 
 const TABS: [KnowledgeTab, string][] = [
-  ['life', 'Life'], ['known', 'Known'], ['courtesies', 'Courtesies'], ['log', 'Log'],
+  ['life', 'Life'], ['fame', 'Fame'], ['known', 'Known'], ['courtesies', 'Courtesies'], ['log', 'Log'],
 ];
 
 /**
@@ -129,6 +133,7 @@ export class KnowledgeView {
   private body = el('div', { class: 'screen-body' });
   private tab: KnowledgeTab = 'life';
   private logAll = false;
+  private saleLine = '';
   private knownAll = new Set<FactKind>();
   private game: Game | null = null;
 
@@ -160,6 +165,7 @@ export class KnowledgeView {
     const inner = el('div', { class: 'scroll-narrow' });
     switch (this.tab) {
       case 'life': this.renderLife(inner, g); break;
+      case 'fame': this.renderFame(inner, g); break;
       case 'known': this.renderKnown(inner, g); break;
       case 'courtesies': this.renderCourtesies(inner, g); break;
       case 'log': this.renderLog(inner, g); break;
@@ -187,6 +193,53 @@ export class KnowledgeView {
           l.did ? el('div', { class: 'life-did' }, l.did) : null));
       }
     }
+  }
+
+  /**
+   * Fame: the career's exploration on a map, the claims the Casa's sheet carries and what became of them,
+   * and the survey sheets, which can be sold, given, published or kept. See knowledge/fame, knowledge/sheets.
+   */
+  private renderFame(host: HTMLElement, g: Game): void {
+    host.append(el('p', { class: 'quote' },
+      'What you have found, claimed and put to rest, and what you have done with what you drew. '
+      + 'A claim is a stone on a place; a found place with no stone on it can still be taken.'));
+    host.append(fameBlock(g));
+    for (const line of fameLines(g)) host.append(el('p', {}, line));
+
+    // The claims the captain has been told of, with what he has settled. Never which are true.
+    const fame = fameOf(g);
+    const told = g.claims.list.filter((c) => c.told);
+    host.append(fold('The Casa\u2019s claims', `${told.length} heard of`, true,
+      told.length === 0 ? el('p', { class: 'life-none' }, 'Nothing has been sworn to you yet. Talk to pilots on the quays of the road.') : null,
+      ...told.map((c) => el('div', { class: 'life-line' },
+        el('div', { class: 'life-said' }, claimName(c).replace(/^./, (x) => x.toUpperCase())),
+        el('div', { class: 'life-did' },
+          c.status === 'open' ? 'Unsettled: the sheet draws it, and nobody you trust has been.'
+            : c.status === 'false' ? 'Put to rest: there is nothing there, and you have said so.'
+            : c.status === 'found' ? 'Found, and not claimed. Until a stone stands on it, it is anybody\u2019s.'
+            : c.status === 'held' ? 'Held: your stone stands, and the Casa will grant ground nearby at a discount.'
+            : `Lost: entered under ${c.by ?? 'another'}\u2019s name.`)))));
+    void fame;
+
+    host.append(fold('Your survey sheets', '', true,
+      el('p', { class: 'life-meta' },
+        'A sheet is a stretch of coast at the grade you hold it. The Casa pays standing and some money; the Genoese pay more and the Casa hears of it; '
+        + 'the other captain pays most and works that coast faster for it; published, it raises everyone\u2019s grade, his included, and pays only fame. '
+        + 'A sheet is sold again only after the coast changes or when you have run more of it.'),
+      this.saleLine ? el('p', { class: 'flavour' }, this.saleLine) : null,
+      ...sheetRows(g).filter((r) => r.level >= 0.2).map((r) => {
+        const actions: [string, SaleKind][] = [['The Casa', 'casa'], ['Give', 'gift'], ['The Genoese', 'genoese'], [g.rival.name.split(' ')[0], 'rival'], ['Publish', 'publish']];
+        return el('div', { class: 'life-line' },
+          el('div', { class: 'life-said' }, `${r.region.name}: ${r.word} (${r.level.toFixed(1)})`),
+          el('div', { class: 'life-meta' }, `Casa ${levelWord(r.casa)} \u00b7 Genoese ${levelWord(r.genoese)} \u00b7 ${g.rival.name.split(' ')[0]} ${levelWord(r.rival)} \u00b7 all ${levelWord(r.world)}`),
+          el('div', { class: 'foot-actions' }, ...actions.map(([label, kind]) => {
+            const o = sheetOffer(g, r.region.id, kind);
+            const price = o.ok ? (o.money > 0 ? ` ${o.money}c` : o.standing > 0 ? ` +${o.standing}` : '') : '';
+            return button(`${label}${price}`, () => { this.saleLine = sellSheet(g, r.region.id, kind); this.render(); },
+              { disabled: !o.ok, ghost: true, title: o.ok ? `${o.buyer}: ${o.money} cruzados, ${o.standing} standing${o.heat ? `, ${o.heat} standing lost with the Casa` : ''}` : o.why });
+          })));
+      }),
+      sheetRows(g).every((r) => r.level < 0.2) ? el('p', { class: 'life-none' }, 'You have drawn too little of any coast to sell. Run a stretch of it, and sound it.') : null));
   }
 
   private renderKnown(host: HTMLElement, g: Game): void {

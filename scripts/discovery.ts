@@ -11,7 +11,8 @@ import { NM, haversine, type LatLon } from '../src/core/math';
 import { Game } from '../src/game/state';
 import { AGREED_W } from '../src/navigation/charts';
 import { along } from '../src/progression/road';
-import { advanceRival } from '../src/progression/rival';
+import { advanceRival, rivalFrontierKnowledge } from '../src/progression/rival';
+import { frontierOf } from '../src/progression/rivalHouse';
 import { coastVerticesNear } from '../src/world/landmass';
 import { ISLES } from '../src/world/isles';
 import { portDef } from '../src/world/ports';
@@ -234,6 +235,7 @@ function drawRegion(g: Game, region: string, k: number): void {
   const half = sheetOffer(g, 'guinea', 'casa');
   const lvlHalf = half.gain;
 
+  g.crown.standing = 200;
   const gold0 = g.crown.gold, ledger0 = g.ledger.length, st0 = g.crown.standing;
   sellSheet(g, 'guinea', 'rival');
   const after = buyerLevel(g, 'rival', 'guinea');
@@ -242,13 +244,14 @@ function drawRegion(g: Game, region: string, k: number): void {
   check('the other buyers still hold nothing', buyerLevel(g, 'casa', 'guinea') === 0 && buyerLevel(g, 'genoese', 'guinea') === 0);
   check('the same sheet does not sell twice to the same man', !sheetOffer(g, 'guinea', 'rival').ok);
 
-  // The rival's pace reads it.
-  const fast = { ...g.rival, frontierLat: 10, standing: 20, claimed: [] as string[] };
-  const slow = { ...fast };
-  const rn = (): Rng => new Rng(5);
-  advanceRival(fast, 365, 5, 100, rn(), 3);
-  advanceRival(slow, 365, 5, 100, rn(), 0);
-  check('what the rival holds of a coast speeds his work on it', fast.frontierLat < slow.frontierLat, `${fast.frontierLat.toFixed(2)} < ${slow.frontierLat.toFixed(2)}`);
+  // The rival's pace reads it: two identical rivals, one holding a sheet of the coast he is working.
+  const slow = new Game(7), fast = new Game(7);
+  fast.rival.sheets = { kongo: { level: 3, epoch: epochAt(fast.seed, 'kongo', fast.clock.date.year), t: fast.clock.t } };
+  const lat0 = frontierOf(fast.rival);
+  for (let i = 0; i < 12; i++) {
+    for (const r of [slow, fast]) advanceRival(r.rival, 100, r.ship.state.pos.lat, 100, new Rng(9 + i), rivalFrontierKnowledge(r.rival, r.seed, r.clock.date.year));
+  }
+  check('what the rival holds of the coast he is working speeds his work on it', frontierOf(fast.rival) < frontierOf(slow.rival) && frontierOf(slow.rival) < lat0, `${frontierOf(fast.rival).toFixed(2)} < ${frontierOf(slow.rival).toFixed(2)} (from ${lat0})`);
 
   // Publishing raises everyone's, the rival's included.
   const g2 = new Game(7);

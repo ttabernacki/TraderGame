@@ -74,6 +74,8 @@ export interface TradeListing extends Listing {
   casa: boolean;
   /** The premium it carries when laid on the barter table here. */
   barter: number;
+  /** A run: the King's good sold where the Casa is not the buyer. Heat on the road it came by (economy/contraband). */
+  run?: boolean;
 }
 import { Crown, commissionPoints, portName, type Patent } from '../progression/crown';
 import { ARCS, ARC_BY_ID, BONDS, dueBeat, type BondId } from '../progression/arcs';
@@ -125,8 +127,17 @@ import { difficultyDef, type Difficulty, type DifficultyDef } from './difficulty
 import { gradeAt as gradeAtPos, laneRisk as laneRiskOf, type Grade } from '../navigation/chartGrade';
 import { checkLead, hearRumour, type Lead } from '../progression/leads';
 import { featureNear, type CoastFeature } from '../world/features';
-import { charterDays, daysLeft, offerVentures, ventureLine, type Venture } from '../progression/ventures';
-import { advanceRival, newRival, rivalFrontierKnowledge, rivalGossip, rivalTrade, rivalWasHere, type RivalState } from '../progression/rival';
+import { charterDays } from '../progression/ventures';
+import { contractLine, contractOffersAt, daysLeft, sign as signPosting, type PortContract } from '../world/contracts';
+import { laneTrend } from '../world/lanes';
+import { quoteTrend } from '../economy/trade';
+import { type LaneState } from '../world/laneState';
+import { addHeat, coolForDeed, inspect, isRun, newHeat, runPrice, type HeatState } from '../economy/contraband';
+import { duesFor } from '../economy/dues';
+import { migrateVentures } from './saveResolvers';
+import { along as roadAlong } from '../progression/road';
+import { ally as rivalAllyHouse, bindRival, buyOut as rivalBuyOutHouse, buyOutPrice, canAlly, houseOf } from '../progression/rivalHouse';
+import { advanceRival, newRival, rivalFrontierKnowledge, rivalGossip, rivalWasHere, type RivalState } from '../progression/rival';
 import { advanceClaims, claimOnIsle, hearClaims, migrateClaims, newClaims, seedClaims, siteDiscount, useSite, watchClaims, type ClaimsState } from '../knowledge/claims';
 import { inheritChart, migrateSheets, newSheets, rivalMeanLevel, surveyRate, type SheetsState } from '../knowledge/sheets';
 import { rollRivalMeeting } from '../progression/rivalEvents';
@@ -479,10 +490,21 @@ export class Game {
 
   /** Rumours picked up in port, and the ones already run down. */
   leads: Lead[] = [];
-  /** Merchants' charters taken on the captain's own account. */
-  ventures: Venture[] = [];
-  /** Charters on offer where she now lies, refreshed with the market. */
-  ventureOffers: Venture[] = [];
+  /**
+   * Contracts signed on the captain's own account (world/contracts); a charter from an older save is one of
+   * these with `kind: 'venture'`.
+   */
+  contracts: PortContract[] = [];
+  /** @deprecated the old name for `contracts`; the screens still read it. */
+  get ventures(): PortContract[] { return this.contracts; }
+  /** Contracts on offer where she now lies, refreshed with the market. */
+  ventureOffers: PortContract[] = [];
+  /** Contracts posted by quays that have run short, not yet signed (the board; world/contracts). */
+  postings: PortContract[] = [];
+  /** The NPC lanes' memory: trends, scarcity counts, last month's flows (world/lanes). Made on first use. */
+  lanes?: LaneState;
+  /** What the captain carries with the weigh-house: heat on the origins of the King's goods run (economy/contraband). */
+  heat: HeatState = newHeat();
   /** The other captain, working his way down the coast while you refit. */
   rival: RivalState;
   /** What they are saying about the other man in the port she now lies in. */
@@ -498,7 +520,7 @@ export class Game {
   shoreReport: string | null = null;
   /** Landings made here, so a coast cannot be milked by going in ten times. */
   private shoreVisits = new Map<string, number>();
-  private nextVentureId = 1;
+  nextContractId = 1;
   private nextLeadId = 1;
 
   /** Everything owed on the Rua Nova, and what the houses there think of you. */
@@ -2353,13 +2375,18 @@ export class Game {
       this.ship.cargo.map((c) => c.goodId))
       .map((l) => {
         const casa = lisbon && MONOPOLY.includes(l.goodId) && !this.hasLicence(l.goodId);
+        // The King's goods run to a buyer who is not the King pay 1.4 to 2.2 times what the Casa would (economy/contraband).
+        // Only a buyer who really wants it and does not make it himself: a quay that grows the stuff has no use for yours.
+        const run = l.wanted && !l.local && l.appetite > 0 && isRun(def, l.goodId, this.hasLicence(l.goodId));
+        const baseBid = run ? Math.max(l.bid, runPrice(def, l.goodId) / (1 + this.markets.glutOf(portId, l.goodId) * 1.5)) : l.bid;
         return {
           ...l,
-          rawAsk: l.ask, rawBid: l.bid,
+          rawAsk: l.ask, rawBid: baseBid,
           ask: l.ask * pay.coin,
           // A town short of coin pays you in what coin it has, and not much of it.
-          bid: l.bid / Math.sqrt(pay.coin) * (casa ? (this.can('kingsPartner') ? 0.9 : CASA_SHARE) : 1),
+          bid: baseBid / Math.sqrt(pay.coin) * (casa ? (this.can('kingsPartner') ? 0.9 : CASA_SHARE) : 1),
           casa,
+          run,
           barter: pay.takes[l.goodId] ?? 1,
         };
       });
@@ -2381,7 +2408,11 @@ export class Game {
     for (const l of this.marketHere(portId)) {
       const n = noise > 0 ? 1 + this.rng.range(-noise, noise) : 1;
       const lie = falseGood === l.goodId ? 1.7 : 1;
-      quotes[l.goodId] = { ask: l.ask * n, bid: l.bid * n * lie, stock: l.stock, wanted: l.wanted, local: l.local };
+      const ask = l.ask * n, bid = l.bid * n * lie;
+      quotes[l.goodId] = {
+        ask, bid, stock: l.stock, wanted: l.wanted, local: l.local,
+        trend: quoteTrend(this.trade.sheets[portId]?.quotes[l.goodId], bid, ask, laneTrend(this, portId, l.goodId)),
+      };
     }
     const prev = this.trade.sheets[portId];
     // A letter never overwrites what you saw with your own eyes more recently.
@@ -2544,6 +2575,8 @@ export class Game {
     this.ship.addCargo(goodId, take, paid, q);
     this.crown.gold -= cost;
     this.markets.buy(port, goodId, take);
+    // Where the King's goods came from: the weigh-house reckons heat by origin.
+    if (MONOPOLY.includes(goodId)) this.heat.origin[goodId] = port;
     this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
     this.enter('buy', `${take.toFixed(0)} ${unitOf(gd, take)} of ${gd.english.toLowerCase()} at ${portDef(port).name}`, -cost);
     this.logEvent('trade', `Bought ${take.toFixed(0)} ${gd.unit} of ${gd.name.toLowerCase()} at ${paid.toFixed(1)} the ${gd.unit}, ${cost.toFixed(0)} cruzados in all. ${gradeWord(q)}.`);
@@ -2585,6 +2618,7 @@ export class Game {
       }
     }
     this.crown.gold += revenue;
+    if (l.run || (quay && MONOPOLY.includes(goodId))) this.noteRun(goodId, take);
     const shared = this.takeShares(revenue);
     const profit = revenue - costBasis;
     this.enter('sell', `${take.toFixed(0)} ${unitOf(gd, take)} of ${gd.english.toLowerCase()} at ${portDef(port).name}${l.casa && !quay ? ', to the Casa' : quay ? ', on the quay' : ''}`, revenue);
@@ -5140,8 +5174,8 @@ export class Game {
    */
   refreshPortBusiness(def: PortDef): void {
     const known = new Set(this.chart.ports.keys());
-    this.ventureOffers = offerVentures(
-      def, this.clock.t, this.rng, known, () => `v${this.nextVentureId++}`, this.markets,
+    this.ventureOffers = contractOffersAt(
+      this.postings, def, known, (p) => roadAlong(anchorageOf(p)), (pid, gid) => this.markets.supply(pid, gid), this.clock.t,
     );
 
     // A port gives up one rumour per visit at most, and only when there is
@@ -5710,34 +5744,56 @@ export class Game {
     };
   }
 
-  /** Take a merchant's charter, on your own account and at your own risk. */
+  /**
+   * Sign a contract a quay has posted (world/contracts). Nothing is loaded for him: the goods are his to bring,
+   * from the market, to the quay that is short of them; the advance is his, and forfeit with a penalty if he does not.
+   */
   acceptVenture(id: string): string {
-    const v = this.ventureOffers.find((x) => x.id === id);
-    if (!v || v.taken) return 'That charter is no longer on offer.';
-    const taken = this.ship.addCargo(v.goodId, v.quantity, 0);
-    if (taken < v.quantity - 0.01) {
-      // Put back whatever went in: a part cargo discharges no charter.
-      if (taken > 0) this.ship.removeCargo(v.goodId, taken);
-      return 'She has not the room for it.';
-    }
-    v.taken = true;
-    v.loaded = true;
-    // The merchant's goods come off this quay, so the town has that much less of them.
-    this.markets.buy(v.fromPort, v.goodId, v.quantity);
-    this.crown.gold += v.advance;
-    this.ventures.push(v);
+    const offer = this.ventureOffers.find((x) => x.id === id);
+    if (!offer || offer.taken) return 'That contract is no longer on offer.';
+    const c = signPosting(offer, this.clock.t);
+    this.crown.gold += c.advance;
+    this.contracts.push(c);
+    this.postings = this.postings.filter((x) => x.id !== id);
     this.ventureOffers = this.ventureOffers.filter((x) => x.id !== id);
     this.logEvent('trade',
-      `Signed for ${v.patron}: ${ventureLine(v)}, ${v.fee} cruzados on delivery and `
-      + `${v.advance} in hand. ${Math.round(daysLeft(v, this.clock.t))} days allowed.`, true);
-    return `Loaded. ${v.advance} cruzados in hand.`;
+      `Signed for ${c.patron}: ${contractLine(c)}, ${c.fee} cruzados on delivery of which ${c.advance} in hand. `
+      + `${Math.round(daysLeft(c, this.clock.t))} days allowed. The goods are yours to bring.`, true);
+    return `Signed. ${c.advance} cruzados in hand; ${c.fee - c.advance} more when it is delivered.`;
   }
 
-  /** Anything consigned here is landed and paid for on arrival. */
+  /** Contracts open to the captain as signed, newest last. */
+  get activeContracts(): PortContract[] { return this.contracts.filter((c) => !c.delivered && !c.failed); }
+
+  /** Anything signed for this quay is landed and paid for on arrival. */
   private deliverVentures(def: PortDef): void {
-    for (const v of this.ventures) {
+    for (const v of this.contracts) {
       if (v.delivered || v.failed || v.toPort !== def.id) continue;
-      if (this.ship.quantityOf(v.goodId) < v.quantity - 0.01) {
+      const held = this.ship.quantityOf(v.goodId);
+      if (v.kind === 'posted') {
+        // A posted contract is the captain's own cargo: arriving without it is not a failure, only a call made too early.
+        if (held < v.quantity - 0.01) {
+          this.logEvent('trade', `${v.patron} asks for his ${good(v.goodId).name}: ${contractLine(v)}. It is not aboard, and the date stands.`, false);
+          continue;
+        }
+        this.ship.removeCargo(v.goodId, v.quantity);
+        // The quay is restocked: that is what the post was for.
+        this.markets.receive(def.id, v.goodId, v.quantity);
+        v.delivered = true;
+        const due = Math.max(0, v.fee - v.advance);
+        this.crown.gold += due;
+        this.enter('contract', `Delivered ${contractLine(v)}`, due);
+        const renown = Math.max(1, Math.round(v.fee / 90));
+        this.crown.standing += renown;
+        this.crown.lifetimeStanding += renown;
+        this.crew.morale = clamp(this.crew.morale + 0.04, 0, 1);
+        this.noteDeed('contract.filled', { target: v.patron, place: def.id, magnitude: 0.5, silent: true, note: `Landed ${contractLine(v)} for ${v.patron}; paid ${v.fee} cruzados in all.` });
+        this.pushAlert(`Contract filled. ${v.fee} cruzados in all.`, 'note');
+        this.logEvent('trade',
+          `Landed ${contractLine(v)} for ${v.patron}, within his time, and was paid the rest of ${v.fee} cruzados on the quay. The shelves here are fuller for it.`, true);
+        continue;
+      }
+      if (held < v.quantity - 0.01) {
         v.failed = true;
         this.noteDeed('commission.failed', { target: v.patron, magnitude: 0.6, note: `${v.patron}\u2019s ${good(v.goodId).english.toLowerCase()} was not aboard at ${def.name}.` });
         this.crown.gold -= v.penalty;
@@ -5758,10 +5814,10 @@ export class Game {
       this.crown.standing += renown;
       this.crown.lifetimeStanding += renown;
       this.crew.morale = clamp(this.crew.morale + 0.04, 0, 1);
-      this.noteDeed('commission.delivered', { target: v.patron, magnitude: 0.5, silent: true, note: `Landed ${ventureLine(v)} for ${v.patron} at ${def.name}; paid ${v.fee} cruzados.` });
+      this.noteDeed('commission.delivered', { target: v.patron, magnitude: 0.5, silent: true, note: `Landed ${contractLine(v)} for ${v.patron} at ${def.name}; paid ${v.fee} cruzados.` });
       this.pushAlert(`Charter discharged. ${v.fee} cruzados.`, 'note');
       this.logEvent('trade',
-        `Landed ${ventureLine(v)} for ${v.patron}, within his time, and was paid ${v.fee} `
+        `Landed ${contractLine(v)} for ${v.patron}, within his time, and was paid ${v.fee} `
         + 'cruzados on the quay without argument.', true);
     }
   }
@@ -5958,7 +6014,7 @@ export class Game {
   dockedSinceT = 0;
 
   /** Charters still running, for the orders panel. */
-  get activeVentures(): Venture[] {
+  get activeVentures(): PortContract[] {
     return this.ventures.filter((v) => !v.delivered && !v.failed);
   }
 
@@ -5977,7 +6033,7 @@ export class Game {
    * merchant's goods leaving your hold when his factor catches up with you, and
    * not a discount on a shipment of diamonds.
    */
-  get consignedVentures(): Venture[] {
+  get consignedVentures(): PortContract[] {
     return this.ventures.filter((v) => v.loaded && !v.delivered);
   }
 
@@ -6083,13 +6139,22 @@ export class Game {
       if (v.delivered || v.failed) continue;
       if (!inPort && this.clock.t > v.dueBy) {
         v.failed = true;
-        this.noteDeed('commission.failed', { target: v.patron, magnitude: 0.6, silent: true, note: `The charter for ${ventureLine(v)} ran out of time.` });
+        if (v.kind === 'posted') {
+          // The goods were his own, so nothing is taken back but what was advanced and the forfeit.
+          this.noteDeed('contract.lapsed', { target: v.patron, place: v.toPort, magnitude: 0.6, silent: true, note: `The contract for ${contractLine(v)} ran out of time.` });
+          this.pushAlert(`${v.patron}\u2019s contract is out of time.`, 'warning');
+          this.logEvent('trade',
+            `The contract for ${contractLine(v)} has lapsed. ${v.patron} wanted it by now; the advance and ${v.penalty - v.advance} more are forfeit, `
+            + 'and the quay is as short as it was.', true);
+        } else {
+          this.noteDeed('commission.failed', { target: v.patron, magnitude: 0.6, silent: true, note: `The charter for ${contractLine(v)} ran out of time.` });
+          this.pushAlert(`${v.patron}\u2019s charter is out of time.`, 'warning');
+          this.logEvent('trade',
+            `The charter for ${contractLine(v)} is void. ${v.patron} has been repaid his advance `
+            + `and ${v.penalty} cruzados besides, and will tell the Rua Nova about it.`, true);
+        }
         this.crown.standing = Math.max(0, this.crown.standing - v.penalty * 0.1);
         this.crown.gold -= v.penalty;
-        this.pushAlert(`${v.patron}\u2019s charter is out of time.`, 'warning');
-        this.logEvent('trade',
-          `The charter for ${ventureLine(v)} is void. ${v.patron} has been repaid his advance `
-          + `and ${v.penalty} cruzados besides, and will tell the Rua Nova about it.`, true);
       }
     }
     // A charter that runs out while she is lying at a quay is reclaimed there
@@ -6099,11 +6164,7 @@ export class Game {
 
   /** The other captain works his way down the coast whether you sail or not. */
   private advanceRival(days: number): void {
-    const cargo = rivalTrade(this.rival, this);
-    if (cargo && this.dockedAt === 'lisboa') {
-      const gd = good(cargo.goodId);
-      this.logEvent('trade', `${this.rival.name}'s caravel came up the Tagus from ${portDef(cargo.port).name} with ${cargo.qty} ${gd.unit}s of ${gd.english.toLowerCase()}. The price of it on the quay went down the same afternoon.`, true);
-    }
+    // His house trades in the monthly lane pass (progression/rivalHouse); here is only his discovery.
     for (const name of advanceClaims(this, days, rivalMeanLevel(this))) {
       this.pushAlert(`${this.rival.name} has been before you at ${name}.`, 'warning');
     }
@@ -7609,10 +7670,94 @@ export class Game {
   year: YearState = newYear();
   /** The Ledger (B1): every consequential act, tagged. Append-only. See ledger/. */
   ledger: LedgerEntry[] = [];
+  // --- Port dues, the weigh-house and the other house (D1, D2) ---------------
+
+  /** Port dues and presents for the call (economy/dues): charged on arrival, never more than the purse holds. */
+  private payPortDues(def: PortDef): void {
+    const mods = this.markets.modifiers?.(def.id, this.clock.t);
+    const d = duesFor(def, this.ship.baseHull.tons, mods?.duesMult ?? 1, this.relationsFor(def.id).regard);
+    const due = d.dues + d.present;
+    if (due <= 0) return;
+    const paid = Math.min(due, Math.max(0, Math.floor(this.crown.gold)));
+    this.crown.gold -= paid;
+    this.enter('dues', `Port dues at ${def.name}`, -paid);
+    this.logEvent('trade', d.line + (paid < due ? ` The purse covered ${paid} of it.` : ''), true);
+  }
+
+  /** The King's good has been run to a buyer who is not the King, or sold on the quay at Lisbon: heat on the road it came by. */
+  private noteRun(goodId: string, qty: number): void {
+    const add = addHeat(this.heat, goodId, qty, good(goodId).lisbon * CASA_SHARE);
+    if (add >= 0.5) {
+      this.noteDeed('contraband.run', { target: this.heat.origin[goodId] ?? goodId, place: this.dockedAt ?? '', magnitude: Math.min(1, add / 4), silent: true,
+        note: `Sold ${Math.round(qty)} ${good(goodId).unit} of ${good(goodId).english.toLowerCase()} past the Casa.` });
+    }
+  }
+
+  /** The weigh-house at Lisbon looks at what the captain has been running (economy/contraband). */
+  private casaInspects(): void {
+    const res = inspect(this.heat, this.clock.t, this.rng.next(), auditCover(this));
+    if (res.level === 0) return;
+    if (res.level === 1) { this.pushAlert('The weigh-house is asking about your pepper.', 'warning'); this.logEvent('trade', res.text, true); return; }
+    const fine = Math.min(res.fine, Math.max(0, Math.floor(this.crown.gold)));
+    this.crown.gold -= fine;
+    this.crown.standing = Math.max(0, this.crown.standing - res.standing);
+    this.casa.regard = clamp(this.casa.regard - (res.forfeit ? 0.25 : 0.1), -1, 1);
+    let seized = 0;
+    if (res.forfeit) {
+      for (const id of MONOPOLY) { const q = this.ship.quantityOf(id); if (q > 0) { this.ship.removeCargo(id, q); seized += q * good(id).lisbon * CASA_SHARE; } }
+      this.crown.syncCargoObjectives((id) => this.ship.quantityOf(id));
+    }
+    this.enter('fine', res.forfeit ? 'The weigh-house: fine and the King’s goods seized' : 'The weigh-house: fine', -fine);
+    this.noteDeed('smuggle.caught', { target: 'portugal', place: 'lisboa', magnitude: res.forfeit ? 1 : 0.6,
+      note: `The Casa fined me ${fine} cruzados for what I ran${res.forfeit ? `, and took ${Math.round(seized)} cruzados of the King’s goods from the hold` : ''}.` });
+    this.pushAlert(res.forfeit ? 'The Casa has seized the King’s goods and fined you.' : 'The Casa has fined you.', 'grave');
+    this.logEvent('trade', `${res.text} ${fine} cruzados.`, true);
+  }
+
+  /** Something done with a heat-cooling meaning (a gift, a sold Fact, a favour). */
+  private coolHeat(tag: string, magnitude: number): void {
+    const took = coolForDeed(this.heat, tag, magnitude, this.clock.t);
+    if (took >= 0.4) this.logEvent('note', 'The weigh-house’s interest in your cargoes has cooled a little.', false);
+  }
+
+  /** What the Casa asks to broker the rival's house over to you. */
+  get rivalBuyOutPrice(): number { return buyOutPrice(this.rival); }
+
+  /** Buy the other captain's house out, through the Casa, at Lisbon. */
+  rivalBuyOut(): string {
+    if (this.dockedAt !== 'lisboa') return 'The Casa mediates such matters, and the Casa is at Lisbon.';
+    if (houseOf(this.rival).bought) return `${this.rival.name}’s house is already yours to deal with: it is shut.`;
+    const price = buyOutPrice(this.rival);
+    if (price > this.crown.gold + this.creditFree) return `The Casa names ${price} cruzados, and there is not that much.`;
+    if (this.crown.gold < price) this.drawCredit(price);
+    this.crown.gold -= price;
+    rivalBuyOutHouse(this.rival);
+    this.rival.standing = Math.max(0, this.rival.standing - 10);
+    this.noteDeed('rival.bought', { target: 'portugal', place: 'lisboa', magnitude: 0.6, note: `Bought out ${this.rival.name}’s house through the Casa for ${price} cruzados.` });
+    this.logEvent('trade', `${this.rival.name}’s house was bought out through the Casa for ${price} cruzados. His hulls are sold, and his lanes are open.`, true);
+    return `Done. ${price} cruzados, and his house trades no more.`;
+  }
+
+  /** Come to an understanding with the other captain: his house keeps off the lanes you work. */
+  rivalAlly(): string {
+    if (!canAlly(this.rival)) return `${this.rival.name} will not have an understanding with you.`;
+    rivalAllyHouse(this.rival);
+    this.noteDeed('rival.allied', { target: 'portugal', magnitude: 0.4, note: `Came to an understanding with ${this.rival.name} over the lanes.` });
+    this.logEvent('trade', `${this.rival.name} has agreed to keep his hulls off the quays you are working. He did not say what he expects in return.`, true);
+    return 'An understanding with the other house.';
+  }
+
+  /** The rival's house did something the captain is owed a line on (world/tick `rivalEvent`). */
+  rivalEvent(kind: 'undercut', portId: string, goodId: string): void {
+    if (kind !== 'undercut') return;
+    this.noteDeed('rival.undercut', { target: portId, place: portId, magnitude: 0.3, note: `Sold ${good(goodId).english.toLowerCase()} into ${portDef(portId).name} until the other house’s margin was gone.` });
+  }
+
   /** Record a deed in the Ledger and say in one quiet line what it did. */
   noteDeed(tag: LedgerTag, d: Deed = {}): LedgerEntry {
     const e = recordDeed(this, tag, d);
     rememberDeed(this, e);
+    this.coolHeat(e.tag, e.magnitude);
     foldLedger(this); // the Fronts and the Powers read what he has just done, not next month
     return e;
   }
@@ -8312,6 +8457,8 @@ export class Game {
     this.visitPolity(def);
     this.markets.refresh(def.id, this.clock.t);
     this.visitMarket(def);
+    this.payPortDues(def);
+    if (def.id === 'lisboa') this.casaInspects();
     const rival = rivalWasHere(this.rival, def.id, this.clock.t);
     if (rival) { this.pushAlert(rival, 'note'); this.logEvent('trade', rival, true); }
     this.refreshPortBusiness(def);
@@ -9647,11 +9794,13 @@ export class Game {
       passedTheKnown: this.passedTheKnown,
       startT: this.startT,
       leads: this.leads,
-      ventures: this.ventures,
-      ventureOffers: this.ventureOffers,
+      contracts: this.contracts,
+      postings: this.postings,
+      lanes: this.lanes,
+      heat: this.heat,
       rival: this.rival,
       rivalRace: this.rivalRace,
-      nextVentureId: this.nextVentureId,
+      nextVentureId: this.nextContractId,
       nextLeadId: this.nextLeadId,
     });
   }
@@ -9824,7 +9973,7 @@ export class Game {
     g.passedTheKnown = d.passedTheKnown ?? false;
     g.startT = d.startT ?? 0;
     g.leads = d.leads ?? [];
-    g.ventures = d.ventures ?? [];
+    migrateVentures(g, d.ventures, d.contracts);
     // Charters homeward from the trades used to be allowed the crow's road,
     // not the volta. Any still open are given the time a merchant now allows.
     if (!d.voltaAllowance) {
@@ -9835,10 +9984,14 @@ export class Game {
         if (extra > 0) v.dueBy += extra * 86400;
       }
     }
-    g.ventureOffers = d.ventureOffers ?? [];
-    if (d.rival) g.rival = d.rival;
+    // Charters on offer at a quay were never commitments: they are not carried over, and the quay posts afresh.
+    g.ventureOffers = [];
+    g.postings = d.postings ?? [];
+    if (d.lanes) g.lanes = d.lanes;
+    g.heat = { ...newHeat(), ...(d.heat ?? {}) };
+    if (d.rival) g.rival = bindRival(d.rival);
     g.rivalRace = d.rivalRace ?? null;
-    g.nextVentureId = d.nextVentureId ?? 1;
+    g.nextContractId = d.nextVentureId ?? 1;
     g.nextLeadId = d.nextLeadId ?? 1;
     g.mode = 'sailing';
     g.lastLat = g.ship.state.pos.lat;

@@ -6,8 +6,9 @@ import type { Game } from '../../game/state';
 import { MAX_VICTUAL_DAYS, MAX_WATER_DAYS, STORE_TONS, fitPlan, loadPlan, planCost, planOf, planTons, recommendedPlan, roomForStores, sparesSetTons, type StoresPlan } from '../../game/stores';
 import { append, button, card, el, kv } from '../dom';
 import type { Ctx } from './ctx';
+import { verb } from './verb';
 
-export function renderStores(ctx: Ctx, host: HTMLElement, g: Game): void {
+export function storesSection(ctx: Ctx, host: HTMLElement, g: Game): void {
   const def = g.portHere!;
   const house = g.factoryHere;
   const discount = house && postureOf(house) === 'stores' ? 0.5 : 1;
@@ -88,7 +89,7 @@ export function renderStores(ctx: Ctx, host: HTMLElement, g: Game): void {
 
   const rec = recommendedPlan(g);
   const last = g.crew.lastStores;
-  left.append(card('Loading — before she weighs',
+  left.append(verb('stores.loading', card('Loading — before she weighs',
     el('p', {}, def.refit > 0.6
       ? 'There is good water here, and a market for stock and greens.'
       : def.refit > 0.3
@@ -101,17 +102,17 @@ export function renderStores(ctx: Ctx, host: HTMLElement, g: Game): void {
         { title: `${rec.water} days of water, ${rec.victuals} of victuals, ${(rec.spares * 100).toFixed(0)}% spares, for the leg as the pilot reckons it` }),
       last ? button('Same as last leg', () => { Object.assign(plan, fitPlan(g, last)); ctx.render(); }) : null,
       goBtn),
-  ));
+  )));
   refresh();
 
   const right = el('div', {});
-  right.append(card('Aboard now',
+  right.append(verb('stores.aboard', card('Aboard now',
     kv('Water', `${g.crew.provisions.water.toFixed(0)} days`),
     kv('Victuals', `${Math.min(g.crew.provisions.biscuit, g.crew.provisions.saltMeat / 0.9).toFixed(0)} days`),
     kv('Fresh provisions', `${g.crew.provisions.fresh.toFixed(0)} days`),
     kv('Spares', `${((g.crew.spares ?? 0) * 100).toFixed(0)}% of a set`),
     kv('Stores in the hold', `${g.ship.storesTons.toFixed(1)} t of ${hold.toFixed(0)}`),
     kv('Days since fresh food', `${g.crew.daysWithoutFresh.toFixed(0)}`),
-  ));
+  )));
   host.append(el('div', { class: 'cols two' }, left, right));
 }

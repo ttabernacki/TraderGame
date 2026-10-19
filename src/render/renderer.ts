@@ -145,8 +145,8 @@ export class Renderer {
 
   ocean = new Ocean();
   sky = new Sky();
-  private envTarget = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
-  private envTargetB = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType });
+  private envTarget = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+  private envTargetB = new THREE.WebGLCubeRenderTarget(128, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
   private envCamera = new THREE.CubeCamera(1, 30000, this.envTarget);
   /** Which of the two cubes holds the newest photograph, and how long since it was taken. */
   private envCur: THREE.WebGLCubeRenderTarget = this.envTarget;
@@ -201,6 +201,7 @@ export class Renderer {
   /** The second, coarse shadow for the land and the towns. See render/shadows.ts. */
   private worldShadow!: WorldShadow;
   private readonly wsLocal = new THREE.Vector2();
+  private readonly tmpSize = new THREE.Vector2();
   private shadowCastable = false;
   private ambient = new THREE.HemisphereLight(0x88aacc, 0x2a2418, 0.6);
   /**
@@ -662,6 +663,10 @@ export class Renderer {
     this.sky.setPhysical(this.renderMode === 'new' && !!this.post);
     SAIL_TRANS.value = this.renderMode === 'new' ? 1 : 0;
     this.ocean.setUpgraded(this.renderMode === 'new');
+    {
+      const bh = this.renderer.getDrawingBufferSize(this.tmpSize).y;
+      this.ocean.setPixel(2 * Math.tan(this.camera.fov * DEG / 2) / Math.max(bh, 1), this.envTarget.width, true);
+    }
     const lighting = this.sky.update(
       f.pos.lat, f.pos.lon, f.dayFromEpoch, f.hourLocal,
       f.dayOfYear, f.year, f.cloud, f.simTime,

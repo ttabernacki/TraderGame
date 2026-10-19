@@ -1,9 +1,10 @@
-import { outstanding } from '../../progression/inland';
 import { HOUSES, creditWord, house, kindBlurb, kindName, quinhaoPrice, standingLine, type DebtKind, type House } from '../../economy/finance';
 import { portName } from '../../progression/crown';
 import type { Game } from '../../game/state';
 import { append, button, card, el, fold, kv } from '../dom';
 import type { Ctx } from './ctx';
+import { regardWord } from './quay';
+import { tagLast, verb } from './verb';
 
 /**
  * The Rua Nova.
@@ -15,7 +16,7 @@ import type { Ctx } from './ctx';
  * letra does not, the sixteenths are never repaid — and the number underneath
  * is the price of that sentence.
  */
-export function renderMoney(ctx: Ctx, host: HTMLElement, g: Game): void {
+export function moneySection(ctx: Ctx, host: HTMLElement, g: Game): void {
   const def = g.portHere!;
   const left = el('div', {});
   const right = el('div', {});
@@ -47,6 +48,7 @@ export function renderMoney(ctx: Ctx, host: HTMLElement, g: Game): void {
         `${Math.round(g.finance.shareOut * 100)}% of everything this voyage lands belongs to the sharers.`)
       : null,
   ));
+  tagLast(left, 'money.casa');
 
   // What is owed, first, because a man walking into a counting house knows
   // what he owes before he knows what he wants.
@@ -95,6 +97,7 @@ export function renderMoney(ctx: Ctx, host: HTMLElement, g: Game): void {
           + 'see it.')
       : null,
   ));
+  tagLast(right, 'money.paper');
 
   right.append(fold('The Casa’s own credit',
     `${g.creditFree.toFixed(0)} left to draw${g.crown.debt > 0 ? `, ${g.crown.debt.toFixed(0)} drawn` : ''}`, false,
@@ -107,6 +110,7 @@ export function renderMoney(ctx: Ctx, host: HTMLElement, g: Game): void {
       + 'the commission, and it is gone the moment that is discharged. The houses lend against '
       + 'you, which is why they can lend so much more.'),
   ));
+  tagLast(right, 'money.casa-credit');
 
   right.append(fold('Your name on this street', '', false,
     ...HOUSES.map((h) => el('div', { style: { marginBottom: '5px' } },
@@ -117,21 +121,24 @@ export function renderMoney(ctx: Ctx, host: HTMLElement, g: Game): void {
       + `${Math.round(g.finance.repaid)}. Taken by sharers: ${Math.round(g.finance.sharedOut)}.`
       + (g.finance.defaults > 0 ? ` Bad debts against your name: ${g.finance.defaults}.` : '')),
   ));
+  tagLast(right, 'money.street');
 
   // And the offers. One card per house that has a man in this town.
   const here = HOUSES.filter((h) => g.houseReaches(h, def));
+  const offers = verb('money.house-offers', el('div', {}));
+  left.append(offers);
   if (here.length === 0) {
-    left.append(card('No money in this town',
+    offers.append(card('No money in this town',
       el('p', {}, 'The Rua Nova reaches a long way and it does not reach here. Whatever you are '
         + 'going to do next, you are going to do it on what is in the ship.')));
   } else {
-    left.append(el('p', { class: 'fit-blurb', style: { marginBottom: '10px' } },
+    offers.append(el('p', { class: 'fit-blurb', style: { marginBottom: '10px' } },
       'A sea loan is insurance with a loan’s face on it: it costs three times what an '
       + 'ordinary bill costs, and if she never comes home nobody ever asks you for it. A letra '
       + 'is cheap and is owed by you whatever happens to her. Sixteenths are never repaid at '
       + 'all — they simply take their share of everything you land, for as long as the '
       + 'voyage runs.'));
-    for (const h of here) left.append(houseCard(ctx, g, h));
+    for (const h of here) offers.append(houseCard(ctx, g, h));
   }
 
   host.append(el('div', { class: 'cols two' }, left, right));

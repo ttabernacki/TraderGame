@@ -7,7 +7,7 @@ import type { Feitoria } from '../progression/feitoria';
 import { PORTS, portDef, type PortDef } from './ports';
 import type { LatLon } from '../core/math';
 import type { LaneState } from './laneState';
-import type { Contract } from './contracts';
+import type { PortContract } from './contracts';
 import type { HeatState } from '../economy/contraband';
 import type { RivalState } from '../progression/rival';
 
@@ -70,7 +70,7 @@ export interface WorldHost {
   /** How well the coast between two points is known, as a multiplier on a lane's risk (Game.laneRisk). Absent: 1. */
   laneRisk?: (from: LatLon, to: LatLon) => number;
   /** Contracts posted by quays and not yet signed (world/contracts), and the next id. */
-  postings?: Contract[];
+  postings?: PortContract[];
   nextContractId?: number;
   /** What the captain carries with the weigh-house (economy/contraband). */
   heat?: HeatState;

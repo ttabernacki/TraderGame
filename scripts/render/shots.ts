@@ -143,8 +143,10 @@ async function capture(name: string, o: Record<string, unknown>, w: number, h: n
   const sp = Number(o.speed ?? 3.4);
   let t = 2e9, lat = s.lat, lon = s.lon;
   const out: Uint8ClampedArray[] = [];
+  const yawRate = Number(o.yawRate ?? 0), pitchRate = Number(o.pitchRate ?? 0);
   for (let i = 0; i < n + 6; i++) {
     const dt = 1 / 60;
+    rr.lookYaw += yawRate; rr.lookPitch += pitchRate;
     lat += Math.cos(hd) * sp * dt / 111320; lon += Math.sin(hd) * sp * dt / (111320 * Math.cos(lat * Math.PI / 180));
     rr.render(frameOf({ ...s, lat, lon }, t, hull), dt, dt); t += dt;
     if (i < 6) continue;

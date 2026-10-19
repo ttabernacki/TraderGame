@@ -1,6 +1,6 @@
 import { NM, clamp, haversine } from '../core/math';
 import {
-  contractLine, contractTons, daysLeft as contractDaysLeft, type Contract,
+  contractLine, contractTons, daysLeft as contractDaysLeft, type PortContract,
 } from '../world/contracts';
 
 /**
@@ -10,13 +10,13 @@ import {
  * (`world/contracts`), and a charter found in an old save becomes a contract with `kind: 'venture'`
  * (`game/saveResolvers migrateVentures`), keeping its date, its advance and any cargo loaded for the
  * merchant. What is left here is the names the screens already import, so that they keep reading the
- * one record: `Venture` is a `Contract`, `ventureLine` is `contractLine`.
+ * one record: `Venture` is a `PortContract`, `ventureLine` is `contractLine`.
  *
  * Nothing new should import this module; use `world/contracts`.
  */
 
-/** @deprecated a charter is a Contract (world/contracts). */
-export type Venture = Contract;
+/** @deprecated a charter is a PortContract (world/contracts). */
+export type Venture = PortContract;
 
 /** @deprecated use contractLine. */
 export const ventureLine = contractLine;

@@ -11,7 +11,7 @@ import { good, unitOf } from '../economy/goods';
 import { PORTS, anchorageOf, portDef } from '../world/ports';
 import { haversine } from '../core/math';
 import { trimToHold } from './stores';
-import { migrateVenture, type Contract } from '../world/contracts';
+import { migrateVenture, type PortContract } from '../world/contracts';
 
 /** Full price of each level of each estate holding, as the old estate sold them. */
 const HOLDING_COST: Record<string, number[]> = {
@@ -184,7 +184,7 @@ export function settleStoresOverflow(g: Game): void {
  * log line says what happened. Idempotent: a save that has `contracts` is left alone.
  */
 export function migrateVentures(g: Game, oldVentures: unknown, contracts: unknown): void {
-  if (Array.isArray(contracts)) { g.contracts = contracts as Contract[]; return; }
+  if (Array.isArray(contracts)) { g.contracts = contracts as PortContract[]; return; }
   if (!Array.isArray(oldVentures)) return;
   g.contracts = (oldVentures as Record<string, unknown>[]).map(migrateVenture);
   const live = g.contracts.filter((c) => !c.delivered && !c.failed).length;

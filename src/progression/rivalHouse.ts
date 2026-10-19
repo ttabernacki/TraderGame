@@ -57,8 +57,15 @@ export interface RivalHouse {
 
 export const START_LAT = -6;
 export const HULL_COST = 1300;
-/** Upkeep a hull costs a month: 0.8% of its price and 24 men at 4 cruzados. */
-export const HULL_UPKEEP = HULL_COST * 0.008 + 24 * 4;
+/** Upkeep a hull costs a month: 0.8% of its price, 24 men at 4 cruzados, chandlery and dues. */
+export const HULL_UPKEEP = HULL_COST * 0.008 + 24 * 4 + 55;
+/** What he keeps of a sale after commission, spoilage and the quay's cut. */
+const TAKE_HOME = 0.78;
+/** A voyage in twelve never comes home. */
+const LOSS = 1 / 12;
+/** A house above this lives on it: the share of the excess spent each month on his household, the court and his name. */
+const HOUSEHOLD_ABOVE = 4000;
+const HOUSEHOLD_RATE = 0.05;
 export const EXPLORE_COST = 350;
 export const START_CAPITAL = 1800;
 const HOLD_T = 60;
@@ -123,6 +130,12 @@ export function bindRival(r: RivalState): RivalState {
 // ---------------------------------------------------------------------------
 // The month
 
+function hash(s: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return (h >>> 0) / 4294967296;
+}
+
 function slip(q: number, avail: number): number {
   return avail <= 0 ? 1 : 1 + Math.min(1, q / avail) ** 2 * 0.55;
 }
@@ -157,7 +170,12 @@ export function stepHouse(host: WorldHost, t: number): void {
     const l = mk.listings(v.to, t, 0, 0.2).find((x) => x.goodId === v.goodId);
     if (!l) { h.capital += v.cost * 0.6; continue; }
     const casa = v.to === 'lisboa' && MONOPOLY.includes(v.goodId) ? Math.max(CASA_SHARE, 0.9) : 1;
-    const got = (v.qty * l.bid * casa) / slip(v.qty, l.appetite);
+    const lost = hash(`${host.seed}:${mi}:${v.from}:${v.to}:${v.goodId}`) < LOSS;
+    if (lost) {
+      host.worldNote?.(v.to, `${r.name}’s house lost a cargo of ${gd.english.toLowerCase()} on the road to ${portDef(v.to).name}.`);
+      continue;
+    }
+    const got = (v.qty * l.bid * casa * TAKE_HOME) / slip(v.qty, l.appetite);
     mk.sell(v.to, v.goodId, Math.min(v.qty, Math.max(1, l.appetite)));
     h.capital += got;
     h.profit += got - v.cost;
@@ -171,8 +189,9 @@ export function stepHouse(host: WorldHost, t: number): void {
   }
   h.voyages = pending;
 
-  // Upkeep, then the books.
+  // Upkeep, the household, then the books.
   h.capital -= h.hulls * HULL_UPKEEP;
+  h.capital -= Math.max(0, h.capital - HOUSEHOLD_ABOVE) * HOUSEHOLD_RATE;
   if (h.capital < 0) { h.capital = 0; if (h.voyages.length === 0 && h.hulls > 1) h.hulls--; }
 
   // A second and third hull when the purse has grown to carry them.

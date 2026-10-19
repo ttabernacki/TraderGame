@@ -8,6 +8,7 @@ import { WORKS, buyable, capacityOf, residentPrice, stockTons, stockValue, type 
 import type { Game } from '../../game/state';
 import { append, button, card, el, kv, plural } from '../dom';
 import type { Ctx } from './ctx';
+import { verb } from './verb';
 
 /**
  * The station.
@@ -19,7 +20,7 @@ import type { Ctx } from './ctx';
  * plainly. The second wants the shed, the chest and the trouble in that
  * order, because that is the order a captain would ask about them.
  */
-export function renderStation(ctx: Ctx, host: HTMLElement, g: Game): void {
+export function houseSection(ctx: Ctx, host: HTMLElement, g: Game): void {
   const def = g.portHere!;
   const f = g.factoryHere;
   const left = el('div', {});
@@ -29,7 +30,7 @@ export function renderStation(ctx: Ctx, host: HTMLElement, g: Game): void {
     const why = g.canFoundFactory(def);
     const spare = g.crew.count - g.ship.baseHull.crewMin;
     const men = g.crew.officers.filter((o) => o.alive && !o.ashoreAt);
-    left.append(card('A House here',
+    left.append(verb('station.found', card('A House here',
       el('p', { class: 'flavour' },
         'A walled shed, a clerk, six men and an agreement with whoever owns the beach. It is '
         + 'not a colony and it is not a conquest; it is a man of yours who is here all year '
@@ -39,10 +40,10 @@ export function renderStation(ctx: Ctx, host: HTMLElement, g: Game): void {
       g.foundingCost(def) > 320 ? el('p', { class: 'gift-sub' }, 'Ground granted at an audience halves the price.') : null,
       kv('Men she can spare', `${Math.max(0, spare)}`, spare < 6 ? 'bad' : ''),
       why ? el('p', { class: 'notice grave' }, why) : null,
-    ));
+    )));
 
     if (!why) {
-      left.append(card('Who is to have it',
+      left.append(verb('station.who', card('Who is to have it',
         el('p', { style: { fontSize: '13px' } },
           'He comes off the muster and out of his berth for years, and she will work worse '
           + 'without him from the moment the boat pulls back. What he is decides what the '
@@ -62,14 +63,14 @@ export function renderStation(ctx: Ctx, host: HTMLElement, g: Game): void {
           ),
           button('Leave him here', () => {
             ctx.notice = { text: g.foundFactory(o.id, ctx.stationOrder) };
-            ctx.tab = 'station';
+            ctx.show('court', 'house');
             ctx.render();
           }, { primary: true }),
         )),
         men.length === 0 ? el('p', { class: 'bad' }, 'There is nobody aft to leave.') : null,
-      ));
+      )));
 
-      right.append(orderCard(ctx, g, def, null));
+      right.append(verb('station.order', orderCard(ctx, g, def, null)));
     }
 
     host.append(el('div', { class: 'cols two' }, left, right));
@@ -78,7 +79,7 @@ export function renderStation(ctx: Ctx, host: HTMLElement, g: Game): void {
 
   // And the station as it stands.
   const wanted = g.garrisonWantedAt(f);
-  left.append(card(`${f.factor}’s store`,
+  left.append(verb('station.store', card(`${f.factor}’s store`,
     kv('In the shed', `${stockTons(f).toFixed(1)} of ${capacityOf(f).toFixed(0)} tons`
       + `, ${g.shedRoom(f).toFixed(1)} free`),
     kv('Worth at Lisbon', `${stockValue(f)} cruzados`),
@@ -95,11 +96,11 @@ export function renderStation(ctx: Ctx, host: HTMLElement, g: Game): void {
           'This will not survive another long absence. A ship in the road, a present to the '
           + 'town, or men and walls — one of the three, and soon.')
       : null,
-  ));
+  )));
 
   // The reward, and the reason the whole thing exists.
   const stock = Object.entries(f.stock).filter(([, q]) => q >= 1);
-  left.append(card('Take it aboard',
+  left.append(verb('station.take-aboard', card('Take it aboard',
     stock.length === 0
       ? el('p', {}, 'The shed is empty. Whatever he has been doing, it has not been buying.')
       : el('div', {}, ...stock.map(([id, q]) => {
@@ -127,14 +128,14 @@ export function renderStation(ctx: Ctx, host: HTMLElement, g: Game): void {
       'Bought in small parcels all year at what a resident pays, and it does not glut the quay '
       + 'on the way into your hold, because it was bought a barrel at a time by somebody who '
       + 'lives here.'),
-  ));
+  )));
 
-  right.append(card('What the House does', ...houseHead(f, () => ctx.render())));
-  right.append(card('Works', worksBlock(g, f, () => ctx.render(), (t) => { ctx.notice = { text: t }; })));
-  right.append(card('The town', civicBlock(g, f.portId, () => ctx.render(), (t) => { ctx.notice = { text: t }; })));
-  if (postureOf(f) === 'buy') right.append(orderCard(ctx, g, def, f));
+  right.append(verb('station.head', card('What the House does', ...houseHead(f, () => ctx.render()))));
+  right.append(verb('station.works', card('Works', worksBlock(g, f, () => ctx.render(), (t) => { ctx.notice = { text: t }; }))));
+  right.append(verb('station.civic', card('The town', civicBlock(g, f.portId, () => ctx.render(), (t) => { ctx.notice = { text: t }; }))));
+  if (postureOf(f) === 'buy') right.append(verb('station.order', orderCard(ctx, g, def, f)));
 
-  right.append(card('The chest',
+  right.append(verb('station.chest', card('The chest',
     el('div', { class: 'row' },
       ...[100, 250, 600].map((n) => button(`Put in ${n}`, () => {
         ctx.notice = { text: g.fundChest(n) };
@@ -150,9 +151,9 @@ export function renderStation(ctx: Ctx, host: HTMLElement, g: Game): void {
     el('p', { style: { fontSize: '12.5px', color: 'var(--ink-soft)', marginTop: '7px' } },
       'What is in the chest is what he can buy with, and what he buys with it is what is '
       + 'waiting for you next time. Emptying it is taking your profit now instead of next year.'),
-  ));
+  )));
 
-  right.append(card('Build',
+  right.append(verb('station.build', card('Build',
     ...WORKS.map((w) => {
       const has = f.works.includes(w.id);
       return el('div', { style: { padding: '6px 0' } },
@@ -169,9 +170,9 @@ export function renderStation(ctx: Ctx, host: HTMLElement, g: Game): void {
           w.blurb),
       );
     }),
-  ));
+  )));
 
-  right.append(card('The garrison',
+  right.append(verb('station.garrison', card('The garrison',
     el('div', { class: 'row' },
       ...[2, 5, 10].map((n) => button(`Leave ${n} more`, () => {
         ctx.notice = { text: g.reinforceFactory(n) };
@@ -182,11 +183,11 @@ export function renderStation(ctx: Ctx, host: HTMLElement, g: Game): void {
           text: g.closeFactory(f, 'Given up while there was still something in it to bring away.'),
           grave: true,
         };
-        ctx.tab = 'town';
+        ctx.show('waterfront', 'quay');
         ctx.render();
       }),
     ),
-  ));
+  )));
 
   host.append(el('div', { class: 'cols two' }, left, right));
 }
