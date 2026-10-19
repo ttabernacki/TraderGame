@@ -33,6 +33,8 @@ const SCENES: Record<string, Scene> = {
   funchal:  { lat: 32.60, lon: -16.91, hour: 17.4, cloud: 0.25, wind: 6, windFrom: 200, wave: 0.5, heading: 90, cam: 'beam', dist: 46, pitch: -4 },
   funchalw: { lat: 32.622, lon: -16.915, hour: 17.9, cloud: 0.2, wind: 6, windFrom: 200, wave: 0.5, heading: 20, pitch: -3 },
   funchalc: { lat: 32.622, lon: -16.915, hour: 18.05, cloud: 0.2, wind: 6, windFrom: 200, wave: 0.5, heading: 340, cam: 'deck', pitch: 1, yaw: 25 },
+  lisboam:  { lat: 38.655, lon: -9.30, hour: 6.4, cloud: 0.25, wind: 8, windFrom: 330, wave: 0.6, heading: 75, pitch: -2, dist: 55 },
+  lisboae:  { lat: 38.655, lon: -9.30, hour: 18.7, cloud: 0.25, wind: 8, windFrom: 330, wave: 0.6, heading: 20, pitch: -2, dist: 55, yaw: 60 },
   lisboa:   { lat: 38.655, lon: -9.30, hour: 16.9, cloud: 0.3, wind: 8, windFrom: 330, wave: 0.6, heading: 80, pitch: -6 },
   whitecap: { lat: 38, lon: -25, hour: 14.0, cloud: 0.6, wind: 26, windFrom: 250, wave: 3.2, vis: 12, heading: 70, pitch: -5 },
 };
