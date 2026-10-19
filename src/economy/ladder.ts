@@ -16,8 +16,8 @@
  *    a great ship's cargo, and the seas a hull can reach pay what they pay.
  */
 import type { Good } from './goods';
-import { portDef, type PortDef } from '../world/ports';
-import { fairsAt, FAIRS, regionOf, type Region } from './trade';
+import type { PortDef } from '../world/ports';
+import { MONOPOLY, fairsAt, FAIRS, regionOf, type Region } from './trade';
 import { polityOfPort } from '../diplomacy/polities';
 
 /** Tons: four times the hold of the next hull class up from the ones that call at a place this size. */
@@ -122,27 +122,23 @@ export const DEEP_PROFIT: Partial<Record<Region, number>> = { india: 9000, east:
 /** And in tons: the share of a month of the carrying polity's trade (POLITY_KT / 12) that its houses hold in a good, at level 1. */
 export const DEEP_TONS = { share: 0.08 };
 /**
- * The houses price their godowns to the market they know they are selling into, not to the village price. `lisbonReturn` is what a
- * unit fetches a captain at Lisbon (the Casa's scales included); the first unit of the deep lot costs the quoted ask plus `lo` of the
- * way from there to that return, and the price climbs by `rise` more of that way by the bottom of the pool. So the margin a buyer keeps
- * on the deep lot is thin, and it is gone when the pool is drained: that is where a great hold stops buying. Pepper and ginger are the
- * Portuguese buyers' goods; the dense luxuries (mace, cloves, silk, stones) have the Gujarati, Arab and Chinese warehouses bidding for
- * them too, and cost more of Lisbon's return: `lo` runs from DEEP_PRICE.lo for a good worth `denseLo` cruzados a ton at Lisbon to
- * DEEP_PRICE.hi for one worth `denseHi`, and above 1 there is no profit to be had from the deep lot of it at all.
+ * The houses price their godowns to the market they know they are selling into, not to the village price. `homeReturn` is the most a
+ * unit fetches a captain on a Portuguese quay (the Casa's hunger at its keenest, less the dealer's spread; the Casa's own cut of the
+ * King's goods is not in it: a licensed captain keeps that); the first unit of the deep lot costs the quoted ask plus `at` of the way
+ * from there to that return, and the price climbs by `rise` more of that way by the bottom of the pool. So the margin a buyer keeps on
+ * the deep lot is thin, thinner as he lifts more, and gone when the pool is drained: that is where a great hold stops buying.
+ * `floor` is the least multiple of the quote the deep lot ever costs.
  */
-export const DEEP_PRICE = { lo: 0.93, hi: 1.1, rise: 0.15, floor: 1.15, denseLo: 700, denseHi: 1600 };
-/** What a unit of a good fetches a captain at Lisbon on a first sale: the Casa's hunger for it and the dealer's spread (the Casa's own cut of the King's goods is not in it: a licensed captain keeps it). */
-export function lisbonReturn(g: Good): number {
-  const hunger = portDef('lisboa').wants[g.id] ?? 0;
-  return g.lisbon * (hunger > 0 ? 1.15 + (2.1 - 1.15) * hunger : 1) * 0.7;
-}
+export const DEEP_PRICE = { at: 0.94, rise: 0.12, floor: 1.15 };
+/** The most a unit of a good fetches on a Portuguese quay on a first sale: the keenest hunger (2.1 of Lisbon's price) less the 30% spread. */
+export const homeReturn = (g: Good): number => g.lisbon * 2.1 * 0.7;
 /** The curve (multiples of the quoted ask) for a listing whose ask is `ask`. */
 export function deepCurve(ask: number, g: Good): { base: number; rise: number } {
-  const room = Math.max(0, lisbonReturn(g) / Math.max(ask, 0.01) - 1);
-  const dens = Math.min(1, Math.max(0, (g.lisbon / Math.max(g.bulk, 1e-4) - DEEP_PRICE.denseLo) / (DEEP_PRICE.denseHi - DEEP_PRICE.denseLo)));
-  const lo = DEEP_PRICE.lo + (DEEP_PRICE.hi - DEEP_PRICE.lo) * dens;
-  return { base: Math.max(DEEP_PRICE.floor, 1 + lo * room), rise: DEEP_PRICE.rise * room };
+  const room = Math.max(0, homeReturn(g) / Math.max(ask, 0.01) - 1);
+  return { base: Math.max(DEEP_PRICE.floor, 1 + DEEP_PRICE.at * room), rise: DEEP_PRICE.rise * room };
 }
+/** Cruzados a ton at Lisbon above which a spice is a luxury, not a warehouse good. */
+export const DEEP_MAX_DENSITY = 1200;
 /** A deep pool in the wholesale season (the pepper harvest, the clove ships) and out of it. */
 export const DEEP_SEASON = { inSeason: 1.35, out: 0.85 };
 
@@ -152,7 +148,8 @@ export const DEEP_SEASON = { inSeason: 1.35, out: 0.85 };
  */
 export function deepUnits(def: PortDef, g: Good, level: number, month: number, worth = def.wealth): number {
   const money = DEEP_PROFIT[regionOf(def.id)];
-  if (!money || isStaple(g) || level <= 0) return 0;
+  // Only the bulk spices that are not the King's (ginger, cinnamon, cardamom: the Casa buys the pepper itself, and sells it on its own scales): the luxuries (mace, cloves, nutmeg, silk, stones) come in small parcels by the Gujarati and the Chinese and nobody holds a warehouse of them.
+  if (!money || isStaple(g) || g.category !== 'spice' || MONOPOLY.includes(g.id) || g.lisbon / Math.max(g.bulk, 1e-4) > DEEP_MAX_DENSITY || level <= 0) return 0;
   const wealth = SHARE_FLOOR + (1 - SHARE_FLOOR) * Math.min((0.5 + worth) / 1.5, 1.2);
   const kt = HOUSE_KT[polityOfPort(def.id)?.id ?? ''] ?? 5000;
   const houses = Math.min(Math.max(kt / 8000, 0.5), 1.5);
