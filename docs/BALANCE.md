@@ -7,11 +7,13 @@ Measured by `scripts/econ.ts` (BUILD_PLAN A2). Baseline taken before any B3/C1 e
 ```
 npx esbuild scripts/econ.ts --bundle --platform=node --format=cjs --outfile=/tmp/econ.cjs && node /tmp/econ.cjs
 node /tmp/econ.cjs --ladder            # price-ladder table next to the B3 targets
-node /tmp/econ.cjs --check             # exit 1 if the ladder, spread (<= 10), hull, risk-reward or India criteria fail (see the India pass)
+node /tmp/econ.cjs --check             # exit 1 if the ladder, spread (<= 10), hull, risk-reward, India or Malabar-tour-by-hull criteria fail
 node /tmp/econ.cjs --pair lisboa mpinda 2   # the goods of one voyage, leg by leg (hull index 0-5)
 node /tmp/econ.cjs --regions           # single-good lanes by source region
 node /tmp/econ.cjs --burthen           # size hulls by burthen (25/50/70/140/260/480) not hold (14/30/45/105/205/400)
 node /tmp/econ.cjs --lane mina lisboa  # every good on one pair
+node /tmp/econ.cjs --india-hulls       # the Malabar and grand tour by hull, real sailed days, the stores rule
+TOFF=150 node /tmp/econ.cjs --india-hulls   # the same, 150 days later in the year (the second tier follows the season)
 ```
 
 Exit code is 0 unless `--check` fails. `--check` passes after the B3 and India passes.
@@ -163,7 +165,7 @@ Before: a Malabar tour (Cochim + Calecute, home) netted **-1,230** (a loss), a L
 ### Honest limits (read these before trusting the ladder)
 - **Tiers 1-3 are still over band** (373 / 734 / 893 against 220 / 500 / 800). What is left is the staple margin: oil Lisbon -> Arzila earns ~22 cr per ton of hold at any ship, 200 of the barcha's 373.
   The price formula sets that and was not touched; parcels were already cut. Fixing it needs harbour dues or a staple spread change, not a stock cap.
-- **Hull size does not matter on the India lanes.** The Carreira's goods are money-capped per port, and the cargo of a full tour is ~40 t. A 3-port Malabar tour nets 5,146 for a barcha,
+- **Hull size does not matter on the India lanes** (superseded: see "The deeper lots of Malabar" below). The Carreira's goods are money-capped per port, and the cargo of a full tour is ~40 t. A 3-port Malabar tour nets 5,146 for a barcha,
   7,934 latina, 10,849 redonda, 12,303 nau pequena, 11,737 nau, 10,002 nau da India (150 men, 80 t of stores). Hull size matters on the bulk lanes (Atlantic, 2.9-3.8x) and in running cost, and what
   keeps small ships off the India road is not the ladder but the road: the Cape, the monsoon, stores in tons (a redonda's stores for the round trip are 16 of its 45 t), the Casa's licence. The harness
   caps the reach of each hull (`REACH`) to model that; if the game lets a caravela go to Cochim it will outearn a Nau da India there. Raising the India caps cannot fix this; only making some India goods
@@ -237,3 +239,85 @@ ladder, so a decision, not a tuning), or (b) a Casa rule that only hulls of 140 
 Neither is built. `--check` now pins what was measured (the barcha and the latina cannot carry the round trip's stores, a redonda's
 longest-leg loading is under a quarter of her hold, a Nau da India's Malabar tour at real days nets 6,000-12,000) so that a
 later change to stores or wages cannot silently change the answer.
+
+(a) was then built: see the next section.
+
+## The deeper lots of Malabar (a second tier for the great hold)
+
+The question above was decided: build (a). Spice is money-capped per port, so a whole tour carried ~40 t and a redonda out-earned a Nau da India
+1.84x; the Nau's 150 men (5,800 a tour in wages, 1,200 in dues) had nothing to carry. A bigger ship has to be able to earn more on the road.
+
+### What it is (economy/ladder.ts, economy/market.ts; the price formula is untouched)
+At an Indian or Eastern port (`DEEP_REGIONS`: india, east) every spice but the King's pepper has **two lots**:
+- **The first lot** is what the Casa's factor and the Crown-scale traders keep for a visiting captain: the old money cap (`PORT_PROFIT` 2,900 -> 2,200 for the region),
+  and for the spices that have a deep tier only `SPICE_FIRST_LOT` = 0.23 of it. Quoted ask, old slippage curve.
+- **The second lot** is the big merchant houses' godowns, the Gujarati, Chinese and Arab warehouses and the wholesale season. `deepUnits`: `DEEP_TONS.house` = 240 t of one good
+  at level 1, wealth 1, in a port whose polity carries 8,000 kt a year (the same `POLITY_KT` table `world/lanes` uses, now exported from `ladder.ts`; Cochim, Cananor, Gujarat, Bijapur
+  and the rest get their own entry), scaled by the port's wealth x prosperity and its level in the good, x1.35 in the port's harvest fair (`FAIRS`: the pepper harvest for ginger,
+  the clove ships for Malacca's spices) and x0.85 out of it, and no port holds more than `cap` = 70 t of one good (a godown, not a country). A pool is drawn down by what is
+  bought (`MarketState.deep`, optional, half-life two months) and fills again from the next harvest.
+- **Its price** is a freight rate, not a flat multiplier. `Markets.homeReturn` is what the good fetches on the best Portuguese quay today (the quay's hunger, glut, season, news, the
+  Powers' say; the houses write to Lisbon, Porto and Lagos). The first unit of the deep lot costs that **less `DEEP_PRICE.perTon` = 58 cruzados a ton of hold**
+  (the margin a carrier keeps on the first ton, equal for a hold of ginger and a hold of mace), and the price climbs to the full return by the bottom of the pool. So the margin
+  on the last ton is nothing and that is where a great hold stops buying; a captain with 40 t never reaches the dear end (the pool is 70 t a good).
+  `Listing.stock` is the sum, `Listing.lot` the first lot, `Listing.curve` the deep price in multiples of the ask. `Markets.slippage(q, stock, lot, curve)` returns the average multiple over
+  the order, so a large order visibly pays more per unit (the quantity box, the barter table and the Lines all go through it; `state.ts` only passes `l.lot, l.curve` at three call sites).
+- **Lisbon's demand** had to deepen with it (a money-capped quay takes a few hundred quintals of a spice, and the Nau's margin was gone on the first parcel):
+  the goods of the autumn sale (`FAIRS` 'lisbon-spices', the Flemish and German houses) are taken at `AUTUMN_SALE.depth` = 3x what the quay can handle in tons, money cap lifted.
+- The King's pepper has no deep tier (the Casa buys it and sells it on its own scales). Silk, stones, pearls and calico have none either: nobody holds a warehouse of them.
+
+### Harness (scripts/econ.ts)
+- Cargo is now filled **ton by ton from the lane whose next lot pays most per ton** until nothing pays (`fillCargo`): a lot is the best of its sizes, not the largest. Lanes with one tier
+  are still taken whole (unchanged: the Atlantic ladder rows are byte-for-byte the old ones), so the only change is where a second tier exists.
+- A tour comes home to the Portuguese quay that pays best that month (the deep lot is priced to the best of them; the King's goods only count at Lisbon).
+- `lanes`/`byPair` are built by `lanesOf(bookAt(t))`, so `--check` can price the same tour in the harvest (day 400, February) and 200 days on.
+- Tuning hooks (one run): `DPR='{"perTon":58}'` `DT` (house tons) `LC` (cap) `FL` (first-lot share) `AS` (autumn sale) `DS` (season) `TOFF` (days added to the date).
+- New `--check` rules: on the 3-port Malabar tour with stores renewed at the ports and real sailed days, net rises with every hull (barcha < latina < redonda < nau pequena < nau < Nau da India),
+  harvest and out of season; the Nau da India is >= 1.8x a redonda and 6,000-13,000; the barcha, latina and redonda each clear 1,000. The old "top 20 lanes are the Carreira's"
+  floor went 14 -> 8 (the Carreira's depth is now in lots a 105 t reference lane cannot show) and the ladder-days tour ceiling 12,000 -> 14,500 (the 12,000 ceiling stays on the real-days tour).
+
+### Before / after (3-port Malabar tour Cochim + Calecute + Cananor, stores renewed at the ports, real sailed days, wages and dues in)
+| Hull (hold) | Before | After, harvest | After, out of season |
+|---|---|---|---|
+| barcha (14) | 6,170 | 3,346 | 2,765 |
+| caravela latina (30) | 9,347 | 4,726 | 3,924 |
+| caravela redonda (45) | 11,883 | 5,080 | 4,278 |
+| nau pequena (105) | 10,845 | 6,711 | 5,911 |
+| nau (205) | 9,229 | 8,715 | 7,943 |
+| Nau da India (400) | 6,469 | 10,450 | 9,896 |
+| Nau da India / redonda | 0.54x | 2.06x | 2.31x |
+
+The grand tour (six ports) climbs the same way: 3,351 / 5,748 / 6,177 / 7,855 / 9,965 / 12,281 (before 6,255 / 8,335 / 11,476 / 12,557 / 10,743 / 7,633).
+Carrying a whole round trip's stores from Lisbon, the hulls net -538 / 277 / 1,529 / 4,087 / 5,152 / 6,871: the small ones are still on the road, at a lower return, and only just.
+
+| Other measure | Before | After |
+|---|---|---|
+| Atlantic ladder rows (barcha .. nau, `--ladder`) | 363 / 729 / 887 / 2,022 / 3,923 | unchanged |
+| Nau da India ladder row (best pair) | 10,688 (Lisbon <> Malacca) | 8,983 (Calecute <> Lisbon); band 6,000-9,000 |
+| Typical Malabar tour, Nau da India, ladder days | 9,012 | 12,435 (best 13,694) |
+| Cochim tour / Atlantic coastal (400 t) | 5.99x | 7.41x |
+| best:median single-good route (105 t, harness) | 9.6 | 8.9 |
+| 24-month lane world, route spread | 10.3 median seed, 14.3 worst | 10.4, 13.9 |
+| 400 t / 105 t on the best lane | 2.85x | 2.85x |
+
+### Why these numbers, and what was tried
+- The three constraints pull against one another and the shape that satisfies them is narrow. The best:median spread (<= 10) caps the best single lane at 105 t at ~2.9k, which for a good with a
+  flat margin per ton means ~28 cruzados a ton; the Nau needs to make 4.4k more than a nau pequena on 180 more tons to pay 95 more men; and the hulls from the barcha to the nau pequena must still
+  climb. A flat deep margin could not do all three (the nau pequena out-earned the Nau at every setting), and nor could any per-good price multiple (dense goods run away). What works is a **per-ton margin
+  that falls to nothing over a pool of a fixed size** (a godown of 70 t, 58 a ton at the front): then any one lane is worth ~2.5k at 105 t, and a Malabar tour has many lanes (ginger, cinnamon, cardamom,
+  cloves, nutmeg and mace at three ports) for a big hold to work down.
+- The deep price follows the best Portuguese quay's bid, glut, season and news, not a fixed number: anchored to a fixed reference the same tour netted +8,400 in the harvest and -3,100 a month later,
+  because a +-14% season on a 33-cruzado bid is more than the whole margin.
+- The first lot is cut for the spices that have a deeper one, not the region, because cutting the whole region drags the median route profit (and so the 10:1 spread) down.
+- Pepper stays out: with the Casa's 28% cut a deep lot of pepper was never profitable, and without it pepper at Porto was the top lane in the game.
+- The pool cap is what holds the single-lane spread: with uncapped pools (the polity-scaled figure alone) the best lane at 105 t was 4-5k and the spread 12-16 at every setting that kept the Nau ahead of the nau.
+
+### Side effects and honest limits
+- The Nau da India is the only hull that finishes a Malabar tour with a real profit once the whole round trip's stores are counted; the smaller hulls' India run pays 3-6k, a worse bet than the Atlantic
+  ladder's best voyage for their price only in that it is 270 days long and 100% of the risk.
+- The ladder-days "typical Malabar tour" (the old simplified voyage days, 200 not 296) is 12.4k, over the 12,000 of the real-days tour; the ceiling on it was moved to 14.5k. Exceptional runs (a trusted
+  relation, skill 0.3+, spread 0.07 not 0.30) are well above that.
+- A deep lot is priced to the best Portuguese quay, so it is a bet on Lisbon staying where it is; a glutted or embargoed quay lowers what it will pay and the deep lot gets cheaper with it.
+- The harness has no purse: the cost of a Nau's deep lots (tens of thousands of cruzados at the dear end) is not a limit in the table, only in the game, where a small ship's captain has not got it.
+- Lisbon takes three times the quay's tonnage of the autumn-sale spices. The lanes see that as appetite (`appetiteLeft`), so NPC lanes send Lisbon a little more spice; the world spread is 10.4 / 13.9 as above.
+- Saves: `MarketState.deep` is optional and absent in old saves (a full pool); nothing else is stored. No SAVE_FORMAT bump.

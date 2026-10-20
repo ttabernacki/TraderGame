@@ -13,6 +13,7 @@
  *  - a war closes the lanes at its ports through marketModifiers and they reopen when it ends;
  *  - the King's goods cannot be laundered by waiting; dues are small and scale with tonnage.
  */
+import { Markets } from '../../src/economy/market';
 import { GOODS, good } from '../../src/economy/goods';
 import { PORTS, portDef } from '../../src/world/ports';
 import {

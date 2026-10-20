@@ -316,6 +316,32 @@ export class Markets {
     }
   }
 
+  /** The slow seasonal drift in a port's prices, about +-0.14. */
+  private seasonOf(portId: string, t: number): number {
+    return fbm1(t / (86400 * 40) + hashPort(portId), 2, 3) * 0.14;
+  }
+
+  /**
+   * What a unit of a good fetches a captain on the best Portuguese quay today, on a first sale: the quay's own bid (the price formula
+   * in `listings`: its hunger, its sating, the season, the news and the Powers, at skill 0 and relation 0). The houses behind a deep lot
+   * write to Lisbon, Porto and Lagos and price to whichever pays most, so no Portuguese quay ever pays much over the deep lot's price.
+   * `fxOf` gives the Powers' say at a quay (cached by the caller).
+   */
+  homeReturn(g: Good, t: number, fxOf: (portId: string) => MarketEffects | null): number {
+    let best = 0;
+    for (const p of PORTS) {
+      const hunger = p.people === 'portuguese' ? p.wants[g.id] ?? 0 : 0;
+      if (hunger <= 0) continue;
+      const fx = fxOf(p.id);
+      if (fx?.closed) continue;
+      const glut = this.stateFor(p.id).glut[g.id] ?? 0;
+      const mid = g.lisbon * (lerp(1.15, 2.1, hunger) / (1 + glut * 1.5)) * (1 + this.seasonOf(p.id, t));
+      const world = this.adjust?.(p.id, g.id, t);
+      best = Math.max(best, mid * 0.7 * priceMod(p.id, g.id).bid * (world?.bid ?? 1) * (fx?.priceMult[g.id] ?? 1));
+    }
+    return best;
+  }
+
   /** Units in the deeper pool of a good at a port, before anyone has drawn on it, at time `t` (the wholesale season). 0 where there is no second tier. */
   deepBaseOf(portId: string, goodId: string, t: number): number {
     const def = portDef(portId);
@@ -414,9 +440,14 @@ export class Markets {
     const held = new Set(carrying);
 
     // Slow seasonal drift so prices are never quite the same twice.
-    const season = fbm1(t / (86400 * 40) + hashPort(portId), 2, 3) * 0.14;
+    const season = this.seasonOf(portId, t);
     // What the Powers are doing to this place (war, embargo, a Front's stage): read once, applied per good.
     const fx = this.modifiers ? this.modifiers(portId, t) : null;
+    const fxCache = new Map<string, MarketEffects | null>();
+    const homeFx = (id: string): MarketEffects | null => {
+      if (!fxCache.has(id)) fxCache.set(id, this.modifiers ? this.modifiers(id, t) : null);
+      return fxCache.get(id)!;
+    };
 
     for (const g of GOODS) {
       const abundance = def.produces[g.id] ?? 0;
@@ -471,7 +502,7 @@ export class Markets {
       out.push({
         goodId: g.id,
         stock: fx?.closed ? 0 : Math.floor((stock + deepLeft) * world.stock * (fx?.stockMult[g.id] ?? 1)),
-        ...(hasDeep ? { lot: fx?.closed ? 0 : Math.floor(stock * world.stock * (fx?.stockMult[g.id] ?? 1)), curve: deepCurve(askNow, g) } : {}),
+        ...(hasDeep ? { lot: fx?.closed ? 0 : Math.floor(stock * world.stock * (fx?.stockMult[g.id] ?? 1)), curve: deepCurve(askNow, g, this.homeReturn(g, t, homeFx)) } : {}),
         // Never quite zero. A market sated to the eyebrows still has somebody
         // who will take a little more if the price is bad enough, and a hard
         // stop at nought is how a captain ends up with a hold he can never

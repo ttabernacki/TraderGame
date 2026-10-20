@@ -36,7 +36,7 @@ export const LOT_TONS: Record<PortDef['size'], number> = {
  */
 export const PORT_PROFIT: Record<Region, number> = {
   europe: 70, atlantic: 70, maghreb: 70, guinea: 300, brazil: 550, kongo: 550, cape: 550,
-  swahili: 900, arabia: 1300, india: 2900, east: 2900,
+  swahili: 900, arabia: 1300, india: 2200, east: 2200,
 };
 
 /**
@@ -96,7 +96,7 @@ export function lotUnits(def: PortDef, g: Good, kind: 'produces' | 'wants', leve
   // cruzados' worth at most.
   const parcel = Math.min(PARCEL_UNITS, PARCEL_VALUE / Math.max(g.lisbon, 0.01)) * (SHARE_FLOOR + (1 - SHARE_FLOOR) * Math.min(Math.max(level, 0), 1));
   // The port's money for dense goods, per good in proportion to its level.
-  const byMoney = ((kind === 'produces' ? PORT_PROFIT : PORT_DEMAND)[regionOf(def.id)] * wealth * scale * Math.max(level, 0) * (g.id === 'ouro' && kind === 'produces' && regionOf(def.id) === 'guinea' ? GOLD_LOT : 1))
+  const byMoney = ((kind === 'produces' ? PORT_PROFIT : PORT_DEMAND)[regionOf(def.id)] * wealth * scale * Math.max(level, 0) * (g.id === 'ouro' && kind === 'produces' && regionOf(def.id) === 'guinea' ? GOLD_LOT : 1) * (kind === 'produces' && hasDeepTier(def, g) ? SPICE_FIRST_LOT.share : 1))
     / (MARGIN_PER_LISBON * Math.max(g.lisbon, 0.01));
   // The autumn sale at Lisbon: the Flemish and German houses (the Fuggers, the Welsers, Antwerp's factors) come for the Casa's
   // spice with money to spare, so the quay's money cap does not bind: Lisbon takes what the quay can handle, and more in the sale.
@@ -105,25 +105,35 @@ export function lotUnits(def: PortDef, g: Good, kind: 'produces' | 'wants', leve
 }
 
 // ---------------------------------------------------------------------------
-// The second tier (BALANCE.md, "The deeper lots of Malabar")
+// The second tier (docs/BALANCE.md, "The deeper lots of Malabar")
 // ---------------------------------------------------------------------------
 //
-// The first lot of a dense good at an Indian or Eastern port is what the Casa's factor and the
-// Crown-scale traders hold for a visiting captain: money-capped (PORT_PROFIT), the same for a
-// barcha and for a Nau. Behind it stand the big merchant houses' godowns, the Gujarati, Chinese
-// and Arab warehouses and, in the harvest, the whole wholesale season. That stock is not shown to
-// a man with a hold of forty tons and a purse to match; it is sold only to a buyer who can
-// carry and pay for it, and dearer: the first unit of it costs DEEP_PRICE.base times the quote
-// and the price climbs by DEEP_PRICE.rise by the bottom of the pool (Markets.slippage).
+// The first lot of a spice at an Indian or Eastern port is what the Casa's factor and the Crown-scale
+// traders keep for a visiting captain: money-capped (PORT_PROFIT), the same for a barcha and for a Nau.
+// Behind it stand the big merchant houses' godowns, the Gujarati, Chinese and Arab warehouses and, in
+// the harvest, the wholesale season. That stock is sold only to a buyer who can carry and pay for it,
+// and dearer: the first ton of it leaves a carrier DEEP_PRICE.perTon cruzados under what the good
+// fetches at home, and the price climbs to the full return by the bottom of the pool. A great hold
+// works down the pool until nothing pays; a small one never reaches the dear end. The order of the
+// price curve is in `Markets.slippage(quantity, stock, lot, curve)`.
 
+/**
+ * Where there is a deeper tier, the first lot of spice is only what the Casa's factor and the Crown-scale traders keep for a visiting
+ * captain: this share of the port's money cap. The rest of what the port holds is behind it (DEEP_TONS).
+ */
+export const SPICE_FIRST_LOT = { share: 0.23 };
 /** Tons a year the carrying polity can spare, order of magnitude (world/lanes reads the same table). */
 export const POLITY_KT: Record<string, number> = { gujarat: 12000, calicut: 8000, kilwa: 2000, malindi: 1000, hormuz: 5000, aden: 5000, malacca: 8000 };
 /** The same, for the polities the lanes did not need to name: the Malabar and Deccan houses. */
 const HOUSE_KT: Record<string, number> = { ...POLITY_KT, cochin: 7000, kolathiri: 5000, bijapur: 6000, vijayanagara: 6000, kotte: 3000 };
-/** What the houses of a region will sell a buyer who can lift it, in profit at the quote, per good (wealth 1, level 1, 8,000 kt polity). */
-export const DEEP_PROFIT: Partial<Record<Region, number>> = { india: 9000, east: 9000 };
-/** And in tons: the share of a month of the carrying polity's trade (POLITY_KT / 12) that its houses hold in a good, at level 1. */
-export const DEEP_TONS = { share: 0.08 };
+/** The regions with a second tier: the Malabar and Deccan coast, Ceylon and Malacca. Everywhere else the first lot is all there is. */
+export const DEEP_REGIONS: ReadonlySet<Region> = new Set<Region>(['india', 'east']);
+/**
+ * Tons of one good the houses of a port hold in their godowns, at level 1 in a port of wealth 1 whose polity carries 8,000 kt a year
+ * (Calecute, Malacca): the houses of a bigger polity (Gujarat) hold more, a smaller one less, a port's wealth and prosperity scale it as
+ * they scale everything else, and the harvest fair opens it. `cap` is the most any port ever holds of one good: a godown, not a country.
+ */
+export const DEEP_TONS = { house: 240, cap: 70 };
 /**
  * The houses price their godowns like a freight rate: `homeReturn` is the most a unit fetches a captain on a Portuguese quay (the
  * Casa's hunger at its keenest, less the dealer's spread; the Casa's own cut of the King's goods is not in it), and the first unit
@@ -132,36 +142,36 @@ export const DEEP_TONS = { share: 0.08 };
  * return by the bottom of the pool, the margin on the last ton is nothing, and that is where a great hold stops buying.
  * `floor` is the least multiple of the quote the deep lot ever costs.
  */
-export const DEEP_PRICE = { perTon: 55, floor: 1.15 };
-/** What a unit of a good fetches on a Portuguese quay on a first sale at the keenest hunger: the Casa's 2.1 of its price less the dealer's 30% spread, 1.5 of Lisbon's price. */
-export const homeReturn = (g: Good): number => g.lisbon * 1.5;
-/** The curve (multiples of the quoted ask) for a listing whose ask is `ask`. */
-export function deepCurve(ask: number, g: Good): { base: number; rise: number } {
-  const margin = Math.max(0, Math.min(DEEP_PRICE.perTon * g.bulk, homeReturn(g) - ask));
-  return { base: Math.max(DEEP_PRICE.floor, (homeReturn(g) - margin) / Math.max(ask, 0.01)), rise: margin / Math.max(ask, 0.01) };
+export const DEEP_PRICE = { perTon: 58, floor: 1.15 };
+/**
+ * The curve (multiples of the quoted ask) for a deep lot, given what a unit of the good fetches now on the best Portuguese quay
+ * (`homeReturn`: the houses write to Lisbon, Porto and Lagos and know what they pay, today). The Casa's own cut of the King's
+ * goods is not in it.
+ */
+export function deepCurve(ask: number, g: Good, homeReturn: number): { base: number; rise: number } {
+  const margin = Math.max(0, Math.min(DEEP_PRICE.perTon * g.bulk, homeReturn - ask));
+  return { base: Math.max(DEEP_PRICE.floor, (homeReturn - margin) / Math.max(ask, 0.01)), rise: margin / Math.max(ask, 0.01) };
 }
-/** Cruzados a ton at Lisbon above which a spice is a luxury, not a warehouse good. */
-export const DEEP_MAX_DENSITY = 1200;
 /** A deep pool in the wholesale season (the pepper harvest, the clove ships) and out of it. */
 export const DEEP_SEASON = { inSeason: 1.35, out: 0.85 };
 
+/** Whether the houses of this port keep a deeper pool of this good: the spices, but not the King's pepper (the Casa buys that itself). */
+export const hasDeepTier = (def: PortDef, g: Good): boolean =>
+  DEEP_REGIONS.has(regionOf(def.id)) && g.category === 'spice' && !MONOPOLY.includes(g.id);
+
 /**
- * Units of a dense good the merchant houses of a port will sell to a buyer who can lift them, over and above the first lot.
- * 0 where there is no second tier (every port outside India and the East, and every staple).
+ * Units of a spice the merchant houses of a port will sell to a buyer who can lift them, over and above the first lot.
+ * 0 where there is no second tier (every port outside India and the East, the King's pepper, and everything that is not a spice).
  */
 export function deepUnits(def: PortDef, g: Good, level: number, month: number, worth = def.wealth): number {
-  const money = DEEP_PROFIT[regionOf(def.id)];
-  // Only the bulk spices that are not the King's (ginger, cinnamon, cardamom: the Casa buys the pepper itself, and sells it on its own scales): the luxuries (mace, cloves, nutmeg, silk, stones) come in small parcels by the Gujarati and the Chinese and nobody holds a warehouse of them.
-  if (!money || isStaple(g) || g.category !== 'spice' || MONOPOLY.includes(g.id) || g.lisbon / Math.max(g.bulk, 1e-4) > DEEP_MAX_DENSITY || level <= 0) return 0;
+  if (!hasDeepTier(def, g) || level <= 0) return 0;
   const wealth = SHARE_FLOOR + (1 - SHARE_FLOOR) * Math.min((0.5 + worth) / 1.5, 1.2);
   const kt = HOUSE_KT[polityOfPort(def.id)?.id ?? ''] ?? 5000;
   const houses = Math.min(Math.max(kt / 8000, 0.5), 1.5);
   // The wholesale season: the harvest fair of the port (the pepper harvest, the clove ships), if it has one for this good.
   const fairGood = FAIRS.some((f) => f.ports.includes(def.id) && f.goods[g.id]?.ask !== undefined);
   const season = !fairGood ? 1 : fairsAt(def.id, month).some((f) => f.goods[g.id]?.ask !== undefined) ? DEEP_SEASON.inSeason : DEEP_SEASON.out;
-  const byMoney = (money * wealth * level * houses * season) / (MARGIN_PER_LISBON * Math.max(g.lisbon, 0.01));
-  const byTons = (DEEP_TONS.share * (kt / 12) * level * season) / Math.max(g.bulk, 1e-4);
-  return Math.floor(Math.min(byMoney, byTons));
+  return Math.floor(Math.min(DEEP_TONS.house * wealth * level * houses * season, DEEP_TONS.cap) / Math.max(g.bulk, 1e-4));
 }
 
 /**
