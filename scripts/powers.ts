@@ -19,9 +19,9 @@ import { along, TRUNK } from '../src/progression/road';
 import { HISTORY } from '../src/progression/chronicle';
 import { TRAFFIC_SCENES, dueTrafficScene, sceneOffered } from '../src/progression/trafficScenes';
 import { FRONT_SCENES, dueFrontScene } from '../src/progression/frontScenes';
-import { tickLines, canFundLine, openFundedLine } from '../src/progression/network';
+import { tickLines, canFundLine, openFundedLine, closeLine } from '../src/progression/network';
 import { daysFromEpoch } from '../src/core/clock';
-import { PATRON_IDS, choosePatron, eventsOf, favouriteEvents, reignAt, ruaNovaTerms, tickPatrons, type PatronId } from '../src/identity';
+import { PATRON_IDS, choosePatron, eventsOf, favouriteEvents, patronOffers, reignAt, ruaNovaTerms, tickPatrons, type PatronId } from '../src/identity';
 import { ERA, MACHINES, goldFever, machinePhase, racePace, reaches, relay } from '../src/world/powers';
 import { POWER_SCENES, duePowerScene, powerSceneOffered } from '../src/progression/powerScenes';
 import { CONDUCT, ruleReading } from '../src/world/powers/rule';
@@ -589,6 +589,382 @@ function playSeed(seed: number, years: number, policy: Policy): Run {
     check('the same seed and the same Ledger give the same history', friend.json === again_.json);
   }
   void textBad;
+}
+
+// ---- 6. E3: the Court ticking, the Crescent, the Gold and the Claim staged; the remaining conflicts; the Rua Nova's Lines --------------
+{
+  const N = Math.min(SEEDS, 30);
+
+  // 6a. Every Front's ladder is reachable (stage 4 in some run at the thirty-year horizon, by history or by a captain who presses), and none
+  // sits at an extreme in most random seeds at twenty years (the section above). The Court's ladder is the dated history's.
+  {
+    const peaks: Record<FrontId, number[]> = { gold: [], traffic: [], claim: [], crescent: [], rule: [], court: [] };
+    for (let s = 1; s <= N; s++) {
+      const r = playSeed(s, 31, 'random');
+      for (const f of FRONT_IDS) peaks[f].push(r.peak[f]);
+    }
+    const pressPeaks: Record<FrontId, number[]> = { gold: [], traffic: [], claim: [], crescent: [], rule: [], court: [] };
+    for (let s = 1; s <= Math.min(N, 12); s++) {
+      const r = playSeed(s, 31, 'press');
+      for (const f of FRONT_IDS) pressPeaks[f].push(r.peak[f]);
+    }
+    const reach = (f: FrontId, k: number): boolean => peaks[f].some((x) => x >= k) || pressPeaks[f].some((x) => x >= k);
+    for (const f of FRONT_IDS) console.log(`  ${f} peak stage over thirty-one years, random ${[1, 2, 3, 4].map((k) => `${k}:${peaks[f].filter((x) => x === k).length}`).join(' ')} | pressing ${[1, 2, 3, 4].map((k) => `${k}:${pressPeaks[f].filter((x) => x === k).length}`).join(' ')}`);
+    check('every Front’s ladder is reachable to its fourth stage (history, or a captain who presses)', FRONT_IDS.every((f) => reach(f, 4)), FRONT_IDS.filter((f) => !reach(f, 4)).join(','));
+    check('the Gold, the Claim and the Crescent are not at stage 4 for every random captain (the captain can keep them down)', (['gold', 'claim', 'crescent'] as const).every((f) => peaks[f].some((x) => x < 4)), (['gold', 'claim', 'crescent'] as const).map((f) => `${f}:${peaks[f].filter((x) => x === 4).length}/${N}`).join(' '));
+    check('pressing moves the Gold and the Claim where a random captain does not (the levers are real)', pressPeaks.gold.filter((x) => x >= 4).length > peaks.gold.slice(0, 12).filter((x) => x >= 4).length && pressPeaks.claim.filter((x) => x >= 4).length >= peaks.claim.slice(0, 12).filter((x) => x >= 4).length);
+  }
+
+  // 6b. The Court Front ticks, in the real dated windows: João II’s death, the Edict, the favourites, Easter 1506.
+  {
+    const bootGame = (seed: number, y: number, mo: number, patron: PatronId, origin?: string): Game => {
+      const g = new Game(seed);
+      g.clock.t = daysFromEpoch(y, mo, 1) * DAY;
+      g.worldT = g.clock.t;
+      g.crown.patent = null;
+      g.crown.standing = 1000;
+      g.dockedAt = 'lisboa';
+      g.identity.patron = patron;
+      if (origin) g.origin = origin as Game['origin'];
+      // What had already fallen or risen before the start is settled, not fallen on the first tick.
+      g.identity.lastMonth = -1;
+      for (const e of eventsOf(g)) { const at = e.at(); if (at !== null && at < g.clock.t) g.identity.applied.push(e.id); }
+      return g;
+    };
+    const run = (g: Game, months: number, each?: (g: Game) => void): void => {
+      for (let i = 0; i < months; i++) { g.clock.t += 30 * DAY; tickWorldDue(g, g.clock.t); tickPatrons(g); each?.(g); }
+    };
+    const near = (t: number | undefined, y: number, mo: number, days: number): boolean => t !== undefined && Math.abs(t - daysFromEpoch(y, mo, 1) * DAY) <= days * DAY;
+    // The King’s death. An idle client of the Crown is pulled down with it; one who moves when warned is spared.
+    let kdOk = 0, spared = 0, pulled = 0, standingSpared = 0, standingPulled = 0, warnedRight = 0, kdSeeds = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const idle = bootGame(seed, 1494, 6, 'crown'), early = bootGame(seed, 1494, 6, 'crown');
+      const p2 = favouriteEvents(early)[0].patron;
+      const away = PATRON_IDS.find((p) => p !== 'crown' && p !== p2)!;
+      run(idle, 18);
+      run(early, 18, (g) => { if (g.identity.warned['king-dies'] !== undefined && g.identity.patron === 'crown') { g.dockedAt = 'lisboa'; choosePatron(g, away); } });
+      kdSeeds++;
+      if (near(idle.identity.warned['king-dies'], 1495, 6, 45)) warnedRight++;
+      const fell = idle.identity.patrons.crown.fell;
+      if (near(fell ?? undefined, 1495, 10, 50)) kdOk++;
+      if (idle.identity.patrons.crown.pulled) pulled++;
+      if (!early.identity.patrons.crown.pulled && early.identity.moved.includes('king-dies')) spared++;
+      standingPulled += idle.crown.standing; standingSpared += early.crown.standing;
+    }
+    check('the Court Front’s history warns of the King’s death four months ahead (June 1495) and the fall lands in October', warnedRight === kdSeeds && kdOk === kdSeeds, `warned in window ${warnedRight}/${kdSeeds}, fell in window ${kdOk}/${kdSeeds}`);
+    check('a client of the Crown who sat still is pulled down with it; one who moved when warned is spared', pulled === kdSeeds && spared === kdSeeds && standingSpared > standingPulled, `pulled ${pulled}, spared ${spared}, standing ${Math.round(standingSpared / kdSeeds)} vs ${Math.round(standingPulled / kdSeeds)}`);
+    // The Court’s stage and the favourite it makes fall.
+    let favOk = 0, favEarlySpared = 0, favSeeds = 0, stageOk = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const probe = bootGame(seed, 1495, 6, 'crown');
+      const p2 = favouriteEvents(probe)[0].patron;
+      const away = PATRON_IDS.find((p) => p !== 'crown' && p !== p2)!;
+      const idle = bootGame(seed, 1495, 6, p2), early = bootGame(seed, 1495, 6, p2);
+      run(idle, 14);
+      run(early, 14, (g) => { if (g.identity.warned['favourite-2'] !== undefined && g.identity.patron === p2) { g.dockedAt = 'lisboa'; choosePatron(g, away); } });
+      favSeeds++;
+      const entered = idle.powers.fronts.court.log.find((l) => l.stage === 2)?.t;
+      if (near(entered, 1495, 10, 50)) stageOk++;
+      const w = idle.identity.warned['favourite-2'], fell = idle.identity.patrons[p2].fell;
+      if (w !== undefined && fell !== null && near(w, 1495, 10, 50) && fell - w >= 2 * 30 * DAY && fell - w <= 5 * 30 * DAY) favOk++;
+      if (idle.identity.patrons[p2].pulled && !early.identity.patrons[p2].pulled && early.identity.moved.includes('favourite-2')) favEarlySpared++;
+    }
+    check('the Court reaches its second stage with the King’s death (October 1495)', stageOk === favSeeds, `${stageOk}/${favSeeds}`);
+    check('the favourite falls three or four months after the stage, with the warning given at the stage', favOk === favSeeds, `${favOk}/${favSeeds}`);
+    check('the favourite’s client who moves early is spared, and one who stays is pulled down', favEarlySpared === favSeeds, `${favEarlySpared}/${favSeeds}`);
+    // The Edict. A converso captain sailing for the Rua Nova loses more with it than another would.
+    let edictWindow = 0, convMore = 0, edictSeeds = 0, edictMoved = 0;
+    for (let seed = 1; seed <= 6; seed++) {
+      const conv = bootGame(seed, 1496, 6, 'ruanova', 'converso'), other = bootGame(seed, 1496, 6, 'ruanova', 'tradesman'), mv = bootGame(seed, 1496, 6, 'ruanova', 'converso');
+      for (const g of [conv, other, mv]) { g.identity.applied.push('favourite-2'); }
+      run(conv, 9); run(other, 9);
+      run(mv, 9, (g) => { if (g.identity.warned['edict'] !== undefined && g.identity.patron === 'ruanova') { g.dockedAt = 'lisboa'; choosePatron(g, 'church'); } });
+      edictSeeds++;
+      if (near(conv.identity.warned['edict'], 1496, 9, 45) && near(conv.identity.patrons.ruanova.fell ?? undefined, 1496, 12, 50)) edictWindow++;
+      if (conv.crown.standing < other.crown.standing) convMore++;
+      if (mv.crown.standing > conv.crown.standing && !mv.identity.patrons.ruanova.pulled) edictMoved++;
+    }
+    check('the Edict is warned of three months ahead and the Rua Nova falls in December 1496', edictWindow === edictSeeds, `${edictWindow}/${edictSeeds}`);
+    check('a converso captain loses more with the Rua Nova than another would; one who moved early loses none of it', convMore === edictSeeds && edictMoved === edictSeeds, `converso loses more ${convMore}/${edictSeeds}, mover spared ${edictMoved}/${edictSeeds}`);
+    // Easter 1506: the Court’s fourth stage; its favourite; the Rua Nova falls with the street.
+    {
+      const g = bootGame(3, 1505, 6, 'ruanova');
+      run(g, 18);
+      check('the Court reaches the reckoning with the massacre of April 1506, and the Rua Nova falls in that window', g.powers.fronts.court.stage === 4 && near(g.powers.fronts.court.log.find((l) => l.stage === 4)?.t, 1506, 4, 50) && g.identity.applied.includes('easter-1506'), `stage ${g.powers.fronts.court.stage}`);
+      check('the favourite of the fourth stage is warned of, and falls, within the same window', g.identity.warned['favourite-4'] !== undefined && g.identity.applied.includes('favourite-4'));
+    }
+    // The new reign’s orders: Manuel’s Casa asks for letters, the old King’s for surveys.
+    {
+      const old = bootGame(2, 1494, 3, 'crown'), neu = bootGame(2, 1497, 3, 'crown');
+      for (const g of [old, neu]) { g.identity.patrons.crown.favour = 0.6; g.chronicle.act = 3; }
+      const offers = (g: Game) => patronOffers(g, []).map((p) => p.title);
+      const a = offers(old), b = offers(neu);
+      check('the Crown’s orders change with the reign: a survey under João II, the King’s letters under Manuel', reignAt(old.clock.t) === 'joao' && reignAt(neu.clock.t) === 'manuel' && a.some((t) => /survey/i.test(t)) && !a.some((t) => /letters/i.test(t)) && b.some((t) => /letters/i.test(t)) && !b.some((t) => /survey/i.test(t)), `${a.join(' | ')} || ${b.join(' | ')}`);
+    }
+    // A save from before the Court ticked is re-laid on the history line.
+    {
+      const g = bootGame(4, 1504, 1, 'crown');
+      run(g, 2);
+      const d = JSON.parse(g.serialize());
+      d.powers.era = undefined; delete d.powers.era;
+      d.powers.fronts.court.base = 0.5; d.powers.fronts.court.stage = 1; d.powers.fronts.court.log = [];
+      d.powers.fronts.claim.base = 2; d.powers.fronts.claim.stage = 1;
+      const old = Game.deserialize(JSON.stringify(d));
+      check('an older save loads at era 1 …', (old.powers.era ?? 1) < ERA);
+      old.clock.t += 40 * DAY; tickWorldDue(old, old.clock.t);
+      check('… and is re-laid on the history line on its next tick (the Court at the Rua Nova’s stage, the Claim at the line drawn), the offset kept', old.powers.era === ERA && old.powers.fronts.court.stage === 3 && old.powers.fronts.claim.stage === 3, `court ${old.powers.fronts.court.stage}, claim ${old.powers.fronts.claim.stage}`);
+      void relay;
+    }
+  }
+
+  // 6c. The Crescent: notes, convoys, a league; and the Lisbon pepper price follows through the Venetian channel.
+  {
+    const st = newPowers();
+    const T = 86400 * 400;
+    const pep = (stage: 1 | 2 | 3 | 4): number => { st.fronts.crescent.stage = stage; return marketModifiers('lisboa', T, st).priceMult.pimenta ?? 1; };
+    const p = [pep(1), pep(2), pep(3), pep(4)];
+    check('the Crescent raises the Lisbon pepper price modifier from stage two, and more at each stage after', p[0] === 1 && p[1] > 1 && p[2] > p[1] && p[3] > p[2], p.map((x) => x.toFixed(3)).join(' '));
+    st.fronts.crescent.stage = 2;
+    check('and the Book can say why (the reason names the Venetian factors)', marketModifiers('lisboa', T, st).reasons.some((r) => /Venice/.test(r)));
+    st.fronts.crescent.stage = 1;
+    const traced: boolean[] = []; let venice = 0, leagues = 0, convoys = 0, notes = 0;
+    for (let s = 1; s <= Math.min(N, 24); s++) {
+      const r = playSeed(s, 31, 'random');
+      const h = r.host, stt = h.powers!;
+      const t = h.worldT!;
+      const stage = stt.fronts.crescent.stage;
+      if (stage >= 2) traced.push((marketModifiers('lisboa', t, stt).priceMult.pimenta ?? 1) > 1);
+      for (const m of stt.powers.mamluk.moves) { if (m.kind === 'venice') venice++; if (m.kind === 'league') leagues++; if (m.kind === 'convoy') convoys++; if (m.kind === 'note') notes++; }
+    }
+    check('in played runs, a Crescent at stage two or more always has the Lisbon pepper price up', traced.length > 5 && traced.every(Boolean), `${traced.filter(Boolean).length}/${traced.length}`);
+    check('the Mamluk court’s notes, convoys and league, and Venice’s bidding at Lisbon, all occur in played runs', notes > 0 && convoys > 0 && leagues > 0 && venice > 0, `notes ${notes}, convoys ${convoys}, league ${leagues}, Venice ${venice}`);
+  }
+
+  // 6d. The remaining conflicts: each is a small machine that reaches its phases, moves a price, shuts and reopens a lane where it should, and tells a rumour.
+  {
+    const PORTS_OF: Record<keyof typeof MACHINES, string[]> = { senegal: ['portudal', 'arguim'], akan: ['mina', 'axim', 'acara'], kongo: ['mpinda'], ndongo: ['luanda', 'benguela'] };
+    const PAT: Record<keyof typeof MACHINES, RegExp> = { senegal: /riders|Damel|Wolof|river/i, akan: /kingdoms|beach/i, kongo: /Manikongo|sons|throne/i, ndongo: /Ngola/i };
+    const names = Object.keys(MACHINES) as (keyof typeof MACHINES)[];
+    const reached: Record<string, number> = {};
+    const priced: Record<string, number> = {}, priceable: Record<string, number> = {};
+    const rumoured: Record<string, number> = {}, heardAtOnce: Record<string, number> = {}, rumourTotal: Record<string, number> = {};
+    let senWarShut = 0, senWar = 0, senReopen = 0, akWarShut = 0, akWar = 0, akReopen = 0;
+    for (let s = 1; s <= Math.min(SEEDS, 40); s++) {
+      const h = makeHost(s) as PowersHost; h.powers = newPowers(); h.ledger = [];
+      h.markets.modifiers = (p, t) => marketModifiers(p, t, h.powers);
+      let lastId = 0;
+      const prev: Record<string, number> = {};
+      const reopened = { sen: false, ak: false };
+      for (let m = 0; m < 31 * 12; m++) {
+        tickWorld(h, 1);
+        const t = h.worldT!, st = h.powers!;
+        for (const k of names) {
+          const ph = machinePhase({ st }, k).phase;
+          if (ph >= 1 && (prev[k] ?? 0) !== ph) {
+            reached[`${k}${ph}:${s}`] = 1;
+            // a phase in force moves a price, a stock or the dues somewhere it names
+            priceable[`${k}${ph}`] = (priceable[`${k}${ph}`] ?? 0) + 1;
+            if (PORTS_OF[k].some((p) => { const mm = marketModifiers(p, t, st); return Object.keys(mm.priceMult).length + Object.keys(mm.stockMult).length > 0 || mm.duesMult !== 1; })) priced[`${k}${ph}`] = (priced[`${k}${ph}`] ?? 0) + 1;
+          }
+          prev[k] = ph;
+        }
+        // the Wolof and the Akan wars shut their lanes and the lanes open again
+        const senWarOn = activeEffects(st, t).some((e) => e.power === 'sahel' && e.kind === 'war');
+        const akWarOn = activeEffects(st, t).some((e) => e.power === 'akan' && e.kind === 'war');
+        if (senWarOn) { senWar++; if (marketModifiers('portudal', t, st).laneClosed) senWarShut++; reopened.sen = true; }
+        else if (reopened.sen && !marketModifiers('portudal', t, st).laneClosed) { senReopen++; reopened.sen = false; }
+        if (akWarOn) { akWar++; if (marketModifiers('axim', t, st).laneClosed) akWarShut++; reopened.ak = true; }
+        else if (reopened.ak && !activeEffects(st, t).some((e) => e.power === 'akan' && e.closes) && !marketModifiers('axim', t, st).laneClosed) { akReopen++; reopened.ak = false; }
+        for (const r of st.rumours) {
+          if (r.id <= lastId) continue;
+          for (const k of names) if (r.power === MACHINES[k].power && PORTS_OF[k].includes(r.place) && PAT[k].test(r.claim)) {
+            rumourTotal[k] = (rumourTotal[k] ?? 0) + 1;
+            if (r.truth === 'true') { rumoured[`${k}:${s}`] = 1; if (reaches(r, r.place, r.born)) heardAtOnce[k] = (heardAtOnce[k] ?? 0) + 1; }
+          }
+        }
+        lastId = st.nextId - 1;
+      }
+    }
+    const seedsReaching = (k: string, ph: number): number => Object.keys(reached).filter((x) => x.startsWith(`${k}${ph}:`)).length;
+    for (const k of names) console.log(`  ${k}: seeds reaching phases 1/2/3 = ${[1, 2, 3].map((ph) => seedsReaching(k, ph)).join('/')} of ${Math.min(SEEDS, 40)}; ${rumourTotal[k] ?? 0} rumours`);
+    check('every conflict machine reaches its last phase in a good share of seeds (a quarter at least)', names.every((k) => seedsReaching(k, 3) >= Math.min(SEEDS, 40) * 0.25), names.map((k) => `${k}:${seedsReaching(k, 3)}`).join(' '));
+    check('Senegal and Akan wars are reached in some seeds; Kongo’s contest and Ndongo’s withheld tribute too', seedsReaching('senegal', 2) >= 2 && seedsReaching('akan', 2) >= 1 && seedsReaching('kongo', 2) >= 3 && seedsReaching('ndongo', 2) >= 3, `senegal ${seedsReaching('senegal', 2)}, akan ${seedsReaching('akan', 2)}, kongo ${seedsReaching('kongo', 2)}, ndongo ${seedsReaching('ndongo', 2)}`);
+    check('every phase of every machine puts a price, a stock or the dues in force at its ports', Object.keys(priceable).every((k) => priced[k] === priceable[k]), Object.keys(priceable).filter((k) => priced[k] !== priceable[k]).join(','));
+    check('every machine tells a plain rumour that is heard where it began', names.every((k) => (rumourTotal[k] ?? 0) > 0 && (heardAtOnce[k] ?? 0) > 0), names.map((k) => `${k}:${heardAtOnce[k] ?? 0}`).join(' '));
+    check('the Wolof war shuts the lane at Portudal for every month of it, and the lane reopens', senWar > 0 && senWarShut === senWar && senReopen > 0, `shut ${senWarShut}/${senWar}, reopened ${senReopen} times`);
+    check('the Akan war shuts the beach at Axim for every month of it, and it reopens', akWar > 0 && akWarShut === akWar && akReopen > 0, `shut ${akWarShut}/${akWar}, reopened ${akReopen} times`);
+    // The succession of Kongo states no year: the machine begins from 1506 and is not a dated scene.
+    const g = new Game(5); g.worldT = g.clock.t;
+    check('the Kongo succession is a machine that begins no earlier than 1506 (and is not in the dated schedule)', !SCHEDULE.some((x) => x.id === 'kongo-succession') && g.powers.powers.kongo.flags.kscPhase === undefined);
+  }
+
+  // 6e. The Gold: fever is a danger to the company on the coast, the stage's price reaches Lisbon, and a collapse or a revolt shuts the beach.
+  {
+    const st = newPowers();
+    const T = 86400 * 400;
+    st.fronts.gold.stage = 2;
+    check('fever pressure is nothing off the Gold Coast, and rises with the stage and with a fever season on it', goldFever(st, 'lisboa', T) === 0 && goldFever(st, 'mina', T) > 0 && (() => { const a = goldFever(st, 'mina', T); st.powers.akan.flags.feverUntil = T + 30 * DAY; const b = goldFever(st, 'mina', T); st.fronts.gold.stage = 4; const c = goldFever(st, 'mina', T); return b > a && c > b; })());
+    const ouro = (stage: 1 | 2 | 3 | 4): number => { st.fronts.gold.stage = stage; return marketModifiers('lisboa', T, st).priceMult.ouro ?? 1; };
+    const o = [ouro(1), ouro(2), ouro(3), ouro(4)];
+    check('the Gold’s stage raises the price of gold at Lisbon as the beach hardens', o[0] === 1 && o[1] > 1 && o[2] > o[1] && o[3] > o[2], o.map((x) => x.toFixed(3)).join(' '));
+    st.fronts.gold.stage = 4;
+    const mm = marketModifiers('mina', T, st);
+    check('at stage four the beach at Mina is let in at a toll and the gold stock is a little over half', mm.stockMult.ouro !== undefined && mm.stockMult.ouro < 0.7 && mm.duesMult > 1.4);
+    let revolts = 0, collapses = 0, fevers = 0, strains = 0, welcomes = 0, hot = 0;
+    for (let s = 1; s <= Math.min(N, 16); s++) {
+      const r = playSeed(s, 31, 'press');
+      for (const m of r.host.powers!.powers.akan.moves) { if (m.kind === 'revolt') revolts++; if (m.kind === 'collapse') collapses++; if (m.kind === 'fever') fevers++; if (m.kind === 'welcome') welcomes++; }
+      strains += r.host.powers!.powers.crown.moves.filter((m) => m.kind === 'strain').length;
+      hot++;
+    }
+    check('in runs of a captain who presses, the Gold has fever seasons, garrison strain, revolts and a closed beach', fevers > 0 && strains > 0 && revolts > 0 && collapses > 0, `fever ${fevers}, strain ${strains}, revolts ${revolts}, collapses ${collapses} over ${hot} runs`);
+    void welcomes;
+  }
+
+  // 6f. The Claim: the stage sets the rival’s pace; Castile’s moves; Las Palmas.
+  {
+    const st = newPowers();
+    const pace = ([1, 2, 3, 4] as const).map((k) => { st.fronts.claim.stage = k; return racePace(st); });
+    check('the Race heats the rival’s house: pace 1 at stage one, then up with each stage; no Powers state, no change', pace[0] === 1 && pace[1] > 1 && pace[2] > pace[1] && pace[3] > pace[2] && racePace(null) === 1, pace.join(' '));
+    const T = 86400 * 400;
+    st.fronts.claim.stage = 3;
+    check('at the line drawn, Las Palmas’s harbour dues rise (Castile’s harbour-master)', marketModifiers('las-palmas', T, st).duesMult > 1);
+    let moves = 0, seedsWith = 0;
+    for (let s = 1; s <= Math.min(N, 20); s++) {
+      const r = playSeed(s, 31, 'random');
+      const k = r.host.powers!.powers.castile.moves.filter((m) => ['note', 'interlopers', 'canaries', 'pilots', 'landing'].includes(m.kind)).length;
+      moves += k; if (k > 0) seedsWith++;
+    }
+    check('Castile moves in nearly every played run (notes, interlopers, Las Palmas, hired pilots, a landing)', seedsWith >= Math.min(N, 20) * 0.8 && moves / Math.min(N, 20) >= 2, `${(moves / Math.min(N, 20)).toFixed(1)} moves a run, ${seedsWith} runs`);
+  }
+
+  // 6g. The scenes: forward only, every choice answers, the Ledger gets real tags, and the Fronts are what offers them.
+  {
+    const along_ = (p: string): number => along(anchorageOf(portDef(p)));
+    const ROAD = ['lisboa', 'funchal', 'las-palmas', 'arguim', 'mina', 'mpinda', 'benguela', 'mocambique', 'melinde', 'calecute', 'cochim'];
+    const bad: string[] = [];
+    for (const sc of FRONT_SCENES) {
+      if (!sc.ports.every((p) => ROAD.includes(p))) bad.push(`${sc.id}: off the road`);
+      const last = Math.max(...sc.ports.map(along_));
+      for (const a of sc.after ?? []) {
+        const pre = FRONT_SCENES.find((x) => x.id === a);
+        if (!pre) { bad.push(`${sc.id}: unknown after ${a}`); continue; }
+        if (Math.min(...pre.ports.map(along_)) > last + 1) bad.push(`${sc.id} needs ${a}, which is only further along`);
+      }
+    }
+    check('no Front scene needs one that lies only further along the road (road.ts along())', bad.length === 0, bad.join('; '));
+    check('about twenty Front scenes: six at the Court, four each at the Crescent, the Gold and the Claim, and one each for Kongo and the Wolof edge', FRONT_SCENES.length === 20 && FRONT_SCENES.filter((s) => s.id.startsWith('court-')).length === 6 && FRONT_SCENES.filter((s) => s.id.startsWith('crescent-')).length === 4 && FRONT_SCENES.filter((s) => s.id.startsWith('gold-')).length === 4 && FRONT_SCENES.filter((s) => s.id.startsWith('claim-')).length === 4, `${FRONT_SCENES.length} scenes`);
+    check('scene ids do not collide with the Traffic’s or the courts’', FRONT_SCENES.every((x) => !TRAFFIC_SCENES.some((y) => y.id === x.id) && !POWER_SCENES.some((y) => y.id === x.id)));
+
+    // Prime a game so that every scene’s condition holds at once, then sail the road forward in laps, answering each in turn. The Court’s scenes
+    // live in dated windows (the old King failing, the new reign’s first months, the Edict coming and come, Easter 1506), so three eras are primed.
+    const prime = (seed: number, era: 'A' | 'B' | 'C'): Game => {
+      const g = new Game(seed);
+      g.clock.t = (era === 'A' ? daysFromEpoch(1496, 3, 1) : era === 'B' ? daysFromEpoch(1497, 6, 1) : daysFromEpoch(1507, 6, 1)) * DAY; g.worldT = g.clock.t;
+      g.chronicle.act = 5; g.crown.gold = 9000; g.crown.patent = null; g.casa.regard = 0.3;
+      const st = g.powers;
+      for (const f of ['gold', 'claim', 'crescent', 'court'] as const) { st.fronts[f].stage = 4; st.fronts[f].base = 13; }
+      st.powers.mamluk.flags.league = g.clock.t;
+      st.powers.akan.flags.feverUntil = g.clock.t + 400 * DAY;
+      st.powers.akan.flags.akqPhase = 1; st.powers.kongo.flags.kscPhase = 2; st.powers.sahel.flags.senPhase = 1;
+      addEffect(st, { kind: 'stub', power: 'castile', ports: ['mina'], start: g.clock.t - DAY, end: g.clock.t + 900 * DAY, reason: 'Interlopers.' });
+      addEffect(st, { kind: 'stub', power: 'mamluk', ports: ['lisboa'], start: g.clock.t - DAY, end: g.clock.t + 900 * DAY, reason: 'Venice.' });
+      addEffect(st, { kind: 'convoy', power: 'mamluk', ports: ['adem'], start: g.clock.t - DAY, end: g.clock.t + 900 * DAY, reason: 'A convoy.' });
+      g.rival.claimed.push('mpinda', 'benguela');
+      if (era === 'A') { g.identity.warned['king-dies'] = g.clock.t - 200 * DAY; g.identity.warned['edict'] = g.clock.t - 20 * DAY; }
+      if (era === 'B') g.identity.applied.push('edict');
+      if (era === 'C') g.identity.applied.push('edict', 'easter-1506');
+      g.identity.patron = favouriteEvents(g)[0].patron;
+      g.identity.warned[favouriteEvents(g)[0].id] = g.clock.t - 20 * DAY;
+      return g;
+    };
+    const ERAS = ['A', 'B', 'C'] as const;
+    const reached = new Set<string>();
+    let crashes = 0, tagBad = 0;
+    const textBad: string[] = [];
+    for (let seed = 1; seed <= 24; seed++) {
+      const gg = prime(seed, ERAS[seed % 3]);
+      const r2 = new Rng(seed * 17);
+      for (let lap = 0; lap < 4; lap++) {
+        for (const port of ROAD) {
+          gg.dockedAt = port;
+          gg.clock.t += 30 * DAY;
+          for (let k = 0; k < 8; k++) {
+            let ev;
+            try { ev = dueFrontScene(gg, port); } catch (e) { crashes++; console.log(String(e)); break; }
+            if (!ev) break;
+            reached.add(ev.id);
+            if (!ev.text || ev.text.length < 200 || ev.choices!.length < 2 || ev.choices!.some((c) => !c.label || !c.detail)) textBad.push(ev.id);
+            const n0 = gg.ledger.length;
+            try { const said = ev.choices![r2.int(0, ev.choices!.length - 1)].resolve(gg); if (typeof said !== 'string' || !said) crashes++; } catch (e) { crashes++; console.log(String(e)); }
+            for (const e of gg.ledger.slice(n0)) if (!isTag(e.tag)) tagBad++;
+          }
+        }
+      }
+    }
+    const missing = FRONT_SCENES.map((x) => `front:${x.id}`).filter((id) => !reached.has(id));
+    check('every Front scene is reached by sailing the road forward (laps of the Carreira) and answers without error', crashes === 0 && missing.length === 0, `missing: ${missing.join(',') || 'none'}; crashes ${crashes}`);
+    check('every scene has a body, two choices at least, and a stated cost on each; the Ledger gets only real tags', textBad.length === 0 && tagBad === 0, [...new Set(textBad)].join(','));
+
+    // Every choice of every scene, from a fresh primed game each time.
+    let choiceCrash = 0, choices = 0;
+    for (const sc of FRONT_SCENES) {
+      const eraOf = (id: string): 'A' | 'B' | 'C' => (id === 'court-new-king' || id === 'court-edict-warn' || id === 'court-old-king' ? 'A' : id === 'court-funchal' ? 'B' : 'C');
+      const probe = prime(40, eraOf(sc.id));
+      probe.dockedAt = sc.ports[0];
+      probe.powers.seen = {};
+      let n = 0;
+      try { n = sc.build(probe, probe.powers).choices!.length; } catch (e) { choiceCrash++; console.log(`${sc.id}: ${String(e)}`); continue; }
+      for (let i = 0; i < n; i++) {
+        const g2 = prime(41 + i, eraOf(sc.id));
+        g2.dockedAt = sc.ports[0];
+        try { sc.build(g2, g2.powers).choices![i].resolve(g2); choices++; } catch (e) { choiceCrash++; console.log(`${sc.id}[${i}]: ${String(e)}`); }
+      }
+    }
+    check('every choice of every Front scene resolves', choiceCrash === 0 && choices >= 50, `${choices} choices`);
+
+    // Scenes are not offered unless the Front, the Effect or the warning is there.
+    const quiet = new Game(7); quiet.worldT = quiet.clock.t; quiet.dockedAt = 'mina';
+    check('with every Front at stage one and nothing in force, no Front scene is offered at Mina, Lisbon or Cochim', ['mina', 'lisboa', 'cochim', 'melinde', 'mpinda', 'arguim'].every((p) => dueFrontScene(quiet, p) === null));
+  }
+
+  // 6h. The Rua Nova’s Lines: it pays the hull against her output, with a visible cut; only its own captain, only while it stands.
+  {
+    const mk = (patron: PatronId): Game => {
+      const g = new Game(12); g.worldT = g.clock.t; g.crown.gold = 50; g.crown.debt = 0; g.crown.patent = null; g.dockedAt = 'lisboa';
+      g.identity.patron = patron; g.identity.patrons.ruanova.favour = 0.4; g.clock.t = daysFromEpoch(1500, 3, 1) * DAY;
+      return g;
+    };
+    const ref = mk('crown');
+    check('the Rua Nova funds no Line for a captain who sails for another patron', !ruaNovaTerms(ref).ok && canFundLine(ref, 'lisboa', 'funchal', 'caravela-latina') !== null);
+    const g = mk('ruanova');
+    const terms = ruaNovaTerms(g);
+    const why0 = canFundLine(g, 'lisboa', 'funchal', 'caravela-latina');
+    check('it funds one for its own captain, on terms that are printed (a cut of 12% and 8% on the advance)', terms.ok && why0 === null && Math.abs(terms.cut - 0.12) < 1e-9 && terms.interest === 0.08, `${why0 ?? 'ok'} ${terms.cut}`);
+    const gold0 = g.crown.gold;
+    const said = openFundedLine(g, 'lisboa', 'funchal', 'caravela-latina');
+    const l = g.lines[g.lines.length - 1];
+    check('the hull is paid by the Rua Nova and not out of the purse, and the advance is a loan in the Ledger', g.crown.gold === gold0 && !!l?.funded && l.funded.owed > l.funded.advanced && g.ledger.some((e) => e.tag === 'loan.taken'), said.slice(0, 80));
+    let lastText = '';
+    for (let i = 0; i < 40 && l.trips < 6 && !l.lost; i++) {
+      g.clock.t += 20 * DAY; g.worldT = g.clock.t;
+      tickLines(g);
+      if (g.remittances.length) lastText = g.remittances[g.remittances.length - 1].voyage ?? '';
+    }
+    if (!l.lost) {
+      check('every profitable voyage’s page names the Rua Nova’s cut and what is still owed', l.trips >= 1 && /The Rua Nova (kept|took)/.test(lastText), lastText.slice(-120));
+      check('the cut is kept, and the debt falls, from the voyages’ own output', l.funded!.kept >= 0 && l.funded!.owed <= l.funded!.advanced * 1.08 + 1e-6);
+    } else {
+      check('a funded Line that is lost leaves its debt against the captain', g.crown.debt > 0);
+    }
+    const fallen = mk('ruanova'); fallen.identity.patrons.ruanova.fell = fallen.clock.t - DAY; fallen.identity.patrons.ruanova.recovers = fallen.clock.t + 200 * DAY;
+    check('and not while the Rua Nova itself has fallen (the Edict, Easter 1506)', !ruaNovaTerms(fallen).ok);
+    const sold = mk('ruanova'); openFundedLine(sold, 'lisboa', 'funchal', 'caravela-latina');
+    const owed0 = sold.lines[sold.lines.length - 1].funded!.owed;
+    const gold1 = sold.crown.gold;
+    const sale = closeLine(sold, sold.lines[sold.lines.length - 1]);
+    check('selling her pays the Rua Nova first, and says so', /Rua Nova/.test(sale) && sold.crown.gold - gold1 < owed0, sale);
+  }
 }
 
 console.log(fails === 0 ? 'POWERS PASSED' : `POWERS FAILED (${fails})`);

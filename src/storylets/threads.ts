@@ -117,7 +117,8 @@ function candidate(s: Storylet, port: string | null): Candidate {
   return {
     id: s.id, source: 'thread', kind: s.kind, priority: s.priority,
     quarter: st.quarter ?? 'waterfront',
-    delivery: port ? 'person' : 'now',
+    // A deadline is not made to wait for a click: the world will not.
+    delivery: port && s.kind !== 'deadline' ? 'person' : 'now',
     preview: (gg) => {
       const q = questOf(gg, def.id);
       if (!q && def.auto && key === def.first) {

@@ -132,6 +132,8 @@ export const pesos = thread({
       + 'a stone he has carried from home in your hand and asks you to hold it.',
     accept: 'Weigh his stone against the Casa’s',
   }),
+  // Merged into the Gold's texture: nobody asks; the trader at the gate is met, and the thread is taken up as he is heard.
+  auto: true,
   first: 'scales',
   steps: {
     scales: {
@@ -424,6 +426,8 @@ export const feverFleet = thread({
       + 'asking every captain in the road.',
     accept: 'Go aboard and see what is wrong',
   }),
+  // A company's crisis: the boat hailing the quay is met, and the thread is taken up as the master is heard.
+  auto: true,
   first: 'board',
   steps: {
     board: {

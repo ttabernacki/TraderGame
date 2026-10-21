@@ -31,8 +31,11 @@ checkpoint between acts.
    (`prester.wait`, 300 days, is satisfied by the India run).
 4. Gifts, cargo and papers a story hands the captain are stowed for him
    (`stowTools`), not left for him to shop for.
-5. Two beats at one port are fine and expected: a scene answered at once
-   surfaces the next due beat.
+5. One storylet scene per port call and one at sea per leg (`src/storylets/`,
+   BUILD_PLAN E1). In port it is a person waiting at the Quarters, heard with
+   one verb; the next beat of the same story is the next call's. A deadline
+   (the Pepper Race's landing) and the Patron's own word are put at the call.
+   A door the world has shut (`expires`) closes the thread with a line.
 
 ## What is done
 

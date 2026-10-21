@@ -208,3 +208,39 @@ Ferreira de Aves and Castelo Rodrigo are the game's, as the King's Offer had the
 **Deliberately left generic:** who the heir's mother is; any real captain's heir; the year the line ends. The heir begins in 1482 on the game's
 clock (the history runs afresh around him, as `inheritFrom` always had it) but into a world whose Fronts, patrons' falls, clauses and
 Traffic stage are the father's.
+
+## The Fronts staged (E3)
+
+Code in `src/world/powers/` (`data.ts` for the dated shocks and stage effects; `race.ts`, `gold.ts`, `crescent.ts`, `conflicts.ts` for the moves),
+`src/identity/patrons.ts` (the Court's favourites and the reigns), `src/progression/frontScenes.ts` (twenty scenes) and `src/progression/network.ts`
+(the Rua Nova's Lines). The Court, the Gold and the Claim now have a history line of their own; the Crescent's was already staged by D4 and
+gains the Venetian channel and Chaul.
+
+| Item | Grade | Note |
+|---|---|---|
+| João II's last illness and death, October 1495; Manuel's accession | documented | Via `chronicle.ts` HISTORY (`manuel`). The Court Front enters its second stage (Favourites) with it. The four months' warning, the eight months' fall of the old circle's clients and the halving of the old reign's favour are **invented**. |
+| The Edict of expulsion, December 1496; forced conversion in 1497; the ban on New Christians leaving (1499) | documented | Tavares; Soyer. The Rua Nova's three months' warning and 24 months' fall are **invented**. The scene that has a family carried to Funchal is the game's own; the 1499 ban is not used. |
+| German and Italian capital in the pepper fleets from about 1503-05 (Marchioni, Affaitati, Welser, Fugger) | approximate | Subrahmanyam; Hümmerich. The Court's third stage (the Rua Nova ascendant) is dated to March 1503 as the game's choice; no scene gives the year. |
+| The Lisbon massacre of New Christians, Easter 1506 | documented | Tavares; Soyer. The King hanged some of the ringleaders and fined the city (documented); counts are not given anywhere. The fourth stage (the reckoning) and the Rua Nova's 18 months are tied to it. |
+| Fever and high mortality at São Jorge da Mina | documented | Vogt; Hair. The "third of a garrison in a bad year", the 1494 date, fever seasons, strain, revolts and the beach's shutting are **invented** (the game's own events, chances and numbers). |
+| Castilian, and later French and English, interlopers on the Guinea coast; the Treaty of Alcáçovas (1479) | documented | The Gold's 1503 shock is the game's date for "the Akan listen to what interlopers offer". |
+| Columbus's return (1493), Tordesillas (June 1494) | documented | Via HISTORY. The Claim's second stage (Castile asks) and third (the line is drawn) follow them. |
+| Cabral at the coast of Brazil, April 1500; Pinzón and Lepe on the same coast earlier that year | documented | Disney; Hemming. The Claim's fourth stage is reached only by pressing, or by 1519. |
+| The Cantino planisphere, 1502 | approximate | A Portuguese chart smuggled out of Lisbon for Ercole d'Este. That Castile saw a copy is the game's gloss. |
+| Magellan sails, September 1519 | documented | A Portuguese captain in Castile's service, bound west for the Spice Islands. Held as data; no scene yet. |
+| Chaul 1508 (Lourenço de Almeida killed), Diu 1509 | documented | Pearson; Subrahmanyam. The Crescent's league can be reached only by a captain who provokes it (or by the Powers' own convoys and notes). |
+| Venetian alarm at the Cape route (Priuli's diaries, 1501-02) and the price of pepper in Venice and Lisbon | documented / invented | The alarm is documented. That Venice's factors bid at Lisbon in a given season, and the price effect (3% at stage two to 11% at stage four), are **invented**. |
+| The Wolof court split; the prince called Bemoim at Lisbon in 1488; the Fula on the Senegal from the 1490s; Songhai expansion under Askia Muhammad | documented (outline) | Hair; Barry on Senegambia; Hunwick on Songhai. The game's Senegal machine (pressure, war, who holds the river) is **invented** in its sequence, lengths and prices; the scene's "lord's kinsman" is not Bemoim and no scene names one. |
+| Several kingdoms on the Akan coast selling to the Castle; Eguafo's decline | approximate | The Mina coast machine (quarrel, war, who holds the beach) is **invented** in its sequence and numbers. |
+| The succession at Kongo, Afonso I, c. 1506-09 | approximate | Sources differ on the year. The machine begins from 1506 and is certain by 1509; **no scene gives a year**, no son is named, and which son wins is the Traffic's and the Ledger's, not history's. The old dated shock (`kongo-succession`) was replaced by the machine. |
+| Ndongo, tributary to Kongo, breaking away | approximate | Early sixteenth century; the machine is light (late, withheld, free) and its dates and lengths are the game's. |
+
+**Invented, marked as such:** the four favourites (one per stage from the second; who falls is the seed's, rotated and kept clear of the dated falls of
+the same years); the Crown's order in Manuel's reign (the King's letters) against the old King's survey; the Rua Nova's terms for a Line (it pays the
+hull; 8% on the advance; its cut of 12%, 18% under the reckoning, of every profit; half of the rest toward the hull); every name in the scenes (Ser Piero Zane of
+Venice, Mahmud ibn Salim, Ali Karim, Rodrigo de Soto, Jorge Nunes, the elder of the beach, the Wolof kinsman) and every sum; Kwesi's part
+beyond the Traffic's "Who buys"; the Gold's fever pressure; the rival's pace at each Claim stage (1, 1.1, 1.25, 1.4); the Castilian harbour-master at Las
+Palmas; every chance and length in the new moves and machines.
+
+**Deliberately left generic:** the identity of the Captain of São Jorge; any year for the Kongo succession; the Zamorin, the Raja, the Damel and the
+Akan elder (unnamed); the number killed in Lisbon in 1506; whose pillar a coast bears (the rival's name is the game's).

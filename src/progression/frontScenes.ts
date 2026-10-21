@@ -5,7 +5,9 @@ import { PATRONS, choosePatron, favouriteEvents, isFallen, patronBlocked, reignA
 import { PATRON_IDS, type PatronId } from '../identity/state';
 import { hasActive, shockTime } from '../world/powers/core';
 import { machinePhase } from '../world/powers/conflicts';
+import { declareReader } from '../world/powers/readers';
 import type { PowersState } from '../world/powers/types';
+import { portDef } from '../world/ports';
 import { canFundLine, openFundedLine } from './network';
 import type { TrafficScene } from './trafficScenes';
 
@@ -35,6 +37,8 @@ import type { TrafficScene } from './trafficScenes';
  * Tordesillas and Castile's interest in the Guinea coast are documented in outline. Every NAME below, every sum, and every
  * face at a quay is the game's own. Scenes state no date beyond what the history gives, and none gives a year for the Kongo succession.
  */
+
+declareReader('scenes.fronts');
 
 const DAY = 86400;
 const MONTH = 30 * DAY;
@@ -719,9 +723,10 @@ const claimPillar: TrafficScene = {
   build: (g) => {
     const name = g.rival.name;
     const place = g.dockedAt ?? 'the coast';
+    const where = g.dockedAt ? portDef(g.dockedAt).name : 'the coast';
     return scene('claim-pillar', 'His stone is here',
       `There is a limestone pillar on the point above the anchorage, cut with the arms of Portugal and a cross, and the name under them is ${name}’s. It has been there long enough for the weather to take the sharpness off the letters. `
-      + `He was not a great deal ahead of you; the people on the beach say his ship watered here a few months ago, and the chart the Casa will make of ${place} will carry his name and not yours. `
+      + `He was not a great deal ahead of you; the people on the beach say his ship watered here a few months ago, and the chart the Casa will make of ${where} will carry his name and not yours. `
       + 'The renown for the coast is his, and the Casa has already entered it.\n\n'
       + 'Castile’s ships are looking at the same coast, and a stone that someone else put up is a claim somebody else must answer, and the King has asked for as many of those as can be made.',
       [
@@ -731,7 +736,7 @@ const claimPillar: TrafficScene = {
           resolve: (gg) => {
             if (!spend(gg, 25)) return again(gg, 'claim-pillar', 'You have not got it. The stone stays in the hold, and the point is as it was.');
             had(gg, 'claim-pillar');
-            gg.noteDeed('claim.made', { target: place, place, magnitude: 0.5, note: `Raised a second padrão beside ${name}’s on the point at ${place}.` });
+            gg.noteDeed('claim.made', { target: place, place, magnitude: 0.5, note: `Raised a second padrão beside ${name}’s on the point at ${where}.` });
             return 'The mason cuts the cross a little deeper than the other. The stone goes up against the sky beside his, and the shadow of the one falls across the other for an hour.';
           },
         },
@@ -741,7 +746,7 @@ const claimPillar: TrafficScene = {
           resolve: (gg) => {
             had(gg, 'claim-pillar');
             casaRegard(gg, -0.01);
-            gg.noteDeed('claim.argued', { target: place, place, magnitude: 0.4, note: `Took a rubbing of ${name}’s pillar at ${place} to be laid before the Casa, and asked that the coast be argued.` });
+            gg.noteDeed('claim.argued', { target: place, place, magnitude: 0.4, note: `Took a rubbing of ${name}’s pillar at ${where} to be laid before the Casa, and asked that the coast be argued.` });
             return 'The mason takes it on wet paper and a blunt pencil. It is a better rubbing than the carving deserves.';
           },
         },

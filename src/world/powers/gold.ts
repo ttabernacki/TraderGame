@@ -53,7 +53,7 @@ export function goldTick(c: Ctx): void {
 
   oneOf(c, [
     // Stage 4: the beach is shut to the Castle for a season and more.
-    ['collapse', stage >= 4 && noWar ? 0.08 : 0, () => {
+    ['collapse', stage >= 4 && quiet('embargo') ? 0.08 : 0, () => {
       launch(c, {
         kind: 'embargo', power: 'akan', ports: GOLD_COAST, dur: months(c.rng, 10, 16), closes: true, blight: 0.02, stock: { ouro: 0.5 }, duesMult: 1.2,
         reason: 'The Akan have stopped selling to the Castle on its terms, and the beach is shut to every ship that is not on theirs.',

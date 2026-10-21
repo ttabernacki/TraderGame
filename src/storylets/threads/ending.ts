@@ -2,6 +2,7 @@ import { clamp } from '../../core/math';
 import type { Game } from '../../game/state';
 import type { SeaChoice } from '../../game/seaEvents';
 import { favourOf, patronBlocked } from '../../identity/patrons';
+import { gateKingsOffer } from '../../progression/endings';
 import { end, portMark, renown, scene, thread } from '../arc';
 import { ports } from '../places';
 import { anyOf, gte, has } from '../qualities';
@@ -80,9 +81,9 @@ export const kingsOffer = thread({
       hooks: [],
       scene: (g, q) => {
         const ev = evaluateKings(g);
-        const choices: SeaChoice[] = [];
-        if (ev.offers.includes('armada')) {
-          choices.push({
+        const all: { id: KingsOffer; c: SeaChoice }[] = [];
+        {
+          all.push({ id: 'armada', c: {
             label: 'The command of the next armada',
             detail: 'A captain-major’s flag, forty ships, and a road that is yours. The Crown’s business from here to the end of your life.',
             resolve: (gg) => {
@@ -91,10 +92,10 @@ export const kingsOffer = thread({
               gg.crown.gold += 2000;
               return end(gg, q, 'armada', 'The King named you captain-major of the next armada to the Indies. The road is yours, and so is whatever the road brings.');
             },
-          });
+          } });
         }
-        if (ev.offers.includes('lordship')) {
-          choices.push({
+        {
+          all.push({ id: 'lordship', c: {
             label: 'A lordship, and the quiet of the land',
             detail: 'Senhor de a town with rents and a gallows. The sea is a long way from it.',
             resolve: (gg) => {
@@ -103,9 +104,9 @@ export const kingsOffer = thread({
               renown(gg, 90);
               return end(gg, q, 'lordship', `The King made you Senhor de ${gg.lordship}, with its rents and its gallows. He was kind about it.`);
             },
-          });
+          } });
         }
-        choices.push({
+        all.push({ id: 'rich', c: {
           label: 'Gold, and be let alone',
           detail: `${5000 + ev.topUp} cruzados and the freedom of the quay. No office, and no enemies made at court.${ev.topUp ? ' The Rua Nova will see to the rest.' : ''}`,
           resolve: (gg) => {
@@ -114,8 +115,8 @@ export const kingsOffer = thread({
             renown(gg, 30);
             return end(gg, q, 'rich', 'Asked the King for gold and to be let alone. He laughed, and paid, and said that was the most honest answer he had had in years.');
           },
-        });
-        choices.push({
+        } });
+        all.push({ id: 'ship', c: {
           label: 'Ask for the ship, and nothing else',
           detail: 'The caravel, the crew, the next voyage. Nothing from the Crown that cannot be taken back.',
           resolve: (gg) => {
@@ -124,7 +125,10 @@ export const kingsOffer = thread({
             renown(gg, 70);
             return end(gg, q, 'ship', 'Asked the King for nothing but the ship and the next voyage. He looked at you for a while, and said that in that case he would have to find something else to give.');
           },
-        });
+        } });
+        // The evaluation here (patron, favour, Titles, the Court Front) and E2's (the Crown's ruin and fall) both gate the table.
+        const gated = gateKingsOffer(g, all);
+        const choices = gated.filter((x) => ev.offers.includes(x.id)).map((x) => x.c);
         return scene(q, 'audience', 'The King, in the evening',
           'He is in a small room with a window on the river, in an old coat, and he waves away the usher. '
           + 'He has a map on the table, the one you made, and he has put his glass on the Indies. "I have been '

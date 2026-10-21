@@ -69,7 +69,7 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       T('A hard coast', 'Interlopers work the beach, the gold goes elsewhere, and every ship that comes has to be paid for in goodwill.'),
       T('The beach is shut', 'The Akan have stopped selling to the Castle on its terms. The fort lives on what it is sent.'),
     ],
-    start: 1.0, perYear: 0.2, ticks: true,
+    start: 1.0, perYear: 0.25, ticks: true,
     levers: {
       push: { label: 'Press the Akan for more', cost: 'Their patience', delta: 0.12 },
       brake: { label: 'Deal fair, and spend the time', cost: 'Margin, and days on the beach', delta: -0.08 },
@@ -415,11 +415,6 @@ export const SCHEDULE: DatedShock[] = [
     id: 'magellan-1519', year: 1519, month: 9, front: 'claim', delta: 2.0, power: 'castile', attitude: 0, place: 'lisboa',
     text: 'Castile has sent a fleet west under a Portuguese captain, to reach the Spice Islands on the Spanish side of the line.',
     source: 'Magellan sailed from Sanlúcar on 20 September 1519 (documented).', grade: 'documented',
-  },
-  {
-    id: 'kongo-succession', year: 1506, month: 6, power: 'kongo', place: 'mpinda',
-    text: 'The old Manikongo is failing, and two of his sons have men under arms.',
-    source: 'Afonso I (Mvemba a Nzinga) succeeded Nzinga a Nkuwu c. 1506-09; the sources differ and the game gives no year in a scene.', grade: 'approximate',
   },
   {
     id: 'benin-terms', year: 1516, month: 1, front: 'traffic', power: 'benin', place: 'ugoton',

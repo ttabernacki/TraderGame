@@ -20,11 +20,6 @@ export function seaWhere(at: LatLon, where: (g: Game) => boolean): Place {
   return { sea: { at, where } };
 }
 
-/** Within reach of a point, whether the ship is docked at a port nearby or in the offing (stories that happen "off Calecute"). */
-export function nearPoint(lat: number, lon: number, nm: number, o: { shoreMin?: number; shoreMax?: number } = {}): Place {
-  return { sea: { at: { lat, lon }, nm, ...o } };
-}
-
 const here = (g: Game): LatLon => (g.dockedAt ? anchorageOf(portDef(g.dockedAt)) : g.ship.state.pos);
 
 function inSpot(g: Game, s: SeaSpot): boolean {
@@ -54,6 +49,7 @@ export function inPlace(g: Game, p: Place): boolean {
 export function pointsOf(p: Place): { at: LatLon; port: string | null }[] {
   if (p.either) return p.either.flatMap(pointsOf);
   if (p.ports) return p.ports.map((id) => ({ at: anchorageOf(portDef(id)), port: id }));
+  if (p.anyPort) return [{ at: anchorageOf(portDef('lisboa')), port: 'lisboa' }];
   if (p.sea) return [{ at: p.sea.at, port: null }];
   return [];
 }

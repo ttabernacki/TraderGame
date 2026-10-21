@@ -1,7 +1,7 @@
 import { clamp } from '../../core/math';
 import { MONTH, pull } from './core';
 import { declareReader } from './modifiers';
-import { launch, months, say, yearOf, att, stageOf, type Ctx } from './moves';
+import { launch, months, yearOf, att, stageOf, type Ctx } from './moves';
 import type { PowerId } from './types';
 
 /**
@@ -108,13 +108,19 @@ function senegal(c: Ctx): void {
         rumour: { place: 'arguim', truth: { claim: 'The caravans are thin at Arguim, and the factor says it is the war on the river.', vague: 'Arguim is short of gum.' }, stale: { claim: 'The gum is plentiful at Arguim and the factor is paying in horses.', vague: 'Arguim is full.' } },
       });
     } else {
-      // The pressure eased of itself.
-      enter(c, p, 'sen', 3, 12);
-      say(c, p, 'eased', 'The pressure on the Wolof edge eased.', {
-        place: 'portudal',
-        truth: { claim: 'The riders have gone back east, and the Wolof road is open.', vague: 'The trouble behind Portudal has passed.' },
-        stale: { claim: 'The Wolof edge is in arms.', vague: 'There is war behind Portudal.' },
-      }, 6);
+      // The pressure eased of itself: the hides and the horses come down again, a little cheaper for having been held back.
+      const dur = months(c.rng, 8, 14);
+      enter(c, p, 'sen', 3, dur);
+      launch(c, {
+        kind: 'welcome', power: p, ports: SEN_PORTS, dur, duesMult: 0.97, stock: { couros: 1.06 }, price: { cavalos: 0.97 },
+        reason: 'The riders have gone back east, and what the river people held back is coming down to the beach.',
+        said: 'The pressure on the Wolof edge eased.', kindName: 'eased',
+        rumour: {
+          place: 'portudal',
+          truth: { claim: 'The riders have gone back east, and the Wolof road is open.', vague: 'The trouble behind Portudal has passed.' },
+          stale: { claim: 'The Wolof edge is in arms.', vague: 'There is war behind Portudal.' },
+        },
+      });
     }
     return;
   }
@@ -203,12 +209,18 @@ function akan(c: Ctx): void {
         rumour: { place: 'mina', truth: { claim: 'The Castle is buying less gold and paying more for it, with the beaches at war.', vague: 'Gold is short at Mina.' }, stale: { claim: 'The Castle’s gold is plentiful.', vague: 'Gold is plentiful at Mina.' } },
       });
     } else {
-      enter(c, p, 'akq', 3, 10);
-      say(c, p, 'settled', 'The quarrel behind Mina was settled without a war.', {
-        place: 'mina', front: 'gold',
-        truth: { claim: 'The Akan kingdoms have settled their quarrel over the Castle’s trade without a war, and the tolls on the beach are lifted.', vague: 'The Akan have settled it.' },
-        stale: { claim: 'The Akan are still at odds behind Mina.', vague: 'The Akan are at odds.' },
-      }, 6, { id: 'gold', delta: -0.15 });
+      const dur = 10;
+      enter(c, p, 'akq', 3, dur);
+      launch(c, {
+        kind: 'welcome', power: p, ports: ['mina'], dur, duesMult: 0.95, stock: { ouro: 1.03 },
+        reason: 'The kingdoms behind the coast have settled their quarrel, and the tolls on the beach are lifted.',
+        said: 'The quarrel behind Mina was settled without a war.', kindName: 'settled', front: { id: 'gold', delta: -0.15 },
+        rumour: {
+          place: 'mina', front: 'gold',
+          truth: { claim: 'The Akan kingdoms have settled their quarrel over the Castle’s trade without a war, and the tolls on the beach are lifted.', vague: 'The Akan have settled it.' },
+          stale: { claim: 'The Akan are still at odds behind Mina.', vague: 'The Akan are at odds.' },
+        },
+      });
     }
     return;
   }
@@ -251,7 +263,7 @@ function kongo(c: Ctx): void {
   if (ph === 0) {
     // The old king fails somewhere between 1506 and 1509 (the sources differ; no scene says when): 3% a month from 1506, certain by 1509.
     const y = yearOf(c.t);
-    const gate = y >= 1506 && !f.kscDone;
+    const gate = y >= 1506 && !f.kscDone && !f.succession;
     if (gate && (y >= 1509 || c.rng.chance(0.03))) {
       const dur = months(c.rng, 4, 8);
       enter(c, p, 'ksc', 1, dur);

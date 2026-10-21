@@ -321,3 +321,15 @@ Carrying a whole round trip's stores from Lisbon, the hulls net -538 / 277 / 1,5
 - The harness has no purse: the cost of a Nau's deep lots (tens of thousands of cruzados at the dear end) is not a limit in the table, only in the game, where a small ship's captain has not got it.
 - Lisbon takes three times the quay's tonnage of the autumn-sale spices. The lanes see that as appetite (`appetiteLeft`), so NPC lanes send Lisbon a little more spice; the world spread is 10.4 / 13.9 as above.
 - Saves: `MarketState.deep` is optional and absent in old saves (a full pool); nothing else is stored. No SAVE_FORMAT bump.
+
+## E3: the Fronts staged (what moves a price, and what does not)
+
+`econ.ts --check` and `--world` are unchanged by E3 (checked): the harnesses build a host with no `powers` state, so `marketModifiers` is the identity there,
+and the Fronts reach the economy only through it. In a played game the new stages do move what a captain is quoted, by design and by small amounts:
+the Lisbon pepper ask +3% (Crescent stage 2), +7% (3), +11% (4) (the Venetian channel adds 4-6% for 5-9 months); Lisbon gold +1% / +4% / +9% by the Gold's stage;
+Lisbon dues +5% / +8% at the Court's third and fourth stages; the Mina beach stock x0.95 / 0.85 / 0.6 by the Gold's stage; the conflict machines' own effects (Portudal
+horses +10-30%, Mina gold +5-10% in a quarrel or war, Mpinda ivory x0.75 in a succession contest, Luanda salt +10-20% when the tribute is withheld).
+History line: the Court enters stage 2 with João II's death (Oct 1495), 3 in March 1503, 4 in April 1506; the Claim stage 2 in March 1493, 3 in June 1494;
+the Gold stage 3 from about 1505 and stage 4 only for a captain who presses; at twenty years (1502) the Gold is at 2, the Claim and the Traffic at 3, the Court at 2 in every seed.
+The Court and the Claim are therefore the dated history's Fronts: at thirty years most seeds stand at stage 4 on the Court (it is the 1506 reckoning) and are not pinned at
+twenty. `scripts/powers.ts` checks the 20-year spread for all six and the 31-year one for the Crescent, the Rule, the Claim and the Gold (the Court's is history's).

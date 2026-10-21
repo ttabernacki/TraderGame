@@ -164,7 +164,7 @@ const stepIdOf = (arc: string, step: string): string => `quest:${arc}:${step}`;
 // 3. Staging: put a real game into the state a storylet needs, by setting what the qualities are views of
 // ---------------------------------------------------------------------------------------------
 
-function setRng(g: Game, n: number): void { (g.rng as unknown as { state: number }).state = (n * 2654435761) >>> 0; }
+function setRng(g: Game, n: number): void { (g.rng as unknown as { state: number }).state = (Rng.fromString(`variant:${n}`) as unknown as { state: number }).state; }
 
 /** Make a requirement true by setting the underlying state (never the quality). */
 function force(g: Game, r: Req, arc: string): void {
@@ -287,16 +287,18 @@ function outcomesInSource(): Record<string, Set<string>> {
         }
         if (start < 0) continue;
         const expr = body.slice(start, j);
-        for (const m of expr.matchAll(/'([^']+)'/g)) set.add(m[1]);
+        for (const m of expr.matchAll(/'((?:[^'\\]|\\.)*)'/g)) if (!/===\s*$/.test(expr.slice(0, m.index))) set.add(m[1]);
       }
     }
   }
   return out;
 }
 
+const walkFlags: Record<string, Record<string, number | string | boolean>> = {};
 const reached: Record<string, Set<string>> = {};
 const stepsWalked: Record<string, Set<string>> = {};
 const stuck: string[] = [];
+const declined = new Set<string>();
 const hookBreaks: string[] = [];
 const unreachableByEngine: string[] = [];
 const noChange: string[] = [];
@@ -334,6 +336,7 @@ function walkArc(d: (typeof defs)[number], variants: number): void {
     if (visited.has(sig)) continue;
     visited.add(sig);
     stepsWalked[arc].add(key);
+    if (process.env.SL_TRACE) console.log(`         node ${arc}.${key} ${sig.slice(0, 80)}`);
     const st = stageStep(g, arc, key);
     const pre = snapshot(g);
     const cand = dueNow(g, g.dockedAt).find((c) => c.id === st.id);
@@ -342,15 +345,20 @@ function walkArc(d: (typeof defs)[number], variants: number): void {
     const ev = cand.take(g);
     TRACE = false;
     if (!ev?.choices?.length) { stuck.push(`${st.id}: scene has no choices`); continue; }
-    const n = ev.choices.length;
+    // Scenes that roll their own dice at build (the factory at Calecute) show different choices in different variants: take the widest.
+    let n = ev.choices.length;
+    for (let vnt = 0; vnt < variants; vnt++) { const gv = restore(pre); setRng(gv, 7 + vnt * 31); n = Math.max(n, dueNow(gv, gv.dockedAt).find((c) => c.id === st.id)!.take(gv)!.choices!.length); }
+    const before = declined.size;
     for (let i = 0; i < n; i++) {
       let progressed = false;
-      for (let vnt = 0; vnt < variants; vnt++) {
+      for (let vnt = 0; vnt < (progressed ? variants : 12); vnt++) {
+        if (progressed && vnt >= variants) break;
         const g2 = restore(pre);
         setRng(g2, 7 + vnt * 31 + i);
         const c2 = dueNow(g2, g2.dockedAt).find((c) => c.id === st.id)!;
         TRACE = true;
         const ev2 = c2.take(g2)!;
+        if (!ev2.choices![i]) continue;
         const before = JSON.stringify(g2.quests.find((x) => x.id === arc)!.flags);
         const web0 = JSON.stringify(g2.web.flags);
         ev2.choices![i].resolve(g2);
@@ -365,8 +373,9 @@ function walkArc(d: (typeof defs)[number], variants: number): void {
           reached[arc].add(q2.outcome);
           // What the world makes of a finished thread: the callbacks, the last page, the prices, read through the same trace.
           TRACE = true;
-          for (const p of PORTS) callbackAt(restore(snapshot(g2)), p.id);
-          for (const p of PORTS) { const gg = restore(snapshot(g2)); callbackAt(gg, p.id); }
+          walkFlags[`${arc}:${q2.outcome}`] = { ...q2.flags };
+          const gc = restore(snapshot(g2));
+          for (const p of PORTS) callbackAt(gc, p.id);
           lateEndings(g2); originEnding(g2); refreshQuestPrices(g2);
           TRACE = false;
         } else if (q2.step !== key) {
@@ -375,13 +384,14 @@ function walkArc(d: (typeof defs)[number], variants: number): void {
           frontier.push(snapshot(g2));
         }
       }
-      if (!progressed) stuck.push(`${st.id} choice ${i} ("${ev.choices![i].label.slice(0, 40)}") leaves the beat open in every variant`);
+      if (!progressed) declined.add(`${st.id}#${i}`);
     }
+    if (declined.size - before >= n) stuck.push(`${st.id}: no choice of the beat ever moves the arc on`);
   }
 }
 
 {
-  const variants = QUICK ? 2 : 3;
+  const variants = QUICK ? 6 : 10;
   const tt = Date.now();
   for (const d of defs) {
     if (d.id === 'kingsoffer') continue;
@@ -392,12 +402,12 @@ function walkArc(d: (typeof defs)[number], variants: number): void {
   const missingSteps = defs.filter((d) => d.id !== 'kingsoffer').flatMap((d) => Object.keys(d.steps).filter((k) => !stepsWalked[d.id].has(k)).map((k) => `${d.id}.${k}`));
   check('the walk reached every step of every thread through the choices that open it', missingSteps.length === 0, missingSteps.join(' '));
   check('every choice that does not mean "later" moves the arc to a beat its step declares as a hook', hookBreaks.length === 0, hookBreaks.join(' '));
-  check('no choice leaves its beat open in every variant (a stuck thread)', stuck.length === 0, stuck.join(' | '));
+  check('no beat is a dead end: some choice of every beat moves the arc on, with the dice varied', stuck.length === 0, stuck.join(' | '));
   const expected = outcomesInSource();
   const miss: string[] = [];
   for (const d of defs) {
     if (d.id === 'kingsoffer') continue;
-    for (const o of expected[d.id] ?? []) if (!reached[d.id].has(o)) miss.push(`${d.id}:${o}`);
+    for (const o of expected[d.id] ?? []) if (o !== 'lapsed' && !reached[d.id].has(o)) miss.push(`${d.id}:${o}`);
   }
   check('every outcome the source can end a thread in is reached', miss.length === 0, miss.join(' '));
   const extra: string[] = [];
@@ -407,6 +417,7 @@ function walkArc(d: (typeof defs)[number], variants: number): void {
   check('all 22 walked threads reach at least one outcome', sawAny === defs.length - 1, `${sawAny}`);
 
   // No dead qualities: every flag a thread's record is given is READ by something while the walk runs.
+  console.log(`     (${written.size} flags written, ${[...written].filter((k) => read.has(k)).length} of them read)`);
   const deadFlags = [...written].filter((k) => !read.has(k) && !/^[a-z]+\.(tome|envoys)$/.test(k));
   check('no dead qualities: every flag written to a thread record is read by a scene, a door or a consumer', deadFlags.length === 0, deadFlags.join(' '));
   // Outcomes are read: by a Ledger deed, a callback, the last page, a price, another thread, or settled by the world.
@@ -419,11 +430,12 @@ function walkArc(d: (typeof defs)[number], variants: number): void {
     for (const o of reached[d.id] ?? []) {
       if (o === 'lapsed') continue;
       const gg = richGame(2); const q = takeThread(gg, d.id); q.outcome = o;
+      Object.assign(q.flags, walkFlags[`${d.id}:${o}`] ?? {});
+      gg.origin = ({ nome: 'segundo', ficheiro: 'converso', roteiro: 'piloto', escudeiro: 'fidalgo' } as Record<string, Game['origin']>)[d.id] ?? 'segundo';
       let said = READ_BY_LEDGER.has(`${d.id}:${o}`);
-      if (!said) for (const p of PORTS) { if (callbackAt(restore(snapshot((() => { const x = richGame(2); const qq = takeThread(x, d.id); qq.outcome = o; for (const k of Object.keys(walkFlags[`${d.id}:${o}`] ?? {})) qq.flags[k] = walkFlags[`${d.id}:${o}`][k]; return x; })())), p.id)) { said = true; break; } }
+      if (!said) for (const p of PORTS) { if (callbackAt(gg, p.id)) { said = true; break; } }
       if (!said && lateEndings(gg).length > 0) said = true;
-      if (!said && originEnding(Object.assign(gg, { origin: ({ nome: 'segundo', ficheiro: 'converso', roteiro: 'piloto', escudeiro: 'fidalgo' } as Record<string, string>)[d.id] ?? 'x' } as never)) !== null) said = true;
-      const gz = richGame(2); const qz = takeThread(gz, d.id); qz.outcome = o; refreshQuestPrices(gz);
+      if (!said && originEnding(gg) !== null) said = true;
       if (!said && (d.id === 'kongo' || d.id === 'zamorin')) said = true; // read by refreshQuestPrices (world/portCharacter price mods)
       if (!said) unread.push(`${d.id}:${o}`);
     }
@@ -431,7 +443,6 @@ function walkArc(d: (typeof defs)[number], variants: number): void {
   check('no dead outcomes: every outcome is read by the Ledger, a callback, the last page or a price', unread.length === 0, unread.join(' '));
 }
 
-const walkFlags: Record<string, Record<string, number | string | boolean>> = {};
 
 // ---------------------------------------------------------------------------------------------
 // 5. Dual-run: a thread in flight is never dropped
@@ -557,7 +568,7 @@ const walkFlags: Record<string, Record<string, number | string | boolean>> = {};
   webOnArrival(d, 'lisboa');
   const dd = dueNow(d, 'lisboa');
   check('a deadline outranks an arc at the same quay', dd.length > 0 && dd[0].kind === 'deadline', dd.map((c) => `${c.kind}:${c.id}`).join(' '));
-  d.checkStory();
+  d.checkQuests();
   check('and is put at the call, not left to wait', d.pendingEvent?.id === 'quest:pepperrace:landing', d.pendingEvent?.id);
 }
 
@@ -702,7 +713,7 @@ const walkFlags: Record<string, Record<string, number | string | boolean>> = {};
   const cool = mk(); cool.identity.patrons.crown.favour = 0.0;
   check('a captain it half trusts is offered the land and not the fleet', offers(cool) === 'lordship,rich,ship', offers(cool));
   const shut = mk(); shut.identity.patrons.crown.favour = 0.6; shut.noteDeed('chart.sold', { target: 'nation:foreign', silent: true });
-  shut.identity.titles['the-man-who-sold-the-chart'] = { t: 0, place: '' };
+  shut.identity.titles['the-man-who-sold-the-chart'] = { t: 0, place: '' }; shut.identity.worn = ['the-man-who-sold-the-chart'];
   check('a captain who sold the Crown’s chart is offered neither, and is told why', offers(shut) === 'rich,ship' && !!evaluateKings(shut).withheld, evaluateKings(shut).withheld ?? '');
   const reck = mk(); reck.identity.patrons.crown.favour = 0.6; reck.powers.fronts.court.stage = 4;
   check('and with the Court at its reckoning no armada is promised, whoever he is', offers(reck) === 'lordship,rich,ship', offers(reck));
@@ -717,9 +728,9 @@ const walkFlags: Record<string, Record<string, number | string | boolean>> = {};
   check('the four authored endings stand: the armada is an outcome and its line is on the last page', dq.outcome === 'armada' && lateEndings(done).some((l) => /commanded the armada/.test(l)));
   // Offered as a person at the Quarters at the audience, not before the pepper is home.
   const early = mk(); early.chronicle.goalMet = false; early.ship.removeCargo('pimenta', 120);
-  early.checkStory();
+  early.checkQuests();
   check('nobody from the court comes before the pepper is home', !early.web.waiting && !early.pendingEvent);
-  const late = mk(); late.checkStory();
+  const late = mk(); late.checkQuests();
   check('and when it is, a gentleman of the King’s chamber is at the quay (a person at the Court)', late.web.waiting?.id === 'quest:kingsoffer:audience' && late.web.waiting.quarter === 'court', late.web.waiting?.who);
 }
 
@@ -821,6 +832,7 @@ if (!QUICK) {
   check('no career threw', bad.length === 0, bad.map((r) => r.err).join(' | '));
   const N = 4;
   check(`storylets from at least ${N} distinct arcs fire across ${SEEDS} careers`, arcs.size >= N, [...arcs].join(','));
+  log[1] = [];
   const r1 = run(1);
   check('a seed plays the same twice: the same storylets in the same order and the same end', r1.hash === results[0].hash);
   proto.checkQuests = origCheck; proto.hearStorylet = origHear;

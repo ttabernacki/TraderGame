@@ -135,6 +135,24 @@ random states are spread (every ending >= 3%, none > 40%; the table is printed).
 npx esbuild scripts/dynasty.ts --bundle --platform=node --format=cjs --outfile=/tmp/dynasty.cjs && node /tmp/dynasty.cjs
 ```
 
+## 7. The Powers and the Fronts — `scripts/powers.ts`
+
+```
+npx esbuild scripts/powers.ts --bundle --platform=node --format=cjs --outfile=/tmp/powers.cjs && node /tmp/powers.cjs [seeds=200] [years=20]
+```
+
+200 seeds x 20 years takes about 9 minutes; `node /tmp/powers.cjs 12 20` is enough while working (the Swahili and Malabar war-spread checks need the full
+count). It checks the delta and attitude tables against the Ledger vocabulary and their readers; the six Fronts over a random player (none pinned at stage
+1 or 4 in more than 80% of seeds, at twenty years; the Crescent, Rule, Claim and Gold also at thirty); `marketModifiers` as the identity with nothing in
+force; the Traffic, the courts of the Indian Ocean and the Rule (D4). E3 adds section 6: every Front's ladder reaches stage four (by history or by a captain
+who presses); the Court ticks in the real dated windows (João II's death warned in June 1495 and fallen in October; the favourite three or four months after
+each stage; the Edict warned in September and fallen in December 1496; Easter 1506), a client who moves when warned is spared and one who sits still is not,
+a converso captain loses more with the Rua Nova; the Crown's orders change with the reign; an older save is re-laid on the history line (`era`); the
+Crescent raises the Lisbon pepper price from stage two and Venice's bidding appears; the four conflict machines (the Senegal, the Mina coast, the Kongo
+succession, Ndongo) reach their phases, move a price, shut and reopen their lanes and tell a rumour heard where it began; the Gold's fever pressure,
+Lisbon gold price and revolts; the Race's pace; the twenty Front scenes (forward only by `road.ts`, every choice resolves, real Ledger tags, laps of the
+Carreira in three dated eras); the Rua Nova funding a Line (its terms printed, repaid out of her voyages, refused to another patron's captain or a fallen Rua Nova).
+
 ## Others
 
 `scripts/*.ts` (pieces, silent, hall, ...) are single-system checks; run each with the same esbuild pattern.
