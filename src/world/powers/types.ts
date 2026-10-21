@@ -156,6 +156,8 @@ export interface Rumour {
   window: number;
   /** When the captain first heard it, at which port, and how many hops it had made. */
   heard?: { t: number; port: string; hops: number };
+  /** A named master who told it at sea (D7): the source line names him instead of a kind of teller. */
+  via?: string;
   checked?: 'agrees' | 'disputed';
   checkedAt?: number;
   soldAt?: number;

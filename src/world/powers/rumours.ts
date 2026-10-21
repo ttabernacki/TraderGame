@@ -152,6 +152,7 @@ const where = (id: string): string => PORT_BY_ID.get(id)?.name ?? id;
 
 export function sourceLine(r: Rumour): string {
   const h = r.heard?.hops ?? 0;
+  if (r.via) return h <= 1 ? `${r.via}, out of ${where(r.place)}` : `${r.via}, who had it from ${where(r.place)}`;
   if (h <= 1) return `${r.teller}, out of ${where(r.place)}`;
   if (h <= 3) return `${r.teller}, who had it from ${where(r.place)}`;
   return `talk on the quay, passed on from as far as ${where(r.place)}`;

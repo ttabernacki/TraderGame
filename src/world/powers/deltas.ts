@@ -146,6 +146,10 @@ export const FRONT_DELTAS: FrontRow[] = [
   F('compact.made', 'rule', -1.2, 'A local list of passes honoured in the King’s name: the Rule is a licence here, not a blockade.', 'scenes.powers', { about: ['melinde', 'malindi'] }),
   F('compact.made', 'crescent', -0.2, 'A friend of Melinde who honours a sultan’s pass is a hard man to write up in Cairo.', 'moves.crescent', { about: ['melinde', 'malindi'] }),
   F('order.breached', 'rule', -0.04, 'An interloper let alone against the letter: the Rule bends where the captain stands.', 'modifiers.stage', { about: RULE_WATERS }),
+  // Strangers as people (D7): a toll is a half-stop; a delayed errand hardens, an aided one eases.
+  F('toll.taken', 'rule', 0.08, 'A toll taken from a master: the first thing the Rule looks like from the other ship.', 'modifiers.stage', { about: RULE_WATERS }),
+  F('passenger.delayed', 'rule', 0.05, 'An envoy, a pilgrim or a gift held on the water: the Rule is something that happens to people.', 'modifiers.stage', { about: RULE_WATERS }),
+  F('passenger.aided', 'rule', -0.04, 'An errand helped on its way: a precedent the other way.', 'modifiers.stage', { about: RULE_WATERS }),
 
   // --- The Court (home): the throne, the Church, the Rua Nova ------------------------------
   F('patron.honest', 'court', -0.05, 'The King had the truth once: the favourites have a little less room.', 'modifiers.stage'),
@@ -267,4 +271,9 @@ export const ATTITUDES: AttitudeRow[] = [
   A('person.redeemed', 'akan', 0.04, 'A person redeemed at their own beach.', 'modifiers.dues', false),
   A('practice.changed', 'kongo', 0.20, 'The Mani Soyo’s officer counts at the beach, because of him.', 'moves.kongo', false),
   A('practice.changed', 'crown', -0.05, 'A factor’s book has a line it did not have.', 'modifiers.dues', false),
+
+  // Strangers as people (D7)
+  A('toll.taken', 'target', -0.07, 'A toll taken from one of theirs.'),
+  A('passenger.delayed', 'target', -0.06, 'Their envoy, pilgrim or gift held on the water.'),
+  A('passenger.aided', 'target', 0.06, 'Their errand helped on its way.'),
 ];
