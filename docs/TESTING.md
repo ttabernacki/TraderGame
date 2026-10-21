@@ -119,6 +119,22 @@ npx esbuild scripts/strangers.ts --bundle --platform=node --format=cjs --outfile
 
 About 30 s.
 
+## 6. Dynasty and the endings — `scripts/dynasty.ts`
+
+`inheritFrom` on a hand-built father (ledger entries at known ages, Fronts at set stages, a clause with a term, a chart point run three times,
+patrons, worn titles, a promoted mate): the Ledger fades by `decayed()` and lies before the heir's first day under its true dates; Fronts
+persist at the same stage and the Powers' monthly tick runs on the heir's own clock; a grant in force is carried at half term; the chart comes
+down at the existing discount; patron favour decays, one that stood well gives a first meeting, one that ruined him stays shut; at most one title
+is carried, at 0.4, with no door shut, and the faded Ledger does not earn the heir a title; the heir is a person (name by origin, relation, age),
+and his Calling is unset until Act II; the company hands on (a mate replaces the pilot, a wronged man stays an enemy, a freed man's child may be
+the Língua); the Houses and Lines pass on; saves round-trip, a third hand-off keeps true dates, golden save 08 loads. The endings: each of the six
+is reached by a state built for it, texts are 2-3 paragraphs and a world line for every relation, counts from the Ledger are in them, and 2000
+random states are spread (every ending >= 3%, none > 40%; the table is printed). The heir card is rendered through the fake DOM.
+
+```
+npx esbuild scripts/dynasty.ts --bundle --platform=node --format=cjs --outfile=/tmp/dynasty.cjs && node /tmp/dynasty.cjs
+```
+
 ## Others
 
 `scripts/*.ts` (pieces, silent, hall, ...) are single-system checks; run each with the same esbuild pattern.

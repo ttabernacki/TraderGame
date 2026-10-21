@@ -92,10 +92,16 @@ checkpoint between acts.
   Visiting still gets the whole shed at resident prices. Unattended for years, a
   station can still burn.
 
-- **Legacy**: the epilogue offers "Send your heir to sea" (`Game.inheritFrom`): 40%
-  of the purse (cap 2,500), a quarter of lifetime renown, up to +4 skill points,
-  the old captain's chart and rutter, and surviving stations (same factor, stock
-  and chest; town regard reduced). Heir is a fidalgo if the line reached 400 renown.
+- **Legacy** (E2, dynasty-lite): the epilogue tells an *assembled* ending (`progression/endings.ts`: lordship, command, exile, the roteiro, a
+  name put off, or the work goes on, scored from Patron favour, the Fronts, the Ledger and Fame, with a last line on the Traffic and the Rule),
+  and offers "Send your heir to sea", which opens the heir card (`ui/heirView.ts`): a named person (relation, age, a name by origin; he may put
+  the family name off) and what comes down in plain words. `Game.inheritFrom` hands on, by data rules (`identity/dynasty.ts`,
+  `company/succession.ts`): 40% of the purse (cap 2,500; 4,000 at 60% for a captain-major), a quarter of lifetime renown, up to +4 skill points,
+  the chart one grade down, the surviving Houses and Lines, the lordship; the Ledger faded (older than 8 years fades, 16 gone) and kept before
+  his first day; the Fronts at the stages the father left; clauses at half term; patron favour halved with a first meeting from those that
+  stood well; one worn title as "a name your father had" at 0.4; a promoted mate or hand for the pilot's and master's seats, a freed man's child
+  as a possible Língua, and a wronged man still an enemy. His Calling is his own, chosen at Act II. Heir is a fidalgo if the line reached 400
+  renown. No multi-life structure.
 
 - **The far end** (act IV+): `feitorcal` (the factory at Calecute: fortify, withdraw or trust
   the Zamorin; maybe a riot, maybe Cochim as ally), `mappila` (off-book pepper, the dhow

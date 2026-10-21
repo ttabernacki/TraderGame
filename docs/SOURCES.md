@@ -183,3 +183,28 @@ weight, a fifth of it for word, a fraction of the Power's regard, the cartaz cla
 
 **Deliberately left generic:** every real master, pilot and merchant of the period (none is used; Malemo Cana and Ahmad ibn Majid are on the
 generator's refusal list), the owners of the ships of any real port, and the sultans, Zamorin and Raja (unnamed, as in D4).
+
+## Dynasty-lite and the assembled endings (E2)
+
+Code in `src/identity/dynasty.ts` (the hand-off), `src/company/succession.ts` (the company) and `src/progression/endings.ts` (the evaluation
+and its paragraphs). The structure of a career as a line is the design team's (v2-story Pillar 6); the history it leans on is thin and is
+marked.
+
+| Item | Grade | Note |
+|---|---|---|
+| The *Lei Mental* (1434): a grant of Crown land passes whole to the eldest legitimate son and reverts to the Crown without one | documented | João I / Duarte, 1434 (Disney, *A History of Portugal*; Hespanha on the Crown's donations). The lordship ending uses it; a natural son needing a letter of legitimation, and a nephew taking it by the Crown's favour for a fee, are the game's readings of it, not cited cases. |
+| A boy in Lisbon in 1500 who will keep the Casa's books and write the history of the Indies from its papers (the Book ending) | documented | João de Barros, b. 1496, factor of the Casa da Índia from 1525, *Décadas da Ásia* (first Década 1552). He is not named in the text. |
+| An heir put into the flagship as a page or a clerk | approximate | Boys and kin sailed in the fleets' ships in every rank; the use of it as an ending sentence is a game device. |
+| The islands (Madeira, São Tomé) as a place a ruined man goes | approximate | Degredados and the disgraced were sent or went to the islands; no case is claimed. |
+
+**Invented, marked as such:** every number in the hand-off (the 0.5 a patron's favour is halved to and the 0.2 floor of a first meeting; the
+0.4 a father's title counts for; the half-term of a grant; the 8-and-16-year fade is the Ledger's own and was already there; the 0.7 a court's
+attitude eases to; the 0.25 a repudiated Ledger fades to; half the purse and no standing for a man who puts the name off); the relation weights
+(son 60%, nephew 20%, natural son 12%, ward 8%) and ages 17-30; the names (the origin pools of D5); the rule that the pilot's and the master's
+seats are taken by a promoted mate or a warm hand, the three-in-four chance that a freed man's child is the new Língua, and the rule that a man
+who left on bad terms stays an enemy; all six endings' scoring weights and every sentence of them (and the invented lordships Alvito, Sortelha,
+Ferreira de Aves and Castelo Rodrigo are the game's, as the King's Offer had them).
+
+**Deliberately left generic:** who the heir's mother is; any real captain's heir; the year the line ends. The heir begins in 1482 on the game's
+clock (the history runs afresh around him, as `inheritFrom` always had it) but into a world whose Fronts, patrons' falls, clauses and
+Traffic stage are the father's.
