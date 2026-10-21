@@ -182,6 +182,17 @@ function renderAll(g: Game, label: string): Set<string> {
     for (const id of renderAll(g, 'second port')) seen.add(id);
     n++;
   }
+  // A person waiting at the Quarters (storylets/engine): the Biscayan at the tavern of Las Palmas, the Leak's captain on the quay at Arguim.
+  {
+    const g = dockedAt('lisboa', 6, (gg) => { gg.crown.gold = 9000; gg.chronicle.act = 3; gg.crown.lifetimeStanding = 200; });
+    g.secretsHeard.push('galeao');
+    g.ship.state.pos = { ...anchorageOf(portDef('las-palmas')) };
+    g.enterPort(portDef('las-palmas')); g.mode = 'port';
+    g.acceptQuest('galeao');
+    need(g.web.waiting?.quarter === 'tavern', `the Biscayan waits at the tavern (${g.web.waiting?.quarter})`);
+    for (const id of renderAll(g, 'a person at the tavern')) seen.add(id);
+    n++;
+  }
   console.log(`rendered ${n} port states; ${seen.size} distinct verbs seen in the DOM`);
   // Every verb that is not conditional on a rare state has been seen at least once somewhere.
   for (const v of VERBS) if (v.quarter !== 'foot' && !seen.has(v.id)) console.log(`   (never rendered in these states: ${v.id})`);
@@ -672,7 +683,7 @@ const deed = (g: Game, tag: any, mag = 0.8, extra: Record<string, unknown> = {})
         raise(pg, deep, owner, 'trusted');
         for (const k of Object.keys(pg.powers.seen)) if (k.startsWith('fired:place:')) delete pg.powers.seen[k];
         pg.checkQuests();
-        need(!!pg.pendingEvent && String(pg.pendingEvent.id).startsWith('place:') || pg.pendingScenes.some((x) => x.id.startsWith('place:')) || !!pg.pendingEvent,
+        need(!!pg.pendingEvent && String(pg.pendingEvent.id).startsWith('place:') || pg.pendingScenes.some((x) => x.id.startsWith('place:')) || !!pg.pendingEvent || !!pg.web.waiting,
           `${port}: checkQuests did not put a scene in a played game`);
       }
 
