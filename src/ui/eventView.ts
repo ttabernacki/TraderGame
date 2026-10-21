@@ -62,6 +62,12 @@ export class EventView {
     this.root.replaceChildren(el('div', { class: `event-card ${event.severity}${event.council ? ' council' : ''}` },
       event.council ? el('div', { class: 'event-eyebrow' }, 'At the chart table') : null,
       el('div', { class: 'event-title' }, event.title),
+      // The man behind a hail (D7): name, home, errand and a one-line read of his temper. No portrait.
+      event.who ? el('div', { class: 'event-who' },
+        el('div', { class: 'event-who-name' }, `${event.who.name}`, el('span', { class: 'event-who-home' }, ` of ${event.who.home}`)),
+        event.who.errand ? el('div', { class: 'event-who-errand' }, event.who.errand) : null,
+        el('div', { class: 'event-who-read' }, event.who.read),
+      ) : null,
       // A blank line in the written text is a paragraph break and has to survive
       // as one. HTML collapses it, so a scene written in three beats — what
       // happened, who is standing where, what they are waiting for — arrived on

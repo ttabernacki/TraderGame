@@ -135,6 +135,7 @@ export interface Stranger {
 
 /** The water a position is in, for who may be sailing it. */
 export type SeaRegion = 'atlantic' | 'algarve' | 'swahili' | 'arabian' | 'crossing' | 'gujarat' | 'malabar';
+export const isIndianWater = (r: SeaRegion): boolean => r !== 'atlantic' && r !== 'algarve';
 export function seaRegionAt(at: LatLon): SeaRegion {
   const lon = wrap180(at.lon);
   const lat = at.lat;
@@ -212,12 +213,15 @@ export const NATION_PEOPLE: Record<Nation, string> = {
 export function trafficAt(at: LatLon): number {
   let busy = 0;
   for (const p of PORTS) {
-    if (!p.known) continue;
+    // The monopoly's frontier silences the Atlantic below the last known port; the Indian Ocean was never silent,
+    // only unknown to Europe, so its ports carry shipping whether or not the Casa's sheet has them (D7).
+    if (!p.known && !isIndianWater(seaRegionAt(anchorageOf(p)))) continue;
     const d = haversine(at, anchorageOf(p)) / NM;
     // A port's shipping thins out with the square of the distance from it; a
     // rich one reaches further.
     const reach = 90 + p.wealth * 520 + (p.size === 'city' || p.size === 'emporium' ? 260 : 0);
-    busy += (0.12 + p.wealth) * Math.exp(-((d / reach) ** 2));
+    // Indian shipping is thinned to a sail a week or so near a port, so a stranger stays an event and not a nuisance.
+    busy += (0.12 + p.wealth) * Math.exp(-((d / reach) ** 2)) * (p.known ? 1 : 0.45);
   }
   // The Gulf of Cádiz and the approaches to the Strait carry everybody's
   // shipping, not just the shipping of the ports in them.
@@ -411,8 +415,8 @@ export function peopleAboard(g: Game, s: Stranger): void {
   s.region = seaRegionAt(s.pos);
   // A man who thinks well of the captain comes down to be spoken to; one who does not, hauls off.
   if (s.business === 'trader') {
-    if (info.regard >= 0.3 && s.intent === 'hold') s.intent = 'close';
-    else if (info.regard <= -0.3) s.intent = 'avoid';
+    if (info.regard >= 0.2 && s.intent === 'hold') s.intent = 'close';
+    else if (info.regard <= -0.2) s.intent = 'avoid';
   }
 }
 
@@ -554,8 +558,8 @@ export function strangerThinks(g: Game, s: Stranger, rangeNm: number): void {
       // The master has met the captain before, or has heard of him (D7).
       const r = s.masterInfo?.regard;
       if (r !== undefined && s.business === 'trader') {
-        if (r >= 0.3) s.intent = 'close';
-        else if (r <= -0.3) s.intent = 'avoid';
+        if (r >= 0.2) s.intent = 'close';
+        else if (r <= -0.2) s.intent = 'avoid';
       }
       break;
     }

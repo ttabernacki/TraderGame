@@ -203,3 +203,13 @@ high-frequency octaves with distance), sparkle in the sky/sea reflection, foam a
 the horizon line and the sea/sky seam, temporal flicker when the ship moves, and MSAA not covering shader-generated high-frequency
 detail (FXAA cannot fix specular aliasing). Verify with a deterministic multi-frame harness (same scene, ship moving, N frames) and
 measure temporal flicker (frame-to-frame pixel variance on the sea region) at every tier, including low/medium, before and after.
+
+
+## Addendum (D7): the Indian Ocean ships
+
+Strangers are now people with Indian Ocean flags (Swahili, Arab, Gujarati, Malabari), and there is **no dhow, baghla or Mappila-ship mesh**.
+For this release they reuse the existing hulls: the lateen caravel (`caravela-latina`) for the common merchantman, the `barcha` for
+coasters and fishers, and the small nau (`nau-pequena`) for the deeper Gujarati and Arab ships. The hail text says "a lateen-rigged
+merchantman" and never "a caravel". A dhow/baghla mesh (stitched or nailed planking, a high poop on the baghla, a long lateen yard, a painted
+eye at the bow) is a possible later S task for the UI builder, if budget allows; nothing in `src/game/strangers.ts` depends on one (only
+`CULTURES[...].hulls` would change).

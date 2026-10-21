@@ -126,7 +126,7 @@ export const CULTURES: Record<Nation, CultureDef> = {
   arab: {
     people: 'arab',
     given: ['Mahfuz', 'Sulayman', 'Hilal', 'Nasir', 'Mubarak', 'Jabir', 'Salih', 'Khalfan', 'Zayid', 'Hamdan', 'Rashid'],
-    family: ['Hamad', 'Jumah', 'Saif', 'Said', 'Khalid', 'Majid al-Sur', 'Naji', 'Ghanim', 'Mansur'],
+    family: ['Hamad', 'Jumah', 'Saif', 'Said', 'Khalid', 'Humaid', 'Naji', 'Ghanim', 'Mansur'],
     style: (g, f) => `Nakhoda ${bin(g, f)}`,
     women: ['Maryam', 'Salma', 'Aisha', 'Shamsa'],
     boats: ['Al-Najah', 'Al-Salamah', 'Fath al-Khayr', 'Bahr al-Amal', 'Al-Sa’d', 'Jawhar'],
@@ -148,7 +148,7 @@ export const CULTURES: Record<Nation, CultureDef> = {
   malabari: {
     people: 'malabar',
     given: ['Moidu', 'Pokker', 'Kunhi', 'Hamsa', 'Bava', 'Ayyoob', 'Mayin', 'Kutti', 'Ussan', 'Seethi'],
-    family: ['Haji', 'Mooppan', 'Thangal', 'Musliyar', 'Koya', 'Maraikkayar', 'Rawther'],
+    family: ['Haji', 'Mooppan', 'Thangal', 'Musliyar', 'Rawther'],
     style: (g, f) => `${g} ${f}`,
     women: ['Aysha', 'Kunhimma', 'Beevi', 'Fathima'],
     boats: ['Barakath', 'Nusrath', 'Kerala Mutu', 'Sulaiman', 'Mappila Kutty', 'Salamath'],
@@ -367,7 +367,7 @@ export function regardParts(g: Pick<Game, 'ledger' | 'clock' | 'powers'>, m: Pic
     if (e.tag === 'master.met') continue;
     if (e.data?.master === m.id) {
       const tone = TAGS[e.tag]?.tone ?? 0;
-      personal += tone * Math.max(0.2, Math.min(1, e.magnitude)) * (tone < 0 ? sense.neg : sense.pos) * 0.6;
+      personal += tone * Math.max(0.2, Math.min(1, e.magnitude)) * (tone < 0 ? sense.neg : sense.pos) * 0.9;
     } else if (WORD_TAGS.has(e.tag) && e.target === m.polity && e.data?.master !== undefined) {
       // Done to somebody else of his flag, and the word has had time to run.
       const near = typeof e.data.near === 'string' ? e.data.near : e.place;

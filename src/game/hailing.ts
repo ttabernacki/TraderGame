@@ -5,6 +5,7 @@ import { hullClass } from '../ship/hull';
 import { NATION_NAME, NATION_PEOPLE, type Stranger } from './encounter';
 import type { SeaEvent, SeaChoice } from './seaEvents';
 import type { Game } from './state';
+import { withPeople } from './terms';
 
 /**
  * What is said when the two ships are close enough to hear each other.
@@ -111,7 +112,7 @@ function takeHer(g: Game, s: Stranger, lawful: boolean): string {
 }
 
 /** Ask him where he thinks he is. The best longitude you will get all voyage. */
-function askThePosition(g: Game, quality: number): string {
+export function askThePosition(g: Game, quality: number): string {
   const from = g.nav.estimated;
   const truth = g.ship.state.pos;
   // He is wrong too, but he is wrong by less, because he has just come from a
@@ -157,7 +158,7 @@ const partAndAway: SeaChoice = {
 };
 
 /** What she shouts across first, which depends entirely on whose she is. */
-function hailFrom(nation: string): string {
+export function hailFrom(nation: string): string {
   switch (nation) {
     case 'portuguese':
       return 'Whose ship? — we are eleven days from Lagos and we have water if you want it.';
@@ -170,6 +171,18 @@ function hailFrom(nation: string): string {
     case 'french':
       return 'Dieppe. He says it twice, as though it explained what a Norman is doing in this '
         + 'water, and to a Norman it does.';
+    case 'swahili':
+      return 'A long greeting in Swahili, then in Arabic, and then the name of his port and of the '
+        + 'month he left it, which is how a coast that lives by the monsoon says who it is.';
+    case 'arab':
+      return 'Peace be on you. And then, because that is how it is done, the name of his ship, '
+        + 'the name of his father and the name of the port he is bound for.';
+    case 'gujarati':
+      return 'A shouted list of the goods in her, in Gujarati and then in a little Arabic, by a man '
+        + 'who would plainly rather sell you some of it.';
+    case 'malabari':
+      return 'Calicut, he says, and then Cochim, and then the price of pepper in each, in the voice of '
+        + 'a man whose whole conversation is a market.';
     default:
       return 'Genova — and then, without being asked, the price of pepper in Bruges.';
   }
@@ -568,9 +581,12 @@ const GENOESE: Build = (g, s) => {
 
 /** What passes between two ships that have closed to speaking distance. */
 export function hailScene(g: Game, s: Stranger): SeaEvent {
-  if (s.nation === 'genoese' && s.business === 'trader') return GENOESE(g, s);
-  const build = BUILDERS[s.business] ?? BUILDERS.trader;
-  return build(g, s);
+  const base = s.nation === 'genoese' && s.business === 'trader' ? GENOESE(g, s) : (BUILDERS[s.business] ?? BUILDERS.trader)(g, s);
+  // A sail with a man at her helm (D7): terms first, the old options after them. A stranger from before that, or
+  // the rival's ship, is hailed exactly as it was.
+  if (!s.masterInfo || s.rival) return base;
+  const trader = base.id === 'hail:trader' || base.id === 'hail:interloper';
+  return withPeople(g, s, trader ? base : base, { position: askThePosition, shout: hailFrom });
 }
 
 /** What she has under hatches, by where she is and what she is about. */

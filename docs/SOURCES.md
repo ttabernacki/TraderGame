@@ -159,3 +159,27 @@ Dated agenda events live in `src/identity/patrons.ts` (`AGENDA`), each with a `s
 a chapel on the Cape road, letters for Prester John, the Christians of St Thomas); the Church's loves and hates; the "favourite who falls"
 when the Court Front reaches its second stage; all thirty-two titles' names, thresholds and teller lines; the clause prices, terms and
 the pairing of pieces to clauses; the generated names.
+
+## Strangers as people (D7)
+
+Data and generator in `src/game/strangers.ts` (cultures, houses, names, errands); terms in `src/game/terms.ts`; the Rule's reading is D4's.
+The KINDS of ship, errand and encounter are attested; every master, owner, ship, house and sum below is the game's.
+
+| Item | Grade | Note |
+|---|---|---|
+| Merchant ships of the western Indian Ocean (Swahili, Arab, Gujarati and Mappila/Malabari) sailing the monsoon between the Swahili coast, Aden, Hormuz, Cambay and the Malabar ports | documented | Pearson, *The Indian Ocean*; Malekandathil, *Maritime India*; Subrahmanyam on Gama's coast leg. Ships are drawn with the lateen caravel and small nau meshes already in the renderer; no dhow/baghla mesh is claimed (docs/RENDER_UPGRADE.md). |
+| Gujarati merchants resident at Melinde and Calicut; Mappila houses at Calicut; Arab houses at Aden | documented | Also in the D4 rows. The houses named in prose are generic ("a Vania counting-house at Cambaia"). |
+| Pilgrims to Mecca by way of Aden, envoys carrying letters between courts, a factor's wife travelling to her father's house, an out-of-work pilot looking for a ship, a prince's gift sent with a trusted master | approximate | The kinds of errand are attested by the period's accounts; the use of them as hail passengers is a game device. |
+| Genoese hulls and capital in the Atlantic trade; Castilian interlopers on the Guinea coast against the Portuguese monopoly; Norman voyages from Dieppe | documented / approximate | Zurara; Pacheco Pereira; the Genoese in the Madeira sugar trade. The Dieppe voyages are traditionally dated to the 1480s but the evidence is thin: used as flavour only. |
+| Moorish corsairs on the Algarve coast and the Strait | approximate | Raids on the Algarve are well attested for the fifteenth century; the Salé of later corsair fame is not claimed. |
+| Passes, tolls and the stopping of ships under the King's letter as the Rule's stages | approximate | See the D4 table above: the practice of the cartaz becoming regular is dated by the game to Act IV-V, not to a year. |
+
+**Invented, marked as such:** every master's name (built from the given names and patronymics of the culture and drawn per seed;
+`strangers.ts` marks each record `invented: true` and refuses the names the game or history already holds), every owner, house and
+boat, the thirty-five houses and their circuits, the five temper types and their lines, every passenger and the lots in every hold,
+the twelve-to-thirty cruzado gifts, the 5% toll and the 12% duty, the weights of the errands, the regard arithmetic (a tone times a
+weight, a fifth of it for word, a fraction of the Power's regard, the cartaz clause), the days word takes to run to a court (D5's
+`wordDays`), and the rumours the masters tell (drawn from the Powers' mill, with the master named as the teller).
+
+**Deliberately left generic:** every real master, pilot and merchant of the period (none is used; Malemo Cana and Ahmad ibn Majid are on the
+generator's refusal list), the owners of the ships of any real port, and the sultans, Zamorin and Raja (unnamed, as in D4).

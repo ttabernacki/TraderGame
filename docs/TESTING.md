@@ -103,6 +103,22 @@ npx esbuild scripts/lanes.ts --bundle --platform=node --format=cjs --outfile=/tm
 node /tmp/econ.cjs --world        # after bundling scripts/econ.ts
 ```
 
+## 5. Strangers as people — `scripts/strangers.ts`
+
+Schema of every generated stranger over many seeds and ten waters (Atlantic, Algarve, Guinea, Kilwa, Melinde, the Arabian sea, the crossing, Gujarat, Calecute and Cochim;
+the roster is a pure function of the seed, unique, invented and clear of real names; no new mesh; terms gate by Rule stage (stop only
+from stage 3) and by the cartaz clause or a pass written for the master; a master spoken at Kilwa is met again at Melinde and Calecute with an
+attitude that differs by what the Ledger says was done to him (two games from one seed, one stopping and one sparing); word reaches a fellow
+master of his court only after the road allows, and reaches the courts through the diplomacy queue and the rumour mill (a rumour Fact with the
+master as source); each term writes the right tags; no term sets a destination, scene, quest or obligation; people survive a save; old saves'
+strangers (no `masterInfo`) are hailed as before; the hail card shows name, home, errand and temper through a fake DOM.
+
+```
+npx esbuild scripts/strangers.ts --bundle --platform=node --format=cjs --outfile=/tmp/strangers.cjs && node /tmp/strangers.cjs [seeds=40]
+```
+
+About 30 s.
+
 ## Others
 
 `scripts/*.ts` (pieces, silent, hall, ...) are single-system checks; run each with the same esbuild pattern.

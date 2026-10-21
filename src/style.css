@@ -1446,6 +1446,13 @@ input[type=range] { width: 100%; accent-color: #8a6b45; }
   color: var(--gold);
   margin-bottom: 9px;
 }
+.event-who { margin: 0 0 12px; padding: 7px 10px; border-left: 2px solid rgba(200,164,78,.45); background: rgba(196,176,136,.06);
+  border-radius: 2px; display: flex; flex-direction: column; gap: 2px; }
+.event-who-name { font-family: var(--serif); font-size: 15px; color: var(--cream); }
+.event-who-home { color: var(--ink-faint); font-style: italic; }
+.event-who-errand { font-family: var(--serif); font-size: 13px; line-height: 1.4; color: var(--cream); }
+.event-who-read { font-size: 12px; line-height: 1.4; color: var(--ink-faint); font-style: italic; }
+@media (max-width: 560px) { .event-who { padding: 6px 8px; } .event-who-errand { font-size: 12.5px; } }
 .event-text {
   font-family: var(--serif);
   font-size: 16px;
