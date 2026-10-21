@@ -11,19 +11,24 @@ import { Rng } from '../src/core/rng';
 import { GOODS } from '../src/economy/goods';
 import { Markets } from '../src/economy/market';
 import { PORTS, anchorageOf, portDef } from '../src/world/ports';
-import { MONTH as WMONTH, tickWorld } from '../src/world/tick';
+import { MONTH as WMONTH, tickWorld, tickWorldDue } from '../src/world/tick';
 import { ALL_TAGS, isTag } from '../src/ledger/tags';
 import { knownFacts } from '../src/knowledge/information';
 import { checkFact } from '../src/knowledge/informers';
 import { along, TRUNK } from '../src/progression/road';
 import { HISTORY } from '../src/progression/chronicle';
 import { TRAFFIC_SCENES, dueTrafficScene, sceneOffered } from '../src/progression/trafficScenes';
+import { FRONT_SCENES, dueFrontScene } from '../src/progression/frontScenes';
+import { tickLines, canFundLine, openFundedLine } from '../src/progression/network';
+import { daysFromEpoch } from '../src/core/clock';
+import { PATRON_IDS, choosePatron, eventsOf, favouriteEvents, reignAt, ruaNovaTerms, tickPatrons, type PatronId } from '../src/identity';
+import { ERA, MACHINES, goldFever, machinePhase, racePace, reaches, relay } from '../src/world/powers';
 import { POWER_SCENES, duePowerScene, powerSceneOffered } from '../src/progression/powerScenes';
 import { CONDUCT, ruleReading } from '../src/world/powers/rule';
 import { lanesAt, laneStateOf } from '../src/world/lanes';
 import { activeEffects } from '../src/world/powers';
 import {
-  ATTITUDES, FRONTS, FRONT_DELTAS, FRONT_IDS, IDENTITY, POWERS, POWER_IDS, READERS, SCHEDULE,
+  ATTITUDES, FRONTS, FRONT_DELTAS, FRONT_IDS, IDENTITY, type FrontId, POWERS, POWER_IDS, READERS, SCHEDULE,
   addEffect, arriveAt, declaredReaders, foldEntry, hops, marketModifiers, migratePowers, newPowers, pointsOf, seedRelations,
   setHistorySource, shockTime, type PowersHost,
 } from '../src/world/powers';
@@ -80,7 +85,7 @@ const entry = (tag: string, over: Partial<Entry> = {}): Entry => ({
   const fxGoods = new Set<string>();
   for (const f of FRONT_IDS) for (const e of FRONTS[f].effects) for (const m of [e.price, e.stock, e.appetite]) for (const k of Object.keys(m ?? {})) fxGoods.add(k);
   check('stage effects name only real goods', [...fxGoods].every((g) => GOODS.some((x) => x.id === g)));
-  check('all six Fronts defined; five tick (the Court is dormant)', FRONT_IDS.length === 6 && FRONT_IDS.filter((f) => FRONTS[f].ticks).sort().join() === 'claim,crescent,gold,rule,traffic');
+  check('all six Fronts defined, and all six tick (the Court was dormant before E3)', FRONT_IDS.length === 6 && FRONT_IDS.filter((f) => FRONTS[f].ticks).length === 6);
   check('thirteen Powers; every one but the Crown moves', POWERS.length === 13 && POWERS.filter((p) => !p.ticks).map((p) => p.id).join() === 'crown');
   check('Kilwa, Mombaça and Melinde are three Powers, and Gujarat is its own', ['kilwa', 'mombasa', 'melinde', 'gujarat'].every((id) => POWERS.some((p) => p.id === id)));
   const rel = seedRelations();
@@ -100,8 +105,8 @@ interface Tel {
   mb: { wars: number; shut: number; zeroFlowShut: number; flowAfter: boolean; starts: number[] };
   staleIntoWar: number;
 }
-interface Run { host: PowersHost; seen: number; wrong: number; ledger: Entry[]; tel: Tel }
-type Policy = 'random' | 'carry' | 'refuse' | 'stop' | 'spare';
+interface Run { host: PowersHost; seen: number; wrong: number; ledger: Entry[]; tel: Tel; peak: Record<FrontId, number> }
+type Policy = 'random' | 'carry' | 'refuse' | 'stop' | 'spare' | 'press';
 const flowAt = (h: PowersHost, port: string): number => lanesAt(port).reduce((sum, l) => sum + (laneStateOf(h).flow[l.id] ?? 0), 0);
 function playSeed(seed: number, years: number, policy: Policy): Run {
   const h = makeHost(seed) as PowersHost;
@@ -117,10 +122,12 @@ function playSeed(seed: number, years: number, policy: Policy): Run {
     staleIntoWar: 0,
   };
   const was = { sw: false, mb: false };
+  const peak = { gold: 1, traffic: 1, claim: 1, crescent: 1, rule: 1, court: 1 } as Record<FrontId, number>;
   for (let m = 0; m < years * 12; m++) {
     tickWorld(h, 1);
     const t = h.worldT!;
     const st = h.powers!;
+    for (const f of FRONT_IDS) peak[f] = Math.max(peak[f], st.fronts[f].stage);
     // The wars, and what the lane sim does at the shut quays: Mombaça-Melinde at Mombaça, Calicut-Cochim at Cochim.
     for (const [k, power, port] of [['sw', 'mombasa', 'mombaca'], ['mb', 'calicut', 'cochim']] as const) {
       const on = activeEffects(st, t).some((e) => e.power === power && e.kind === 'war');
@@ -133,7 +140,14 @@ function playSeed(seed: number, years: number, policy: Policy): Run {
       } else if (!on && x.wars > 0 && flowAt(h, port) > 0) x.flowAfter = true;
       was[k] = on;
     }
-    if (policy === 'stop' || policy === 'spare') {
+    if (policy === 'press') {
+      // The hostile captain of the Gold, the Claim and the Crescent: shaded scales and a broken word on the beach, stones raised and sheets sold, ships stopped in the east.
+      h.ledger.push(entry('weights.false', { t, place: 'mina', target: 'eguafo', magnitude: 1 }));
+      h.ledger.push(entry('promise.broken', { t, place: 'mina', target: 'eguafo', magnitude: 1 }));
+      h.ledger.push(entry('claim.made', { t, place: 'lisboa', target: 'mpinda', magnitude: 1 }));
+      h.ledger.push(entry('chart.sold', { t, place: 'lisboa', target: 'castile', magnitude: 1 }));
+      h.ledger.push(entry('ship.stopped', { t, place: 'calecute', target: 'calicut', magnitude: 1 }));
+    } else if (policy === 'stop' || policy === 'spare') {
       // Act IV, spring 1498 to autumn 1501: every few months, at Calecute and Kilwa, the same conduct.
       const y = 1482 + 6.5 / 12 + m / 12;
       if (y >= 1498.3 && y < 1501.8 && m % 3 === 0) {
@@ -159,21 +173,20 @@ function playSeed(seed: number, years: number, policy: Policy): Run {
       if (e && (e.kind === 'war' || e.kind === 'embargo' || e.kind === 'blockade') && e.start <= t && t < e.end && marketModifiers(r.place, t, st).laneClosed) tel.staleIntoWar++;
     }
   }
-  return { host: h, seen, wrong, ledger: h.ledger, tel };
+  return { host: h, seen, wrong, ledger: h.ledger, tel, peak };
 }
 {
   const t0 = Date.now();
-  const endStage: Record<string, number[]> = { traffic: [], gold: [], claim: [], crescent: [], rule: [] };
+  const endStage: Record<string, number[]> = { traffic: [], gold: [], claim: [], crescent: [], rule: [], court: [] };
   const swSeeds: number[] = [], mbSeeds: number[] = [], swStarts = new Set<number>(), mbStarts = new Set<number>();
   let swReopen = 0, mbReopen = 0, swZero = 0, mbZero = 0, swShut = 0, mbShut = 0, staleWar = 0, staleWarSeeds = 0, powerMoves = 0;
   let kongoMoves = 0, kongoSeeds = 0, rumours = 0, unresolved = 0, wrongSeeds = 0, staleOrFalse = 0, heardTotal = 0;
   const kinds = new Map<string, number>();
-  const dormant: string[] = [];
   const offsetBreach: string[] = [];
   for (let s = 1; s <= SEEDS; s++) {
     const run = playSeed(s, YEARS, 'random');
     const st = run.host.powers!;
-    for (const f of ['traffic', 'gold', 'claim', 'crescent', 'rule'] as const) endStage[f].push(st.fronts[f].stage);
+    for (const f of ['traffic', 'gold', 'claim', 'crescent', 'rule', 'court'] as const) endStage[f].push(st.fronts[f].stage);
     const tl = run.tel;
     if (tl.sw.wars > 0) swSeeds.push(s);
     if (tl.mb.wars > 0) mbSeeds.push(s);
@@ -190,7 +203,6 @@ function playSeed(seed: number, years: number, policy: Policy): Run {
     heardTotal += run.seen;
     if (run.wrong > 0) wrongSeeds++;
     staleOrFalse += st.rumours.filter((r) => r.truth !== 'true').length;
-    for (const f of FRONT_IDS) if (!FRONTS[f].ticks && st.fronts[f].stage !== 1) dormant.push(`${f}@${s}`);
     for (const f of FRONT_IDS) {
       const o = st.fronts[f].offset;
       if (o < FRONTS[f].offsetMin - 1e-9 || o > FRONTS[f].offsetMax + 1e-9) offsetBreach.push(`${f}@${s}`);
@@ -201,11 +213,11 @@ function playSeed(seed: number, years: number, policy: Policy): Run {
     unresolved += run.host.powers!.rumours.filter((r) => r.born < tPlayed && r.resolved === undefined).length;
   }
   const share = (f: string, pred: (n: number) => boolean): number => endStage[f].filter(pred).length / SEEDS;
-  console.log(`  ${SEEDS} seeds x ${YEARS} years in ${((Date.now() - t0) / 1000).toFixed(1)} s; traffic end stages ${[1, 2, 3, 4].map((k) => `${k}:${endStage.traffic.filter((x) => x === k).length}`).join(' ')}; gold ${[1, 2, 3, 4].map((k) => `${k}:${endStage.gold.filter((x) => x === k).length}`).join(' ')}`);
+  console.log(`  ${SEEDS} seeds x ${YEARS} years in ${((Date.now() - t0) / 1000).toFixed(1)} s; traffic end stages ${[1, 2, 3, 4].map((k) => `${k}:${endStage.traffic.filter((x) => x === k).length}`).join(' ')}; gold ${[1, 2, 3, 4].map((k) => `${k}:${endStage.gold.filter((x) => x === k).length}`).join(' ')}; court ${[1, 2, 3, 4].map((k) => `${k}:${endStage.court.filter((x) => x === k).length}`).join(' ')}`);
   console.log(`  Kongo: ${(kongoMoves / SEEDS).toFixed(1)} moves a run (${[...kinds].map(([k, n]) => `${k} ${n}`).join(', ')}); ${rumours} rumours made, ${heardTotal} heard`);
   console.log(`  claim ${[1, 2, 3, 4].map((k) => `${k}:${endStage.claim.filter((x) => x === k).length}`).join(' ')}; crescent ${[1, 2, 3, 4].map((k) => `${k}:${endStage.crescent.filter((x) => x === k).length}`).join(' ')}; rule ${[1, 2, 3, 4].map((k) => `${k}:${endStage.rule.filter((x) => x === k).length}`).join(' ')}`);
   console.log(`  Swahili war in ${swSeeds.length}/${SEEDS} seeds (${swStarts.size} distinct start months), Malabar war in ${mbSeeds.length}/${SEEDS} (${mbStarts.size}); ${(powerMoves / SEEDS).toFixed(1)} moves a run across the seven ticking courts`);
-  for (const f of ['traffic', 'gold', 'claim', 'crescent', 'rule']) check(`${f}: not pinned at an extreme (stage 1 or 4) in more than 80% of seeds`, share(f, (n) => n === 1 || n === 4) <= 0.8, `${(share(f, (n) => n === 1 || n === 4) * 100).toFixed(0)}% at an extreme`);
+  for (const f of ['traffic', 'gold', 'claim', 'crescent', 'rule', 'court']) check(`${f}: not pinned at an extreme (stage 1 or 4) in more than 80% of seeds`, share(f, (n) => n === 1 || n === 4) <= 0.8, `${(share(f, (n) => n === 1 || n === 4) * 100).toFixed(0)}% at an extreme`);
   check('the Crescent and the Rule have moved by the end of the twenty years in most seeds', share('crescent', (n) => n >= 2) > 0.5 && share('rule', (n) => n >= 2) > 0.5);
   check('a Swahili war begins in some seeds and not others, and at different months', swSeeds.length >= SEEDS * 0.1 && swSeeds.length < SEEDS && swStarts.size >= 6, `${swSeeds.length} seeds, ${swStarts.size} start months`);
   check('a Malabar war begins in some seeds and not others, and at different months', mbSeeds.length >= SEEDS * 0.1 && mbSeeds.length < SEEDS && mbStarts.size >= 6, `${mbSeeds.length} seeds, ${mbStarts.size} start months`);
@@ -219,7 +231,7 @@ function playSeed(seed: number, years: number, policy: Policy): Run {
   check('every rumour resolves (true, stale or false) once its window is past', unresolved === 0, `${unresolved} unresolved of ${rumours}`);
   check('some rumours are false or stale', staleOrFalse > 0, `${staleOrFalse} of ${rumours}`);
   check('a rumour is demonstrably wrong at least once in most runs', wrongSeeds / SEEDS >= 0.5, `${wrongSeeds}/${SEEDS} runs settled one as not borne out`);
-  check('dormant Fronts do not move stage', dormant.length === 0, dormant.slice(0, 3).join(' '));
+  check('no Front is dormant: every Front has a history line that moves it', FRONT_IDS.every((f) => FRONTS[f].ticks && FRONTS[f].perYear + SCHEDULE.filter((x) => x.front === f).length > 0));
   check('no lever pushes a Front past its bounds', offsetBreach.length === 0, offsetBreach.slice(0, 3).join(' '));
 
   // No lever stops a great process.
@@ -445,13 +457,13 @@ function playSeed(seed: number, years: number, policy: Policy): Run {
   check('stopping everyone reaches the stopping of ships; sparing everyone leaves a free sea', stages.stop.every((x) => x >= 3) && stages.spare.every((x) => x <= 2));
 
   // A longer horizon for the Crescent and the Rule, where the dated shocks of 1505-15 are in force.
-  const longEnd: Record<string, number[]> = { crescent: [], rule: [], claim: [] };
+  const longEnd: Record<string, number[]> = { crescent: [], rule: [], claim: [], gold: [] };
   const N30 = Math.min(SEEDS, 40);
   for (let seed = 1; seed <= N30; seed++) {
     const r = playSeed(seed, 31, 'random');
-    for (const f of ['crescent', 'rule', 'claim'] as const) longEnd[f].push(r.host.powers!.fronts[f].stage);
+    for (const f of ['crescent', 'rule', 'claim', 'gold'] as const) longEnd[f].push(r.host.powers!.fronts[f].stage);
   }
-  for (const f of ['crescent', 'rule', 'claim']) {
+  for (const f of ['crescent', 'rule', 'claim', 'gold']) {
     const ex = longEnd[f].filter((x) => x === 1 || x === 4).length / N30;
     check(`${f}: not pinned at an extreme after thirty years either`, ex <= 0.8, `${(ex * 100).toFixed(0)}% at an extreme; ${[1, 2, 3, 4].map((k) => `${k}:${longEnd[f].filter((x) => x === k).length}`).join(' ')}`);
   }

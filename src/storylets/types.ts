@@ -63,7 +63,7 @@ export interface Person {
   quarter?: Quarter;
 }
 
-export type SourceId = 'thread' | 'traffic' | 'power' | 'deep' | 'web';
+export type SourceId = 'thread' | 'traffic' | 'power' | 'front' | 'deep' | 'web';
 
 export interface Expiry {
   /** True once the world has moved on. */

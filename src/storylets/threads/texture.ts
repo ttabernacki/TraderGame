@@ -58,7 +58,6 @@ export const adrift = thread({
             resolve: (gg) => {
               gg.crew.morale = clamp(gg.crew.morale - 0.06, 0, 1);
               gg.ship.addCargo('ferramenta', 12, 0, 0.55);
-              q.flags.boy = true;
               return go(gg, q, 'factor', 'Took the boy off the Nossa Senhora da Ajuda and sent a prize crew '
                 + 'aboard her. Her master’s papers are for the factor at Arguim.');
             },
@@ -67,7 +66,6 @@ export const adrift = thread({
             label: 'Take the boy and her papers, and leave her',
             detail: 'Fever ships are burnt. There is nothing to be done for the rest.',
             resolve: (gg) => {
-              q.flags.boy = true;
               renown(gg, 5);
               return go(gg, q, 'factor', 'Took the boy and the master’s papers off the Nossa Senhora da '
                 + 'Ajuda, and burnt her. The papers are for the factor at Arguim.');
@@ -153,7 +151,6 @@ export const pesos = thread({
             resolve: (gg) => {
               renown(gg, 25);
               gg.shiftPeopleRegard(portDef('mina').people, 0.3);
-              q.flags.public = true;
               return go(gg, q, 'axim', 'Put the false weights to the factor at Mina in front of the gold traders. '
                 + 'The scales were changed the same afternoon. The trader’s brother runs a market at Axim.');
             },
@@ -269,6 +266,7 @@ export const padrao = thread({
                 gg.crown.padraoStock -= 1;
                 gg.crown.padroesRaised += 1;
                 q.flags.raised = true;
+                gg.noteDeed('claim.made', { target: 'sao-gregorio', magnitude: 0.5, note: 'Raised a new stone on the foot of Dias’s fallen padrão of São Gregório.' });
                 renown(gg, 55);
               } else {
                 renown(gg, 30);
@@ -302,7 +300,8 @@ export const padrao = thread({
         'The factor at Moçambique is a thin, tired man who has never been further south than '
         + 'the bar. He has been told Dias’s stone fell, and has been waiting for a captain to say '
         + 'whether it is true. He reads the inscription you copied aloud, twice, and then sets the '
-        + 'paper down.',
+        + 'paper down.'
+        + (q.flags.carried ? ' The arms of Portugal that you cut from the stone are on his desk beside it, and he does not look at them for long.' : ''),
         [
           {
             label: 'Ask for nothing',
@@ -394,7 +393,6 @@ export const mercador = thread({
             resolve: (gg) => {
               leaveToTrade(gg, 'malindi', { trust: 0.3, respect: 0.1 }, 'brought a Melinde merchant home');
               renown(gg, 30);
-              q.flags.freely = true;
               return end(gg, q, 'freely', 'Brought Hasan ibn Salim home to Melinde and took nothing. The sheikh '
                 + 'has made a note of that.');
             },
@@ -483,7 +481,8 @@ export const feverFleet = thread({
       scene: (_g, q) => scene(q, 'shore', 'The Aguada de São Brás',
         'Sweet water from a stream behind the beach, fresh meat from the Khoikhoi herdsmen for beads and '
         + 'iron, and the sick laid out in the shade of a tarpaulin in a line along the sand. They get better '
-        + 'quickly. By the third day the ones who will live are obvious.',
+        + 'quickly. By the third day the ones who will live are obvious.'
+        + (q.flags.aboard ? ' The twenty from your own deck are carried up the beach first.' : q.flags.lent ? ' Your surgeon goes along the line of them with a bucket and a cloth.' : ''),
         [
           {
             label: 'Stay and nurse them until they can sail',

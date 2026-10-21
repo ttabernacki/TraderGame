@@ -94,7 +94,7 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       T('The line is drawn', 'The line is drawn on paper, and both crowns are arguing over where it falls on water.'),
       T('The race', 'Whoever lands first, owns. Both crowns send what they have.'),
     ],
-    start: 0.5, perYear: 0.05, ticks: true,
+    start: 0.5, perYear: 0.04, ticks: true,
     levers: {
       push: { label: 'Raise another padrão', cost: 'A stone and a risk', delta: 0.15 },
       brake: { label: 'Keep the sheets in the Casa’s press', cost: 'Renown you might have sold', delta: -0.08 },
@@ -387,12 +387,12 @@ export const SCHEDULE: DatedShock[] = [
     source: 'Castilian, and later French and English, interlopers on the Guinea coast contested the Portuguese monopoly from the 1470s; the Treaty of Alcáçovas (1479) was the settlement. The game dates the shock to 1503 as its own choice; no year is claimed in a scene.', grade: 'approximate',
   },
   {
-    id: 'brazil-sighted', year: 1500, month: 5, front: 'claim', delta: 1.5, power: 'castile', attitude: -0.05, place: 'lisboa',
+    id: 'brazil-sighted', year: 1500, month: 5, front: 'claim', delta: 1.2, power: 'castile', attitude: -0.05, place: 'lisboa',
     text: 'Land has been found in the south-west, across the ocean, on the Portuguese side of the line. Castile says that a Spanish pilot saw the same coast months before.',
     source: 'Pedro Álvares Cabral reached the coast of Brazil in April 1500; the Spanish captains Vicente Yáñez Pinzón (Jan 1500) and Diego de Lepe had sighted the same coast earlier that year (Disney; Hemming on Brazil). The line at Tordesillas put the coast on the Portuguese side.', grade: 'documented',
   },
   {
-    id: 'cantino-chart', year: 1502, month: 11, front: 'claim', delta: 1.0, power: 'castile', attitude: 0.05, place: 'lisboa',
+    id: 'cantino-chart', year: 1502, month: 11, front: 'claim', delta: 0.6, power: 'castile', attitude: 0.05, place: 'lisboa',
     text: 'A Portuguese chart of the new coasts has been bought out of the Casa for a duke in Italy, and Castile has seen a copy.',
     source: 'The Cantino planisphere, smuggled out of Lisbon for Ercole d’Este of Ferrara and dated 1502 (documented); that Castile saw a copy is the game’s own gloss.', grade: 'approximate',
   },

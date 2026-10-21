@@ -5,6 +5,7 @@ import { deepPort, homecomingWord } from '../../places';
 import { button, card, el, fold } from '../dom';
 import type { Ctx } from './ctx';
 import { deepPlaceCard, memoryCard, patronCard, stopCard } from './place';
+import { personAt } from './person';
 import { verb } from './verb';
 
 /** The quay: who is here, what the place is, and what is wrong with her before she sails. */
@@ -55,6 +56,8 @@ export function quaySection(ctx: Ctx, host: HTMLElement, g: Game): void {
       'You have no leave to trade here. Seek an audience with whoever governs the place before you open the hold.'));
   }
 
+  // A person with something to put to the captain this call (storylets/engine), then anybody with a story to take up.
+  personAt(ctx, left, g, 'waterfront');
   // Somebody on the quay with a story. See progression/quests.
   const offers = g.questOffersHere();
   if (offers.length) {

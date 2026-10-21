@@ -142,7 +142,6 @@ export const caravel = thread({
               detail: 'He goes back to Portugal. His wife here does not.',
               resolve: (gg) => {
                 q.flags.tome = 'aboard';
-                q.flags.book = true;
                 const n = writeTheSea(gg, -45, -10, -30, 20);
                 return go(gg, q, 'home',
                   `Tomé Lopes came aboard with his book and without his son. ${n} squares of the `
@@ -155,7 +154,6 @@ export const caravel = thread({
               detail: 'He stays. His knowledge comes home.',
               resolve: (gg) => {
                 q.flags.tome = 'stayed';
-                q.flags.book = true;
                 const n = writeTheSea(gg, -45, -10, -30, 20);
                 return go(gg, q, 'home',
                   `Tomé stayed with his wife and son, and gave us his book. ${n} squares of the `
@@ -168,7 +166,6 @@ export const caravel = thread({
               detail: 'He stays, speaks for you here, and knows every sounding for a hundred leagues.',
               resolve: (gg) => {
                 q.flags.tome = 'agent';
-                q.flags.book = true;
                 const at = anchorageOf(portDef(CASTAWAY));
                 gg.soundedGround.push({ lat: at.lat, lon: at.lon, nm: 400, source: 'Tomé Lopes', sigmaNm: 8 });
                 gg.shiftPeopleRegard(portDef(CASTAWAY).people, 0.3);
@@ -661,7 +658,11 @@ export const kongo = thread({
         + 'with your name on it. Portuguese traders on the coast are buying the king’s people — his '
         + 'subjects, his nobles’ own sons — and carrying them to São Tomé. He asks that it stop. '
         + 'He asks you, who brought his envoys home, to carry the request to the King of Portugal '
-        + 'and press it.\n\n'
+        + 'and press it.'
+        + (q.flags.backed === 'afonso' ? ' It is in Afonso’s own hand, the king you backed.'
+          : q.flags.backed === 'mpanzu' ? ' It was written for Mpanzu by a Portuguese priest he keeps for the purpose, and it is not a letter to a friend.'
+            : ' Both brothers have put their marks to it, which is the peace you brokered still holding.')
+        + '\n\n'
         + 'It would cost a great deal: the São Tomé men are rich and well-connected in Lisbon.',
         [
           {
@@ -671,7 +672,6 @@ export const kongo = thread({
               gg.shiftPeopleRegard('kongo', 0.4);
               gg.casa.regard = clamp(gg.casa.regard - 0.3, -1, 1);
               renown(gg, 60);
-              q.flags.enforced = true;
               return end(gg, q, 'enforced', 'Pressed the king of Kongo’s request at court and got the '
                 + 'São Tomé traders turned off his river. The Casa is furious. Kongo trades with us alone.');
             },
@@ -831,7 +831,6 @@ export const galeao = thread({
               detail: `About ${Math.round(odds * 10)} chances in ten of a clean pull${g.ship.effects.boat ? ' with the longboat' : ''}.`,
               resolve: (gg) => {
                 if (gg.rng.chance(odds)) {
-                  q.flags.arana = true;
                   return go(gg, q, 'aranaHome', 'Arana came off the beach with his drawings and his two apprentices. Castile will know by morning. Lisbon.');
                 }
                 gg.killHands(1, 'Shot in the boat off La Gomera.');
@@ -868,7 +867,6 @@ export const galeao = thread({
                 if (gg.rng.chance(odds)) {
                   gg.shiftPeopleRegard('castilian', q.flags.letter ? -0.3 : -0.5);
                   gg.crew.morale = clamp(gg.crew.morale + 0.1, 0, 1);
-                  q.flags.prize = true;
                   return go(gg, q, 'prizeHome', 'Cut the galleon out from under Gran Canaria in the middle watch with a prize crew aboard her before the guard boat was awake. She sails in company. Lisbon, and fast.');
                 }
                 gg.killHands(gg.rng.int(2, 5), 'Killed cutting out the Castilian galleon.');

@@ -10,6 +10,7 @@ import { count, feitorCalecute, mappila, monsoon, pepperRace, prester, sofala, z
 import { ficheiro, nome, roteiro, escudeiro } from '../storylets/threads/origins';
 import { adrift, feverFleet, mercador, padrao, pesos } from '../storylets/threads/texture';
 import { offersAt, registerThreads } from '../storylets/threads';
+import { qualityOf } from '../storylets/qualities';
 
 /**
  * The long stories, as the Web carries them (BUILD_PLAN E1, Pillar 4).
@@ -73,7 +74,7 @@ export function originEnding(g: Game): string | null {
  * cost — so that what the captain did is something the road shows him, not
  * only something the journal says.
  */
-const CALLBACKS: { quest: QuestId; outcomes?: string[]; ports: string[]; text: string }[] = [
+const CALLBACKS: { quest: QuestId; outcomes?: string[]; flags?: Record<string, number | string | boolean>; ports: string[]; text: string }[] = [
   { quest: 'pesos', outcomes: ['inland'], ports: ['mina', 'axim', 'acara'], text: 'The gold traders at the gate nod to you before they nod to the factor. Word of the scales has gone along the coast.' },
   { quest: 'pesos', outcomes: ['cheat'], ports: ['mina', 'axim', 'acara'], text: 'The gold traders find something to do when you come down the beach. The clerk’s scales are still the Casa’s.' },
   { quest: 'pesos', outcomes: ['repaid'], ports: ['axim'], text: 'A trader at Axim gives you a nod that is almost warm. He has been told about the hundred and fifty.' },
@@ -92,7 +93,7 @@ const CALLBACKS: { quest: QuestId; outcomes?: string[]; ports: string[]; text: s
   { quest: 'count', outcomes: ['honest', 'declared'], ports: ['lisboa'], text: 'The weigh-house clerks are very civil this morning. The contador has been telling the story of your book.' },
   { quest: 'feitorcal', outcomes: ['peace'], ports: ['calecute', 'cochim'], text: 'Aires Correia, the factor, has put a jar of Calecute’s best pepper-wine on your table with no note. The shutters of the house are wide open.' },
   { quest: 'feitorcal', outcomes: ['riot', 'riot-home'], ports: ['cochim', 'calecute'], text: 'Nobody at the water stairs will meet your eye. The black patch on the waterfront, where the factory was, has a fresh flower on it.' },
-  { quest: 'mappila', outcomes: ['treaty'], ports: ['cananor', 'calecute'], text: 'A Cananor boatman offers to carry you ashore for nothing. The Kolathiri’s friends are everywhere on the water.' },
+  { quest: 'mappila', outcomes: ['treaty', 'friendly'], ports: ['cananor', 'calecute'], text: 'A Cananor boatman offers to carry you ashore for nothing. The Kolathiri’s friends are everywhere on the water.' },
   { quest: 'malay', outcomes: ['malacca', 'quay'], ports: ['cochim', 'calecute', 'columbo'], text: 'A pilot in the Cochim roadstead has heard of Malacca and of the ship that went there. He asks whether the cloves are what he has been told.' },
   { quest: 'pepperrace', outcomes: ['won'], ports: ['lisboa', 'lagos'], text: 'A Ribeira porter touches his cap. The men who lost money on the other ship are not among the ones who look you in the eye.' },
   { quest: 'feverfleet', outcomes: ['nursed', 'landed'], ports: ['mocambique', 'lisboa', 'lagos'], text: 'A man with a scar at the corner of his mouth recognises the ship and stands to attention on the quay. He was one of the São Vicente’s.' },
@@ -102,6 +103,15 @@ const CALLBACKS: { quest: QuestId; outcomes?: string[]; ports: string[]; text: s
   { quest: 'prester', outcomes: ['found', 'proof'], ports: ['melinde', 'mocambique'], text: 'A Melinde scribe asks whether it is true about the Abyssinian letter, and whether he might copy it. Word travels on this coast faster than ships.' },
   { quest: 'galeao', ports: ['las-palmas', 'lisboa'], text: 'A shipwright’s apprentice on the careenage stops work to watch you pass. He has a sketch of a long, low hull on his bench, and does not try to hide it.' },
   { quest: 'leak', ports: ['lisboa'], text: 'The Rua Nova has a new contador, and a new way of looking at the ships’ books.' },
+  // What the choices on the way left in the thread's own record, remembered where the road shows it (BUILD_PLAN E1: no dead qualities).
+  { quest: 'nome', flags: { kin: true }, ports: ['lisboa'], text: 'The Casa holds a second letter from Duarte, and this one is about the neighbour, who has been paid. He thanks you in the last line, as if it had cost him something.' },
+  { quest: 'nome', flags: { land: true }, ports: ['lisboa', 'funchal'], text: 'A clerk has a note from the donatary’s agent at Funchal: the cane land is entered in your name, and the water with it.' },
+  { quest: 'nome', flags: { proud: true }, ports: ['lisboa', 'lagos'], text: 'Duarte’s steward is on the quay, and does not come forward when he sees the ship.' },
+  { quest: 'leak', flags: { falseCharts: true }, ports: ['las-palmas'], text: 'A Castilian pilot tells anyone who will listen how two caravels were lost on the Arguim banks by a chart that was a good deal too sure of itself. He does not look at you.' },
+  { quest: 'prester', outcomes: ['lost'], ports: ['melinde', 'mocambique'], text: 'A Melinde scribe asks whether anything was ever heard of the envoy, and does not wait for the answer.' },
+  { quest: 'zamorin', outcomes: ['war'], ports: ['calecute', 'cochim'], text: 'The guns on the point at Calecute are manned when you come in, and nobody on the beach turns to look at the ship.' },
+  { quest: 'aprendiz', outcomes: ['home'], ports: ['lagos', 'funchal'], text: 'A fishwife on the quay has a boy by the hand, in his Sunday clothes. He looks at the ship, and then at his feet.' },
+  { quest: 'feverfleet', outcomes: ['left'], ports: ['mocambique', 'melinde'], text: 'A boatswain at the water stairs looks at the casks in your boat, and says to nobody that a cask of water is a cask of water.' },
 ];
 
 export function callbackAt(g: Game, portId: string): string | null {
@@ -111,6 +121,7 @@ export function callbackAt(g: Game, portId: string): string | null {
     if (!cb.ports.includes(portId) || g.secretsHeard.includes(key)) continue;
     const q = g.quests.find((x) => x.id === cb.quest);
     if (!q?.outcome || (cb.outcomes && !cb.outcomes.includes(q.outcome))) continue;
+    if (cb.flags && !Object.entries(cb.flags).every(([k, v]) => q.flags[k] === v)) continue;
     g.secretsHeard.push(key);
     return cb.text;
   }
@@ -124,6 +135,7 @@ const LATE_ENDINGS: Record<string, string> = {
   'kingsoffer:rich': 'You took the gold and were let alone. It was the most honest thing anyone at court had said in years.',
   'kingsoffer:ship': 'You asked for nothing but the ship. The King had to find something else to give, and never did.',
   'pepperrace:won': 'You were first up the Tagus with the pepper, and the court has told it ever since.',
+  'pepperrace:quarrel': 'You quarrelled with your rival on the Ribeira in front of the court, and the court has told it better than either of you.',
   'pepperrace:second': 'You came second up the Tagus, and were gracious about it. It is the only thing in the story anyone remembers of you.',
   'feverfleet:nursed': 'The men of the São Vicente tell the story of the Aguada de São Brás in every tavern on the Tagus.',
 };
@@ -132,6 +144,12 @@ export function lateEndings(g: Game): string[] {
   for (const q of g.quests) {
     const line = q.outcome ? LATE_ENDINGS[`${q.id}:${q.outcome}`] : undefined;
     if (line) out.push(line);
+  }
+  // The Kilwa promise: a quality the Çofala thread wrote, read here by the last page (and by the Rule's scenes and Hamisi's approval).
+  if (qualityOf(g, 'flag.promise.kilwa.first_call')) {
+    const sofala = g.quests.find((q) => q.id === 'sofala')?.outcome;
+    if (sofala === 'fair') out.push('The King’s ships called at Kilwa before Çofala, as you had promised the vizier, and the vizier remembers it.');
+    if (sofala === 'route') out.push('You promised the vizier of Kilwa that the ships would call there first, and then gave the Crown the road to Çofala. He has the promise by heart.');
   }
   return out;
 }

@@ -8,6 +8,7 @@ import { people } from '../../world/peoples';
 import { button, card, el, foldCard, kv } from '../dom';
 import { openLineCard } from '../networkView';
 import type { Ctx } from './ctx';
+import { personAt } from './person';
 import { regardWord } from './quay';
 import { verb } from './verb';
 import { clauseCard } from '../identityView';
@@ -21,6 +22,7 @@ export function audienceSection(ctx: Ctx, host: HTMLElement, g: Game): void {
   const marks = pol ? markCounts(g.diplomacy.marks, pol.id, g.clock.t) : { for: 0, against: 0 };
   const pe = people(def.people);
 
+  personAt(ctx, host, g, 'court');
   host.append(verb('court.standing', card(pol ? pol.name : `The ${pe.name}`,
     kv('Regard', regardWord(rel.regard), rel.regard > 0.2 ? '' : rel.regard < -0.2 ? 'bad' : ''),
     kv('Leave to trade', rel.mayTrade ? 'granted' : 'not yet', rel.mayTrade ? '' : 'bad'),
@@ -77,7 +79,7 @@ export function audienceSection(ctx: Ctx, host: HTMLElement, g: Game): void {
 
 /** Lines: ships under your flag that run between ports, begun where you have a House or at Lisbon. */
 export function linesSection(ctx: Ctx, host: HTMLElement, g: Game): void {
-  const couldBuy = g.crown.gold + g.creditFree >= hullPrice('caravela-latina') * 0.8 || g.lines.some((l) => !l.lost);
+  const couldBuy = g.crown.gold + g.creditFree >= hullPrice('caravela-latina') * 0.8 || g.lines.some((l) => !l.lost) || g.identity.patron === 'ruanova';
   if ((g.factoryHere || g.portHere!.id === 'lisboa') && couldBuy) {
     host.append(verb('freight.open-line', openLineCard(g, () => ctx.render(), (t) => { ctx.notice = { text: t }; }, g.portHere!.id)));
   } else {

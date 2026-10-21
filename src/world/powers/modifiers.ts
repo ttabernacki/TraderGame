@@ -2,7 +2,7 @@ import { GOODS } from '../../economy/goods';
 import { TRUNK } from '../../progression/road';
 import { activeEffects, powerOfName } from './core';
 import { FRONTS } from './data';
-import type { ReaderId } from './deltas';
+import { declareReader, declaredReaders } from './readers';
 import { FRONT_IDS, type PowersState } from './types';
 import { polityOfPort } from '../../diplomacy/polities';
 
@@ -45,10 +45,7 @@ export const TOLL = { price: 1.25, stock: 0.4, appetite: 0.6, dues: 2 };
 const GOOD_IDS = GOODS.map((g) => g.id);
 const trunk = new Set(TRUNK);
 
-/** Mark which consumers exist; scripts/powers.ts checks the table's `reader`s against this. */
-const declared = new Set<ReaderId>();
-export function declareReader(id: ReaderId): ReaderId { declared.add(id); return id; }
-export const declaredReaders = (): ReaderId[] => [...declared];
+export { declareReader, declaredReaders };
 declareReader('modifiers.stage');
 declareReader('modifiers.dues');
 

@@ -1,6 +1,7 @@
 import { DEEP_PORTS, peekDeepBeat, putDeepBeat } from '../places';
 import type { ArcBeat } from '../places/types';
 import { POWER_SCENES, peekPowerScene, putPowerScene } from '../progression/powerScenes';
+import { FRONT_SCENES, peekFrontScene, putFrontScene } from '../progression/frontScenes';
 import { TRAFFIC_SCENES, peekTrafficScene, putTrafficScene, type TrafficScene } from '../progression/trafficScenes';
 import type { Game } from '../game/state';
 import { leadOf, registerSource } from './engine';
@@ -16,7 +17,7 @@ import type { Candidate, Req, Source, SourceId, Storylet } from './types';
  * (no dice at build), so a person's lines are read straight from the built scene.
  */
 
-const sceneStorylet = (source: 'traffic' | 'power', prefix: string, sc: TrafficScene, all: TrafficScene[]): Storylet => {
+const sceneStorylet = (source: 'traffic' | 'power' | 'front', prefix: string, sc: TrafficScene, all: TrafficScene[]): Storylet => {
   const requires: Req[] = [{ fn: (g) => sc.needs(g, g.powers), label: `${source}.${sc.id}.needs`, reads: ['front.traffic.stage'] }];
   if (sc.stages) requires.push({ q: 'front.traffic.stage', op: '>=', v: sc.stages[0] }, { q: 'front.traffic.stage', op: '<=', v: sc.stages[1] });
   return {
@@ -39,7 +40,7 @@ function sceneSource(id: SourceId, prefix: string, scenes: TrafficScene[], peek:
       };
       return [c];
     },
-    all: () => scenes.map((s) => sceneStorylet(id as 'traffic' | 'power', prefix, s, scenes)),
+    all: () => scenes.map((s) => sceneStorylet(id as 'traffic' | 'power' | 'front', prefix, s, scenes)),
   };
 }
 
@@ -51,6 +52,7 @@ const beatStorylet = (portId: string, b: ArcBeat): Storylet => ({
 
 registerSource(sceneSource('traffic', 'traffic', TRAFFIC_SCENES, peekTrafficScene, putTrafficScene));
 registerSource(sceneSource('power', 'power', POWER_SCENES, peekPowerScene, putPowerScene));
+registerSource(sceneSource('front', 'front', FRONT_SCENES, peekFrontScene, putFrontScene));
 registerSource({
   id: 'deep',
   due: (g, port) => {

@@ -128,7 +128,6 @@ export const nome = thread({
             label: 'Cabo do Segundo, for yourself',
             detail: 'Your own name on a chart. A second son does not get many chances.',
             resolve: (gg) => {
-              q.flags.named = 'self';
               renown(gg, 70);
               gg.chart.addPlace('Cabo do Segundo', 'cape', UNNAMED_CAPE, gg.clock.t);
               return end(gg, q, 'self', 'Named the headland past Melinde for yourself, and set a padrão on it. '
@@ -140,7 +139,6 @@ export const nome = thread({
             detail: q.flags.friend ? 'A second son you once stood surety for.' : 'The house will have it in the will.',
             resolve: (gg) => {
               const friend = !!q.flags.friend;
-              q.flags.named = friend ? 'friend' : 'brother';
               renown(gg, friend ? 40 : 30);
               gg.crown.gold += friend ? 600 : 0;
               gg.chart.addPlace(friend ? 'Cabo Mendes' : 'Cabo de Duarte', 'cape', UNNAMED_CAPE, gg.clock.t);
@@ -155,7 +153,6 @@ export const nome = thread({
             label: 'Cabo da Boa Vista, and leave it at that',
             detail: 'A name anyone could have. Nobody can say you took anything.',
             resolve: (gg) => {
-              q.flags.named = 'plain';
               renown(gg, 25);
               gg.chart.addPlace('Cabo da Boa Vista', 'cape', UNNAMED_CAPE, gg.clock.t);
               return end(gg, q, 'plain', 'Named the headland past Melinde for what it looks like.');
@@ -278,7 +275,9 @@ export const ficheiro = thread({
         + 'expecting a captain with a name like yours for some time. A merchant in a white coat '
         + 'asks, politely, about your cousin, and then about the Casa’s clerk at Arguim, and '
         + 'then sets down three things on the table: a list of what the Zamorin’s factors have been '
-        + 'paid, the price of pepper by the week, and a letter for your family.',
+        + 'paid, the price of pepper by the week, and a letter for your family.'
+        + (q.flags.vouched ? ' He mentions, as one mentions a debt, that you put your name beside Isaac’s.'
+          : q.flags.threat ? ' He is careful not to ask what you meant by the Florentine house, when you said it to the clerk.' : ''),
         [
           {
             label: 'Take the letter, and trade with them',
@@ -396,7 +395,9 @@ export const roteiro = thread({
         + 'flat as a table. The lead goes down to twelve fathoms at the top of the tide and finds '
         + 'sand. It is on no chart in the Casa. He got here, and whatever happened to him happened '
         + 'after the last page.\n\nOn the north horn of the bay there is a cairn, very old, with '
-        + 'nothing in it.',
+        + 'nothing in it.'
+        + (q.flags.bastiao ? ' Bastião is at your shoulder, and has begun to weep without any noise.'
+          : q.flags.published ? ' You think of the name struck out of a book in Lisbon, and of how little the bar cares.' : ''),
         [
           {
             label: 'Name it for him',
@@ -533,7 +534,9 @@ export const escudeiro = thread({
         + 'I have watched what you have done with it. I should like to be told, by you and by nobody '
         + 'else, what the captains are really doing out there." It does not say what will come of a '
         + 'plain answer.'
-        + (q.flags.aboard ? ' Dom Lopo, who reads over your shoulder, goes very still.' : ''),
+        + (q.flags.aboard
+          ? ` Dom Lopo, who reads over your shoulder${q.flags.hurt ? ', his arm still stiff from Mina,' : q.flags.steady ? ', who apologised to a clerk at Mina because you made him,' : q.flags.reckless ? ', who put a clerk’s sleeve to the wall at Mina,' : q.flags.hard ? ', who has stood the lowest watch under you,' : ''} goes very still.`
+          : ''),
         [
           {
             label: 'Tell him the truth',

@@ -22,7 +22,7 @@ import { deliverFactoryMail, noteSightings, postLetter, tickFactories, transitDa
 import { ambientAtSea, barkAt } from '../progression/barks';
 import { noteSeen, prosperityOf, prosperityShock, tickWorldDue, type PortState, type Reason } from '../world/tick';
 import { placeCallbackAt, placeCredit, placeHouseFactor, placeMods, rememberDeed } from '../places';
-import { arriveAt, foldLedger, marketModifiers, migratePowers, newPowers, setHistorySource, type PowersState } from '../world/powers';
+import { arriveAt, foldLedger, goldFever, marketModifiers, migratePowers, newPowers, racePace, setHistorySource, type PowersState } from '../world/powers';
 import { MILESTONES, checkMilestones } from '../progression/milestones';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
 import { azoresHigh, itczLatitude } from '../world/wind';
@@ -4180,6 +4180,8 @@ export class Game {
       wardroomUnrest: w.unrest * (1 + (this.crew.conceded ?? 0) * 0.22),
       // A company who would follow you anywhere do not fear anywhere.
       wardroomFear: w.fear * (this.can('followAnywhere') ? 0.2 : 1),
+      // A fever season on the Gold Coast is a danger to the company that lies there (world/powers/gold.ts).
+      fever: goldFever(this.powers, this.dockedAt, this.clock.t),
     });
 
     this.driftRegard(days);
@@ -6188,7 +6190,8 @@ export class Game {
       this.pushAlert(`${this.rival.name} has been before you at ${name}.`, 'warning');
     }
     const news = advanceRival(
-      this.rival, days, this.ship.state.pos.lat, this.crown.lifetimeStanding, this.rng,
+      // The Race: the nearer the line is to being drawn in earnest, the harder his house presses (world/powers/race.ts).
+      this.rival, days * racePace(this.powers), this.ship.state.pos.lat, this.crown.lifetimeStanding, this.rng,
       rivalFrontierKnowledge(this.rival, this.seed, this.clock.date.year),
     );
     if (!news) return;

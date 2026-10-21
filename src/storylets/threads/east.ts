@@ -3,7 +3,7 @@ import { anchorageOf, portDef } from '../../world/ports';
 import type { Game } from '../../game/state';
 import { allyWithCochin, end, go, hasOfficer, later, leaveToTrade, outcomeOf, portMark, renown, roll, scene, thread, writeTheSea } from '../arc';
 import { anyPort, either, ports, seaNear, seaWhere } from '../places';
-import { afterDays, allOf, anyOf, gte, has, lte } from '../qualities';
+import { afterDays, allOf, anyOf, gte, has, lte, qualityOf, setFlag } from '../qualities';
 
 /**
  * The far end of the road: Prester John, the Zamorin, the Monsoon pilot, Çofala, the Count, the Factory at Calecute,
@@ -176,7 +176,6 @@ export const prester = thread({
       hooks: [],
       scene: (g, q) => {
         const ok = g.rng.chance(q.flags.envoy === 'lucas' ? 0.75 : 0.55);
-        q.flags.returned = ok;
         return scene(q, 'wait', ok ? 'A letter from Prester John' : 'No word',
           ok
             ? 'A letter, in the tongue of the Abyssinians, sealed with a lion: the Negus Eskender '
@@ -205,6 +204,7 @@ export const prester = thread({
       goal: () => 'Bring Yohannes of Axum to the King in Lisbon.',
       marker: () => portMark('lisboa', 'The King'),
       at: ports('lisboa'),
+      needs: [has('story.@.pilgrim')],
       quarter: 'court',
       homeward: true,
       carries: 'Yohannes of Axum',
@@ -286,9 +286,10 @@ export const zamorin = thread({
             },
             {
               label: 'Present the King of Portugal’s letter',
-              detail: g.crown.lifetimeStanding >= 340 ? 'Your name carries it.' : 'Your name is not yet big enough to carry it.',
+              // A title opens the Zamorin's door: the King's Man is received on his name where another captain is received on his renown.
+              detail: g.crown.lifetimeStanding >= 340 || qualityOf(g, 'title.homem-do-rei') ? 'Your name carries it.' : 'Your name is not yet big enough to carry it.',
               resolve: (gg) => {
-                const ok = gg.crown.lifetimeStanding >= 340;
+                const ok = gg.crown.lifetimeStanding >= 340 || !!qualityOf(gg, 'title.homem-do-rei');
                 q.flags.audience = ok ? 'good' : 'poor';
                 gg.shiftPeopleRegard(portDef('calecute').people, ok ? 0.2 : -0.1);
                 leaveToTrade(gg, 'calicut', ok ? { trust: 0.1, respect: 0.15 } : { respect: -0.1 }, 'the King of Portugal\u2019s letter was read');
@@ -311,7 +312,8 @@ export const zamorin = thread({
         return scene(q, 'merchants', 'The Moors of Calecute',
           'The pepper is in the warehouses of the Mappila and Cairo merchants, and they will not '
           + 'sell to you at any price the Zamorin would call fair. They have also been telling '
-          + 'him that you are pirates.',
+          + 'him that you are pirates.'
+          + (q.flags.audience === 'poor' ? ' The gifts you brought him have been laughed over in every warehouse, and the Moors use it.' : ''),
           [
             {
               label: 'Outbid them',
@@ -352,7 +354,8 @@ export const zamorin = thread({
       scene: (_g, q) => scene(q, 'hostages', 'Our factors are taken',
         'A boat comes after you from the beach: the Zamorin’s men have seized the two factors '
         + 'you left ashore with the goods, on the Moors’ word that you mean to sail without '
-        + 'paying the customs.',
+        + 'paying the customs.'
+        + (q.flags.merchantsBroken ? ' They are the same Moors the Zamorin fined on your evidence, and they have not forgiven it.' : ''),
         [
           {
             label: 'Go back and negotiate',
@@ -487,7 +490,6 @@ export const monsoon = thread({
             resolve: (gg) => {
               if (gg.crown.gold < 200) return later(q, 'He looks at your purse without seeming to. Come back with two hundred cruzados.');
               gg.crown.gold -= 200;
-              q.flags.free = true;
               return go(gg, q, 'crossing', 'Gave Malemo a present of two hundred cruzados and he '
                 + 'came aboard with his kamal. He will show you the crossing at the turn of the wind.');
             },
@@ -590,6 +592,7 @@ export const sofala = thread({
       marker: () => portMark('quiloa', 'The vizier of Kilwa'),
       at: ports('quiloa'),
       quarter: 'court',
+      writes: ['flag.promise.kilwa.first_call'],
       hooks: ['merchant'],
       scene: (_g, q) => scene(q, 'vizier', 'The vizier of Kilwa',
         'He receives you in a courtyard with a fountain, offers sherbet, and listens for a long time '
@@ -606,6 +609,8 @@ export const sofala = thread({
               gg.crown.gold -= 100;
               leaveToTrade(gg, 'kilwa', { trust: 0.3, respect: 0.1 }, 'promised that the ships would call at Kilwa first');
               q.flags.promise = true;
+              // The promise is a quality the world reads: the Rule's Kilwa scenes, the epilogue and Hamisi's approval.
+              setFlag(gg, 'flag.promise.kilwa.first_call');
               return go(gg, q, 'merchant', 'Gave the vizier of Kilwa a hundred cruzados of cloth and a promise that may not be the '
                 + 'King’s to give. He named a Kilwa merchant at Moçambique who has been to Çofala.');
             },
@@ -735,7 +740,6 @@ export const count = thread({
             resolve: (gg) => {
               renown(gg, 25);
               gg.noteDeed('parcel.refused', { target: 'the factor', magnitude: 0.6, note: 'Refused the factor\u2019s parcel and saw the pepper weighed into the book.' });
-              q.flags.honest = true;
               return go(gg, q, 'cape', 'Refused the factor’s parcel and saw the pepper weighed into the book. He shrugged, and was quietly relieved.');
             },
           },
@@ -902,7 +906,6 @@ export const feitorCalecute = thread({
             label: 'Go to the Zamorin, and ask for his word',
             detail: 'A King’s word is a King’s word. It may also be a great deal less.',
             resolve: (gg) => {
-              q.flags.trusted = true;
               gg.adjustPolity('calicut', { trust: 0.15, respect: 0.05 }, 'asked the Zamorin for his word');
               renown(gg, 10);
               return go(gg, q, 'aftermath', 'Went to the Zamorin and asked for his word that the factory would be left in peace. '
@@ -919,10 +922,11 @@ export const feitorCalecute = thread({
       kind: 'front',
       hooks: [],
       scene: (g, q) => {
-        // What the merchants do is partly dice, weighted by what was done about it.
-        const risk = q.flags.armed ? 0.25 : q.flags.evacuated ? 0.1 : 0.6;
+        // What the merchants do is partly dice, weighted by what was done about it, and by the world: the Crescent's stage, and the ships the King's letter has stopped off Calecute.
+        const risk = clamp((q.flags.armed ? 0.25 : q.flags.evacuated ? 0.1 : 0.6)
+          + 0.06 * (Number(qualityOf(g, 'front.crescent.stage')) - 1)
+          + 0.05 * Math.min(3, Number(qualityOf(g, 'ledger.ship.stopped@calicut'))), 0.05, 0.9);
         const riot = roll(g) < risk;
-        q.flags.riot = riot;
         return scene(q, 'aftermath', riot ? 'Fire at Calecute' : 'A quiet month at Calecute',
           riot
             ? 'The word reaches Cochim on a fisher’s boat: the Mappila crowd came down to the Portuguese '
@@ -1059,6 +1063,7 @@ export const mappila = thread({
               const n = gg.ship.addCargo('pimenta', 40, 0, 0.7);
               renown(gg, 35);
               q.flags.searched = true;
+              gg.noteDeed('ship.stopped', { target: 'calicut', magnitude: 0.5, note: 'Stopped the coastal dhows between Calecute and Cananor and took forty quintals of their pepper as the King’s.' });
               gg.adjustPolity('calicut', { trust: -0.25, respect: 0.05 }, 'stopped and searched the coastal dhows');
               return go(gg, q, 'raja', `Stopped the dhows and took ${n} quintals as the King’s. The Mappila houses will long remember the ship.`);
             },
@@ -1080,7 +1085,8 @@ export const mappila = thread({
       scene: (_g, q) => scene(q, 'raja', 'The Kolathiri',
         'The Raja of Cananor is old, fat, and delighted to see you. The Zamorin’s enemy is his friend, he '
         + 'says, and a Portuguese ship is worth two regiments. '
-        + (q.flags.searched ? 'He has heard about the dhows, and is very pleased. ' : q.flags.informed ? 'He has heard that there is an honest captain on the coast, and would like to see the animal. ' : '')
+        + (q.flags.searched ? 'He has heard about the dhows, and is very pleased. ' : q.flags.informed ? 'He has heard that there is an honest captain on the coast, and would like to see the animal. '
+          : q.flags.refused ? 'He has heard that a captain turned down Khwaja Muhammad’s pepper, and thinks it either very honest or very expensive. ' : '')
         + 'He would like a factory, and a treaty, and would like them both now.',
         [
           {
@@ -1229,7 +1235,6 @@ export const pepperRace = thread({
         const edge = (q.flags.outbid ? 0.22 : 0) + (q.flags.sabotage ? 0.3 : 0) + (q.flags.pressed ? 0.15 : 0)
           + (q.flags.divided ? 0.05 : 0) + g.rng.next() * 0.45;
         const first = edge > 0.5;
-        q.flags.first = first;
         return scene(q, 'landing', first ? 'First up the Tagus' : 'Second up the Tagus',
           first
             ? 'The Ribeira has turned out to watch. You come up with the tide and lie alongside before anyone has '

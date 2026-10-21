@@ -5,6 +5,7 @@ import { asking, clearAsk } from '../world/powers/moves';
 import { hasActive } from '../world/powers/core';
 import { ruleReading } from '../world/powers/rule';
 import type { PowersState } from '../world/powers/types';
+import { qualityOf } from '../storylets/qualities';
 import type { TrafficScene } from './trafficScenes';
 
 /**
@@ -286,7 +287,10 @@ const kilwaGold: TrafficScene = {
       'The great mosque and the coral-stone houses of Kilwa are older than anything in Lisbon that is not a church, and the vizier’s counting house is the best-kept room in them. '
       + 'Rashid bin Sultani, who has weighed the sultan’s tithe for thirty years, shows you the scales and a chest that is a good deal lighter than his father’s. '
       + (dry ? 'The Sofala dhows are late this season, and he says so without shame; they were late in his father’s time too, and they came. ' : 'The dhows from Çofala have come in, and the tithe is weighed; but he says it with the air of a man counting what he still has. ')
-      + 'He knows how the ships of the Portuguese ask the way to Çofala itself. He does not blame them. He would ask, too.\n\n'
+      + 'He knows how the ships of the Portuguese ask the way to Çofala itself. He does not blame them. He would ask, too.'
+      // The promise made at Çofala's door (storylets: flag.promise.kilwa.first_call) is read here, where it is kept or not.
+      + (qualityOf(g, 'flag.promise.kilwa.first_call') ? ' He does not mention the promise you made him, that the King’s ships would call at Kilwa first; he lets the scales say it.' : '')
+      + '\n\n'
       + (wants
         ? 'What he wants is simple. The gold dhows sail north to Melinde and Cambay with the tithe paid. He has heard that the King’s ships stop any vessel without a letter. He asks whether you will write one, for the dhows of the vizier’s house.'
         : 'He pours sherbet. He asks, without hurry, what the Portuguese intend for the gold.'),

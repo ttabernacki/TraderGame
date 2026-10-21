@@ -6,6 +6,7 @@ import { deepPort } from '../../places';
 import { polityOfPort } from '../../diplomacy/polities';
 import { outstanding, errandsAt, candidates } from '../../progression/inland';
 import { hullPrice } from '../../progression/network';
+import { waitingAt } from '../../storylets/engine';
 import { frontsAt, type FrontLine } from './fronts';
 
 /**
@@ -83,6 +84,7 @@ export const VERBS: Verb[] = [
   { id: 'town.year-quarters', quarter: 'court', section: 'audience', label: 'Winter quarters', was: 'Town', when: (g) => g.dockedAt === 'lisboa' },
   { id: 'town.first-contact', quarter: 'waterfront', section: 'quay', label: 'First contact', was: 'Town', when: unknown },
   { id: 'town.quest-offers', quarter: 'waterfront', section: 'quay', label: 'Somebody on the quay with a story', was: 'Town', when: (g) => g.questOffersHere().length > 0 },
+  { id: 'story.person.waterfront', quarter: 'waterfront', section: 'quay', label: 'Somebody on the quay with something to say', was: 'new', when: (g) => !!waitingAt(g, 'waterfront') },
   { id: 'town.place', quarter: 'waterfront', section: 'quay', label: 'The place', was: 'Town' },
   { id: 'town.readiness', quarter: 'waterfront', section: 'quay', label: 'Before you sail', was: 'Town' },
   { id: 'town.soundings', quarter: 'waterfront', section: 'quay', label: 'The local pilots: buy his soundings', was: 'Town', when: (g) => g.localSoundingsPrice() !== null },
@@ -115,6 +117,7 @@ export const VERBS: Verb[] = [
   },
   // ---- Tavern
   { id: 'town.gossip', quarter: 'tavern', section: 'board', label: 'What they say ashore', was: 'Town', when: (g) => !!g.portGossip },
+  { id: 'story.person.tavern', quarter: 'tavern', section: 'board', label: 'Somebody at the next table', was: 'new', when: (g) => !!waitingAt(g, 'tavern') },
   { id: 'tavern.rumours', quarter: 'tavern', section: 'board', label: 'The rumour board', was: 'new' },
   { id: 'tavern.listen', quarter: 'tavern', section: 'board', label: 'Buy a round and listen', was: 'new' },
   { id: 'freight.waterfront-says', quarter: 'tavern', section: 'board', label: 'What the waterfront says', was: 'Freight' },
@@ -150,6 +153,7 @@ export const VERBS: Verb[] = [
   { id: 'money.street', quarter: 'market', section: 'money', label: 'Your name on this street', was: 'Money' },
   { id: 'money.house-offers', quarter: 'market', section: 'money', label: 'Borrow, or sell sixteenths', was: 'Money' },
   // ---- Fort and Court
+  { id: 'story.person.court', quarter: 'court', section: 'audience', label: 'A clerk or an officer with a word for you', was: 'new', when: (g) => !!waitingAt(g, 'court') },
   { id: 'court.standing', quarter: 'court', section: 'audience', label: 'Standing: regard, leave and marks', was: 'new' },
   { id: 'court.audience', quarter: 'court', section: 'audience', label: 'Seek an audience', was: 'foot', when: (g) => !portuguese(g) },
   { id: 'court.patron', quarter: 'court', section: 'audience', label: 'The Patron’s perks here', was: 'new', when: (g) => !!deepPort(g.dockedAt) },
@@ -205,9 +209,10 @@ export function clicksFor(v: Verb): number {
 /** Badges: small words on the quarter buttons, from what is actually waiting. */
 function badgeOf(g: Game, q: QuarterId): string {
   switch (q) {
-    case 'waterfront': return g.questOffersHere().length > 0 ? 'a story' : '';
+    case 'waterfront': return g.questOffersHere().length > 0 ? 'a story' : waitingAt(g, 'waterfront') ? 'someone waits' : '';
     case 'tavern': {
       const n = g.powers.rumours.filter((r) => r.heard?.port === g.dockedAt).length;
+      if (waitingAt(g, 'tavern')) return 'someone waits';
       return n > 0 ? `${n} tale${n === 1 ? '' : 's'}` : '';
     }
     case 'yard': return g.readiness().some((c) => c.state === 'bad') ? 'wants work' : '';
@@ -216,7 +221,7 @@ function badgeOf(g: Game, q: QuarterId): string {
       if (!g.relationsFor(g.dockedAt!).mayTrade && !portuguese(g)) return 'closed';
       return g.ventureOffers.length > 0 ? `${g.ventureOffers.length} freight` : owed > 0 ? `${owed.toFixed(0)} owed` : '';
     }
-    case 'court': return g.factoryHere ? 'a House' : '';
+    case 'court': return waitingAt(g, 'court') ? 'someone waits' : g.factoryHere ? 'a House' : '';
     case 'faith': return '';
   }
 }

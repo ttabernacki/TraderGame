@@ -1,3 +1,4 @@
+import { ruaNovaTerms } from '../identity/patrons';
 import { clamp } from '../core/math';
 import { GOOD_BY_ID } from '../economy/goods';
 import { Markets } from '../economy/market';
@@ -200,6 +201,11 @@ export interface Line {
   /** A share in another owner's ship: the fraction of each voyage that is yours. She is his to run. */
   share?: number;
   partner?: string;
+  /**
+   * The hull was advanced by the Rua Nova against her output (E3): what is still owed it, its cut of every profitable
+   * voyage (a fraction), what it has kept so far, and what it advanced. Absent on every other Line.
+   */
+  funded?: { owed: number; cut: number; kept: number; advanced: number };
 }
 
 const SHIP_NAMES = ['São Brás', 'Santa Clara', 'Boa Ventura', 'São Cristóvão', 'Nossa Senhora do Cabo',
@@ -327,7 +333,8 @@ function bringNews(g: Game, port: string): void {
   g.hearFrom(port);
 }
 
-export function canOpenLine(g: Game, home: string, to: string, hullId: string): string | null {
+/** Everything about opening a Line except how the hull is paid for. */
+function lineBlock(g: Game, home: string, to: string, hullId: string): string | null {
   if (!g.feitorias.some((f) => f.portId === home && !f.lost) && home !== 'lisboa') return 'A Line runs from one of your Houses.';
   if (home === to) return 'She has to go somewhere.';
   if (g.lines.some((l) => !l.lost && !l.share && l.home === home)) {
@@ -336,9 +343,49 @@ export function canOpenLine(g: Game, home: string, to: string, hullId: string): 
   const def = portDef(to);
   if (def.people !== 'portuguese' && !g.relationsFor(to).mayTrade) return `You have no leave to trade at ${def.name}.`;
   if (!lineHulls(g).includes(hullId)) return 'The yards will not sell you that hull yet.';
+  return null;
+}
+
+export function canOpenLine(g: Game, home: string, to: string, hullId: string): string | null {
+  const block = lineBlock(g, home, to, hullId);
+  if (block) return block;
   const cost = hullPrice(hullId);
   if (cost > g.crown.gold + g.creditFree) return `The hull comes to ${cost} cruzados, and there is not that much.`;
   return null;
+}
+
+/** What the Rua Nova will do for a Line, or why it will not (the patron of record, standing and favour decide). */
+export function fundedTerms(g: Game): { ok: boolean; why: string; cut: number; interest: number } {
+  const t = ruaNovaTerms(g);
+  return t;
+}
+
+export function canFundLine(g: Game, home: string, to: string, hullId: string): string | null {
+  const t = fundedTerms(g);
+  if (!t.ok) return t.why;
+  return lineBlock(g, home, to, hullId);
+}
+
+/**
+ * Open a Line on the Rua Nova's money: it pays the hull, and is repaid out of her output, with its cut of every
+ * profitable voyage kept besides. The terms are told when she is bought and on every voyage's page.
+ */
+export function openFundedLine(g: Game, home: string, to: string, hullId: string): string {
+  const why = canFundLine(g, home, to, hullId);
+  if (why) return why;
+  const t = fundedTerms(g);
+  const cost = hullPrice(hullId);
+  const id = g.nextLineId++;
+  const name = SHIP_NAMES[(id * 5 + g.lines.length) % SHIP_NAMES.length];
+  const owed = Math.round(cost * (1 + t.interest));
+  g.lines.push({
+    id, name, hullId, home, to, phase: 'home', at: g.clock.t, cargo: null, purse: 0, voyageText: '',
+    trips: 0, earned: 0, history: [], funded: { owed, cut: t.cut, kept: 0, advanced: cost },
+  });
+  const h = HULL_BY_ID.get(hullId)!;
+  g.logEvent('trade', `The Rua Nova advanced the ${h.english.toLowerCase()} ${name} (${cost} cruzados) to run between ${portDef(home).name} and ${portDef(to).name}: ${owed} to be repaid out of her voyages, and ${Math.round(t.cut * 100)}% of every profit besides.`, true);
+  g.noteDeed('loan.taken', { target: 'The Rua Nova', place: 'lisboa', magnitude: Math.min(1, cost / 2000), note: `The Rua Nova advanced the ${name} against her output: ${owed} cruzados owed, and its cut of ${Math.round(t.cut * 100)}% of every profit.` });
+  return `The ${name} will run ${portDef(home).name} to ${portDef(to).name}, on the Rua Nova's money: ${owed} owed, and its ${Math.round(t.cut * 100)}% of every profit.`;
 }
 
 export function openLine(g: Game, home: string, to: string, hullId: string): string {
@@ -376,10 +423,18 @@ export function amendLine(g: Game, l: Line, change: { hullId?: string; to?: stri
 
 export function closeLine(g: Game, l: Line): string {
   if (l.phase !== 'home') return `${l.name} is at sea. She can be sold when she comes in.`;
-  const back = Math.round(hullPrice(l.hullId) * 0.6);
+  let back = Math.round(hullPrice(l.hullId) * 0.6);
+  let owedNote = '';
+  if (l.funded && l.funded.owed > 0) {
+    const pay = Math.min(l.funded.owed, back);
+    back -= pay;
+    l.funded.owed -= pay;
+    owedNote = ` ${pay} of it went to the Rua Nova${l.funded.owed > 0 ? `, and ${Math.round(l.funded.owed)} is still owed` : ''}.`;
+    if (l.funded.owed > 0) g.crown.debt += Math.round(l.funded.owed);
+  }
   g.crown.gold += back;
   l.lost = true;
-  return `${l.name} sold for ${back} cruzados.`;
+  return `${l.name} sold for ${back} cruzados.${owedNote}`;
 }
 
 function letterFrom(g: Game, port: string, text: string, severity: 'note' | 'warning' | 'grave' = 'note', act?: Letter['act']): void {
@@ -484,7 +539,24 @@ function step(g: Game, l: Line): void {
   const gain = Math.max(0, purse - costs);
   const shares = gain * 0.35;
   const casa = gain * (g.casa.linesRate ?? (g.can('rua') ? 0.08 : 0.15));
-  const whole = purse - costs - shares - casa;
+  let whole = purse - costs - shares - casa;
+  // A Line on the Rua Nova's money pays it first: its cut of what the voyage cleared, then half of the rest toward the hull.
+  let fundNote = '';
+  if (l.funded) {
+    const f = l.funded;
+    const mine = Math.max(0, whole);
+    const kept = Math.round(mine * f.cut);
+    const toward = Math.min(f.owed, Math.round((mine - kept) * 0.5));
+    f.kept += kept;
+    f.owed -= toward;
+    whole -= kept + toward;
+    fundNote = mine > 0
+      ? ` The Rua Nova kept ${kept} (${Math.round(f.cut * 100)}% of the profit) and ${toward} toward the hull; ${f.owed > 0 ? `${Math.round(f.owed)} still owed` : 'the hull is paid for'}.`
+      : ` The voyage cleared nothing, and the Rua Nova took nothing; ${Math.round(f.owed)} is still owed.`;
+    if (f.owed <= 0 && toward > 0) {
+      g.noteDeed('loan.repaid', { target: 'The Rua Nova', place: 'lisboa', magnitude: Math.min(1, f.advanced / 2000), note: `The ${l.name} paid off the Rua Nova's advance out of her voyages; it kept ${Math.round(f.kept)} cruzados of cut besides.` });
+    }
+  }
   // A part-owner gets his part, of the profit and of the loss.
   const net = Math.round(whole * (l.share ?? 1));
   l.trips++;
@@ -497,7 +569,7 @@ function step(g: Game, l: Line): void {
       arrives: g.clock.t + (portDef(l.home).people === 'portuguese' ? 0 : g.transitDays(l.home) * 86400),
       amount: net, from: l.name,
       voyage: `The ${l.name}: ${l.voyageText}. Outward cargo ${outlay}, costs ${costs}, the men’s shares ${Math.round(shares)}, the Casa ${Math.round(casa)}. `
-        + (l.share ? `Your ${shareWord(l.share)} share: ${net}.` : `Net ${net}.`),
+        + (l.share ? `Your ${shareWord(l.share)} share: ${net}.` : `Net ${net}.`) + fundNote,
     });
   }
   l.cargo = null;
@@ -511,6 +583,11 @@ function lose(g: Game, l: Line, near: string): void {
   l.lost = true;
   const what = l.cargo ? ` with ${Math.round(l.cargo.qty)} ${GOOD_BY_ID.get(l.cargo.goodId)!.unit}s of ${GOOD_BY_ID.get(l.cargo.goodId)!.english.toLowerCase()}` : '';
   letterFrom(g, l.home, `The ${l.name} has not come in. She was last seen bound for ${near}${what}, and nobody expects her now.`, 'grave');
+  if (l.funded && l.funded.owed > 0) {
+    const owed = Math.round(l.funded.owed);
+    g.crown.debt += owed;
+    letterFrom(g, 'lisboa', `The Rua Nova has written the ${l.name}'s ${owed} cruzados against your name, as a loan; it does not write off a hull it advanced.`, 'warning');
+  }
   g.logEvent('peril', `The ${l.name} of your Line from ${portDef(l.home).name} is lost.`, true);
 }
 

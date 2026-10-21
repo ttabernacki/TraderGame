@@ -249,6 +249,8 @@ export interface CrewUpdateContext {
   wardroomUnrest?: number;
   /** Multiplies the dread of unsailed water. */
   wardroomFear?: number;
+  /** Extra daily sickness pressure from a place's fever (the Gold Coast's, world/powers/gold.ts). */
+  fever?: number;
   /**
    * The captain's own standing with them, which is a different thing from his
    * competence.
@@ -434,7 +436,7 @@ export function updateCrew(crew: CrewState, ctx: CrewUpdateContext): CrewEvent[]
   }
 
   // --- Other sickness -----------------------------------------------------
-  const sickPressure = clamp(0.004 + (p.water < 20 ? 0.006 : 0) + ctx.exertion * 0.01, 0, 0.05);
+  const sickPressure = clamp(0.004 + (p.water < 20 ? 0.006 : 0) + ctx.exertion * 0.01 + (ctx.fever ?? 0), 0, 0.05);
   crew.sickness = clamp(
     crew.sickness + d * (sickPressure * (ctx.physic ?? 1) - ctx.surgeonQuality * 0.006) - d * 0.004,
     0, 1,

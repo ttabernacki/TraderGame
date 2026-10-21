@@ -7,6 +7,7 @@ import { arriveAt, rumourFacts } from '../../world/powers';
 import { button, card, el, fold } from '../dom';
 import { factCard } from '../factCard';
 import type { Ctx } from './ctx';
+import { personAt } from './person';
 import { verb } from './verb';
 
 const ROUND = 3;
@@ -17,6 +18,7 @@ export function boardSection(ctx: Ctx, host: HTMLElement, g: Game): void {
   const deep = deepPort(def.id);
   const hooks = { changed: () => ctx.render(), goTo: () => { /* the tavern has no chart in it */ } };
 
+  personAt(ctx, host, g, 'tavern');
   if (g.portGossip) {
     host.append(verb('town.gossip', card('What they say ashore',
       el('p', { style: { fontStyle: 'italic', lineHeight: '1.7' } }, g.portGossip))));

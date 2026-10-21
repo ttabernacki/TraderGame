@@ -135,6 +135,9 @@ function previewOf(g: Game, c: Candidate): { who: string; line: string } {
   return c.preview(g);
 }
 
+/** Above zero while a preview is being built: the falsifier's flag tracing (scripts/storylets.ts) does not count what it reads. */
+export const quiet = { n: 0 };
+
 /**
  * Build a scene to read its title and first lines, then put back what the build touched (the generator and the
  * thread record's flags): a scene may roll dice or note a flag as it is built, and a preview must not.
@@ -142,10 +145,12 @@ function previewOf(g: Game, c: Candidate): { who: string; line: string } {
 export function withoutTrace<T>(g: Game, flags: Record<string, unknown> | undefined, fn: () => T): T {
   const rng = g.rng as unknown as { state: number };
   const saved = rng.state;
+  quiet.n++;
   const keep = flags ? JSON.stringify(flags) : '';
   try {
     return fn();
   } finally {
+    quiet.n--;
     rng.state = saved;
     if (flags) {
       for (const k of Object.keys(flags)) delete flags[k];

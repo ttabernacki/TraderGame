@@ -49,7 +49,7 @@ export function castileTick(c: Ctx): void {
         place: 'lisboa', front: 'claim',
         truth: { claim: 'Castile has sent to ask where the line runs, and who gave the Portuguese pilots their sheets.', vague: 'Castile is asking about the line.' },
         stale: { claim: 'Castile is content to let the south alone.', vague: 'Castile is quiet.' },
-      }, 8, { id: 'claim', delta: 0.1 });
+      }, 8, { id: 'claim', delta: 0.05 });
     }],
     ['interlopers', (claim >= 2 && !active(c, 'castile', 'stub') ? 0.02 * (claim >= 4 ? 2 : 1) : 0) * heat, () => {
       launch(c, {
@@ -71,7 +71,7 @@ export function castileTick(c: Ctx): void {
       launch(c, {
         kind: 'stub', power: 'castile', ports: ['las-palmas'], dur, duesMult: 1.15,
         reason: 'Castile’s harbour-master at Las Palmas has had a letter about Portuguese hulls, and the dues have changed with it.',
-        said: 'Had Las Palmas search Portuguese hulls.', kindName: 'canaries', front: { id: 'claim', delta: 0.1 },
+        said: 'Had Las Palmas search Portuguese hulls.', kindName: 'canaries', front: { id: 'claim', delta: 0.05 },
         rumour: {
           place: 'las-palmas', front: 'claim',
           truth: { claim: 'The harbour-master at Las Palmas has orders about Portuguese hulls, and asks what each of them has been doing south of the line.', vague: 'Las Palmas is asking questions of Portuguese ships.' },
@@ -86,7 +86,7 @@ export function castileTick(c: Ctx): void {
       launch(c, {
         kind: 'stub', power: 'castile', ports: ['lagos', 'lisboa'], dur: months(c.rng, 4, 8), duesMult: 1.04,
         reason: 'Castile is hiring Portuguese pilots, and the Casa’s men are searching outward ships for sheets.',
-        said: 'Hired pilots from the Algarve.', kindName: 'pilots', front: { id: 'claim', delta: 0.1 },
+        said: 'Hired pilots from the Algarve.', kindName: 'pilots', front: { id: 'claim', delta: 0.05 },
         rumour: {
           place: 'lagos', front: 'claim',
           truth: { claim: 'Castile is paying Portuguese pilots to cross the border, and the Casa’s men are searching outward ships for sheets.', vague: 'Pilots are leaving for Castile.' },
@@ -103,7 +103,7 @@ export function castileTick(c: Ctx): void {
         truth: { claim: 'A Castilian captain says he landed on a coast past Mina and raised his sovereigns’ arms; the Casa says the coast is Portugal’s.', vague: 'Castile says it has landed past the line.' },
         stale: { claim: 'The south is Portugal’s, and nobody has been there but her ships.', vague: 'The south is Portugal’s.' },
         falsehood: { claim: 'Castile has built a fort on the Guinea coast and is holding it.', vague: 'Castile has a fort in Guinea.' },
-      }, 8, { id: 'claim', delta: 0.2 });
+      }, 8, { id: 'claim', delta: 0.15 });
     }],
   ]);
 }

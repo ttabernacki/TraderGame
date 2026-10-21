@@ -8,6 +8,7 @@ import type { Tag } from '../ledger/tags';
 import type { Patent } from '../progression/crown';
 import { ACT_CHARGE } from '../progression/chronicle';
 import { shockTime } from '../world/powers/core';
+import { declareReader } from '../world/powers/readers';
 import { portDef } from '../world/ports';
 import { PATRON_IDS, type PatronId } from './state';
 import { titlePatronEdge, titleShuts } from './titles';
@@ -23,6 +24,8 @@ import { titlePatronEdge, titleShuts } from './titles';
  *
  * Sources and what is invented are marked beside each event and in docs/SOURCES.md.
  */
+
+declareReader('moves.court');
 
 export interface PatronDef {
   id: PatronId;
@@ -134,6 +137,52 @@ export const AGENDA: AgendaEvent[] = [
     source: 'Lisbon massacre, April 1506 (Tavares; Soyer). The credit effect and its length are invented.', grade: 'documented' },
 ];
 
+// -- The Court Front's favourites ---------------------------------------------------------
+
+/** Months of warning before a favourite falls: three or four (D5). */
+const favouriteWait = (g: Game, k: number): number => 3 + ((Math.abs(g.seed) + k) % 2);
+
+/** When the Court Front first reached a stage, from its own log, or null (a save that was re-laid jumped it, and has no such event). */
+function courtEntered(g: Game, stage: number): number | null {
+  const hit = g.powers?.fronts?.court?.log.find((l) => l.stage === stage);
+  return hit ? hit.t : null;
+}
+
+/**
+ * One favourite per stage of the Court Front from its second: a patron's man at court falls three or four months after the
+ * Court enters the stage, and the warning is given when it does. Which patron is the seed's, rotated by the stage, so the same
+ * patron is not always the one. INVENTED, all of it: the favourites are the game's own (the Court's stages are what the dated
+ * history sets; see the Court Front in world/powers/data.ts and docs/SOURCES.md).
+ */
+export function favouriteEvents(g: Game): AgendaEvent[] {
+  const out: AgendaEvent[] = [];
+  // Who may fall at each stage keeps clear of the dated falls of the same years (the old King's circle in 1495-96, the Rua Nova in 1506).
+  const WHO: Record<number, PatronId[]> = { 2: ['church', 'ruanova'], 3: ['crown', 'church', 'ruanova'], 4: ['crown', 'church'] };
+  for (const k of [2, 3, 4]) {
+    const pool = WHO[k];
+    const patron = pool[(Math.abs(g.seed) + k) % pool.length];
+    const wait = favouriteWait(g, k);
+    const d = PATRONS[patron];
+    out.push({
+      id: `favourite-${k}`, patron, kind: 'fall', warn: wait, lasts: 10,
+      at: () => { const e = courtEntered(g, k); return e === null ? null : e + wait * MONTH; },
+      text: `${d.name}’s favourite at court has fallen, and so have those who were his.`,
+      warnText: `${d.name}’s man at court is losing the King’s ear. Those who sail for ${d.short} are looking for another door, and it will be some months before the Casa says so.`,
+      source: 'invented: the Court Front’s stage is the dated history (João II’s death, the Rua Nova’s money, the massacre of 1506); who falls is the game’s own', grade: 'invented',
+    });
+  }
+  return out;
+}
+
+/** The dated agenda and the Court Front's favourites, together. */
+export const eventsOf = (g: Game): AgendaEvent[] => [...AGENDA, ...favouriteEvents(g)];
+
+/** The reign the Crown's orders are written in: João II's until his death in October 1495, Manuel's after (documented, via the Powers' schedule). */
+export function reignAt(t: number): 'joao' | 'manuel' {
+  const at = shockTime('joao-dies');
+  return at !== null && t >= at ? 'manuel' : 'joao';
+}
+
 /** Strength of a patron now: the Court Front’s stage, the dated history, and any fall in progress. */
 export function strengthOf(g: Game, id: PatronId): number {
   const rec = g.identity.patrons[id];
@@ -163,6 +212,22 @@ export function cutOf(g: Game, id: PatronId): number {
   return PATRONS[id].cut * (stage === 4 ? 1.5 : 1);
 }
 
+/**
+ * What the Rua Nova will do for a Line (E3): it pays the hull of a captain who sails for it, and is repaid out of her
+ * output with its cut of every profit besides, at the patron's cut (12%, 18% when the Court's reckoning has come) and
+ * 8% on the advance. INVENTED: the interest. Nothing else is asked and nothing is hidden: the terms are on the page.
+ */
+export function ruaNovaTerms(g: Game): { ok: boolean; why: string; cut: number; interest: number } {
+  const cut = cutOf(g, 'ruanova');
+  const no = (why: string) => ({ ok: false, why, cut, interest: 0.08 });
+  if (g.identity.patron !== 'ruanova') return no('The Rua Nova funds the Lines of the captain who sails for it.');
+  const barred = patronBlocked(g, 'ruanova');
+  if (barred) return no(barred);
+  if (isFallen(g, 'ruanova')) return no('The Rua Nova’s houses are calling in notes, not lending.');
+  if (favourOf(g, 'ruanova') < -0.15) return no('The Rua Nova thinks too little of you to lend a hull.');
+  return { ok: true, why: '', cut, interest: 0.08 };
+}
+
 /** Why a patron cannot be sailed for this voyage, or null. */
 export function patronBlocked(g: Game, id: PatronId): string | null {
   const r = g.identity.patrons[id];
@@ -183,7 +248,7 @@ export function choosePatron(g: Game, id: PatronId): { ok: boolean; text: string
   const old = g.identity.patron;
   if (old === id) return { ok: true, text: `You sail for ${PATRONS[id].name} again.` };
   // Leaving a patron that has been warned of falling, before it falls, is moving early.
-  for (const e of AGENDA) {
+  for (const e of eventsOf(g)) {
     if (e.patron !== old || e.kind !== 'fall') continue;
     const warned = g.identity.warned[e.id];
     if (warned !== undefined && !g.identity.applied.includes(e.id) && !g.identity.moved.includes(e.id)) {
@@ -206,6 +271,12 @@ function applyFall(g: Game, e: AgendaEvent): void {
   const early = g.identity.moved.includes(e.id);
   g.pushAlert(e.text, 'warning');
   g.logEvent('crown', e.text, true);
+  if (e.id === 'king-dies') {
+    // The new reign remembers less of the old one's favours: what he had earned from the Crown is half as much.
+    const c = g.identity.patrons.crown;
+    c.favour = clamp(c.favour * 0.5, -1, 1);
+    g.logEvent('crown', 'The new King’s secretaries have the Casa’s books open, and what a captain was owed by the old reign is read at half.', true);
+  }
   if (client && !early) {
     rec.pulled = true;
     rec.favour = clamp(rec.favour - 0.4, -1, 1);
@@ -276,25 +347,22 @@ export function tickPatrons(g: Game): void {
   if (month === id.lastMonth) return;
   id.lastMonth = month;
   foldLedger(g);
-  for (const e of AGENDA) {
+  for (const e of eventsOf(g)) {
     const at = e.at();
     if (at === null || id.applied.includes(e.id)) continue;
+    // A save from before the Court ticked has its one invented favourite already fallen: that is the second stage's.
+    if (e.id === 'favourite-2' && id.applied.includes('favourite')) continue;
     if (e.kind === 'fall' && e.warn > 0 && now >= at - e.warn * MONTH && id.warned[e.id] === undefined) {
       id.warned[e.id] = now;
       if (e.warnText) { g.pushAlert(e.warnText, 'note'); g.logEvent('crown', e.warnText, true); }
     }
     if (now >= at) {
       id.applied.push(e.id);
-      if (e.kind === 'fall') applyFall(g, e);
-      else { g.logEvent('crown', e.text, true); }
+      if (e.kind === 'fall') {
+        applyFall(g, e);
+        if (e.id.startsWith('favourite-') && !id.favourite) id.favourite = e.patron;
+      } else { g.logEvent('crown', e.text, true); }
     }
-  }
-  // The invented favourite: when the Court Front reaches its second stage, one patron’s man falls (seeded).
-  if ((g.powers?.fronts?.court?.stage ?? 1) >= 2 && !id.favourite) {
-    id.favourite = PATRON_IDS[Math.abs(g.seed) % PATRON_IDS.length];
-    const e: AgendaEvent = { id: 'favourite', patron: id.favourite, kind: 'fall', at: () => now, warn: 0, lasts: 10, text: `${PATRONS[id.favourite].name}’s favourite at court has fallen, and so have those who were his.`, source: 'invented', grade: 'invented' };
-    id.applied.push(e.id);
-    applyFall(g, e);
   }
   for (const p of PATRON_IDS) {
     const rec = id.patrons[p];
@@ -401,6 +469,30 @@ function crownSurvey(g: Game): Body | null {
   };
 }
 
+const MANUEL_PORT: Record<number, string> = { 1: 'mina', 2: 'mpinda', 3: 'mocambique', 4: 'calecute', 5: 'cochim' };
+
+/**
+ * The new reign’s order (E3). After João II’s death the Casa’s survey is not what the Crown asks of a captain it trusts: Manuel’s
+ * household wants its own factors and letters carried to the road’s far ports, by men who will say whose they are. It pays better
+ * than the survey, and counts for more with the Casa; it is not offered while the Crown has fallen. INVENTED: the order and its pay.
+ */
+function crownManuel(g: Game): Body | null {
+  const act = Math.min(5, g.chronicle.act);
+  if (favourOf(g, 'crown') < 0.2) return null;
+  const port = MANUEL_PORT[act];
+  const gross = 200 + 110 * act;
+  return {
+    title: `The King’s letters for ${portDef(port).name}`, advance: Math.round(gross * 0.5), reward: gross, standingReward: 24 + 12 * act, returnTo: 'lisboa',
+    patron: 'crown', cut: 0, gross,
+    narrative: 'The new King has his own secretaries at the Casa now, and they want it known who the King’s captains are. A sealed chest and a packet of letters go to the factor at '
+      + `${portDef(port).name}; he will give you a receipt in the King’s name, and the Casa will read it before it reads anything else of yours.`,
+    objectives: [
+      { kind: 'reach', description: `Make ${portDef(port).name} with the King’s letters`, target: port, progress: 0, complete: false },
+      { kind: 'return', description: 'Bring the factor’s receipt to the Casa at Lisbon', target: 'lisboa', progress: 0, complete: false },
+    ],
+  };
+}
+
 /**
  * What the patron of record puts on the table. The Crown keeps its dated commissions and gains a survey the Casa
  * writes when it likes him; the Church and the Rua Nova write theirs from the act, the policy and the markets, and
@@ -416,7 +508,8 @@ export function patronOffers(g: Game, crownOffers: Patent[]): Patent[] {
   const keep = act >= 2 ? crownOffers.filter((p) => p.title === ACT_CHARGE[act]) : crownOffers.slice(0, 1);
   if (id === 'crown') {
     if (isFallen(g, 'crown')) return keep;
-    const s = crownSurvey(g);
+    // The old King’s Casa asks for surveys; Manuel’s asks for letters and factors carried (reignAt).
+    const s = reignAt(g.clock.t) === 'manuel' ? crownManuel(g) : crownSurvey(g);
     return s ? [...crownOffers, mk(s, 0)].slice(-4) : crownOffers;
   }
   const barred = patronBlocked(g, id);

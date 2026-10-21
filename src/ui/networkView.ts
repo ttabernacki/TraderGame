@@ -5,7 +5,7 @@ import type { Game } from '../game/state';
 import { capacityOf, policyOf, stockTons, stockValue, type Feitoria } from '../progression/feitoria';
 import {
   CIVIC, civicCost, fundCivic, POSTURES, amendLine, bestCargo, buildWorks, closeLine, footingOf, footingWord, hullPrice, inSeason, legCost,
-  legDays, lineDestinations, lineHulls, openLine, canOpenLine, postureOf, worksChoices, worksCost, worksName,
+  legDays, lineDestinations, lineHulls, openLine, canOpenLine, canFundLine, fundedTerms, openFundedLine, postureOf, worksChoices, worksCost, worksName,
   worksOutput, worksUpkeep, sellShare, shareWord, type Line, type Posture,
 } from '../progression/network';
 import { civicGain, civicLevel, prosperityOf, seenProsperity, MAX_CIVIC_LEVEL, type Civic } from '../world/tick';
@@ -124,6 +124,7 @@ function lineCard(g: Game, l: Line, rerender: () => void, notify: (t: string) =>
     kv('Now', lineStatus(g, l)),
     kv('Voyages', `${l.trips}, ${Math.round(l.earned)} cruzados all told${l.lastNet !== undefined ? `, last ${l.lastNet}` : ''}`,
       (l.lastNet ?? 0) < 0 ? 'warn' : ''),
+    l.funded ? kv('The Rua Nova', `${l.funded.owed > 0 ? `${Math.round(l.funded.owed)} still owed` : 'hull paid for'}; its ${Math.round(l.funded.cut * 100)}% cut has kept ${Math.round(l.funded.kept)} so far`, l.funded.owed > 0 ? 'warn' : '') : null,
     el('div', { class: 'row', style: { flexWrap: 'wrap', gap: '6px' } },
       select('Hull', l.nextHull ?? l.hullId, lineHulls(g).map((h) => [h, `${hullName(h)} (${HULL_BY_ID.get(h)!.hold} t)`]),
         (v) => { notify(amendLine(g, l, { hullId: v })); rerender(); }),
@@ -181,7 +182,22 @@ export function openLineCard(g: Game, rerender: () => void, notify: (t: string) 
     button(`Buy her — ${hullPrice(form.hull)} cruzados`, () => { notify(openLine(g, form.home, form.to, form.hull)); rerender(); },
       { primary: true, disabled: !!why, title: why ?? '' }),
     why ? el('p', { class: 'gift-sub' }, why) : null,
+    fundedCard(g, form.home, form.to, form.hull, rerender, notify),
   );
+}
+
+/** The Rua Nova's side of a Line: it pays the hull, and the terms are printed where the button is. */
+function fundedCard(g: Game, home: string, to: string, hull: string, rerender: () => void, notify: (t: string) => void): HTMLElement | null {
+  if (g.identity.patron !== 'ruanova' || !to) return null;
+  const t = fundedTerms(g);
+  const why = canFundLine(g, home, to, hull);
+  const owed = Math.round(hullPrice(hull) * (1 + t.interest));
+  return el('div', { class: 'perk' },
+    el('p', { class: 'gift-sub' }, t.ok
+      ? `Or let the Rua Nova pay for her: ${owed} cruzados to be repaid out of her voyages, and its ${Math.round(t.cut * 100)}% of every profit besides.`
+      : t.why),
+    button(`Have the Rua Nova fund her — ${owed} owed, ${Math.round(t.cut * 100)}% of every profit`, () => { notify(openFundedLine(g, home, to, hull)); rerender(); },
+      { disabled: !!why, title: why ?? '' }));
 }
 
 /** The whole network, for the Orders book. */

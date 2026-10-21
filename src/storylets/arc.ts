@@ -120,27 +120,36 @@ function whatChanged(g: Game): string {
  * here are only recorded as `thread.closed`; the ones that were a choice about
  * word, weights, charts or mercy are also entered under their own tag.
  */
-export const OUTCOME_DEEDS: Record<string, { tag: LedgerTag; target: string; magnitude?: number }> = {
-  'kongo:enforced': { tag: 'promise.kept', target: 'kongo', magnitude: 0.8 },
-  'kongo:lookedaway': { tag: 'promise.broken', target: 'kongo', magnitude: 0.5 },
-  'sofala:fair': { tag: 'promise.kept', target: 'kilwa', magnitude: 0.7 },
-  'pesos:cheat': { tag: 'weights.false', target: 'eguafo', magnitude: 0.8 },
-  'pesos:inland': { tag: 'weights.fair', target: 'eguafo', magnitude: 0.7 },
-  'pesos:report': { tag: 'weights.fair', target: 'eguafo', magnitude: 0.6 },
-  'pesos:repaid': { tag: 'weights.fair', target: 'eguafo', magnitude: 0.6 },
-  'monsoon:freed': { tag: 'companion.freed', target: 'Malemo', magnitude: 0.9 },
-  'monsoon:kept': { tag: 'companion.kept', target: 'Malemo', magnitude: 0.6 },
-  'roteiro:sold': { tag: 'chart.sold', target: 'nation:foreign', magnitude: 0.7 },
-  'roteiro:crown': { tag: 'chart.shared', target: 'portugal', magnitude: 0.6 },
-  'roteiro:named': { tag: 'chart.shared', target: 'portugal', magnitude: 0.5 },
-  'count:caught': { tag: 'smuggle.caught', target: 'portugal', magnitude: 0.8 },
-  'count:got away': { tag: 'smuggle.escaped', target: 'portugal', magnitude: 0.4 },
-  'count:declared': { tag: 'parcel.redeemed', target: 'portugal', magnitude: 0.7 },
-  'escudeiro:honest': { tag: 'patron.honest', target: 'portugal', magnitude: 0.7 },
-  'escudeiro:flattered': { tag: 'patron.flattered', target: 'portugal', magnitude: 0.5 },
-  'adrift:boy': { tag: 'mercy.shown', target: 'Arguim', magnitude: 0.7 },
-  'feverfleet:nursed': { tag: 'mercy.shown', target: 'the São Vicente', magnitude: 0.9 },
-  'caravel:mass': { tag: 'mercy.shown', target: 'Isabel da Costa', magnitude: 0.6 },
+export interface OutcomeDeed { tag: LedgerTag; target: string; magnitude?: number; when?: (q: QuestState) => boolean }
+const D = (tag: LedgerTag, target: string, magnitude: number, when?: (q: QuestState) => boolean): OutcomeDeed => ({ tag, target, magnitude, when });
+export const OUTCOME_DEEDS: Record<string, OutcomeDeed[]> = {
+  'kongo:enforced': [D('promise.kept', 'kongo', 0.8)],
+  'kongo:lookedaway': [D('promise.broken', 'kongo', 0.5)],
+  // The Kilwa promise (`flag.promise.kilwa.first_call`) is kept or broken by what is done at Çofala; without it, the road to
+  // Çofala shown to the Crown is only a sheet given, and fair trading is only fair trading.
+  'sofala:fair': [D('promise.kept', 'kilwa', 0.7, (q) => !!q.flags.promise)],
+  'sofala:route': [D('promise.broken', 'kilwa', 0.6, (q) => !!q.flags.promise), D('chart.shared', 'portugal', 0.5)],
+  'pesos:cheat': [D('weights.false', 'eguafo', 0.8)],
+  'pesos:inland': [D('weights.fair', 'eguafo', 0.7)],
+  'pesos:report': [D('weights.fair', 'eguafo', 0.6)],
+  'pesos:repaid': [D('weights.fair', 'eguafo', 0.6)],
+  'monsoon:freed': [D('companion.freed', 'Malemo', 0.9)],
+  'monsoon:kept': [D('companion.kept', 'Malemo', 0.6)],
+  'roteiro:sold': [D('chart.sold', 'nation:foreign', 0.7)],
+  'roteiro:crown': [D('chart.shared', 'portugal', 0.6)],
+  'roteiro:named': [D('chart.shared', 'portugal', 0.5)],
+  'count:caught': [D('smuggle.caught', 'portugal', 0.8)],
+  'count:got away': [D('smuggle.escaped', 'portugal', 0.4)],
+  'count:declared': [D('parcel.redeemed', 'portugal', 0.7)],
+  'escudeiro:honest': [D('patron.honest', 'portugal', 0.7)],
+  'escudeiro:flattered': [D('patron.flattered', 'portugal', 0.5)],
+  'adrift:boy': [D('mercy.shown', 'Arguim', 0.7)],
+  'adrift:left': [D('ship.abandoned', 'Nossa Senhora da Ajuda', 0.6)],
+  'mercador:freely': [D('passenger.aided', 'malindi', 0.6)],
+  'mercador:pilotage': [D('passenger.aided', 'malindi', 0.4)],
+  'aprendiz:chose': [D('mercy.shown', 'Nuno', 0.5)],
+  'feverfleet:nursed': [D('mercy.shown', 'the São Vicente', 0.9)],
+  'caravel:mass': [D('mercy.shown', 'Isabel da Costa', 0.6)],
 };
 
 /** Whether the Ledger already says this outcome (so the epilogue need not say it twice). */
@@ -167,8 +176,9 @@ export function go(g: Game, q: QuestState, next: string, line: string): string {
 export function end(g: Game, q: QuestState, outcome: string, line: string, after?: () => void): string {
   q.outcome = outcome;
   q.fired = false;
-  const deed = OUTCOME_DEEDS[`${q.id}:${outcome}`];
-  if (deed) g.noteDeed(deed.tag, { target: deed.target, magnitude: deed.magnitude, note: line });
+  for (const deed of OUTCOME_DEEDS[`${q.id}:${outcome}`] ?? []) {
+    if (!deed.when || deed.when(q)) g.noteDeed(deed.tag, { target: deed.target, magnitude: deed.magnitude, note: line });
+  }
   g.noteDeed('thread.closed', { target: q.id, note: `${defOf(q.id).title}: ${outcome}. ${line}` });
   after?.();
   const change = whatChanged(g);

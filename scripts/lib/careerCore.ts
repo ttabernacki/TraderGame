@@ -21,12 +21,15 @@ export interface Result {
 
 export interface Opts { maxVoyages: number; maxYears: number; debug: boolean; stopAtLisbon?: (g: Game) => boolean;
   /** Called at the top of each voyage, with the ship at the quay she will sail from. */
-  onVoyage?: (g: Game, n: number) => void }
+  onVoyage?: (g: Game, n: number) => void;
+  /** Take up every story offered on the quay (scripts/storylets.ts). */
+  accept?: boolean }
 
 export function play(seed: number, o: Opts): Result & { game: Game } {
   const { maxVoyages, maxYears } = o;
   const DEBUG = o.debug;
   const t: Tally = newTally();
+  t.accept = o.accept;
   const rng = new Rng(seed * 31 + 7);
   const t0 = Date.now();
   let g: Game = newGame(seed);

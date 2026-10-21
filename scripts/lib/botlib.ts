@@ -27,6 +27,8 @@ export interface Tally {
   pieces: Record<string, number>;
   trades: number;
   notes: string[];
+  /** Take up every story somebody on the quay offers (scripts/storylets.ts). Off for the plain career bot. */
+  accept?: boolean;
 }
 export const newTally = (): Tally => ({ events: {}, snaps: 0, audiences: 0, pieces: {}, trades: 0, notes: [] });
 
@@ -58,7 +60,13 @@ export function pickChoice(e: { choices?: { label: string }[] }): number {
 /** Answer whatever is pending. Returns true if something was answered. */
 export function answerScenes(g: Game, t: Tally, limit = 20): boolean {
   let did = false;
-  for (let i = 0; i < limit && g.pendingEvent; i++) {
+  for (let i = 0; i < limit; i++) {
+    // A person waiting at the Quarters (storylets/engine) is heard, as a scene put at the quay always was.
+    if (!g.pendingEvent && g.dockedAt) {
+      if (t.accept) for (const o of g.questOffersHere()) g.acceptQuest(o.id);
+      if (!g.pendingEvent && g.web.waiting) g.hearStorylet();
+    }
+    if (!g.pendingEvent) break;
     const e = g.pendingEvent;
     t.events[e.id] = (t.events[e.id] ?? 0) + 1;
     if (!e.choices || e.choices.length === 0) { g.pendingEvent = null; did = true; continue; }
