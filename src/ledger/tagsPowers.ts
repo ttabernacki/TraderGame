@@ -58,6 +58,11 @@ export const POWERS_TAGS = {
     did: 'At {target} the Rule is a list of friends, written in the sultan’s own hand, and the coast knows who agreed to it.',
     tone: 0.9, readers: ['book'], planned: ['powers', 'titles', 'epilogue'],
   }),
+  'claim.argued': d({
+    doc: 'Put the Portuguese case for where the line runs to a court, aloud, with the Castilian one in hand.',
+    did: 'The line was argued in the open, and the Casa has a note of who spoke for it.',
+    tone: 0.4, readers: ['book'], planned: ['powers', 'titles'],
+  }),
   'ally.sworn': d({
     doc: 'Gave a court his word that the ship would stand with it against its enemy.',
     did: '{target} has your word, and its enemies have heard that you gave it.',

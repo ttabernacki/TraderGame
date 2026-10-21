@@ -510,7 +510,7 @@ const advance = (g: Game, days: number): void => { g.clock.t += days * DAY; };
   check('every golden save opens with an identity, is named, and round-trips it', ok === all.length && named === all.length, `${ok}/${all.length}, ${named} named`);
   const old = fresh(120); old.identity.name = 'Álvaro de Lima'; old.identity.calling = 'pilot'; old.identity.patrons.church.favour = 0.7;
   const heir = new Game(121); heir.setOrigin('segundo'); heir.inheritFrom(old);
-  check('an heir keeps the family name and the patrons’ memory, and chooses his own Calling', heir.identity.name.endsWith('de Lima') && heir.identity.patrons.church.favour === 0.7 && heir.identity.calling === null);
+  check('an heir keeps the family name and the patrons’ memory (favour decays, 0.7 -> 0.42: a first meeting, not a debt), and chooses his own Calling', heir.identity.name.endsWith('de Lima') && Math.abs(heir.identity.patrons.church.favour - 0.42) < 1e-9 && heir.identity.calling === null);
 }
 
 console.log(fails === 0 ? '\nidentity: all ok' : `\nidentity: ${fails} FAILED`);

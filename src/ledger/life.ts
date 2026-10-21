@@ -1,4 +1,4 @@
-import { byVoyage, dateOf, didLine, placeName, type Entry } from './ledger';
+import { byVoyage, dateOf, didLine, inheritedEntries, ownEntries, placeName, type Entry } from './ledger';
 import { TAGS } from './tags';
 
 /**
@@ -38,7 +38,7 @@ export function lifeLine(e: Entry): LifeLine {
 
 export function life(ledger: Entry[]): LifeChapter[] {
   const chapters: LifeChapter[] = [];
-  for (const v of byVoyage(ledger)) {
+  for (const v of byVoyage(ownEntries(ledger))) {
     const lines = v.entries.map(lifeLine);
     if (lines.length === 0 && v.n === 0) continue;
     chapters.push({
@@ -46,7 +46,16 @@ export function life(ledger: Entry[]): LifeChapter[] {
       lines,
     });
   }
-  return chapters.reverse().map((c) => ({ ...c, lines: [...c.lines].reverse() }));
+  const out = chapters.reverse().map((c) => ({ ...c, lines: [...c.lines].reverse() }));
+  // What an heir was handed: the faded Ledger of the years before him, kept in one chapter at the foot, under their own dates.
+  const before = inheritedEntries(ledger);
+  if (before.length > 0) {
+    out.push({
+      title: 'The years before you, as the Book keeps them (faded)',
+      lines: [...before].sort((a, b) => b.t - a.t).map(lifeLine),
+    });
+  }
+  return out;
 }
 
 /** Everything the Life page will print for these entries, as one string (for tests). */

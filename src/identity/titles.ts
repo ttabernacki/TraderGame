@@ -5,7 +5,7 @@ import type { Tag } from '../ledger/tags';
 import { POLITIES, POLITY_BY_ID, polityOfPort, type PolityDef, type Temper } from '../diplomacy/polities';
 import { along } from '../progression/road';
 import { anchorageOf, portDef } from '../world/ports';
-import { record } from '../ledger/ledger';
+import { ownEntries, record } from '../ledger/ledger';
 import type { PatronId } from './state';
 
 /**
@@ -176,7 +176,15 @@ export const TITLES: TitleDef[] = [
 
 export const TITLE_BY_ID = new Map(TITLES.map((t) => [t.id, t]));
 
-export const titleCtx = (g: Pick<Game, 'ledger' | 'milestones'>): TitleCtx => ({ ledger: g.ledger, milestones: g.milestones });
+/** What the predicates see: the captain's own deeds. An heir's titles are earned by the heir, not by the faded Ledger he was handed. */
+export const titleCtx = (g: Pick<Game, 'ledger' | 'milestones'>): TitleCtx => ({ ledger: ownEntries(g.ledger), milestones: g.milestones });
+
+/** What a father's title is worth to his heir: "a name your father had", at this fraction of its effect (E2). INVENTED. */
+export const INHERIT_SCALE = 0.4;
+export const inheritedTitle = (g: Pick<Game, 'identity'>): TitleDef | null => {
+  const id = g.identity.inherited?.id;
+  return id ? TITLE_BY_ID.get(id) ?? null : null;
+};
 
 /** Which titles the Ledger says are earned, in the order authored. */
 export function earnedNow(c: TitleCtx): TitleDef[] {
@@ -334,6 +342,14 @@ export function titleEdge(g: Pick<Game, 'clock' | 'identity'>, polityId: string)
       if (d) { out.trust += d.trust ?? 0; out.respect += d.respect ?? 0; out.interest += d.interest ?? 0; }
     }
   }
+  // A name the father had: word of it has long since run, so every court has heard, and it counts for 0.4.
+  const dad = inheritedTitle(g);
+  if (dad?.courts) {
+    for (const key of ['*', pol.temper, pol.id]) {
+      const d = dad.courts[key];
+      if (d) { out.trust += (d.trust ?? 0) * INHERIT_SCALE; out.respect += (d.respect ?? 0) * INHERIT_SCALE; out.interest += (d.interest ?? 0) * INHERIT_SCALE; }
+    }
+  }
   return { trust: clamp(out.trust, -0.5, 0.5), respect: clamp(out.respect, -0.5, 0.5), interest: clamp(out.interest, -0.5, 0.5) };
 }
 
@@ -343,11 +359,12 @@ export function titleEdgeAtPort(g: Pick<Game, 'clock' | 'identity'>, port: strin
 }
 
 export function titleWageMult(g: Pick<Game, 'identity'>): number {
-  return g.identity.worn.reduce((m, id) => m * (TITLE_BY_ID.get(id)?.hire ?? 1), 1);
+  const dad = inheritedTitle(g);
+  return g.identity.worn.reduce((m, id) => m * (TITLE_BY_ID.get(id)?.hire ?? 1), 1) * (dad?.hire ? 1 + (dad.hire - 1) * INHERIT_SCALE : 1);
 }
 
 export function titlePatronEdge(g: Pick<Game, 'identity'>, p: PatronId): number {
-  return g.identity.worn.reduce((s, id) => s + (TITLE_BY_ID.get(id)?.patron?.[p] ?? 0), 0);
+  return g.identity.worn.reduce((s, id) => s + (TITLE_BY_ID.get(id)?.patron?.[p] ?? 0), 0) + (inheritedTitle(g)?.patron?.[p] ?? 0) * INHERIT_SCALE;
 }
 
 export function titleShuts(g: Pick<Game, 'identity'>, p: PatronId): string | null {

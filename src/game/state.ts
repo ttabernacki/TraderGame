@@ -11,19 +11,18 @@ import {
   type ChronicleState,
 } from '../progression/chronicle';
 import {
-  QUESTS, dueScene, newQuest, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
+  QUESTS, offersAt, refreshQuestPrices, type QuestDef, type QuestId, type QuestState,
   rumoursHeard,
 } from '../progression/quests';
+import { hear as hearStorylet, migrateWeb, newWeb, resolveOldSaves, surface as surfaceStorylet, takeThread, webOnArrival, type WebState } from '../storylets';
 import { cancelPortQuests, migrateEstate, settleFoldedPieces, settleStoresOverflow, migrateFittings } from './saveResolvers';
 import { WAGE_PER_MAN_MONTH, loadPlan, planOf, recordLeg, storesTons, trimToHold } from './stores';
 import { migrateEnterprises, tickLines, type Letter, type Line } from '../progression/network';
 import { deliverFactoryMail, noteSightings, postLetter, tickFactories, transitDays } from '../progression/livingFactory';
 import { ambientAtSea, barkAt } from '../progression/barks';
 import { noteSeen, prosperityOf, prosperityShock, tickWorldDue, type PortState, type Reason } from '../world/tick';
-import { dueDeepScene, placeCallbackAt, placeCredit, placeHouseFactor, placeMods, rememberDeed } from '../places';
+import { placeCallbackAt, placeCredit, placeHouseFactor, placeMods, rememberDeed } from '../places';
 import { arriveAt, foldLedger, marketModifiers, migratePowers, newPowers, setHistorySource, type PowersState } from '../world/powers';
-import { dueTrafficScene } from '../progression/trafficScenes';
-import { duePowerScene } from '../progression/powerScenes';
 import { MILESTONES, checkMilestones } from '../progression/milestones';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
 import { azoresHigh, itczLatitude } from '../world/wind';
@@ -117,7 +116,7 @@ import { migrateTutorial, newTutorial, noteVerb, stepTutorial, type TutorialStat
 import { ringWatchBell } from './watchBell';
 import { legReportOnArrival, noteDeparture, type LegStart } from './legReport';
 import { migrateYear, newYear, yearOnArrival, yearOnDeparture, type YearState } from './year';
-import { decayed as decayedLedger, record as recordDeed, sanitize as sanitizeLedger, type Deed, type Entry as LedgerEntry } from '../ledger/ledger';
+import { record as recordDeed, sanitize as sanitizeLedger, type Deed, type Entry as LedgerEntry } from '../ledger/ledger';
 import type { Tag as LedgerTag } from '../ledger/tags';
 import { campaignDef, type CampaignId } from './campaign';
 import { PlayerFleet, type FleetSave } from './fleet';
@@ -135,7 +134,7 @@ import { quoteTrend } from '../economy/trade';
 import { type LaneState } from '../world/laneState';
 import { addHeat, coolForDeed, inspect, isRun, newHeat, runPrice, type HeatState } from '../economy/contraband';
 import { duesFor } from '../economy/dues';
-import { type IdentityState, newIdentity, migrateIdentity, ensureName, inheritIdentity, tickIdentity, patronOffers, orderDischarged, patronCredit, titleWageMult, entryRadiusNm, noteLeadEntry, canFoundWithoutCourt, designBlocked } from '../identity';
+import { type IdentityState, type InheritOpts, newIdentity, migrateIdentity, ensureName, planInheritance, applyDynasty, tickIdentity, patronOffers, orderDischarged, patronCredit, titleWageMult, entryRadiusNm, noteLeadEntry, canFoundWithoutCourt, designBlocked } from '../identity';
 import { CLAUSES, clauseLine, clauseMods, grantClause, judgeClause, menWageMult, presentWaived, refuseClause } from '../identity/clauses';
 import { migrateVentures } from './saveResolvers';
 import { along as roadAlong } from '../progression/road';
@@ -379,9 +378,7 @@ export class Game {
   /** Take a thread up. Its first beat plays at once if it belongs here. */
   acceptQuest(id: QuestId): string {
     if (this.quests.some((q) => q.id === id)) return 'Already taken up.';
-    this.quests.push(newQuest(id, this.clock.t));
-    this.noteDeed('thread.taken', { target: id, magnitude: 0.2, note: `Took up ${QUESTS[id].title}.` });
-    this.logEvent('crown', `Took up: ${QUESTS[id].title}. ${QUESTS[id].blurb}`, true);
+    takeThread(this, id);
     this.checkQuests();
     return `${QUESTS[id].title} — in the Book, under Missions.`;
   }
@@ -475,22 +472,30 @@ export class Game {
     return prosperityShock(this, portId, delta, reason);
   }
 
-  /** Put whichever quest beat is due. In port, straight onto the screen. */
+  /**
+   * Put whichever storylet is due (storylets/): at most one scene per port call and one per leg. At sea, and the Patron's
+   * own word in port, the scene is put at once; any other is a person waiting at the Quarters until he is heard (`hearStorylet`).
+   */
   checkQuests(): void {
-    // A beat that was put and has since vanished — dropped from the queue by
-    // a port call, a lost ship, anything — is put again rather than leaving
-    // the whole story waiting on a card nobody will ever see.
-    for (const q of this.quests) {
-      if (!q.fired || q.outcome) continue;
-      const id = `quest:${q.id}:${q.step}`;
-      if (this.pendingEvent?.id !== id && !this.pendingScenes.some((x) => x.id === id)) q.fired = false;
-    }
-    const s = dueScene(this, this.dockedAt) ?? dueTrafficScene(this, this.dockedAt) ?? duePowerScene(this, this.dockedAt) ?? dueDeepScene(this, this.dockedAt);
+    const s = surfaceStorylet(this);
     if (!s) return;
     this.easeTheClock(1);
     if (!this.pendingEvent) this.pendingEvent = s;
     else this.pendingScenes.push(s);
   }
+
+  /** The captain hears the person waiting at the Quarters: his scene is put. */
+  hearStorylet(): boolean {
+    const s = hearStorylet(this);
+    if (!s) return false;
+    this.easeTheClock(1);
+    if (!this.pendingEvent) this.pendingEvent = s;
+    else this.pendingScenes.push(s);
+    return true;
+  }
+
+  /** What the storylets write and the clock of their call (storylets/engine). Additive: an older save has none. */
+  web: WebState = newWeb();
 
   /** Errands done for towns. See world/portCharacter. */
 
@@ -4963,40 +4968,36 @@ export class Game {
    * same year as everyone does, so the history runs afresh around a captain
    * who already knows where things are.
    */
-  inheritFrom(old: Game): void {
-    this.generation = old.generation + 1;
-    const purse = Math.min(old.secretsHeard.includes('captain-major') ? 4000 : 2500,
-      Math.floor(Math.max(0, old.crown.gold) * (old.secretsHeard.includes('captain-major') ? 0.6 : 0.4)));
-    const name = Math.floor(old.crown.lifetimeStanding * 0.25);
-    this.crown.gold += purse;
-    this.crown.standing += name;
-    this.crown.lifetimeStanding += name;
-    this.captain.points += Math.min(4, Math.floor(old.crown.lifetimeStanding / 250));
+  inheritFrom(old: Game, opts: InheritOpts = {}): void {
+    // What passes down is planned first, as plain data (identity/dynasty), so the heir card shows exactly what is done here.
+    const plan = planInheritance(old, { origin: this.origin, name: this.identity.name, ...opts });
+    this.generation = plan.generation;
+    this.crown.gold += plan.purse;
+    this.crown.standing += plan.standing;
+    this.crown.lifetimeStanding += plan.standing;
+    this.captain.points += plan.points;
     inheritChart(this, old);
     this.rutter = old.rutter;
-    let kept = 0;
+    const keep = plan.repudiate ? 0.5 : 0.7;
     for (const f of old.liveFactories) {
       const rel = this.relationsFor(f.portId);
       rel.met = true; rel.mayTrade = true; rel.factory = true;
       rel.regard = Math.max(rel.regard, 0.15);
       this.feitorias.push({
         ...f, officerId: null, settled: this.clock.t, ticked: this.clock.t, seen: undefined,
-        ledger: undefined, trouble: Math.min(f.trouble, 0.3), regard: Math.max(0.3, f.regard * 0.7),
+        ledger: undefined, trouble: Math.min(f.trouble, 0.3), regard: Math.max(0.3, f.regard * keep),
         garrison: Math.max(f.garrison, 6), stock: { ...f.stock }, paid: { ...f.paid },
       });
-      kept++;
     }
     // The Lines go on running for the heir, from whatever home they had.
     this.lines = old.lines.filter((l) => !l.lost).map((l) => ({ ...l, phase: 'home' as const, at: this.clock.t, cargo: null, purse: 0, history: [] }));
     this.nextLineId = old.nextLineId;
-    // The Ledger is inherited, faded: what is older than eight years loses weight, and past sixteen is gone.
-    this.ledger = decayedLedger(old.ledger, old.clock.t);
-    inheritIdentity(this, old);
+    this.lordship = old.lordship;
+    // The Ledger faded and carried, the Fronts as he left them, the clauses at half term, the patrons, the one title, the company.
+    applyDynasty(this, old, plan);
+    this.wardroomCache = null;
     this.logEvent('note',
-      `You are the ${['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth'][this.generation] ?? `${this.generation}th`} `
-      + `of your line. Your ${old.generation === 1 ? 'father' : 'predecessor'} left ${purse} cruzados, a name worth ${name} at court, `
-      + `the charts and the book of the sea he made`
-      + `${kept ? `, and ${kept} ${kept === 1 ? 'station' : 'stations'} still standing on the coast` : ''}.`, true);
+      `You are the ${['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth'][this.generation] ?? `${this.generation}th`} of your line. ${plan.words.join(' ')}`, true);
     this.refreshEnvironment();
   }
 
@@ -8499,6 +8500,7 @@ export class Game {
     legReportOnArrival(this, def.id);
     yearOnArrival(this, def.id);
     companyOnArrival(this, def.id);
+    webOnArrival(this, def.id);
     this.nav.applyLandfall(anchorageOf(def), this.clock.t);
     this.chart.chartPort(def, this.nav.estimated, this.ship.state.pos, this.clock.t, true);
     this.chart.settleAround(anchorageOf(def), this.clock.t);
@@ -9804,6 +9806,7 @@ export class Game {
       trade: this.trade,
       chronicle: this.chronicle,
       quests: this.quests,
+      web: this.web,
       soundedGround: this.soundedGround,
       passageRecord: this.passageRecord,
       daysSincePort: this.daysSincePort,
@@ -9954,6 +9957,7 @@ export class Game {
     cancelPortQuests(g, d.portQuestsDone);
     g.soundedGround = d.soundedGround ?? [];
     g.quests = d.quests ?? [];
+    g.web = migrateWeb(d.web);
     g.diplomacy = d.diplomacy ?? newDiplomacy();
     // Identity is additive: a save from before it has no patron, no titles and no Calling, and a name from its origin.
     g.identity = migrateIdentity(d.identity);
@@ -10026,6 +10030,8 @@ export class Game {
     migrateFittings(g);
     g.syncStores();
     settleStoresOverflow(g);
+    // The Web (storylets/resolver): a thread in flight goes on from its beat; the two that were cut are settled.
+    resolveOldSaves(g);
     g.refreshEnvironment();
     // A voyage begun before milestones existed has already done what it has
     // done: claim it quietly rather than paying it all out at once.

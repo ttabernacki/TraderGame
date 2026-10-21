@@ -642,8 +642,8 @@ export function powerSceneOffered(g: Game, sc: TrafficScene, port: string): bool
   return sc.needs(g, st);
 }
 
-/** The next scene of the Indian Ocean's courts due at this port, if any. Marks it put; it is had when answered. */
-export function duePowerScene(g: Game, port: string | null): SeaEvent | null {
+/** The next scene of the Indian Ocean's courts offered at this port, if any, not yet marked put (the storylet engine's source). */
+export function peekPowerScene(g: Game, port: string | null): TrafficScene | null {
   if (!port) return null;
   const st = g.powers;
   for (const sc of POWER_SCENES) {
@@ -654,10 +654,21 @@ export function duePowerScene(g: Game, port: string | null): SeaEvent | null {
       delete st.seen[`fired:${sc.id}`];
     }
     if (!powerSceneOffered(g, sc, port)) continue;
-    st.seen[`fired:${sc.id}`] = g.clock.t;
-    return sc.build(g, st);
+    return sc;
   }
   return null;
+}
+
+/** Build a scene and mark it put; it is had when answered. */
+export function putPowerScene(g: Game, sc: TrafficScene): SeaEvent {
+  g.powers.seen[`fired:${sc.id}`] = g.clock.t;
+  return sc.build(g, g.powers);
+}
+
+/** The next scene of the Indian Ocean's courts due at this port, if any. Marks it put; it is had when answered. */
+export function duePowerScene(g: Game, port: string | null): SeaEvent | null {
+  const sc = peekPowerScene(g, port);
+  return sc ? putPowerScene(g, sc) : null;
 }
 
 /** The Rule's one plain line, for whoever needs it outside the Book. */

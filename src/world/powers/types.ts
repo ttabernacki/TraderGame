@@ -225,4 +225,10 @@ export interface PowersState {
   nextId: number;
   /** The last month index run. */
   lastMonth: number;
+  /**
+   * Which edition of the history line the Fronts' clocks were laid on (E3 re-staged the Gold, the Claim and the Court
+   * and set the Court ticking). A state without it is from before and is re-laid on its next tick, keeping what the
+   * captain has done to each Front (the offset).
+   */
+  era?: number;
 }

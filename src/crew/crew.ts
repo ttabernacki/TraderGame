@@ -69,6 +69,8 @@ export interface Officer {
   /** Promoted out of the fo'c'sle: the hand he was, and whether he stands as mate. */
   handId?: string;
   mate?: boolean;
+  /** An heir's company (company/succession): the name of the old man whose seat he took, or the freed man whose child he is. */
+  succeeds?: string;
 }
 
 export interface Provisions {

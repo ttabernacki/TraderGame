@@ -30,7 +30,12 @@ export type ReaderId =
   | 'moves.swahili'    // the Swahili tick: Kilwa, Mombaça and Melinde read attitude, relations and the Rule
   | 'moves.malabar'    // the Malabar tick: Calicut, Cochim and Gujarat
   | 'moves.crescent'   // the Mamluk tick: notes, convoys, the league, read from the Crescent's stage
-  | 'scenes.powers';   // powerScenes: the courts of the Swahili coast and Malabar, and the Rule's evaluation
+  | 'scenes.powers'    // powerScenes: the courts of the Swahili coast and Malabar, and the Rule's evaluation
+  | 'moves.fever'      // the crew's sickness at the Gold Coast: a fever season is a danger to the ship's company (gold.ts goldFever)
+  | 'moves.race'       // Castile's moves and the rival's pace read the Claim and Castile's attitude (race.ts)
+  | 'moves.conflicts'  // the Senegal, Akan, Kongo and Ndongo machines read the Akan's and Kongo's attitude (conflicts.ts)
+  | 'moves.court'      // the patrons' agenda reads the Court Front's stage and its dated shocks (identity/patrons.ts)
+  | 'scenes.fronts';   // frontScenes: the Court, Crescent, Gold and Claim scenes offered from the Fronts and the Ledger
 
 export const READERS: Record<ReaderId, string> = {
   'modifiers.stage': 'A Front’s stage turns on its stage effects in marketModifiers (world/powers/modifiers.ts).',
@@ -42,6 +47,11 @@ export const READERS: Record<ReaderId, string> = {
   'moves.malabar': 'Calicut, Cochim and Gujarat decide their moves from attitude, relations and the Crescent (world/powers/malabar.ts).',
   'moves.crescent': 'The Mamluk Power sends notes, convoys and a league as the Crescent rises (world/powers/crescent.ts).',
   'scenes.powers': 'The Swahili and Malabar scenes and the Rule’s reading of the captain are offered and worded from these (progression/powerScenes.ts, world/powers/rule.ts).',
+  'moves.fever': 'A fever season at the Castle raises the sickness of any company lying on the Gold Coast (world/powers/gold.ts goldFever, read by game/state.ts).',
+  'moves.race': 'Castile’s moves and the pace of the rival’s house read the Claim’s stage and Castile’s regard (world/powers/race.ts).',
+  'moves.conflicts': 'The Wolof, Akan, Kongo and Ndongo conflicts begin, turn and end on the regard of the people concerned (world/powers/conflicts.ts).',
+  'moves.court': 'The patrons’ falls and rises follow the Court Front’s stage and its dated shocks (identity/patrons.ts).',
+  'scenes.fronts': 'The Court, Crescent, Gold and Claim scenes are offered and worded from the Fronts and the Ledger (progression/frontScenes.ts).',
 };
 
 export interface FrontRow {
@@ -93,9 +103,10 @@ export const FRONT_DELTAS: FrontRow[] = [
   F('promise.kept', 'gold', -0.06, 'A promise kept to the Akan eases the fort.', 'moves.gold', { about: ['eguafo', ...GOLD_COAST] }),
   F('promise.broken', 'gold', 0.10, 'A promise broken to the Akan: the fort pays for it for years.', 'moves.gold', { about: ['eguafo', ...GOLD_COAST] }),
   F('port.funded', 'gold', -0.10, 'A House at the fort takes some of its weight.', 'moves.gold', { where: GOLD_COAST, about: GOLD_COAST }),
-  F('hand.died', 'gold', 0.03, 'Fever on the Mina coast: each man lost is a day the garrison is thinner.', 'moves.gold', { scale: 'magnitude', where: GOLD_COAST }),
+  F('hand.died', 'gold', 0.03, 'Fever on the Mina coast: each man lost is a day the garrison is thinner.', 'moves.fever', { scale: 'magnitude', where: GOLD_COAST }),
   F('order.breached', 'gold', 0.08, 'An interloper let alone against the commission: the monopoly leaks.', 'moves.gold', { where: GOLD_COAST }),
   F('ship.stopped', 'gold', -0.04, 'An interloper stopped off the gold coast holds the Crown’s monopoly.', 'moves.gold', { where: GOLD_COAST }),
+  F('mercy.shown', 'gold', -0.04, 'The Castle’s sick tended by a ship that did not have to: the Akan buyers notice who nurses their own.', 'scenes.fronts', { where: GOLD_COAST, about: GOLD_COAST }),
   F('hostage.died', 'gold', 0.08, 'A chief’s son dead in the captain’s keeping: the Akan do not forget it.', 'moves.gold', { about: ['eguafo', ...GOLD_COAST] }),
 
   // --- The Claim / the Race: Castile, the line, who is first ---------------------------------
@@ -107,6 +118,7 @@ export const FRONT_DELTAS: FrontRow[] = [
   F('landmark.surveyed', 'claim', 0.03, 'A coast properly surveyed is a coast properly claimed.', 'modifiers.stage'),
   F('name.given', 'claim', 0.02, 'A name on the chart is a flag of a kind.', 'modifiers.stage'),
   F('patent.completed', 'claim', 0.05, 'The Crown has what it asked for, and asks for more.', 'modifiers.stage'),
+  F('claim.argued', 'claim', -0.10, 'The line argued at court, aloud, with the Castilian case in hand: the Race slows by a little, and the Casa notes who spoke.', 'scenes.fronts'),
   F('informer.found', 'claim', -0.05, 'The rival’s man found at a court: one less ear for Castile.', 'modifiers.stage'),
   F('informer.wronged', 'claim', 0.02, 'An innocent named: the court takes the Portuguese for credulous.', 'modifiers.stage'),
   F('crown.reported', 'claim', 0.03, 'Findings entered: the Crown’s case is the better documented.', 'modifiers.stage'),
@@ -154,9 +166,9 @@ export const FRONT_DELTAS: FrontRow[] = [
   // --- The Court (home): the throne, the Church, the Rua Nova ------------------------------
   F('patron.honest', 'court', -0.05, 'The King had the truth once: the favourites have a little less room.', 'modifiers.stage'),
   F('patron.flattered', 'court', 0.05, 'A cheerful letter feeds the faction that wrote it.', 'modifiers.stage'),
-  F('patent.completed', 'court', -0.06, 'A commission discharged is the throne’s grip on the Casa.', 'modifiers.stage'),
+  F('patent.completed', 'court', -0.06, 'A commission discharged is the throne’s grip on the Casa.', 'moves.court'),
   F('crown.reported', 'court', -0.03, 'A report on the coast keeps the court from guessing.', 'modifiers.stage'),
-  F('loan.defaulted', 'court', 0.08, 'A bad debt on the Rua Nova: the money’s friends at court grow cold.', 'modifiers.stage'),
+  F('loan.defaulted', 'court', 0.08, 'A bad debt on the Rua Nova: the money’s friends at court grow cold.', 'moves.court'),
   F('loan.repaid', 'court', -0.03, 'A debt repaid is credit at court.', 'modifiers.stage'),
   F('commission.failed', 'court', 0.04, 'A charter broken is a patron who will say so.', 'modifiers.stage'),
   F('commission.delivered', 'court', -0.03, 'A charter delivered is a patron’s credit.', 'modifiers.stage'),
@@ -218,8 +230,8 @@ export const ATTITUDES: AttitudeRow[] = [
   A('faith.respected', 'target', 0.12, 'A worship left alone.', 'moves.kongo'),
 
   // Trade, weights, roads
-  A('weights.false', 'akan', -0.15, 'The gold traders find something to do when he comes down the beach.'),
-  A('weights.fair', 'akan', 0.08, 'Word of the scales goes along the coast.'),
+  A('weights.false', 'akan', -0.15, 'The gold traders find something to do when he comes down the beach.', 'moves.conflicts'),
+  A('weights.fair', 'akan', 0.08, 'Word of the scales goes along the coast.', 'moves.conflicts'),
   A('weights.false', 'target', -0.15, 'A shaded scale.', 'modifiers.dues', false),
   A('weights.fair', 'target', 0.08, 'An honest scale.', 'modifiers.dues', false),
   A('lane.opened', 'target', 0.10, 'An inland road opened for their goods.'),
@@ -233,9 +245,9 @@ export const ATTITUDES: AttitudeRow[] = [
   A('crown.reported', 'crown', 0.05, 'Reported to the factor.'),
   A('chart.shared', 'crown', 0.10, 'His sheets in the Casa’s press.'),
   A('chart.sold', 'crown', -0.15, 'Sold the Crown’s coast to others.'),
-  A('chart.sold', 'castile', 0.10, 'A sheet of the Portuguese coast in Castilian hands.'),
+  A('chart.sold', 'castile', 0.10, 'A sheet of the Portuguese coast in Castilian hands.', 'moves.race'),
   A('claim.made', 'crown', 0.10, 'A padrão raised.', 'modifiers.dues', false),
-  A('claim.made', 'castile', -0.08, 'A padrão on a coast Castile was watching.', 'modifiers.dues', false),
+  A('claim.made', 'castile', -0.08, 'A padrão on a coast Castile was watching.', 'moves.race', false),
   A('claim.lost', 'crown', -0.04, 'The rival’s name stands where his might have.', 'modifiers.dues', false),
   A('smuggle.caught', 'crown', -0.12, 'Fined at the weigh-house.', 'modifiers.dues', false),
   A('loan.defaulted', 'crown', -0.06, 'A name on the Rua Nova that is never closed.', 'modifiers.dues', false),

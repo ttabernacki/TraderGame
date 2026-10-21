@@ -4,7 +4,7 @@ import type { Entry } from '../../ledger/ledger';
 import { MONTH as WORLD_MONTH, onMonth, prosperityShock, type WorldHost } from '../tick';
 import { PORT_BY_ID } from '../ports';
 import {
-  MONTH, activeEffects, enemiesOf, friendsOf, initAt, powerOfName, pull, shockTime, stageOfPoints, pointsOf,
+  ERA, MONTH, activeEffects, enemiesOf, friendsOf, initAt, powerOfName, pull, relay, shockTime, stageOfPoints, pointsOf,
 } from './core';
 import { FRONTS, SCHEDULE } from './data';
 import { ATTITUDES, FRONT_DELTAS, type AttitudeRow, type FrontRow } from './deltas';
@@ -14,7 +14,9 @@ import { type Ctx, yearOf } from './moves';
 import { kilwaTick, melindeTick, mombasaTick } from './swahili';
 import { calicutTick, cochinTick, gujaratTick } from './malabar';
 import { mamlukTick } from './crescent';
-import { beninTick, castileTick, sahelTick } from './stubs';
+import { beninTick, sahelTick } from './stubs';
+import { castileTick } from './race';
+import { conflictsTick } from './conflicts';
 import { declareReader } from './modifiers';
 import { announce, hearAt, resolveDue, type Heard } from './rumours';
 import { FRONT_IDS, type FrontId, type PowerId, type PowersState, type Rumour } from './types';
@@ -155,6 +157,7 @@ export function powersMonth(host: WorldHost, t: number): void {
   const st = h.powers;
   if (!st) return;
   if (st.lastMonth < 0) initAt(st, t - WORLD_MONTH);
+  else if ((st.era ?? 1) < ERA) relay(st, t - WORLD_MONTH);
   const idx = Math.floor(t / MONTH);
   if (idx <= st.lastMonth) return;
   st.lastMonth = idx;
@@ -171,7 +174,6 @@ export function powersMonth(host: WorldHost, t: number): void {
   // Attitudes ease back toward indifference: a court forgives, and forgets, slowly.
   for (const p of Object.values(st.powers)) p.attitude *= 0.985;
 
-  goldTick(st, t, rng);
   kongoTick(st, t, rng, { note: (text) => h.powersNote?.(text) });
   // The courts of the Indian Ocean, the Crescent, and the lighter stubs. Each draws from its own generator.
   const year = yearOf(t);
@@ -179,6 +181,7 @@ export function powersMonth(host: WorldHost, t: number): void {
   mombasaTick(ctx('mombasa')); melindeTick(ctx('melinde')); kilwaTick(ctx('kilwa'));
   calicutTick(ctx('calicut')); cochinTick(ctx('cochin')); gujaratTick(ctx('gujarat'));
   mamlukTick(ctx('mamluk')); castileTick(ctx('castile')); beninTick(ctx('benin')); sahelTick(ctx('sahel'));
+  goldTick(ctx('gold')); conflictsTick(ctx('conflicts'));
   // Act V opening fixes the Rule at the stage the captain's conduct (and the coast's history) had made it.
   if ((h.chronicle?.act ?? 0) >= 5 && st.rule && st.rule.lockedAt === undefined) {
     st.rule.lockedAt = t;

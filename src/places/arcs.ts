@@ -29,8 +29,8 @@ export function beatOffered(g: Game, deep: DeepPort, b: ArcBeat): boolean {
   return b.needs ? b.needs(g) : true;
 }
 
-/** The beat due at this port, if any. Marks it put; it is had when answered. */
-export function dueDeepScene(g: Game, port: string | null): SeaEvent | null {
+/** The beat offered at this port, if any, not yet marked put (the storylet engine's source). */
+export function peekDeepBeat(g: Game, port: string | null): ArcBeat | null {
   const deep = deepPort(port);
   if (!deep) return null;
   const seen = g.powers.seen;
@@ -42,10 +42,21 @@ export function dueDeepScene(g: Game, port: string | null): SeaEvent | null {
       delete seen[`fired:${id}`];
     }
     if (!beatOffered(g, deep, b)) continue;
-    seen[`fired:${id}`] = g.clock.t;
-    return b.build(g);
+    return b;
   }
   return null;
+}
+
+/** Build a beat and mark it put; it is had when answered. */
+export function putDeepBeat(g: Game, b: ArcBeat): SeaEvent {
+  g.powers.seen[`fired:place:${b.id}`] = g.clock.t;
+  return b.build(g);
+}
+
+/** The beat due at this port, if any. Marks it put; it is had when answered. */
+export function dueDeepScene(g: Game, port: string | null): SeaEvent | null {
+  const b = peekDeepBeat(g, port);
+  return b ? putDeepBeat(g, b) : null;
 }
 
 /** Where the arc stands, for the Quarters: beats had, and the next, if it can be named. */

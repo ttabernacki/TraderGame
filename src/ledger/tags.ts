@@ -18,6 +18,7 @@
 import { POWERS_TAGS } from './tagsPowers';
 import { IDENTITY_TAGS } from './tagsIdentity';
 import { STRANGER_TAGS } from './tagsStrangers';
+import { DYNASTY_TAGS } from './tagsDynasty';
 
 export interface TagDef {
   /** What the tag means, for whoever has to emit or read it. */
@@ -55,6 +56,7 @@ export const TAGS = {
   ...POWERS_TAGS,
   ...IDENTITY_TAGS,
   ...STRANGER_TAGS,
+  ...DYNASTY_TAGS,
   // --- Word given and kept -------------------------------------------------
   'promise.kept': t(0.8, 'A word given to a court or a person, and honoured.',
     '{target} will remember that you kept your word.', BOTH, { planned: ['powers', 'company', 'titles'] }),

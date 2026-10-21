@@ -31,6 +31,13 @@ export interface Entry {
   note: string;
   /** Structured facts a reader needs (a clause's kind, id and term). Optional; most entries carry none. */
   data?: Record<string, number | string>;
+  /**
+   * Set on an entry an heir has taken over from his father (identity/dynasty). It is the shift, in seconds, that moved
+   * the entry's `t` back so that it lies before the heir's own first day; `t - inh` is the date it really had. Entries
+   * with it are the faded memory of the world, not the heir's own deeds: titles, the epilogue's chronicles and the muster
+   * read the heir's own entries only.
+   */
+  inh?: number;
 }
 
 /** What `record` needs of the game; `Game` satisfies it. */
@@ -163,8 +170,14 @@ export function byVoyage(l: Entry[]): { n: number; from: number; entries: Entry[
 }
 
 export function dateOf(e: Entry): string {
-  return formatDateAt(e.t);
+  return formatDateAt(e.t - (e.inh ?? 0));
 }
+
+/** An entry that came down from a father. */
+export const isInherited = (e: Entry): boolean => e.inh !== undefined;
+/** The heir's own deeds, leaving out what he inherited; the list itself when nothing was inherited (no copy). */
+export const ownEntries = (l: Entry[]): Entry[] => (l.some(isInherited) ? l.filter((e) => !isInherited(e)) : l);
+export const inheritedEntries = (l: Entry[]): Entry[] => l.filter(isInherited);
 
 export function isEntry(x: unknown): x is Entry {
   const e = x as Entry;

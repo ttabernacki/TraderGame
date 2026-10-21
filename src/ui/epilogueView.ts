@@ -10,6 +10,9 @@ import { patronEnding, TITLE_BY_ID } from '../identity';
 import { portName } from '../progression/crown';
 import type { Game } from '../game/state';
 import { chronicles, muster } from '../ledger/chronicle';
+import { ownEntries } from '../ledger/ledger';
+import { endingFor } from '../progression/endings';
+import { heirScreen, type HeirChoice } from './heirView';
 import { companyEndLines } from '../company/company';
 import { button, card, el, kv } from './dom';
 import { fameBlock, fameLines } from './fameMap';
@@ -29,7 +32,7 @@ import { fameBlock, fameLines } from './fameMap';
 export class EpilogueView {
   root = el('div', { class: 'screen' });
 
-  constructor(g: Game, onRestart: () => void, onHeir?: () => void) {
+  constructor(g: Game, onRestart: () => void, onHeir?: (c: HeirChoice) => void) {
     const lost = g.crew.deaths;
     const home = g.crew.count;
     const years = ((g.clock.t - g.startT) / 86400 / 365.25);
@@ -86,7 +89,8 @@ export class EpilogueView {
         // kept a book of him. Generated from the Ledger; none of it is fixed
         // text, and a family of deeds the Ledger does not hold is not mentioned.
         ...(() => {
-          const c = chronicles(g.ledger, `the captain of ${g.ship.name}`);
+          // An heir's chronicles are his own: what he was handed is the world's faded memory, not his deeds.
+          const c = chronicles(ownEntries(g.ledger), `the captain of ${g.ship.name}`);
           const one = (x: { title: string; byline: string; lines: string[] }): HTMLElement => card(x.title,
             el('p', { class: 'flavour' }, x.byline),
             ...x.lines.map((l) => el('p', {}, l)));
@@ -133,7 +137,7 @@ export class EpilogueView {
         // name, and by count where it does not. The Ledger holds the deaths
         // with their cause; hands off an older save are added from the muster.
         ...(() => {
-          const m = muster(g.ledger);
+          const m = muster(ownEntries(g.ledger));
           const known = new Set(m.named.map((n) => n.name));
           const older = g.hands.filter((h) => !h.alive && !known.has(h.name));
           const total = Math.max(m.total, g.crew.deaths);
@@ -410,6 +414,20 @@ export class EpilogueView {
           kv('Yours', `${Math.round(g.crown.lifetimeStanding)}`),
         ),
 
+        // The ending, assembled from Patron favour, the Fronts, the Ledger and Fame (progression/endings), then the world he made.
+        ...(() => {
+          const e = endingFor(g);
+          return [card(e.title,
+            ...e.paragraphs.map((t) => el('p', {}, t)),
+            el('p', { class: 'flavour' }, e.world))];
+        })(),
+
+        // An heir's own page about where he began.
+        g.identity.heir
+          ? card(`Of your line: ${g.identity.heir.father}${g.identity.heir.repudiated ? ' (a name put off)' : ''}`,
+              ...g.identity.heir.legacy.map((l) => el('p', {}, l)))
+          : null,
+
         card('What became of it',
           el('p', {},
             'Within twenty years Portuguese fleets are fighting in the Indian Ocean, there is a '
@@ -436,7 +454,11 @@ export class EpilogueView {
       ),
       body,
       el('div', { class: 'screen-foot' },
-        onHeir ? button('Send your heir to sea', onHeir, { primary: true }) : null,
+        onHeir ? button('Send your heir to sea', () => {
+          // The heir card takes the epilogue's place: who he is and what comes down to him, before he does.
+          const kept = Array.from(this.root.childNodes);
+          this.root.replaceChildren(...heirScreen(g, onHeir, () => this.root.replaceChildren(...kept)));
+        }, { primary: true }) : null,
         button('Fit out another ship', onRestart, { primary: !onHeir }),
       ),
     );

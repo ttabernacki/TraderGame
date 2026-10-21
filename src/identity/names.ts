@@ -33,3 +33,19 @@ export function heirName(old: string, origin: OriginId, rng: Rng): string {
 }
 
 export const cleanName = (s: string | undefined | null): string => (s ?? '').replace(/[<>]/g, '').trim().slice(0, 40);
+
+export const familyOf = (name: string): string => name.split(' ').slice(1).join(' ');
+
+/** A family name other than this one, from the origin's pool: the name an heir takes when he puts his father's off. */
+export function otherFamily(not: string, origin: OriginId, rng: Rng): string {
+  const p = POOL[origin] ?? POOL.segundo;
+  const fams = p.family.filter((f) => f !== not);
+  return fams[Math.floor(rng.next() * fams.length)] ?? p.family[0];
+}
+
+/** An heir's given name: not the father's, from the origin's pool. */
+export function heirGiven(oldGiven: string, origin: OriginId, rng: Rng): string {
+  const p = POOL[origin] ?? POOL.segundo;
+  const given = p.given.filter((x) => x !== oldGiven);
+  return given[Math.floor(rng.next() * given.length)];
+}

@@ -140,7 +140,7 @@ export function termYears(kind: ClauseKind, trust: number, poisoned: boolean): n
 }
 
 /** On-grant effects that are state rather than a modifier. */
-function onGrant(g: Game, pol: PolityDef, kind: ClauseKind): void {
+export function onGrant(g: Game, pol: PolityDef, kind: ClauseKind): void {
   if (kind === 'pilot') {
     const a = portDef(pol.seat);
     g.soundedGround.push({ lat: a.lat, lon: a.lon, nm: 200, source: `the pilots of ${a.name}` });

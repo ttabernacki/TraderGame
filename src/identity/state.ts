@@ -29,6 +29,26 @@ export interface PatronRec {
 
 export interface TitleRec { t: number; place: string }
 
+export type Relation = 'son' | 'nephew' | 'natural son' | 'ward';
+
+/** The captain as one of a line (E2): who he is to the man before him, and what was handed down, in plain words. INVENTED throughout. */
+export interface HeirRec {
+  name: string;
+  relation: Relation;
+  age: number;
+  /** The captain before him, by name. */
+  father: string;
+  /** What the father was: the heir chooses his own at Act II and is not bound to it. */
+  fatherCalling: CallingId | null;
+  /** He took another name and put the father's off (`dynasty.repudiate`). */
+  repudiated: boolean;
+  /** What came down to him, one plain line each, as the heir card showed them. */
+  legacy: string[];
+}
+
+/** A worn title of the father's, carried as a name and not a deed: at a reduced effect (identity/titles, `INHERIT_SCALE`). */
+export interface InheritedTitle { id: string; from: string }
+
 export interface IdentityState {
   v: 1;
   name: string;
@@ -54,6 +74,12 @@ export interface IdentityState {
   favourite?: PatronId;
   /** Seat-holders a Master has kept beside the usual one (role -> count), for the Book. */
   seats: number;
+  /** E2: set for an heir. Absent on a first captain. */
+  heir?: HeirRec;
+  /** E2: the one title of the father's that the heir carries as "a name your father had". */
+  inherited?: InheritedTitle | null;
+  /** E2: on the *father's* game, the stance the heir card recorded for the hand-off. */
+  heirStance?: 'keep' | 'repudiate';
 }
 
 export const newPatronRec = (): PatronRec => ({ favour: 0, grudge: 0, fell: null, recovers: null, pulled: false, ruined: null, done: 0 });
@@ -90,6 +116,11 @@ export function migrateIdentity(raw: unknown): IdentityState {
     lastDay: typeof r.lastDay === 'number' ? r.lastDay : -1e12,
     favourite: PATRON_IDS.includes(r.favourite as PatronId) ? r.favourite as PatronId : undefined,
     seats: typeof r.seats === 'number' ? r.seats : 0,
+    heir: r.heir && typeof r.heir === 'object' && typeof (r.heir as HeirRec).name === 'string'
+      ? { ...(r.heir as HeirRec), legacy: Array.isArray((r.heir as HeirRec).legacy) ? (r.heir as HeirRec).legacy.filter((x) => typeof x === 'string') : [] }
+      : undefined,
+    inherited: r.inherited && typeof r.inherited === 'object' && typeof (r.inherited as InheritedTitle).id === 'string' ? { ...(r.inherited as InheritedTitle) } : undefined,
+    heirStance: r.heirStance === 'repudiate' || r.heirStance === 'keep' ? r.heirStance : undefined,
   };
 }
 

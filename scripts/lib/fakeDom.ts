@@ -42,6 +42,7 @@ export class FakeEl extends FakeNode {
       this.children.push(node);
     }
   }
+  replaceChildren(...nodes: (FakeNode | string)[]): void { for (const c of [...this.children]) this.removeChild(c); this.append(...nodes); }
   appendChild(n: FakeNode): FakeNode { this.append(n); return n; }
   removeChild(n: FakeNode): FakeNode {
     const i = this.children.indexOf(n);

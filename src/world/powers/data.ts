@@ -69,17 +69,20 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       T('A hard coast', 'Interlopers work the beach, the gold goes elsewhere, and every ship that comes has to be paid for in goodwill.'),
       T('The beach is shut', 'The Akan have stopped selling to the Castle on its terms. The fort lives on what it is sent.'),
     ],
-    start: 1.0, perYear: 0.25, ticks: true,
+    start: 1.0, perYear: 0.2, ticks: true,
     levers: {
       push: { label: 'Press the Akan for more', cost: 'Their patience', delta: 0.12 },
       brake: { label: 'Deal fair, and spend the time', cost: 'Margin, and days on the beach', delta: -0.08 },
       contest: { label: 'Take the beach’s case to the Castle’s captain', cost: 'Casa regard', delta: -0.10 },
     },
-    offsetMin: -1.6, offsetMax: 3,
+    offsetMin: -1.6, offsetMax: 3.6,
     effects: [
       { minStage: 2, ports: ['mina'], stock: { ouro: 0.95 }, line: 'Gold is slower to come down: the Akan are choosier about whom they sell to.' },
+      { minStage: 2, maxStage: 2, ports: ['lisboa'], price: { ouro: 1.01 }, line: 'The Castle’s returns are a little short, and the Casa notices on the Tagus.' },
       { minStage: 3, ports: ['mina', 'axim', 'acara'], stock: { ouro: 0.85 }, duesMult: 1.2, prosperity: -0.01, line: 'The beach is a hard one now, and every ship pays for the privilege of landing.' },
+      { minStage: 3, maxStage: 3, ports: ['lisboa'], price: { ouro: 1.04 }, line: 'Less gold is coming up from Mina, and the Casa pays more for what there is.' },
       { minStage: 4, ports: ['mina'], stock: { ouro: 0.6 }, duesMult: 1.5, line: 'The Akan have stopped selling to the Castle on its terms.' },
+      { minStage: 4, ports: ['lisboa'], price: { ouro: 1.09 }, line: 'The Mina beach is shut, and gold on the Tagus is dear.' },
     ],
   },
 
@@ -91,16 +94,19 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       T('The line is drawn', 'The line is drawn on paper, and both crowns are arguing over where it falls on water.'),
       T('The race', 'Whoever lands first, owns. Both crowns send what they have.'),
     ],
-    start: 0.5, perYear: 0.2, ticks: true,
+    start: 0.5, perYear: 0.05, ticks: true,
     levers: {
       push: { label: 'Raise another padrão', cost: 'A stone and a risk', delta: 0.15 },
       brake: { label: 'Keep the sheets in the Casa’s press', cost: 'Renown you might have sold', delta: -0.08 },
       contest: { label: 'Argue the line at court', cost: 'Casa regard', delta: -0.10 },
     },
-    offsetMin: -1.2, offsetMax: 2.4,
+    offsetMin: -1.2, offsetMax: 3.0,
     effects: [
       { minStage: 3, ports: ['mina', 'axim'], price: { ouro: 1.04 }, line: 'Castilian ships are bidding for gold on the Mina beach.' },
       { minStage: 4, ports: ['mina', 'axim'], price: { ouro: 1.04 }, stock: { ouro: 0.95 }, line: 'Castile and Portugal are both on the beach, and the gold goes to whoever pays at once.' },
+      { minStage: 3, maxStage: 3, ports: ['las-palmas'], duesMult: 1.1, line: 'Castile’s harbour-master at Las Palmas asks what a Portuguese hull has been doing south of the line.' },
+      { minStage: 4, ports: ['las-palmas'], duesMult: 1.2, line: 'Castile’s harbour-master at Las Palmas has orders about Portuguese ships, and reads them aloud.' },
+      { minStage: 4, ports: ['sao-tome-porto', 'mpinda'], duesMult: 1.05, line: 'Both crowns have ships out beyond Mina, and every quay there asks whose a stranger is.' },
     ],
   },
 
@@ -122,9 +128,10 @@ export const FRONTS: Record<FrontId, FrontDef> = {
     effects: [
       { minStage: 2, ports: ['adem'], duesMult: 1.05, line: 'Notes have gone to Cairo and Rome, and the harbour-master at Adem counts the Portuguese in every account.' },
       { minStage: 3, ports: ['cambaia', 'diu'], price: { pimenta: 1.08 }, stock: { pimenta: 0.9 }, line: 'The merchants of Gujarat sail in company, and what they carry goes to the Red Sea first.' },
-      { minStage: 3, ports: ['lisboa'], price: { pimenta: 1.06 }, line: 'The Red Sea road is moving more of the pepper, and Lisbon pays more for what comes round the Cape.' },
+      { minStage: 2, maxStage: 2, ports: ['lisboa'], price: { pimenta: 1.03 }, line: 'Venice’s factors have written home about the Cape pepper, and Lisbon’s brokers are asking more for it.' },
+      { minStage: 3, maxStage: 3, ports: ['lisboa'], price: { pimenta: 1.07 }, line: 'The Red Sea road is moving more of the pepper, and Lisbon pays more for what comes round the Cape.' },
       { minStage: 3, ports: ['calecute', 'cochim', 'cananor'], duesMult: 1.1, line: 'Convoys of the Moorish ships make the Malabar quays dear.' },
-      { minStage: 4, ports: ['lisboa'], price: { pimenta: 1.08 }, line: 'The league has raised the price of pepper on the Tagus.' },
+      { minStage: 4, ports: ['lisboa'], price: { pimenta: 1.11 }, line: 'The league has raised the price of pepper on the Tagus.' },
     ],
   },
 
@@ -161,7 +168,7 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       T('The Rua Nova ascendant', 'The money on the Rua Nova outweighs the old families.'),
       T('The reckoning', 'The Church, the throne and the money have each been given what they asked for, and each wants to be paid.'),
     ],
-    start: 0.5, perYear: 0.25, ticks: false,
+    start: 0.5, perYear: 0.08, ticks: true,
     levers: {
       push: { label: 'Take a patron’s side', cost: 'The other patrons', delta: 0.08 },
       brake: { label: 'Stay out of it', cost: 'Whatever the patron would have given', delta: -0.05 },
@@ -169,8 +176,8 @@ export const FRONTS: Record<FrontId, FrontDef> = {
     },
     offsetMin: -1.6, offsetMax: 2.4,
     effects: [
-      { minStage: 3, ports: ['lisboa'], duesMult: 1.1, line: 'Everything at the Casa takes longer, and costs more, than it did.' },
-      { minStage: 4, ports: ['lisboa'], duesMult: 1.1, line: 'The reckoning has reached the quays.' },
+      { minStage: 3, maxStage: 3, ports: ['lisboa'], duesMult: 1.05, line: 'Everything at the Casa takes longer, and costs more, than it did.' },
+      { minStage: 4, ports: ['lisboa'], duesMult: 1.08, line: 'The reckoning has reached the quays.' },
     ],
   },
 };
@@ -268,7 +275,7 @@ export const SCHEDULE: DatedShock[] = [
     source: 'The Mani Soyo baptised 3 April and the Manikongo (as João I) on 3 May 1491 (Rui de Pina; Pigafetta and Lopes). The dates are the usual ones; the game does not claim the detail.', grade: 'documented',
   },
   {
-    id: 'colombo-west', history: 'colombo-returns', front: 'claim', delta: 0.50, place: 'lisboa',
+    id: 'colombo-west', history: 'colombo-returns', front: 'claim', delta: 3.0, place: 'lisboa',
     text: 'The Genoese is back from the west, and Castile has a claim to answer.',
     source: 'Date from chronicle HISTORY (Columbus returns, 1493).', grade: 'documented',
   },
@@ -278,17 +285,17 @@ export const SCHEDULE: DatedShock[] = [
     source: 'Donation of São Tomé to Álvaro de Caminha, 1493 (Hair; Seibert on São Tomé).', grade: 'documented',
   },
   {
-    id: 'tordesillas-line', history: 'tordesillas', front: 'claim', delta: 0.40, place: 'lisboa',
+    id: 'tordesillas-line', history: 'tordesillas', front: 'claim', delta: 3.9, place: 'lisboa',
     text: 'At Tordesillas the line is drawn.',
     source: 'Date from chronicle HISTORY (Tordesillas, June 1494).', grade: 'documented',
   },
   {
-    id: 'joao-dies', history: 'manuel', front: 'court', delta: 0.40, place: 'lisboa',
+    id: 'joao-dies', history: 'manuel', front: 'court', delta: 4.2, place: 'lisboa',
     text: 'The King is dead, and the court is new.',
     source: 'Date from chronicle HISTORY (João II dies, October 1495).', grade: 'documented',
   },
   {
-    id: 'edict', year: 1496, month: 12, front: 'court', delta: 0.40, place: 'lisboa',
+    id: 'edict', year: 1496, month: 12, front: 'court', delta: 0.6, place: 'lisboa',
     text: 'The King has ordered the Jews out of Portugal or into the font. The Rua Nova is not calm.',
     source: 'Edict of expulsion, December 1496; forced conversions in 1497 (Tavares; Soyer).', grade: 'documented',
   },
@@ -367,6 +374,47 @@ export const SCHEDULE: DatedShock[] = [
     id: 'albuquerque-1513', year: 1513, month: 3, front: 'rule', delta: 2.0, place: 'adem',
     text: 'The Governor has taken a fleet up to Adem, and means to shut the Red Sea to ships without the letter.',
     source: 'Albuquerque\u2019s attack on Aden, 1513 (failed), and the plan to blockade the Red Sea; Hormuz taken 1515. The Rule\u2019s \u201cblockade\u201d stage follows this policy; the game does not claim a particular year for it in any scene.', grade: 'approximate',
+  },
+  // --- E3: the Court, the Gold and the Claim, staged. The stage a shock lifts a Front to is the game's own reading of the date. ---
+  {
+    id: 'mina-fever-years', year: 1494, month: 3, front: 'gold', delta: 0.5, power: 'akan', attitude: 0, place: 'mina',
+    text: 'The Castle at Mina is being relieved with whatever men can be spared, and the ones who come out say the fever takes a third of a garrison in a bad year.',
+    source: 'Mortality at São Jorge da Mina was notorious in the Portuguese sources (Vogt, The Portuguese in West Africa; Hair on Guinea). The 1494 date and “a third” are INVENTED: the sources give the fact of high mortality, not a figure for a year.', grade: 'invented',
+  },
+  {
+    id: 'mina-interlopers', year: 1503, month: 5, front: 'gold', delta: 0.8, power: 'akan', attitude: -0.04, place: 'mina',
+    text: 'Foreign ships are working the Mina coast for gold, and the Akan are listening to what they offer.',
+    source: 'Castilian, and later French and English, interlopers on the Guinea coast contested the Portuguese monopoly from the 1470s; the Treaty of Alcáçovas (1479) was the settlement. The game dates the shock to 1503 as its own choice; no year is claimed in a scene.', grade: 'approximate',
+  },
+  {
+    id: 'brazil-sighted', year: 1500, month: 5, front: 'claim', delta: 1.5, power: 'castile', attitude: -0.05, place: 'lisboa',
+    text: 'Land has been found in the south-west, across the ocean, on the Portuguese side of the line. Castile says that a Spanish pilot saw the same coast months before.',
+    source: 'Pedro Álvares Cabral reached the coast of Brazil in April 1500; the Spanish captains Vicente Yáñez Pinzón (Jan 1500) and Diego de Lepe had sighted the same coast earlier that year (Disney; Hemming on Brazil). The line at Tordesillas put the coast on the Portuguese side.', grade: 'documented',
+  },
+  {
+    id: 'cantino-chart', year: 1502, month: 11, front: 'claim', delta: 1.0, power: 'castile', attitude: 0.05, place: 'lisboa',
+    text: 'A Portuguese chart of the new coasts has been bought out of the Casa for a duke in Italy, and Castile has seen a copy.',
+    source: 'The Cantino planisphere, smuggled out of Lisbon for Ercole d’Este of Ferrara and dated 1502 (documented); that Castile saw a copy is the game’s own gloss.', grade: 'approximate',
+  },
+  {
+    id: 'rua-nova-money', year: 1503, month: 3, front: 'court', delta: 2.4, place: 'lisboa',
+    text: 'The German and Italian houses have put their money into the pepper fleets, and the Rua Nova is the loudest voice at court.',
+    source: 'Italian and German capital (Marchioni, Affaitati, Welser, Fugger) took part in the Portuguese spice fleets from about 1503-05 (Subrahmanyam; Hümmerich). The month is approximate.', grade: 'approximate',
+  },
+  {
+    id: 'lisbon-massacre', year: 1506, month: 4, front: 'court', delta: 3.5, place: 'lisboa',
+    text: 'The New Christians of Lisbon have been killed in the streets for three days, and the King has hanged some of those who did it.',
+    source: 'The Lisbon massacre of New Christians, Easter 1506 (Tavares; Soyer). Counts differ by source and are not given.', grade: 'documented',
+  },
+  {
+    id: 'chaul-1508', year: 1508, month: 3, front: 'crescent', delta: 1.5, power: 'gujarat', attitude: -0.05, place: 'cambaia',
+    text: 'The Egyptian and Gujarati ships have caught the Viceroy’s son off Chaul, and he is dead.',
+    source: 'Battle of Chaul, 1508: Lourenço de Almeida killed by the Mamluk-Gujarati fleet (Pearson; Subrahmanyam). Avenged at Diu the following year.', grade: 'documented',
+  },
+  {
+    id: 'magellan-1519', year: 1519, month: 9, front: 'claim', delta: 2.0, power: 'castile', attitude: 0, place: 'lisboa',
+    text: 'Castile has sent a fleet west under a Portuguese captain, to reach the Spice Islands on the Spanish side of the line.',
+    source: 'Magellan sailed from Sanlúcar on 20 September 1519 (documented).', grade: 'documented',
   },
   {
     id: 'kongo-succession', year: 1506, month: 6, power: 'kongo', place: 'mpinda',

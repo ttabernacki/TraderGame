@@ -13,6 +13,7 @@ import { EventView } from './eventView';
 import { Hud } from './hud';
 import { LogbookView } from './logbookView';
 import { EpilogueView } from './epilogueView';
+import { heirOrigin, setHeirStance } from '../identity/dynasty';
 import { OrdersView } from './ordersView';
 import { PortView } from './portView';
 import { SightView } from './sightView';
@@ -274,7 +275,7 @@ export class Ui {
         break;
       case 'epilogue':
         this.overlay.append(new EpilogueView(g, () => this.cb.onNewGame(g.difficulty, g.origin),
-          () => this.cb.onNewGame(g.difficulty, g.crown.lifetimeStanding >= 400 ? 'fidalgo' : g.origin, g)).root);
+          (c) => { setHeirStance(g, c.repudiate ? 'repudiate' : 'keep'); this.cb.onNewGame(g.difficulty, heirOrigin(g), g, c.name); }).root);
         break;
       case 'gameover':
         this.overlay.append(new GameOverView(

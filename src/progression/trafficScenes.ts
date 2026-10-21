@@ -662,8 +662,8 @@ export function sceneOffered(g: Game, sc: TrafficScene, port: string): boolean {
   return sc.needs(g, st);
 }
 
-/** The next Traffic scene due at this port, if any. Marks it put; it is had when answered. */
-export function dueTrafficScene(g: Game, port: string | null): SeaEvent | null {
+/** The next Traffic scene offered at this port, if any, not yet marked put (the storylet engine's source; see storylets/sources). */
+export function peekTrafficScene(g: Game, port: string | null): TrafficScene | null {
   if (!port) return null;
   const st = g.powers;
   for (const sc of TRAFFIC_SCENES) {
@@ -676,8 +676,19 @@ export function dueTrafficScene(g: Game, port: string | null): SeaEvent | null {
       delete st.seen[`fired:${sc.id}`];
     }
     if (!sceneOffered(g, sc, port)) continue;
-    st.seen[`fired:${sc.id}`] = g.clock.t;
-    return sc.build(g, st);
+    return sc;
   }
   return null;
+}
+
+/** Build a scene and mark it put; it is had when answered. */
+export function putTrafficScene(g: Game, sc: TrafficScene): SeaEvent {
+  g.powers.seen[`fired:${sc.id}`] = g.clock.t;
+  return sc.build(g, g.powers);
+}
+
+/** The next Traffic scene due at this port, if any. Marks it put; it is had when answered. */
+export function dueTrafficScene(g: Game, port: string | null): SeaEvent | null {
+  const sc = peekTrafficScene(g, port);
+  return sc ? putTrafficScene(g, sc) : null;
 }

@@ -1,5 +1,4 @@
 import { clamp } from '../../core/math';
-import { dateFromDays } from '../../core/clock';
 import type { Rng } from '../../core/rng';
 import { MONTH, addEffect, hasActive } from './core';
 import { declareReader } from './modifiers';
@@ -26,7 +25,7 @@ export const NDONGO_PORTS = ['luanda', 'benguela'];
 
 /** Monthly chances; see the falsifier for what they do to a 20-year run. */
 export const K = {
-  embargoBase: 0.07, war: 0.011, truce: 0.12, curb: 0.035, push: 0.035, succession: 0.2,
+  embargoBase: 0.07, war: 0.011, truce: 0.12, curb: 0.035, push: 0.035,
   drift: 0.04,
 } as const;
 
@@ -49,7 +48,6 @@ export function kongoTick(st: PowersState, t: number, rng: Rng, out: KongoOut = 
   const traffic = st.fronts.traffic.stage;
   const att = k.attitude;
   let bal = k.balance ?? 0;
-  const year = dateFromDays(Math.floor(t / 86400)).year;
 
   // The court's lean follows the trade: as the Traffic grows, the traders gain on the elders.
   const lean = traffic >= 4 ? 0.6 : traffic === 3 ? 0.3 : traffic === 2 ? -0.15 : -0.35;
@@ -151,19 +149,5 @@ export function kongoTick(st: PowersState, t: number, rng: Rng, out: KongoOut = 
     });
     return;
   }
-
-  // The succession: not dated in the scene, but late enough in the game that it is the heir who lives it.
-  if (year >= 1506 && !k.flags.succession && rng.chance(K.succession)) {
-    k.flags.succession = true;
-    const e = addEffect(st, {
-      kind: 'succession', power: 'kongo', ports: KONGO_PORTS, start: t, end: t + 6 * MONTH, duesMult: 1.2, stock: { marfim: 0.85 },
-      reason: 'The old Manikongo is failing, and two of his sons have men under arms; the beach is cautious.',
-    });
-    log(st, t, 'succession', 'The court is split over the succession.');
-    announce(st, rng, t, {
-      event: `effect:${e.id}`, place: 'mpinda', power: 'kongo', window: 8,
-      truth: { claim: 'The old Manikongo is failing, and two of his sons have men under arms.', vague: 'There is trouble at the Manikongo’s court.' },
-      stale: { claim: 'The Manikongo is well, and the court is quiet.', vague: 'The Manikongo’s court is quiet.' },
-    });
-  }
+  // The succession of c. 1506-09 is a state machine of its own (conflicts.ts).
 }

@@ -66,6 +66,22 @@ export function mamlukTick(c: Ctx): void {
         },
       });
     }],
+    // The Venetian channel: Venice's factors, alarmed at the Cape pepper, bid for it at Lisbon itself, and the Lisbon price follows.
+    ['venice', cres >= 2 && !(typeof f.veniceUntil === 'number' && c.t < f.veniceUntil) ? 0.05 : 0, () => {
+      const dur = months(c.rng, 5, 9);
+      f.veniceUntil = c.t + dur * MONTH;
+      launch(c, {
+        kind: 'stub', power: 'mamluk', ports: ['lisboa'], dur, price: { pimenta: 1.04 + 0.015 * (cres - 2) }, blight: 0,
+        reason: 'Venice’s factors are bidding for pepper at Lisbon, and the brokers on the Rua Nova have noticed.',
+        said: 'Venice’s factors bid for pepper at Lisbon.', kindName: 'venice', front: { id: 'crescent', delta: 0.1 },
+        rumour: {
+          place: 'lisboa', front: 'crescent',
+          truth: { claim: 'Venice’s factors are bidding for pepper at Lisbon for whatever it costs, and the brokers on the Rua Nova have noticed.', vague: 'Venice is buying pepper at Lisbon.' },
+          stale: { claim: 'Venice takes no notice of the pepper that comes round the Cape.', vague: 'Venice takes no notice.' },
+          falsehood: { claim: 'Venice has bought the whole of the fleet’s pepper before it landed.', vague: 'Venice has bought the fleet.' },
+        },
+      });
+    }],
     ['note', cres >= 2 && (typeof f.noteAt !== 'number' || c.t - f.noteAt > 18 * MONTH) ? 0.06 : 0, () => {
       f.noteAt = c.t;
       launch(c, {

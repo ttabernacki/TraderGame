@@ -86,8 +86,28 @@ export function newPowers(): PowersState {
   for (const id of POWER_IDS) powers[id] = newPower(id, rel[id]);
   return {
     v: 1, fronts, powers, effects: [], rumours: [], parcels: [], local: { state: 'unmet' }, localRule: { state: 'unmet' }, rule: {},
-    cursor: 0, shocksDone: [], seen: {}, nextId: 1, lastMonth: -1,
+    cursor: 0, shocksDone: [], seen: {}, nextId: 1, lastMonth: -1, era: ERA,
   };
+}
+
+/** The edition of the history line this build lays the Fronts on. */
+export const ERA = 2;
+
+/**
+ * Re-lay the Fronts' history clocks on this edition's line: start, the drift to `t`, and every dated shock already
+ * applied. What the captain and the Powers have done (the offset) is kept; stages are set without announcing them.
+ */
+export function relay(st: PowersState, t: number): void {
+  for (const id of FRONT_IDS) {
+    const f = st.fronts[id];
+    const def = FRONTS[id];
+    if (!def.ticks) continue;
+    let base = def.start + def.perYear * Math.max(0, (t - START_T) / YEAR);
+    for (const s of SCHEDULE) if (st.shocksDone.includes(s.id) && s.front === id) base += s.delta ?? 0;
+    f.base = base;
+    f.stage = stageOfPoints(pointsOf(f));
+  }
+  st.era = ERA;
 }
 
 /** Fill whatever a saved state lacks (the `??=` of the load boundary) and drop what is malformed. */
@@ -122,6 +142,7 @@ export function migratePowers(raw: unknown): PowersState {
   base.seen = d.seen && typeof d.seen === 'object' ? d.seen : {};
   base.nextId = typeof d.nextId === 'number' ? d.nextId : 1;
   base.lastMonth = typeof d.lastMonth === 'number' ? d.lastMonth : -1;
+  base.era = typeof d.era === 'number' ? d.era : 1;
   return base;
 }
 
@@ -160,6 +181,7 @@ export function initAt(st: PowersState, t: number): void {
   }
   for (const id of FRONT_IDS) st.fronts[id].stage = stageOfPoints(pointsOf(st.fronts[id]));
   st.lastMonth = Math.floor(t / MONTH);
+  st.era = ERA;
 }
 
 // ---------------------------------------------------------------------------------------------
