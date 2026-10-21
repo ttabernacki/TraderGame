@@ -8,7 +8,7 @@ import { powerOfName } from '../world/powers/core';
 import { hasClause } from '../identity/clauses';
 import { wordDays } from '../identity/titles';
 import { polityOfPort, POLITY_BY_ID } from '../diplomacy/polities';
-import type { Nation, Business } from './encounter';
+import type { Nation } from './encounter';
 import type { Game } from './state';
 
 /**
@@ -467,7 +467,7 @@ function passengerFor(m: MasterRec, rng: Rng): Passenger {
     case 'pilot':
       return { kind, name: person, to, weight: ERRANDS.pilot, errand: `${person}, a pilot out of work since his ship was lost, going to ${dest} to find another.` };
     default:
-      return { kind, name: person, to, weight: ERRANDS.gift, errand: `${person}, with a prince’s gift for ${dest}: ${rng.pick(GIFTS[m.nation] ?? GIFTS.swahili)}.` };
+      return { kind, name: person, to, weight: ERRANDS.gift, errand: `${person}, with a prince’s gift for ${dest}: ${rng.pick(GIFTS[m.nation] ?? GIFTS.swahili ?? ['a sealed box'])}.` };
   }
 }
 

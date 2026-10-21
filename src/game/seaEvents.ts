@@ -27,6 +27,8 @@ export interface SeaChoice {
   detail: string;
   /** Carry it out. Returns what goes in the log. */
   resolve: (g: Game) => string;
+  /** A hail's term (game/terms.ts): parley, search, pass, gift, licence, toll or stop. For the falsifier and the card. */
+  term?: string;
 }
 
 export interface SeaEvent {
@@ -43,6 +45,8 @@ export interface SeaEvent {
   facts?: Record<string, number>;
   /** A question put at the chart table rather than something happening on deck. */
   council?: boolean;
+  /** The man behind a hail (D7): shown as a compact line under the title. */
+  who?: { name: string; home: string; errand: string; read: string };
 }
 
 /** Everything an event needs to know about the ship's situation. */

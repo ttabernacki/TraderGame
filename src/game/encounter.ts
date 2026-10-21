@@ -5,6 +5,10 @@ import { polarAt, polarNoGo } from '../ship/polars';
 import { hullClass } from '../ship/hull';
 import type { Rng } from '../core/rng';
 import type { Game } from './state';
+import {
+  CULTURES, infoOf, meetingFor, pickMaster,
+  type CargoLot, type MasterInfo, type Owner, type Passenger,
+} from './strangers';
 
 /**
  * A strange sail.
@@ -32,7 +36,9 @@ import type { Game } from './state';
  * own ship.
  */
 
-export type Nation = 'portuguese' | 'castilian' | 'genoese' | 'moorish' | 'french';
+export type Nation = 'portuguese' | 'castilian' | 'genoese' | 'moorish' | 'french'
+  // The Indian Ocean (D7): the peoples whose ships the Rule is about.
+  | 'swahili' | 'arab' | 'gujarati' | 'malabari';
 
 export type Business =
   /** Honest freight between known ports. */
@@ -108,6 +114,39 @@ export interface Stranger {
   rival?: boolean;
   /** A course she is making for on her own account, sailed as well as she can. */
   course?: number;
+  // --- Strangers as people (D7). All optional: a save from before them has none, and is hailed as it was. ---
+  /** The man at her helm: roster id, name, home, temper, and what the Ledger makes of the captain to him. */
+  masterInfo?: MasterInfo;
+  /** Whose ship she is, when it is not the master's own. */
+  owner?: Owner;
+  /** Who is aboard for a reason of his own. */
+  passengers?: Passenger[];
+  /** What is in her hold. */
+  cargo?: CargoLot[];
+  /** The people id of the flag she sails under. */
+  people?: string;
+  /** What the lookout makes of her colours, in a phrase. */
+  flag?: string;
+  /** What she is about, in a sentence: the first passenger's errand, or the freight. */
+  errand?: string;
+  /** The water she was raised in. */
+  region?: SeaRegion;
+}
+
+/** The water a position is in, for who may be sailing it. */
+export type SeaRegion = 'atlantic' | 'algarve' | 'swahili' | 'arabian' | 'crossing' | 'gujarat' | 'malabar';
+export function seaRegionAt(at: LatLon): SeaRegion {
+  const lon = wrap180(at.lon);
+  const lat = at.lat;
+  if (lon >= 24 && lat >= -27 && lat < 32) {
+    if (lon < 52 && lat < 6) return 'swahili';
+    if (lon < 62) return lat >= 6 || lon >= 52 ? 'arabian' : 'swahili';
+    if (lat >= 15) return 'gujarat';
+    if (lon >= 68) return 'malabar';
+    return 'crossing';
+  }
+  if (lat > 35.5 && lat < 38 && lon > -10 && lon < -5.5) return 'algarve';
+  return 'atlantic';
 }
 
 // -----------------------------------------------------------------------------
@@ -120,6 +159,8 @@ const SHIP_NAMES: Record<Nation, string[]> = {
   genoese: ['Santa Caterina', 'La Superba', 'San Giorgio', 'La Fortuna'],
   moorish: ['Al-Fath', 'Rih al-Bahr', 'Bab al-Nasr', 'Al-Ghazi'],
   french: ['Marie de Dieppe', 'La Pensée', 'Le Sacre', 'La Bonne Aventure'],
+  // Replaced by the master's own boat as soon as the sail is raised (see raiseASail).
+  swahili: ['Kheri'], arab: ['Al-Najah'], gujarati: ['Lakshmi'], malabari: ['Barakath'],
 };
 
 const MASTERS: Record<Nation, string[]> = {
@@ -129,6 +170,8 @@ const MASTERS: Record<Nation, string[]> = {
   genoese: ['Bartolomeo Grimaldi', 'Antonio Doria', 'Nicoloso Spinola'],
   moorish: ['Sidi Muhammad al-Zarruq', 'Ali ben Yusuf', 'Umar al-Tanji'],
   french: ['Jean Cousin', 'Guillaume de Sores', 'Robert Estienne'],
+  // Replaced by the roster's invented masters as soon as the sail is raised (see raiseASail).
+  swahili: [''], arab: [''], gujarati: [''], malabari: [''],
 };
 
 export const NATION_NAME: Record<Nation, string> = {
@@ -137,6 +180,10 @@ export const NATION_NAME: Record<Nation, string> = {
   genoese: 'Genoese',
   moorish: 'Moorish',
   french: 'French',
+  swahili: 'Swahili',
+  arab: 'Arab',
+  gujarati: 'Gujarati',
+  malabari: 'Malabari',
 };
 
 /** The people id each flag answers to, for the relations they share. */
@@ -146,6 +193,10 @@ export const NATION_PEOPLE: Record<Nation, string> = {
   genoese: 'castilian',
   moorish: 'moor',
   french: 'castilian',
+  swahili: 'swahili',
+  arab: 'arab',
+  gujarati: 'gujarati',
+  malabari: 'malabar',
 };
 
 /**
@@ -176,6 +227,8 @@ export function trafficAt(at: LatLon): number {
 
 /** The flags that could plausibly be in this water, with weights. */
 function flagsAt(g: Game, at: LatLon): { nation: Nation; business: Business; w: number }[] {
+  const region = seaRegionAt(at);
+  if (region !== 'atlantic' && region !== 'algarve') return indianFlags(g, region);
   const lat = at.lat;
   const near = portsNear(at, 700)[0];
   const people = near?.def.people ?? null;
@@ -205,7 +258,7 @@ function flagsAt(g: Game, at: LatLon): { nation: Nation; business: Business; w: 
     // A friendly sultan's galleys keep his coast, and the corsairs know whose
     // friend you are.
     const ally = g.alliedWatersAt(at.lat, at.lon);
-    out.push({ nation: 'moorish', business: 'corsair', w: (lat > 28 ? 1.1 : 0.35) * (ally ? 0.3 : 1) });
+    out.push({ nation: 'moorish', business: 'corsair', w: (lat > 28 ? 1.1 : 0.35) * (ally ? 0.3 : 1) * (region === 'algarve' ? 1.6 : 1) });
   }
 
   // Somebody in trouble, anywhere, and more likely the worse the weather has
@@ -218,8 +271,37 @@ function flagsAt(g: Game, at: LatLon): { nation: Nation; business: Business; w: 
   return out;
 }
 
+/**
+ * Who is sailing the Indian Ocean (D7). The ships of the Rule: Swahili, Arab, Gujarati and Malabari merchantmen
+ * on the monsoon road, a few boats fishing and now and then one in trouble. By culture and by water, not by
+ * the Portuguese flag the Atlantic table is written for.
+ */
+function indianFlags(g: Game, region: SeaRegion): { nation: Nation; business: Business; w: number }[] {
+  const mix: Record<string, [Nation, number][]> = {
+    swahili: [['swahili', 3], ['arab', 1.2], ['gujarati', 0.8], ['malabari', 0.5]],
+    arabian: [['arab', 2.5], ['gujarati', 1.2], ['swahili', 0.6], ['malabari', 0.8]],
+    crossing: [['gujarati', 1.8], ['arab', 1.5], ['malabari', 1], ['swahili', 0.4]],
+    gujarat: [['gujarati', 3], ['arab', 1.2], ['malabari', 1]],
+    malabar: [['malabari', 3], ['gujarati', 1.2], ['arab', 1], ['swahili', 0.3]],
+  };
+  const out: { nation: Nation; business: Business; w: number }[] = [];
+  const nations = mix[region] ?? mix.crossing;
+  for (const [nation, w] of nations) out.push({ nation, business: 'trader', w });
+  const first = nations[0][0];
+  out.push({ nation: first, business: 'fisher', w: 0.6 });
+  out.push({
+    nation: g.rng.chance(0.5) ? first : nations[Math.min(1, nations.length - 1)][0],
+    business: 'distressed', w: 0.4 + clamp(g.weatherNow.waveHeight / 6, 0, 1),
+  });
+  return out;
+}
+
 /** What sort of hull that errand is sailed in. */
 function hullFor(business: Business, nation: Nation, rng: Rng): string {
+  // No dhow or baghla mesh yet (docs/RENDER_UPGRADE.md): the lateen caravel and the small nau stand in for them.
+  if (nation === 'swahili' || nation === 'arab' || nation === 'gujarati' || nation === 'malabari') {
+    return business === 'fisher' ? 'barcha' : rng.pick(CULTURES[nation].hulls);
+  }
   switch (business) {
     case 'corsair':
       return rng.chance(0.7) ? 'caravela-latina' : 'caravela-redonda';
@@ -273,7 +355,7 @@ export function raiseASail(g: Game, rangeNm: number): Stranger | null {
   const bearing = wrap360(g.ship.state.heading + g.rng.range(-115, 115));
   const pos = rhumbStep(at, bearing, rangeNm * NM);
 
-  return {
+  const s: Stranger = {
     hullId,
     nation: choice.nation,
     business: choice.business,
@@ -292,6 +374,46 @@ export function raiseASail(g: Game, rangeNm: number): Stranger | null {
     spoken: false,
     awareT: null,
   };
+  peopleAboard(g, s);
+  return s;
+}
+
+const FLAG_OF: Record<Nation, string> = {
+  portuguese: 'the white flag with the blue cross of Christ',
+  castilian: 'a red cross on white, Castile\u2019s castle and lion at the masthead',
+  genoese: 'the red cross of St George',
+  moorish: 'a plain green pennant',
+  french: 'a white cross on blue',
+  swahili: 'a long red pennant, a sultan\u2019s port by the cut of it',
+  arab: 'a green pennant with a few words of script worked into it',
+  gujarati: 'a swallow-tailed pennant, and a painted eye at the bow',
+  malabari: 'a small green flag and a painted eye on the bow',
+};
+
+/**
+ * Give the sail a man (D7): the master of a roster house with a name and a temper, her owner, whoever is aboard
+ * on an errand of his own and what is in the hold. Draws nothing from the game's own dice, so the Atlantic
+ * meets the sails it always did; only what is written on her changes.
+ */
+export function peopleAboard(g: Game, s: Stranger): void {
+  const rec = pickMaster(g, s.nation, s.pos);
+  const m = meetingFor(g.seed, g.ledger, rec);
+  const info = infoOf(g, rec);
+  s.masterInfo = info;
+  s.master = rec.name;
+  s.name = rec.boat;
+  s.owner = rec.owner;
+  s.passengers = m.passengers;
+  s.cargo = m.cargo;
+  s.people = rec.people;
+  s.flag = FLAG_OF[s.nation];
+  s.errand = m.errand;
+  s.region = seaRegionAt(s.pos);
+  // A man who thinks well of the captain comes down to be spoken to; one who does not, hauls off.
+  if (s.business === 'trader') {
+    if (info.regard >= 0.3 && s.intent === 'hold') s.intent = 'close';
+    else if (info.regard <= -0.3) s.intent = 'avoid';
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -426,9 +548,17 @@ export function strangerThinks(g: Game, s: Stranger, rangeNm: number): void {
     case 'distressed':
       s.intent = 'hold';
       break;
-    default:
-      s.intent = g.rng.chance(0.45) ? 'close' : 'hold';
+    default: {
+      const roll = g.rng.chance(0.45);
+      s.intent = roll ? 'close' : 'hold';
+      // The master has met the captain before, or has heard of him (D7).
+      const r = s.masterInfo?.regard;
+      if (r !== undefined && s.business === 'trader') {
+        if (r >= 0.3) s.intent = 'close';
+        else if (r <= -0.3) s.intent = 'avoid';
+      }
       break;
+    }
   }
 }
 
