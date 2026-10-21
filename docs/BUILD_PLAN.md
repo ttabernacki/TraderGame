@@ -1,5 +1,7 @@
 # Carreira da Índia — Structural Build Plan
 
+> **Status (build plan):** phases A–D are built (A1–A5, B1–B4, C1–C5, D1–D7) plus the India lot depth and the renderer upgrade (R0–R5, water filtering). Open: phase E (storylet web, dynasty-lite, remaining Fronts), a Court-Front tick, the Rua Nova Lines side, and real-browser/real-GPU verification of everything.
+
 Status: approved direction, ready to delegate. Synthesised from the design-team round 2
 (`docs/design-team/v2-gameplay.md`, `v2-story.md`, `v2-devils-advocate.md`; v1 files are superseded).
 Read those for rationale and numbers; this document is the **single source of truth for what to build,
