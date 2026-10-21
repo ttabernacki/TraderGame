@@ -13,11 +13,11 @@ export type FrontId = 'gold' | 'traffic' | 'claim' | 'crescent' | 'rule' | 'cour
 export const FRONT_IDS: FrontId[] = ['gold', 'traffic', 'claim', 'crescent', 'rule', 'court'];
 
 export type PowerId =
-  | 'crown' | 'castile' | 'mamluk' | 'kilwa' | 'melinde' | 'calicut' | 'cochin' | 'kongo'
+  | 'crown' | 'castile' | 'mamluk' | 'kilwa' | 'mombasa' | 'melinde' | 'calicut' | 'cochin' | 'gujarat' | 'kongo'
   // Inside the Traffic: they predate the Portuguese and have their own interests.
   | 'akan' | 'benin' | 'sahel';
 export const POWER_IDS: PowerId[] = [
-  'crown', 'castile', 'mamluk', 'kilwa', 'melinde', 'calicut', 'cochin', 'kongo', 'akan', 'benin', 'sahel',
+  'crown', 'castile', 'mamluk', 'kilwa', 'mombasa', 'melinde', 'calicut', 'cochin', 'gujarat', 'kongo', 'akan', 'benin', 'sahel',
 ];
 
 /** Stage points a Front stage spans. A Front runs 0..16; stages begin at 0, 4, 8, 12. */
@@ -82,7 +82,7 @@ export interface FrontDef {
 /** An active thing in the world: an embargo, a war, a stage's toll. `marketModifiers` reads these. */
 export interface Effect {
   id: number;
-  kind: 'embargo' | 'war' | 'register' | 'push' | 'succession' | 'blockade' | 'stub';
+  kind: 'embargo' | 'war' | 'register' | 'push' | 'succession' | 'blockade' | 'stub' | 'convoy' | 'welcome';
   power: PowerId;
   ports: string[];
   start: number;
@@ -195,6 +195,14 @@ export interface LocalFight {
   at?: number;
 }
 
+/** The Rule's reading of the captain's conduct, fixed when Act V opens (powers/rule.ts). */
+export interface RuleState {
+  /** When Act V was first seen; conduct after this moves the Rule a third as much. */
+  lockedAt?: number;
+  /** The stage the Rule stood at then. */
+  stage?: number;
+}
+
 export interface PowersState {
   v: 1;
   fronts: Record<FrontId, FrontState>;
@@ -203,6 +211,9 @@ export interface PowersState {
   rumours: Rumour[];
   parcels: Parcel[];
   local: LocalFight;
+  /** The Rule's one winnable local fight (the list at Melinde). Additive: older saves default it. */
+  localRule?: LocalFight;
+  rule?: RuleState;
   /** Ledger entries already folded into the Fronts and attitudes. */
   cursor: number;
   /** Dated shocks already applied. */

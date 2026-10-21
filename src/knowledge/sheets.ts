@@ -72,9 +72,10 @@ export const STANDING = { casa: 16, gift: 30, publish: 22 } as const;
 export const HEAT = { genoese: 8, rival: 14 } as const;
 /** Below this gain there is nothing to sell. */
 export const MIN_GAIN = 0.2;
-/** Survey speed: the flagship's offing pass runs at this rate. A Pilot Calling roughly doubles it (not built yet). */
+/** Survey speed: the flagship's offing pass runs at this rate. The Pilot Calling doubles it (identity/calling). */
 export const SURVEY_RATE = { base: 1, pilot: 2 };
-export const surveyRate = (_g?: unknown): number => SURVEY_RATE.base;
+export const surveyRate = (g?: unknown): number =>
+  (g as { identity?: { calling?: string | null } } | undefined)?.identity?.calling === 'pilot' ? SURVEY_RATE.pilot : SURVEY_RATE.base;
 
 // -- What the captain holds ---------------------------------------------------------
 

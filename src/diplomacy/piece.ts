@@ -37,6 +37,8 @@ export interface Outcome {
   also?: { polity: string; marks: NewMark[]; measures?: { trust?: number; respect?: number; interest?: number } }[];
   /** For an audience: how the presents were taken. */
   gift?: { value: number; loved: boolean; scorned: boolean };
+  /** Set by the Table when the piece ends: the clause it named, granted, refused or poisoned (identity/clauses). */
+  clauseLine?: string;
 }
 
 export interface PieceScene {
@@ -78,7 +80,7 @@ export interface PieceRun {
   started: number;
   state: unknown;
   /** Set once resolved; kept so the ledger can say what came of it. */
-  outcome?: { grade: Grade; line: string; t: number };
+  outcome?: { grade: Grade; line: string; t: number; clause?: string };
 }
 
 export interface PiecesState {

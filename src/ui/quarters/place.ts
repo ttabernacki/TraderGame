@@ -3,7 +3,7 @@ import { people } from '../../world/peoples';
 import type { PortDef } from '../../world/ports';
 import type { Game } from '../../game/state';
 import {
-  activeEntries, arcProgress, memoryLines, nextEntry, patronOf, stageWord, stopOf, type DeepPort,
+  activeEntries, arcProgress, memoryLines, nextEntry, patronOf, patronsIn, shortName, stageWord, stopOf, type DeepPort, type PatronDef,
 } from '../../places';
 import { STAGES } from '../../places/types';
 import { card, el, fold, kv } from '../dom';
@@ -53,27 +53,35 @@ export function deepPlaceCard(g: Game, def: PortDef, deep: DeepPort): HTMLElemen
 
 /** The Patron: who he is, what he thinks of you and why, what he gives, and where his story stands. */
 export function patronCard(g: Game, deep: DeepPort): HTMLElement {
-  const v = patronOf(g, deep);
-  const p = deep.patron;
+  const cards = patronsIn(deep).map((p, i) => onePatron(g, deep, p, i === 0));
+  return cards.length === 1 ? cards[0] : verb('place.patron', el('div', {}, ...cards));
+}
+
+function onePatron(g: Game, deep: DeepPort, p: PatronDef, first: boolean): HTMLElement {
+  const v = patronOf(g, deep, p);
   const arc = arcProgress(g, deep);
+  const aside = p.aside?.(g) ?? null;
+  const ownsArc = deep.arc.length > 0 && (deep.arc[0].patron ? deep.arc[0].patron === p.id : first);
   const dots = STAGES.map((s) => el('span', { class: `patron-stage${s === v.stage ? ' now' : STAGES.indexOf(s) < STAGES.indexOf(v.stage) ? ' past' : ''}` }, stageWord(s)));
-  return verb('place.patron', card(`${p.name}, ${p.title}`,
+  const body = card(`${p.name}, ${p.title}`,
     el('p', { class: 'flavour' }, p.of.charAt(0).toUpperCase() + p.of.slice(1) + '.'),
     el('p', { class: 'patron-says' }, p.greet[v.stage]),
     el('div', { class: 'patron-track' }, ...dots),
-    kv('To you, he is', stageWord(v.stage)),
+    kv(`To you, ${shortName(p)} is`, stageWord(v.stage)),
     v.reasons.length
       ? el('ul', { class: 'list patron-reasons' }, ...v.reasons.slice(0, 3).map((r) => el('li', { class: r.delta < 0 ? 'bad' : 'good' }, `${r.delta < 0 ? '−' : '+'} ${r.why}`)))
       : el('p', { class: 'flavour' }, 'Nothing you have done on this coast has been weighed yet. Come ashore, and deal.'),
     ...v.shown.map((k) => el('p', { class: 'perk on' }, el('b', {}, '✓ '), k.text)),
     ...v.locked.map((k) => el('p', { class: 'perk off' }, el('b', {}, `(${stageWord(k.stage)}) `), k.text)),
     fold('Who he is', '', false, ...p.bio.map((b) => el('p', {}, b))),
-    arc.total > 0
+    aside ? el('p', { class: 'patron-says' }, aside) : null,
+    ownsArc && arc.total > 0
       ? el('p', { class: 'flavour' }, arc.done === arc.total
-        ? 'His story with you is told.'
-        : arc.next ? `His own matter (${arc.done} of ${arc.total}): it will come up on a call, when he trusts you enough to raise it.` : '')
+        ? `${shortName(p)}’s story with you is told.`
+        : arc.next ? `${shortName(p)}’s own matter (${arc.done} of ${arc.total}): it will come up on a call, when there is trust enough to raise it.` : '')
       : null,
-  ));
+  );
+  return deep.others?.length ? body : verb('place.patron', body);
 }
 
 /** What the place says of what the captain did here. */

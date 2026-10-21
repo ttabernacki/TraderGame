@@ -85,7 +85,7 @@ export function newPowers(): PowersState {
   const powers = {} as Record<PowerId, PowerState>;
   for (const id of POWER_IDS) powers[id] = newPower(id, rel[id]);
   return {
-    v: 1, fronts, powers, effects: [], rumours: [], parcels: [], local: { state: 'unmet' },
+    v: 1, fronts, powers, effects: [], rumours: [], parcels: [], local: { state: 'unmet' }, localRule: { state: 'unmet' }, rule: {},
     cursor: 0, shocksDone: [], seen: {}, nextId: 1, lastMonth: -1,
   };
 }
@@ -115,6 +115,8 @@ export function migratePowers(raw: unknown): PowersState {
   base.rumours = Array.isArray(d.rumours) ? d.rumours.filter((r) => r && typeof r.born === 'number') : [];
   base.parcels = Array.isArray(d.parcels) ? d.parcels.filter((p) => p && typeof p.n === 'number') : [];
   base.local = { ...base.local, ...(d.local ?? {}) };
+  base.localRule = { state: 'unmet', ...(d.localRule ?? {}) };
+  base.rule = { ...(d.rule ?? {}) };
   base.cursor = typeof d.cursor === 'number' ? d.cursor : 0;
   base.shocksDone = Array.isArray(d.shocksDone) ? d.shocksDone : [];
   base.seen = d.seen && typeof d.seen === 'object' ? d.seen : {};

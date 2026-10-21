@@ -18,6 +18,10 @@ import { checkFact } from '../src/knowledge/informers';
 import { along, TRUNK } from '../src/progression/road';
 import { HISTORY } from '../src/progression/chronicle';
 import { TRAFFIC_SCENES, dueTrafficScene, sceneOffered } from '../src/progression/trafficScenes';
+import { POWER_SCENES, duePowerScene, powerSceneOffered } from '../src/progression/powerScenes';
+import { CONDUCT, ruleReading } from '../src/world/powers/rule';
+import { lanesAt, laneStateOf } from '../src/world/lanes';
+import { activeEffects } from '../src/world/powers';
 import {
   ATTITUDES, FRONTS, FRONT_DELTAS, FRONT_IDS, IDENTITY, POWERS, POWER_IDS, READERS, SCHEDULE,
   addEffect, arriveAt, declaredReaders, foldEntry, hops, marketModifiers, migratePowers, newPowers, pointsOf, seedRelations,
@@ -39,7 +43,7 @@ const entry = (tag: string, over: Partial<Entry> = {}): Entry => ({
 
 // ---- 1. The tables ------------------------------------------------------------------------------------
 {
-  check('front-delta table is about sixty rows', FRONT_DELTAS.length >= 55 && FRONT_DELTAS.length <= 75, `${FRONT_DELTAS.length} rows`);
+  check('front-delta table is of the order of eighty rows', FRONT_DELTAS.length >= 55 && FRONT_DELTAS.length <= 95, `${FRONT_DELTAS.length} rows`);
   check('attitude table is data of the same order', ATTITUDES.length >= 40, `${ATTITUDES.length} rows`);
   const badTag = [...FRONT_DELTAS, ...ATTITUDES].filter((r) => !isTag(r.tag)).map((r) => r.tag);
   check('every row names a real Ledger tag', badTag.length === 0, badTag.join(','));
@@ -76,10 +80,11 @@ const entry = (tag: string, over: Partial<Entry> = {}): Entry => ({
   const fxGoods = new Set<string>();
   for (const f of FRONT_IDS) for (const e of FRONTS[f].effects) for (const m of [e.price, e.stock, e.appetite]) for (const k of Object.keys(m ?? {})) fxGoods.add(k);
   check('stage effects name only real goods', [...fxGoods].every((g) => GOODS.some((x) => x.id === g)));
-  check('all six Fronts defined, two tick', FRONT_IDS.length === 6 && FRONT_IDS.filter((f) => FRONTS[f].ticks).join() === 'gold,traffic'.split(',').sort((a, b) => FRONT_IDS.indexOf(a as never) - FRONT_IDS.indexOf(b as never)).join() || FRONT_IDS.filter((f) => FRONTS[f].ticks).length === 2);
-  check('eleven Powers, only Kongo ticks', POWERS.length === 11 && POWERS.filter((p) => p.ticks).map((p) => p.id).join() === 'kongo');
+  check('all six Fronts defined; five tick (the Court is dormant)', FRONT_IDS.length === 6 && FRONT_IDS.filter((f) => FRONTS[f].ticks).sort().join() === 'claim,crescent,gold,rule,traffic');
+  check('thirteen Powers; every one but the Crown moves', POWERS.length === 13 && POWERS.filter((p) => !p.ticks).map((p) => p.id).join() === 'crown');
+  check('Kilwa, Mombaça and Melinde are three Powers, and Gujarat is its own', ['kilwa', 'mombasa', 'melinde', 'gujarat'].every((id) => POWERS.some((p) => p.id === id)));
   const rel = seedRelations();
-  check('relations are seeded from allies and feuds', (rel.kilwa.melinde ?? 0) < 0 && (rel.mamluk.calicut ?? 0) > 0 && (rel.calicut.cochin ?? 0) < 0, `kilwa-melinde ${rel.kilwa.melinde} mamluk-calicut ${rel.mamluk.calicut}`);
+  check('relations are seeded from allies and feuds', (rel.mombasa.melinde ?? 0) < 0 && (rel.kilwa.mombasa ?? 0) > 0 && (rel.gujarat.calicut ?? 0) > 0 && (rel.calicut.cochin ?? 0) < 0 && (rel.aden?.calicut ?? 0) === 0, `mombasa-melinde ${rel.mombasa.melinde} gujarat-calicut ${rel.gujarat.calicut}`);
   const noDate = SCHEDULE.filter((s) => shockTime(s.id) === null).map((s) => s.id);
   check('every dated shock resolves a date (history ones from chronicle HISTORY)', noDate.length === 0, noDate.join(','));
   check('every dated shock carries a source note', SCHEDULE.every((s) => s.source.length > 20));
@@ -87,33 +92,80 @@ const entry = (tag: string, over: Partial<Entry> = {}): Entry => ({
 
 // ---- 2. Two hundred seeds, twenty years, a random player ------------------------------------------------------
 const POOL = ALL_TAGS.filter((t) => FRONT_DELTAS.some((r) => r.tag === t) || ATTITUDES.some((r) => r.tag === t));
-const TARGETS = ['kongo', 'eguafo', 'castile', 'kilwa', 'calicut', 'portugal', 'malindi', 'mpinda', 'mina', 'arguim', 'benin'];
-const PLACES = ['', 'arguim', 'mina', 'mpinda', 'lisboa', 'melinde', 'calecute', 'axim'];
-interface Run { host: PowersHost; seen: number; wrong: number; ledger: Entry[] }
-function playSeed(seed: number, years: number, policy: 'random' | 'carry' | 'refuse'): Run {
+const TARGETS = ['kongo', 'eguafo', 'castile', 'kilwa', 'calicut', 'portugal', 'malindi', 'mpinda', 'mina', 'arguim', 'benin', 'mombasa', 'cochin', 'gujarat', 'aden', 'kolathiri', 'melinde'];
+const PLACES = ['', 'arguim', 'mina', 'mpinda', 'lisboa', 'melinde', 'calecute', 'axim', 'quiloa', 'mombaca', 'cochim', 'cananor'];
+interface Tel {
+  /** Wars begun, months with the lane shut, and whether the lane sim carried goods through the port again afterwards. */
+  sw: { wars: number; shut: number; zeroFlowShut: number; flowAfter: boolean; starts: number[] };
+  mb: { wars: number; shut: number; zeroFlowShut: number; flowAfter: boolean; starts: number[] };
+  staleIntoWar: number;
+}
+interface Run { host: PowersHost; seen: number; wrong: number; ledger: Entry[]; tel: Tel }
+type Policy = 'random' | 'carry' | 'refuse' | 'stop' | 'spare';
+const flowAt = (h: PowersHost, port: string): number => lanesAt(port).reduce((sum, l) => sum + (laneStateOf(h).flow[l.id] ?? 0), 0);
+function playSeed(seed: number, years: number, policy: Policy): Run {
   const h = makeHost(seed) as PowersHost;
   h.powers = newPowers();
   h.ledger = [];
+  // The game wires this in state.ts; the lane sim reads the Powers through it.
+  h.markets.modifiers = (p, t) => marketModifiers(p, t, h.powers);
   const rng = new Rng(seed * 7919 + 13);
   let seen = 0, wrong = 0;
+  const tel: Tel = {
+    sw: { wars: 0, shut: 0, zeroFlowShut: 0, flowAfter: false, starts: [] },
+    mb: { wars: 0, shut: 0, zeroFlowShut: 0, flowAfter: false, starts: [] },
+    staleIntoWar: 0,
+  };
+  const was = { sw: false, mb: false };
   for (let m = 0; m < years * 12; m++) {
     tickWorld(h, 1);
     const t = h.worldT!;
-    // a random captain: a few deeds a year, and a call at some port every month
-    if (rng.chance(0.5)) {
+    const st = h.powers!;
+    // The wars, and what the lane sim does at the shut quays: Mombaça-Melinde at Mombaça, Calicut-Cochim at Cochim.
+    for (const [k, power, port] of [['sw', 'mombasa', 'mombaca'], ['mb', 'calicut', 'cochim']] as const) {
+      const on = activeEffects(st, t).some((e) => e.power === power && e.kind === 'war');
+      const x = tel[k];
+      if (on && !was[k]) { x.wars++; x.starts.push(m); }
+      // The first month of a war is the month the lane pass ran before the war was declared; count from the second.
+      if (on && was[k]) {
+        x.shut++;
+        if (marketModifiers(port, t, st).laneClosed && flowAt(h, port) === 0) x.zeroFlowShut++;
+      } else if (!on && x.wars > 0 && flowAt(h, port) > 0) x.flowAfter = true;
+      was[k] = on;
+    }
+    if (policy === 'stop' || policy === 'spare') {
+      // Act IV, spring 1498 to autumn 1501: every few months, at Calecute and Kilwa, the same conduct.
+      const y = 1482 + 6.5 / 12 + m / 12;
+      if (y >= 1498.3 && y < 1501.8 && m % 3 === 0) {
+        const place = (m / 3) % 2 === 0 ? 'calecute' : 'quiloa';
+        const target = place === 'calecute' ? 'calicut' : 'kilwa';
+        if (policy === 'stop') h.ledger.push(entry('ship.stopped', { t, place, target, magnitude: 0.6 }));
+        else { h.ledger.push(entry('ship.spared', { t, place, target, magnitude: 0.5 })); h.ledger.push(entry('pass.granted', { t, place, target, magnitude: 0.5 })); }
+      }
+    } else if (rng.chance(0.5)) {
+      // a random captain: a few deeds a year, and a call at some port every month
       const tag = policy === 'carry' && rng.chance(0.6) ? 'traffic.carried' : policy === 'refuse' && rng.chance(0.6) ? 'hearing.contested' : rng.pick(POOL);
       h.ledger.push(entry(tag, { t, place: rng.pick(PLACES), target: rng.pick(TARGETS), magnitude: rng.range(0.2, 1) }));
     }
-    const port = rng.pick(['arguim', 'mina', 'mpinda', 'benguela', 'lagos', 'funchal', 'lisboa']);
+    const port = rng.pick(['arguim', 'mina', 'mpinda', 'benguela', 'lagos', 'funchal', 'lisboa', 'mocambique', 'melinde', 'calecute', 'cochim', 'quiloa', 'mombaca']);
     const a = arriveAt(h, port, t);
     seen += a.heard.length;
     wrong += a.settled.filter((r) => r.settled === 'not borne out').length;
+    // A tale that was true once, heard after it stopped being so, about a quay that is shut now.
+    for (const { rumour: r } of a.heard) {
+      const id = /^effect:(\d+)$/.exec(r.event)?.[1];
+      if (r.truth !== 'stale' || !id) continue;
+      const e = st.effects.find((x) => x.id === Number(id));
+      if (e && (e.kind === 'war' || e.kind === 'embargo' || e.kind === 'blockade') && e.start <= t && t < e.end && marketModifiers(r.place, t, st).laneClosed) tel.staleIntoWar++;
+    }
   }
-  return { host: h, seen, wrong, ledger: h.ledger };
+  return { host: h, seen, wrong, ledger: h.ledger, tel };
 }
 {
   const t0 = Date.now();
-  const endStage: Record<string, number[]> = { traffic: [], gold: [] };
+  const endStage: Record<string, number[]> = { traffic: [], gold: [], claim: [], crescent: [], rule: [] };
+  const swSeeds: number[] = [], mbSeeds: number[] = [], swStarts = new Set<number>(), mbStarts = new Set<number>();
+  let swReopen = 0, mbReopen = 0, swZero = 0, mbZero = 0, swShut = 0, mbShut = 0, staleWar = 0, staleWarSeeds = 0, powerMoves = 0;
   let kongoMoves = 0, kongoSeeds = 0, rumours = 0, unresolved = 0, wrongSeeds = 0, staleOrFalse = 0, heardTotal = 0;
   const kinds = new Map<string, number>();
   const dormant: string[] = [];
@@ -121,7 +173,16 @@ function playSeed(seed: number, years: number, policy: 'random' | 'carry' | 'ref
   for (let s = 1; s <= SEEDS; s++) {
     const run = playSeed(s, YEARS, 'random');
     const st = run.host.powers!;
-    for (const f of ['traffic', 'gold'] as const) endStage[f].push(st.fronts[f].stage);
+    for (const f of ['traffic', 'gold', 'claim', 'crescent', 'rule'] as const) endStage[f].push(st.fronts[f].stage);
+    const tl = run.tel;
+    if (tl.sw.wars > 0) swSeeds.push(s);
+    if (tl.mb.wars > 0) mbSeeds.push(s);
+    tl.sw.starts.forEach((m) => swStarts.add(m)); tl.mb.starts.forEach((m) => mbStarts.add(m));
+    if (tl.sw.flowAfter) swReopen++;
+    if (tl.mb.flowAfter) mbReopen++;
+    swZero += tl.sw.zeroFlowShut; mbZero += tl.mb.zeroFlowShut; swShut += tl.sw.shut; mbShut += tl.mb.shut;
+    staleWar += tl.staleIntoWar; if (tl.staleIntoWar > 0) staleWarSeeds++;
+    for (const id of ['kilwa', 'mombasa', 'melinde', 'calicut', 'cochin', 'gujarat', 'mamluk'] as const) powerMoves += st.powers[id].moves.length;
     kongoMoves += st.powers.kongo.moves.length;
     if (st.powers.kongo.moves.length >= 1) kongoSeeds++;
     for (const mv of st.powers.kongo.moves) kinds.set(mv.kind, (kinds.get(mv.kind) ?? 0) + 1);
@@ -142,7 +203,16 @@ function playSeed(seed: number, years: number, policy: 'random' | 'carry' | 'ref
   const share = (f: string, pred: (n: number) => boolean): number => endStage[f].filter(pred).length / SEEDS;
   console.log(`  ${SEEDS} seeds x ${YEARS} years in ${((Date.now() - t0) / 1000).toFixed(1)} s; traffic end stages ${[1, 2, 3, 4].map((k) => `${k}:${endStage.traffic.filter((x) => x === k).length}`).join(' ')}; gold ${[1, 2, 3, 4].map((k) => `${k}:${endStage.gold.filter((x) => x === k).length}`).join(' ')}`);
   console.log(`  Kongo: ${(kongoMoves / SEEDS).toFixed(1)} moves a run (${[...kinds].map(([k, n]) => `${k} ${n}`).join(', ')}); ${rumours} rumours made, ${heardTotal} heard`);
-  for (const f of ['traffic', 'gold']) check(`${f}: not pinned at an extreme (stage 1 or 4) in more than 80% of seeds`, share(f, (n) => n === 1 || n === 4) <= 0.8, `${(share(f, (n) => n === 1 || n === 4) * 100).toFixed(0)}% at an extreme`);
+  console.log(`  claim ${[1, 2, 3, 4].map((k) => `${k}:${endStage.claim.filter((x) => x === k).length}`).join(' ')}; crescent ${[1, 2, 3, 4].map((k) => `${k}:${endStage.crescent.filter((x) => x === k).length}`).join(' ')}; rule ${[1, 2, 3, 4].map((k) => `${k}:${endStage.rule.filter((x) => x === k).length}`).join(' ')}`);
+  console.log(`  Swahili war in ${swSeeds.length}/${SEEDS} seeds (${swStarts.size} distinct start months), Malabar war in ${mbSeeds.length}/${SEEDS} (${mbStarts.size}); ${(powerMoves / SEEDS).toFixed(1)} moves a run across the seven ticking courts`);
+  for (const f of ['traffic', 'gold', 'claim', 'crescent', 'rule']) check(`${f}: not pinned at an extreme (stage 1 or 4) in more than 80% of seeds`, share(f, (n) => n === 1 || n === 4) <= 0.8, `${(share(f, (n) => n === 1 || n === 4) * 100).toFixed(0)}% at an extreme`);
+  check('the Crescent and the Rule have moved by the end of the twenty years in most seeds', share('crescent', (n) => n >= 2) > 0.5 && share('rule', (n) => n >= 2) > 0.5);
+  check('a Swahili war begins in some seeds and not others, and at different months', swSeeds.length >= SEEDS * 0.1 && swSeeds.length < SEEDS && swStarts.size >= 6, `${swSeeds.length} seeds, ${swStarts.size} start months`);
+  check('a Malabar war begins in some seeds and not others, and at different months', mbSeeds.length >= SEEDS * 0.1 && mbSeeds.length < SEEDS && mbStarts.size >= 6, `${mbSeeds.length} seeds, ${mbStarts.size} start months`);
+  check('the Swahili war shuts the lane (the lane sim carries nothing through Mombaça) and the lane reopens (it carries again) in some seeds', swZero > 0 && swZero === swShut - (swShut - swZero) && swReopen >= 3, `${swZero}/${swShut} war months with the lane shut and no flow; reopened in ${swReopen} seeds`);
+  check('the Malabar war shuts the lane at Cochim and the lane reopens, in some seeds', mbZero > 0 && mbReopen >= 3, `${mbZero}/${mbShut} war months with the lane shut and no flow; reopened in ${mbReopen} seeds`);
+  check('while a war is on, the lane is shut in every month of it (trunk or not)', swZero === swShut && mbZero === mbShut, `sw ${swZero}/${swShut}, mb ${mbZero}/${mbShut}`);
+  check('a captain relying on a stale tale can arrive at a shut quay', staleWar > 0, `${staleWar} such tales heard in ${staleWarSeeds} seeds`);
   check('the Traffic moves: most seeds end beyond stage 1', share('traffic', (n) => n >= 2) > 0.8);
   check('Kongo has a non-trivial history in nearly every run', kongoSeeds / SEEDS >= 0.95 && kongoMoves / SEEDS >= 2, `${kongoSeeds}/${SEEDS} runs, ${(kongoMoves / SEEDS).toFixed(1)} moves`);
   check('every Power has an attitude that the Ledger can move (non-ticking ones included)', POWER_IDS.every((p) => ATTITUDES.some((r) => r.power === p || r.power === 'target') || p === 'crown'));
@@ -343,6 +413,170 @@ function playSeed(seed: number, years: number, policy: 'random' | 'carry' | 'ref
   })());
   check('migratePowers tolerates rubbish', migratePowers({ fronts: 5, rumours: 'x' }).fronts.traffic.stage === 1);
   void hops; void WMONTH;
+}
+
+// ---- 5. The Rule, the Crescent, the courts of the Indian Ocean (D4) ------------------------------------------------------
+{
+  // The conduct table agrees with the delta table about which way each deed pushes the Rule.
+  const disagree: string[] = [];
+  for (const c of CONDUCT) {
+    const rows = FRONT_DELTAS.filter((r) => r.front === 'rule' && r.tag === c.tag);
+    if (rows.length === 0) { disagree.push(`${c.tag}: no rule row`); continue; }
+    for (const r of rows) if (Math.sign(r.delta) !== c.lean) disagree.push(`${c.tag}:${r.delta}`);
+  }
+  check('the Book’s reading of the Rule agrees with the Front’s delta table, tag by tag', disagree.length === 0, disagree.join(' '));
+
+  // A stop-everyone captain and a spare-everyone captain, Calecute and Kilwa, Act IV, the same seeds.
+  let differ = 0, stopHigher = 0, n = 0;
+  const stages = { stop: [] as number[], spare: [] as number[] };
+  for (let seed = 1; seed <= Math.min(SEEDS, 40); seed++) {
+    const a = playSeed(seed, 20, 'stop'), b = playSeed(seed, 20, 'spare');
+    const sa = a.host.powers!.fronts.rule.stage, sb = b.host.powers!.fronts.rule.stage;
+    stages.stop.push(sa); stages.spare.push(sb);
+    n++; if (sa !== sb) differ++; if (sa > sb) stopHigher++;
+    const ra = ruleReading(a.host.powers, a.ledger), rb = ruleReading(b.host.powers, b.ledger);
+    if (seed === 1) {
+      console.log(`  Rule, stop-everyone: ${ra.line}`);
+      console.log(`  Rule, spare-everyone: ${rb.line}`);
+      check('the Book’s line says what the captain did, at the two places', /At Calecute you stopped/.test(ra.line) && /At Kilwa you stopped/.test(ra.line) && /let .* go/.test(rb.line) && /wrote .* passes?/.test(rb.line) && ra.conductStage > rb.conductStage);
+    }
+  }
+  check('the Rule’s stage differs between a stop-everyone and a spare-everyone policy in every seed, stopping the higher', differ === n && stopHigher === n, `stop ${[1, 2, 3, 4].map((k) => `${k}:${stages.stop.filter((x) => x === k).length}`).join(' ')} | spare ${[1, 2, 3, 4].map((k) => `${k}:${stages.spare.filter((x) => x === k).length}`).join(' ')}`);
+  check('stopping everyone reaches the stopping of ships; sparing everyone leaves a free sea', stages.stop.every((x) => x >= 3) && stages.spare.every((x) => x <= 2));
+
+  // A longer horizon for the Crescent and the Rule, where the dated shocks of 1505-15 are in force.
+  const longEnd: Record<string, number[]> = { crescent: [], rule: [], claim: [] };
+  const N30 = Math.min(SEEDS, 40);
+  for (let seed = 1; seed <= N30; seed++) {
+    const r = playSeed(seed, 31, 'random');
+    for (const f of ['crescent', 'rule', 'claim'] as const) longEnd[f].push(r.host.powers!.fronts[f].stage);
+  }
+  for (const f of ['crescent', 'rule', 'claim']) {
+    const ex = longEnd[f].filter((x) => x === 1 || x === 4).length / N30;
+    check(`${f}: not pinned at an extreme after thirty years either`, ex <= 0.8, `${(ex * 100).toFixed(0)}% at an extreme; ${[1, 2, 3, 4].map((k) => `${k}:${longEnd[f].filter((x) => x === k).length}`).join(' ')}`);
+  }
+
+  // The scenes.
+  const along_ = (p: string): number => along(anchorageOf(portDef(p)));
+  const ROAD = ['mocambique', 'quiloa', 'mombaca', 'melinde', 'calecute', 'cananor', 'cochim'];
+  check('the road order used by the scenes is the order along the road', ROAD.every((p, i) => i === 0 || along_(p) >= along_(ROAD[i - 1]) - 30), ROAD.map((p) => `${p}:${Math.round(along_(p))}`).join(' '));
+  const bad: string[] = [];
+  for (const sc of POWER_SCENES) {
+    if (!sc.ports.every((p) => ROAD.includes(p))) bad.push(`${sc.id}: off the Indian Ocean road`);
+    const last = Math.max(...sc.ports.map(along_));
+    for (const a of sc.after ?? []) {
+      const pre = POWER_SCENES.find((x) => x.id === a);
+      if (!pre) { bad.push(`${sc.id}: unknown after ${a}`); continue; }
+      if (Math.min(...pre.ports.map(along_)) > last + 1) bad.push(`${sc.id} needs ${a}, which is only further along`);
+    }
+  }
+  check('no court scene needs one that lies only further along the road (road.ts along())', bad.length === 0, bad.join('; '));
+  check('about a dozen court scenes at Melinde, Kilwa, Mombaça, Calecute, Cananor and Cochim', POWER_SCENES.length >= 12 && POWER_SCENES.length <= 14 && new Set(POWER_SCENES.flatMap((x) => x.ports)).size === 6, `${POWER_SCENES.length} scenes`);
+  check('scene ids do not collide with the Traffic’s', POWER_SCENES.every((x) => !TRAFFIC_SCENES.some((y) => y.id === x.id)));
+  const textBad: string[] = [];
+
+  // Sail the road forward, answering at random; every scene is reached on the forward road alone.
+  const reached = new Set<string>();
+  let crashes = 0;
+  for (let seed = 1; seed <= 40; seed++) {
+    const gg = new Game(seed);
+    gg.worldT = gg.clock.t;
+    gg.chronicle.act = 4;
+    gg.crown.gold = 8000;
+    gg.casa.regard = 0.3;
+    gg.powers.fronts.rule.base = 4.5; gg.powers.fronts.rule.stage = 2;
+    const r2 = new Rng(seed * 31);
+    for (let lap = 0; lap < 16; lap++) {
+      for (const port of ROAD) {
+        gg.dockedAt = port;
+        gg.clock.t += 30 * DAY;
+        // Mombaça is at war with Melinde some of the time; the stages vary by seed.
+        if (lap === 2 && port === 'mombaca' && seed % 2 === 0) addEffect(gg.powers, { kind: 'war', power: 'mombasa', ports: ['mombaca', 'melinde'], start: gg.clock.t, end: gg.clock.t + 90 * DAY, closes: true, reason: 'A stub war.' });
+        if (seed % 3 === 0) gg.powers.fronts.rule.stage = (2 + (lap % 3)) as 2;
+        for (let k = 0; k < 6; k++) {
+          let ev;
+          try { ev = duePowerScene(gg, port); } catch (e) { crashes++; console.log(String(e)); break; }
+          if (!ev) break;
+          reached.add(ev.id);
+          if (!ev.text || ev.text.length < 200 || ev.choices!.length < 2 || ev.choices!.some((c) => !c.label || !c.detail)) textBad.push(ev.id);
+          try { ev.choices![r2.int(0, ev.choices!.length - 1)].resolve(gg); } catch (e) { crashes++; console.log(String(e)); }
+        }
+      }
+    }
+  }
+  const missing = POWER_SCENES.map((x) => `power:${x.id}`).filter((id) => !reached.has(id));
+  check('every court scene is reached by sailing forward and answers without error', crashes === 0 && missing.length === 0, `missing: ${missing.join(',') || 'none'}; crashes ${crashes}`);
+  check('every scene has a body, two choices at least, and a stated cost on each', textBad.length === 0, [...new Set(textBad)].join(','));
+
+  // The Rule's winnable local fight, at Melinde.
+  {
+    const g = new Game(21); g.worldT = g.clock.t; g.dockedAt = 'melinde'; g.chronicle.act = 4; g.crown.gold = 1000; g.casa.regard = 0.2;
+    g.powers.fronts.rule.base = 5; g.powers.fronts.rule.stage = 2;
+    const take = (id: string, pick: number): void => {
+      g.clock.t += 40 * DAY;
+      let ev = duePowerScene(g, 'melinde');
+      for (let i = 0; i < 6 && ev && ev.id !== `power:${id}`; i++) { ev.choices![ev.choices!.length - 1].resolve(g); g.clock.t += DAY; ev = duePowerScene(g, 'melinde'); }
+      if (!ev || ev.id !== `power:${id}`) throw new Error(`scene ${id} not offered`);
+      ev.choices![pick].resolve(g);
+    };
+    take('melinde-welcome', 1); // trades with both coasts
+    take('melinde-harbourmaster', 0);
+    // Unprepared: no surety, no tongue, no regard: the stand is refused and the chance stays.
+    g.clock.t += 40 * DAY;
+    const early = duePowerScene(g, 'melinde')!;
+    check('the stand is offered once the Rule is a stage-two fact and the sultan’s seal is held', early.id === 'power:melinde-banyan' || early.id === 'power:melinde-list');
+    if (early.id === 'power:melinde-banyan') { g.powers.seen['fired:melinde-banyan'] = g.clock.t; delete g.powers.seen['fired:melinde-banyan']; }
+    g.powers.localRule!.state = 'offered';
+    const gold0 = g.crown.gold, pts0 = pointsOf(g.powers.fronts.rule);
+    const listSc = POWER_SCENES.find((x) => x.id === 'melinde-list')!;
+    const ev0 = listSc.build(g, g.powers);
+    const refused = ev0.choices![0].resolve(g);
+    check('without a surety, a tongue or the court’s regard the stand is refused and costs nothing', g.powers.localRule!.state === 'offered' && g.crown.gold === gold0 && /somebody he knows|speak his tongue/.test(refused), refused.slice(0, 60));
+    g.powers.localRule!.trust = true;
+    g.crown.gold = 100;
+    const poor = listSc.build(g, g.powers).choices![0].resolve(g);
+    check('and without the money it is refused', g.powers.localRule!.state === 'offered' && g.crown.gold === 100 && /two hundred and fifty/.test(poor));
+    g.crown.gold = 1000;
+    const casa0 = g.casa.regard;
+    listSc.build(g, g.powers).choices![0].resolve(g);
+    check('the Rule’s stand at Melinde can be won, once, at real cost', g.powers.localRule!.state === 'won' && g.crown.gold === 750 && g.casa.regard < casa0 && g.ledger.some((e) => e.tag === 'compact.made'));
+    check('it lowers the Rule by about a stage’s third, and stands in the Book for years', pointsOf(g.powers.fronts.rule) <= pts0 - 1.0 && marketModifiers('melinde', g.clock.t + 365 * DAY, g.powers).reason.includes('roll'));
+    check('it is not offered a second time', !powerSceneOffered(g, listSc, 'melinde'));
+    g.clock.t += 70 * DAY;
+    check('and its first page is read to the captain two months on', duePowerScene(g, 'melinde')?.id === 'power:melinde-after');
+  }
+
+  // The Rule is fixed when Act V opens; conduct after that counts a third.
+  {
+    const g = new Game(31); g.worldT = g.clock.t;
+    g.noteDeed('ship.stopped', { target: 'kilwa', place: 'quiloa', magnitude: 0.5 });
+    const o1 = g.powers.fronts.rule.offset;
+    g.chronicle.act = 5;
+    g.clock.t += 40 * DAY; g.worldT = g.clock.t - 31 * DAY; tickWorld(g, 1);
+    check('Act V’s opening fixes the Rule at the stage it had reached', g.powers.rule?.lockedAt !== undefined && g.powers.rule.stage === g.powers.fronts.rule.stage);
+    g.noteDeed('ship.stopped', { target: 'kilwa', place: 'quiloa', magnitude: 0.5 });
+    const d2 = g.powers.fronts.rule.offset - o1;
+    check('conduct after that counts a third as much', Math.abs(d2 - o1 * 0.35) < 1e-9 && d2 > 0, `${o1.toFixed(3)} then ${d2.toFixed(3)}`);
+  }
+
+  // The Powers' moves are driven by the Ledger and deterministic per seed.
+  {
+    const run = (att: number) => {
+      const h = makeHost(9) as PowersHost; h.powers = newPowers(); h.ledger = [];
+      h.powers.powers.cochin.attitude = att; h.powers.powers.melinde.attitude = att; h.powers.powers.kilwa.attitude = att; h.powers.powers.calicut.attitude = att;
+      let welcomes = 0, evicts = 0;
+      for (let m = 0; m < 120; m++) {
+        for (const id of ['cochin', 'melinde', 'kilwa', 'calicut'] as const) h.powers!.powers[id].attitude = att;
+        tickWorld(h, 1);
+      }
+      for (const e of h.powers!.effects) { if (e.kind === 'welcome') welcomes++; if (e.kind === 'embargo' && ['kilwa', 'melinde', 'calicut'].includes(e.power)) evicts++; }
+      return { welcomes, evicts, json: JSON.stringify(h.powers) };
+    };
+    const friend = run(0.6), foe = run(-0.6), again_ = run(0.6);
+    check('a friendly court welcomes the factor; a hostile one sends him away or shuts the quay', friend.welcomes > foe.welcomes && foe.evicts > friend.evicts, `welcomed ${friend.welcomes}/${foe.welcomes}, shut ${friend.evicts}/${foe.evicts}`);
+    check('the same seed and the same Ledger give the same history', friend.json === again_.json);
+  }
+  void textBad;
 }
 
 console.log(fails === 0 ? 'POWERS PASSED' : `POWERS FAILED (${fails})`);

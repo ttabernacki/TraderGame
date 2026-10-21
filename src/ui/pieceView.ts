@@ -24,7 +24,7 @@ export function pieceCard(
         onclick: () => {
           onLine('you', c.label);
           const o = stepPiece(g, run, c.id);
-          if (o) { onLine('narrator', o.line + '.'); onDone(o); } else rerender();
+          if (o) { onLine('narrator', o.line + '.'); if (o.clauseLine) onLine('narrator', o.clauseLine); onDone(o); } else rerender();
         },
       }, el('b', {}, c.label), c.hint ? el('span', {}, c.hint) : null))));
 }

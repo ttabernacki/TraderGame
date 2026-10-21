@@ -77,3 +77,85 @@ polity beyond "Eguafo's country"; any year but 1482.
 
 **The Quarters' own invented verbs:** shore leave (a day, a few cruzados, morale and the fo'c'sle's regard up, fever risk on a fever
 coast), keeping the day (mass, with or without a chaplain), buying a round at the tavern. All numbers are the game's.
+
+## Arguim, Melinde, Calecute and Lisbon as Deep ports (D6)
+
+Data and prose in `src/places/ports/{arguim,melinde,calecute,lisboa}.ts`; the header of each file repeats this table for its port. The
+Patrons are people with agency: each has an interest, a rule he keeps, and a way of being wrong about the captain.
+
+| Item | Grade | Note |
+|---|---|---|
+| Arguin: the Crown's fort and factor; gum, gold dust and captives bought for wheat, cloth and horses; the caravan road from the Sahara | documented | Zurara; Pacheco Pereira. Ahmad ibn Yahya is the Traffic's broker (C2), deepened. |
+| The Imraguen fishers of the Banc d'Arguin and the shoals that wrecked ships; ransom (manumission) honoured in Islamic law and the bar on enslaving free Muslims | documented | The practice; Bilal, his boat and Ahmad's stance are **invented**. |
+| Caravans in the cool months; gum gathered in the dry season; the harmattan, Dec-Mar | approximate | Months are climate, not a dated record. The wheat ship in May and October and the hot-months fever (x1.4) are **invented**. |
+| Melinde at odds with Mombasa and welcoming the Portuguese; a Melinde pilot taking Gama to India (1498) | documented | Accounts of the pilot differ; Hamisi is the company's invention (docs/DESIGN.md), not claimed to be him. |
+| The monsoons (kaskazi, kusi) as the Indian Ocean's timetable; rhymed rutters of the Arab pilots (Ibn Majid, 1490); the long rains (Mar-May) and the short (Oct-Dec) | documented | The turning (5-26 April) is read off the game's own wind, not a record. |
+| Fleets from Cambay and Hormuz in Melinde with the north-east monsoon, and sailing for India on the south-west | approximate | Multipliers **invented**. |
+| Nairuzi, the Swahili new year on 20-23 March | approximate | The coast kept more than one new year (Persian reckoning; the Shirazi July feast); the date is a game choice. |
+| Calicut: the Zamorin, the pepper port, the Mappila merchants, the Koya as the Mappila head and port officer (shah bandar) | documented | The title; Mammali, his house, his sister's son, the Friday table, the failed crop, the letter to Cochim and the pass are **invented**. |
+| The sea closed to shipping in the south-west monsoon (about June-August); pepper to the warehouses Dec-Mar; Onam in Aug-Sep and Vishu in April | approximate | Festival dates move with the Malayalam calendar; used as months. |
+| Lisbon: the Casa da Mina and Casa dos Escravos on the Ribeira; the Rua Nova dos Mercadores; the Order of Christ (Tomar), its jurisdiction and revenues overseas (*Romanus Pontifex*, 1455) | documented | The Order's friar and the bursar's office are generic; Frei Diogo and Frei Lourenço are **invented**. |
+| Conversos fleeing Castile (Inquisition from 1478-80); the expulsion of 1492 and João II's fee; the Edict of December 1496 and the forced conversions of 1497 | documented | The arc's third beat reads the date and says only what the period knew. Branca Nunes, her nephew Isaac and her cousin Jorge are **invented**. |
+| Corpus Christi procession with St George; Lent; Santo António on 13 June; plague years at Lisbon | documented / approximate | Lent and Corpus Christi move; used as months. |
+| The Mina ships' arrival at Lisbon in May and November | invented | Mirrors the Casa's ship leaving for Mina in March and September (C4). |
+
+**Invented, marked as such:** Ahmad's cousin Idriss and the Wolof broker Demba Sy; Salim bin Abdalla, the boy Sefu and the pilots' roll as a guild with a
+rule against ships that stop dhows; Mammali; Fernão Vaz, Branca Nunes, Frei Diogo, Frei Lourenço; the four beats of each arc; every sum, multiplier, threshold,
+credit (Arguim 120/250, Melinde 200/400, Calecute 250/500, Lisbon 300/600 and 120), House factor (0.7-0.8) and dues perk (0.92-0.96).
+
+**Deliberately left generic:** the factor and the Captain of Arguim; the Sultan and majlis of Melinde; the Zamorin and his officer; the Provedor, the
+Order's commander and the King's officers at Lisbon; any year but those documented above.
+
+## Swahili coast, Malabar and the Rule (D4)
+
+Powers' moves in `src/world/powers/{swahili,malabar,crescent,stubs}.ts`; dated shocks in `data.ts` (`SCHEDULE`, each with a `source` and grade);
+scenes in `src/progression/powerScenes.ts`; the Rule's reading in `src/world/powers/rule.ts`. The KINDS of event are attested; the chances,
+durations and effects on prices are the game's own balance.
+
+| Item | Grade | Note |
+|---|---|---|
+| Melinde's welcome to da Gama (April 1498), a pilot for the crossing, and its enmity with Mombasa | documented | Subrahmanyam, *The Career and Legend of Vasco da Gama*; Portuguese and Arabic accounts. The pilot's name and origin are disputed and not used. |
+| Da Gama at Calicut (20 May 1498); the Muslim merchants' opposition at the Zamorin's court | documented | Subrahmanyam; Malekandathil, *Maritime India*. |
+| The Portuguese took vessels and pilots by force on the first voyage's coast leg | approximate | Which vessel and when is not given. Held as a small push on the Rule only. |
+| Cabral at Calicut (September 1500); the attack on the Portuguese factory and the bombardment (December 1500) | documented | Pearson, *The Portuguese in India*; Subrahmanyam. Numbers killed vary and are not given. |
+| Cochin and Cannanore give the Portuguese factories (December 1500 to January 1501); Cochin's tribute to the Zamorin | documented | Pearson; Subrahmanyam. |
+| Venetian alarm at Portuguese pepper (1501-02), a Venetian embassy to Cairo (1504) | documented | Girolamo Priuli's diaries. The game dates the alarm by year only. |
+| Da Gama's second voyage (1502), tribute forced from Kilwa; the practice of the cartaz becoming regular | approximate | The exact first pass is not fixed; the game claims no year in a scene for the cartaz. |
+| Almeida takes Kilwa and Mombasa (July and August 1505); a fort at Kilwa | documented | Pearson; Subrahmanyam. |
+| The Mamluk fleet to Gujarat (1507-08), Chaul (1508), defeat at Diu (February 1509) | documented | Pearson; Subrahmanyam. The game gives years only. |
+| Albuquerque's attack on Aden (1513) and the plan to blockade the Red Sea; Hormuz (1515) | approximate | The Rule's "blockade" stage follows this policy by the middle of the 1510s; no scene names a year. |
+| Kilwa's gold: tithe on gold from Sofala; dynastic disputes at Kilwa in the late fifteenth century | documented / approximate | The trade is documented. The game uses "a fight over the stool" with no names or dates; the frequency is invented. |
+| Mombasa as the strongest harbour on the coast and Melinde's rival | documented | Date of the enmity not claimed. |
+| Gujarat's Cambay merchants resident at Melinde and Calicut | documented | The Cambay man in the scenes is invented. |
+
+**Invented, marked as such:** every personal name in the D4 scenes (Mwinyi Hamad bin Faraji, Mwinyi Juma bin Salim, Jivan Kanji, Rui Teles,
+Rashid bin Sultani, Juma bin Omari, Mwinyi Chande bin Abdallah, Kunhi Raman, Ibrahim Koya and the Koya house, Ali Kutty, Karunakaran,
+Govinda Pillai); the harbour-master's roll of passes at Melinde, the 250-cruzado bond, the surety of nine dhows and the forty-one let out; Cochin's
+tribute as a sum; the six stopped dhows; the vizier's counting house and chest; the Powers' monthly chances and durations; the effects on
+prices, stock and dues; the league and the convoys as moves of a Power (the Crescent's stages are the game's staging of a documented
+Mamluk, Gujarati and Calicut co-operation in 1507-09).
+
+**Deliberately left generic:** the sultans of Kilwa, Mombasa and Melinde (no names, though the polity data lists rulers); the Zamorin and the
+Raja of Cochim (unnamed); the identity of the Portuguese factor at any port; any year for the cartaz; the numbers of ships stopped.
+
+**The Rule's reading.** The stage is the Front's (history shocks plus the captain's deeds, `FRONT_DELTAS`); the Book's single line is
+`ruleReading` over a conduct table whose signs the falsifier checks against the delta table. The two places that set it (Calecute and Kilwa)
+and "fixed when Act V opens" are the game's design.
+
+## Patrons, titles and clauses (D5)
+
+Dated agenda events live in `src/identity/patrons.ts` (`AGENDA`), each with a `source` and a grade.
+
+| Item | Grade | Note |
+|---|---|---|
+| Duke of Braganza executed 1483; Duke of Viseu killed by the King 1484 | documented | Hair; Disney, *A History of Portugal*. That the Crown's patron grows stronger is the game's own reading. |
+| Baptism of the Manikongo 1491 | documented | Rui de Pina. The Order's funding of priests and masons is **invented**. |
+| João II dies, Oct 1495; Manuel I | documented | Via the Powers' schedule (`joao-dies`). The four months' warning, the eight months' fall and the old circle's clients falling are **invented**. |
+| Edict of expulsion Dec 1496; forced conversions 1497 | documented | Tavares; Soyer. The calling-in of Rua Nova credit and its 24 months are **invented**; the Church's baptism policy turns from patience to the font on the Edict. |
+| Franciscans sail with Cabral, 1500 | approximate | The Order's funds are **invented**. |
+| Lisbon massacre of New Christians, April 1506 | documented | Tavares; Soyer. The credit effect and its 18 months are **invented**. |
+
+**Invented, marked as such:** the three patrons' cuts (0, 8%, 12%); every order title and text (the tenth of Madeira, priests for Mpinda,
+a chapel on the Cape road, letters for Prester John, the Christians of St Thomas); the Church's loves and hates; the "favourite who falls"
+when the Court Front reaches its second stage; all thirty-two titles' names, thresholds and teller lines; the clause prices, terms and
+the pairing of pieces to clauses; the generated names.

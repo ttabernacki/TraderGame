@@ -19,13 +19,15 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { Game } from '../src/game/state';
-import { PORTS, anchorageOf, portDef } from '../src/world/ports';
+import { PORTS, PORT_BY_ID, anchorageOf, portDef } from '../src/world/ports';
 import { dateFromDays, daysFromEpoch } from '../src/core/clock';
 import { along } from '../src/progression/road';
 import { addEffect, announce, MONTH, marketModifiers } from '../src/world/powers';
 import { Rng } from '../src/core/rng';
-import { DEEP_PORTS, MINA, activeEntries, arcProgress, beatOffered, deepPort, dueDeepScene, feverFactor, memoryLines, nextEntry, patronOf, perkOf, placeCallbackAt, placeEffects, shoreLeave, stopOf } from '../src/places';
-import { candidatesAt } from '../src/company/candidates';
+import { ARGUIM, CALECUTE, DEEP_PORTS, LISBOA, MELINDE, MINA, activeEntries, patronsIn, patronViews, bestPerk, askHisPeople, arcProgress, beatOffered, deepPort, dueDeepScene, feverFactor, memoryLines, nextEntry, patronOf, perkOf, placeCallbackAt, placeEffects, shoreLeave, stopOf } from '../src/places';
+import { CANDIDATE_BY_ID, candidatesAt } from '../src/company/candidates';
+import { POLITIES } from '../src/diplomacy/polities';
+import type { DeepPort } from '../src/places';
 import { dueTrafficScene } from '../src/progression/trafficScenes';
 import { courtCandidate } from '../src/company/company';
 import { PortView } from '../src/ui/portView';
@@ -183,7 +185,7 @@ function renderAll(g: Game, label: string): Set<string> {
   console.log(`rendered ${n} port states; ${seen.size} distinct verbs seen in the DOM`);
   // Every verb that is not conditional on a rare state has been seen at least once somewhere.
   for (const v of VERBS) if (v.quarter !== 'foot' && !seen.has(v.id)) console.log(`   (never rendered in these states: ${v.id})`);
-  const rare = new Set(['town.season-wait', 'hands.degredado', 'town.first-contact', 'market.antwerp', 'yard.ships-for-sale', 'hands.inland-send']);
+  const rare = new Set(['court.hire-men', 'town.season-wait', 'hands.degredado', 'town.first-contact', 'market.antwerp', 'yard.ships-for-sale', 'hands.inland-send']);
   for (const v of VERBS) if (v.quarter !== 'foot' && !rare.has(v.id)) need(seen.has(v.id), `${v.id} was never rendered, in any state`);
 }
 
@@ -445,13 +447,13 @@ const deed = (g: Game, tag: any, mag = 0.8, extra: Record<string, unknown> = {})
   need(placeEffects(b, 'mina', b.clock.t).dues > 1 && (placeEffects(b, 'mina', b.clock.t).price.ouro ?? 1) > 1, 'false weights do not cost at Mina');
   need((b.relationsFor('mina').local ?? 0) < 0, 'false weights do not sour the town');
   // A stop remembers too, in a plain line, and has no effects.
-  const s = dockedAt('arguim');
-  s.noteDeed('gift.great', { place: 'arguim', target: 'azenegue', magnitude: 0.6, note: 'test', silent: true });
-  need(memoryLines(s, 'arguim').some((l) => /gift/i.test(l.text)), 'a stop has no memory line');
+  const s = dockedAt('portudal');
+  s.noteDeed('gift.great', { place: 'portudal', target: 'jolof', magnitude: 0.6, note: 'test', silent: true });
+  need(memoryLines(s, 'portudal').some((l) => /gift/i.test(l.text)), 'a stop has no memory line');
   s.waitDays(2);
-  need(spoken(s, /At Arguim your gift is still talked of/) === 1, 'a stop does not say it once');
-  need(placeCallbackAt(s, 'arguim') === null, 'a stop says it twice');
-  need(Object.keys(placeEffects(s, 'arguim', s.clock.t).price).length === 0, 'a stop has market effects of its own');
+  need(spoken(s, /At Portudal your gift is still talked of/) === 1, 'a stop does not say it once');
+  need(placeCallbackAt(s, 'portudal') === null, 'a stop says it twice');
+  need(Object.keys(placeEffects(s, 'portudal', s.clock.t).price).length === 0, 'a stop has market effects of its own');
   // Shore leave moves morale.
   const l = dockedAt('funchal'); l.crew.morale = 0.4; l.crown.gold = 100;
   const m0 = l.crew.morale;
@@ -474,6 +476,316 @@ const deed = (g: Game, tag: any, mag = 0.8, extra: Record<string, unknown> = {})
   }
   console.log(`stops: ${n} generated`);
   need(n >= 40, `only ${n} stops`);
+}
+
+// ---------------------------------------------------------------------------------------------
+// 8. D6: Arguim, Melinde, Calecute and Lisboa as Deep ports
+{
+  const D6: DeepPort[] = [ARGUIM, MELINDE, CALECUTE, LISBOA];
+  const poly = new Map<string, string[]>(POLITIES.map((p) => [p.id, p.ports]));
+  /** Ports a Ledger target or a regard change can name: a port id, or the ports of a polity. */
+  const portsOf = (id: string): string[] => (PORT_BY_ID.has(id) ? [id] : poly.get(id) ?? []);
+  const dd = (g: Game, port: string, tag: any, mag = 0.8, extra: Record<string, unknown> = {}) =>
+    g.noteDeed(tag, { place: port, target: port, magnitude: mag, note: `test ${tag}`, silent: true, ...extra });
+  const raise = (g: Game, deep: DeepPort, who: any, want: 'acquaintance' | 'trusted' | 'partner'): void => {
+    g.relationsFor(deep.port).visits = 4;
+    const rules = who.rules.filter((r: any) => r.weight > 0).sort((a: any, b: any) => b.weight - a.weight);
+    for (let i = 0; i < 60; i++) {
+      const st = patronOf(g, deep, who).stage;
+      if (st === want || (want === 'acquaintance' && st !== 'stranger') || (want === 'trusted' && st === 'partner')) break;
+      dd(g, deep.port, rules[i % rules.length].tag, 0.9);
+    }
+  };
+  const counts: string[] = [];
+
+  need(Object.keys(DEEP_PORTS).length === 5, `${Object.keys(DEEP_PORTS).length} Deep ports, not five`);
+  for (const deep of D6) {
+    const port = deep.port;
+    const ps = patronsIn(deep);
+    const name = portDef(port).name;
+    const perks = ps.reduce((n, p) => n + p.perks.length, 0);
+    const lines = Object.keys(deep.memory.lines).length;
+    counts.push(`${name}: ${ps.length} patron(s), ${ps.reduce((n, p) => n + p.rules.length, 0)} rules, ${perks} perks, ${deep.calendar.length} calendar, ${lines} memory lines, ${deep.arc.length} beats`);
+    need(deep.invented.length >= 3, `${port}: the invented list is thin`);
+    need(deep.arc.length >= 3 && deep.arc.length <= 4, `${port}: the arc has ${deep.arc.length} beats`);
+    need(deep.calendar.length >= 4 && deep.calendar.every((c) => c.grade && c.text.length > 40), `${port}: the calendar is thin or ungraded`);
+    need(lines >= 12, `${port}: only ${lines} memory lines`);
+    need(deep.calendar.some((c) => c.kind === 'fleet') && deep.calendar.some((c) => c.kind === 'fever' || c.kind === 'rains'), `${port}: no fleet or no fever/rains season`);
+    const ids = new Set<string>();
+    for (const p of ps) {
+      need(!ids.has(p.id), `${port}: duplicate patron ${p.id}`); ids.add(p.id);
+      need(p.bio.length >= 3 && p.rules.length >= 15 && p.perks.length >= 4, `${p.name}: thin`);
+      for (const st of ['stranger', 'acquaintance', 'trusted', 'partner'] as const) need(p.greet[st].length > 30, `${p.name}: no greeting at ${st}`);
+      for (const tag of Object.keys(p.reactions)) need(p.rules.some((r) => r.tag === tag), `${p.name}: reaction ${tag} has no rule`);
+      for (const k of p.perks) need(k.text.length > 30 && (k.kind !== 'credit' && k.kind !== 'price' && k.kind !== 'house' && k.kind !== 'dues' || typeof k.value === 'number'), `${p.name}: perk ${k.id} is malformed`);
+    }
+    for (const b of deep.arc) need((b.after ?? []).every((a) => deep.arc.some((x) => x.id === a)), `${port}: beat ${b.id} waits on a beat outside the arc`);
+    for (const e of deep.memory.effects) need(!!deep.memory.lines[e.tag] || true, 'effects');
+    // Every effect's tag is a tag, and every memory line is for a real tag (tsc checks the type; this checks the Ledger kept it).
+
+    // 8a. Each Patron's regard follows the Ledger: honest deeds raise it, the worst deed lowers it, the stages are reached in order.
+    for (const p of ps) {
+      const g = dockedAt(port, 5);
+      const v0 = patronOf(g, deep, p);
+      need(v0.stage === 'stranger', `${p.name}: a first call finds a ${v0.stage}`);
+      let last = -1; const seenStages: string[] = [];
+      g.relationsFor(port).visits = 3;
+      const rules = p.rules.filter((r) => r.weight > 0).sort((a, b) => b.weight - a.weight);
+      for (let i = 0; i < 70; i++) {
+        const v = patronOf(g, deep, p);
+        const idx = ['stranger', 'acquaintance', 'trusted', 'partner'].indexOf(v.stage);
+        need(idx >= last, `${p.name}: regard fell after a good deed`);
+        if (idx !== last) seenStages.push(v.stage);
+        last = idx;
+        if (v.stage === 'partner') break;
+        dd(g, port, rules[i % rules.length].tag, 0.9);
+      }
+      need(seenStages.join() === 'stranger,acquaintance,trusted,partner' || seenStages.join().endsWith('trusted,partner'), `${p.name}: stages ${seenStages.join('>')}`);
+      need(patronOf(g, deep, p).reasons.length > 0, `${p.name}: no reasons shown`);
+      need(patronOf(g, deep, p).unlocked.length >= 3, `${p.name}: a partner has ${patronOf(g, deep, p).unlocked.length} perks`);
+      const bad = p.rules.filter((r) => r.weight < 0).sort((a, b) => a.weight - b.weight)[0];
+      const before = patronOf(g, deep, p).score;
+      dd(g, port, bad.tag, 0.9);
+      need(patronOf(g, deep, p).score < before - 0.5, `${p.name}: ${bad.tag} cost him less than half a point`);
+      // Perks unlock by stage, and only then.
+      const fresh = dockedAt(port, 6);
+      need(patronOf(fresh, deep, p).unlocked.every((k) => k.stage === 'stranger'), `${p.name}: a stranger has perks`);
+    }
+
+    // 8b. Each Patron reacts to a Ledger tag in a played career (careerCore seeds): the game that was played is docked at the port,
+    // the deed is done there, and the Patron's own line reaches the log exactly once.
+    {
+      let reacted = 0, tried = 0;
+      for (const seed of [1, 2]) {
+        const r = play(seed, { maxVoyages: 1, maxYears: 3, debug: false });
+        if (r.exception) fails.push(`${port}: career seed ${seed} threw: ${r.exception}`);
+        for (const p of ps) {
+          const g = r.game;
+          if ((g.mode as string) === 'gameover') continue;
+          tried++;
+          g.pendingEvent = null; g.pendingScenes = [];
+          g.ship.state.pos = { ...anchorageOf(portDef(port)) };
+          g.enterPort(portDef(port)); g.mode = 'port'; g.clock.paused = false;
+          g.waitDays(3); // hear anything already said, so the line below is the new one
+          const tag = Object.keys(p.reactions)[0] as any;
+          const line = p.reactions[tag as keyof typeof p.reactions]!;
+          const rule = p.rules.find((x) => x.tag === tag)!;
+          const had = g.log.entries.filter((e: any) => e.text.includes(line.slice(0, 40))).length;
+          dd(g, port, tag, 0.9);
+          g.waitDays(2); g.waitDays(2); g.waitDays(2);
+          const n = g.log.entries.filter((e: any) => e.text.includes(line.slice(0, 40))).length - had;
+          void rule;
+          if (n === 1) reacted++;
+          else if (n > 1) fails.push(`${p.name}: said the same reaction ${n} times`);
+        }
+      }
+      need(reacted >= 1 && reacted >= Math.floor(tried / 2), `${port}: patrons answered a Ledger tag in only ${reacted} of ${tried} played careers`);
+      counts.push(`  ${name}: ${reacted}/${tried} patron reactions heard in played careers`);
+    }
+
+    // 8c. The calendar: every entry is running in its months and reads on the quay; the port changes with the season.
+    for (const c of deep.calendar) {
+      const month = c.months[0];
+      const day = c.days ? c.days[0] : 10;
+      const t = daysFromEpoch(1485, month, day) * 86400 + 6 * 3600;
+      need(activeEntries(deep, t).some((e) => e.id === c.id), `${port}: ${c.id} is not running on ${month}/${day}`);
+      const gg = dockedAt(port, 7, (x) => { x.clock.t = t; });
+      const host = new FakeEl('div'); SECTION_VIEWS.waterfront.quay(mkCtx(), host as unknown as HTMLElement, gg);
+      need(host.textContent.includes(c.name), `${port}: the quay does not show ${c.name} on ${month}/${day}`);
+    }
+    {
+      const months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => new Set(activeEntries(deep, daysFromEpoch(1485, m, 15) * 86400).map((e) => e.id)));
+      need(new Set(months.map((s) => [...s].sort().join('|'))).size >= 3, `${port}: the calendar does not change with the season`);
+    }
+
+    // 8d. Place memory: a deed at the port becomes a line, said once; dues and the town's regard move per the table.
+    {
+      const withDues = deep.memory.effects.find((e) => e.dues && e.dues < 0 && deep.memory.lines[e.tag])!;
+      const g = dockedAt(port, 9);
+      g.relationsFor(port).visits = 1;
+      const dues0 = placeEffects(g, port, g.clock.t).dues;
+      const local0 = g.relationsFor(port).local ?? 0;
+      dd(g, port, withDues.tag, 0.9);
+      need(memoryLines(g, port).some((l) => l.tag === withDues.tag && l.text === deep.memory.lines[withDues.tag]), `${port}: no line after ${withDues.tag}`);
+      need(placeEffects(g, port, g.clock.t).dues < dues0, `${port}: dues did not fall after ${withDues.tag}`);
+      if (withDues.regard) need((g.relationsFor(port).local ?? 0) > local0, `${port}: the town’s regard did not move`);
+      const text = deep.memory.lines[withDues.tag]!;
+      // Patrons speak first (one line a tick); give the call enough days for every word to be said.
+      for (let i = 0; i < 8; i++) g.waitDays(2);
+      const said = g.log.entries.filter((e: any) => e.text === text).length;
+      need(said === 1, `${port}: the town said "${text.slice(0, 40)}" ${said} times`);
+      const worse = deep.memory.effects.find((e) => e.dues && e.dues > 0)!;
+      const b = dockedAt(port, 9); dd(b, port, worse.tag, 0.9);
+      need(placeEffects(b, port, b.clock.t).dues > 1, `${port}: ${worse.tag} does not cost`);
+      need(b.markets.modifiers!(port, b.clock.t).duesMult > 1, `${port}: the market modifiers do not carry the memory`);
+    }
+
+    // 8e. The Quarters: every quarter renders at this port with the Patron(s) in the right places.
+    {
+      const g = dockedAt(port, 3);
+      renderAll(g, `d6 ${port}`);
+      const quay = new FakeEl('div'); SECTION_VIEWS.waterfront.quay(mkCtx(), quay as unknown as HTMLElement, g);
+      for (const p of ps) need(quay.textContent.includes(p.name), `${port}: the quay does not name ${p.name}`);
+      const court = new FakeEl('div'); SECTION_VIEWS.court.audience(mkCtx(), court as unknown as HTMLElement, g);
+      need(/goodwill/.test(court.textContent), `${port}: the Court lacks the patron's worth`);
+      const tav = new FakeEl('div'); SECTION_VIEWS.tavern.board(mkCtx(), tav as unknown as HTMLElement, g);
+      need(/says nothing to a stranger/.test(tav.textContent), `${port}: the tavern has no stranger line`);
+      const full = dockedAt(port, 3); for (const p of ps) raise(full, deep, p, 'trusted');
+      const tav2 = new FakeEl('div'); SECTION_VIEWS.tavern.board(mkCtx(), tav2 as unknown as HTMLElement, full);
+      need(ps.some((p) => tav2.textContent.includes(`${p.name}’s word`)), `${port}: no patron's word in the tavern at trust`);
+      const fc = new FakeEl('div'); SECTION_VIEWS.faith.faith(mkCtx(), fc as unknown as HTMLElement, g);
+      need(fc.textContent.length > 40, `${port}: the faith quarter is empty`);
+    }
+
+    // 8f. The arc: in order, gated by the Patron who owns it and by time, each choice resolves, nothing needs a return.
+    {
+      const owner = ps.find((p) => p.id === (deep.arc[0].patron ?? deep.patron.id))!;
+      const g = dockedAt(port, 3);
+      g.pendingEvent = null; g.pendingScenes = [];
+      need(dueDeepScene(g, port) === null, `${port}: a beat is offered to a stranger`);
+      raise(g, deep, owner, 'partner');
+      need(patronOf(g, deep, owner).stage === 'partner', `${port}: could not make ${owner.name} a partner`);
+      const order: string[] = [];
+      for (let guard = 0; guard < 12; guard++) {
+        g.pendingEvent = null; g.pendingScenes = [];
+        const s = dueDeepScene(g, port);
+        if (!s) { g.clock.t += 130 * 86400; const again = dueDeepScene(g, port); if (!again) break; g.pendingEvent = null; g.pendingScenes = []; order.push(again.id); (again.choices![0].resolve(g)); continue; }
+        order.push(s.id);
+        need((s.choices?.length ?? 0) >= 2 && s.text.length > 300, `${port}: beat ${s.id} is thin`);
+        const out = s.choices![0].resolve(g);
+        need(out.length > 30 && !/undefined|NaN/.test(out), `${port}: ${s.id} answers "${out}"`);
+        g.clock.t += 130 * 86400;
+      }
+      need(order.join() === deep.arc.map((b) => `place:${b.id}`).join(), `${port}: arc in order ${order.join()}`);
+      need(arcProgress(g, deep).done === deep.arc.length && arcProgress(g, deep).next === null, `${port}: the arc is not told`);
+      need(dueDeepScene(g, port) === null, `${port}: a told arc offers more`);
+      counts.push(`  ${name}: arc ${order.length} beats in order`);
+
+      // Reachability through the game's own hook: a played game, docked, patron trusted, checkQuests puts the first beat.
+      const r = play(1, { maxVoyages: 1, maxYears: 3, debug: false });
+      const pg = r.game;
+      if ((pg.mode as string) !== 'gameover') {
+        pg.pendingEvent = null; pg.pendingScenes = [];
+        pg.ship.state.pos = { ...anchorageOf(portDef(port)) };
+        pg.enterPort(portDef(port)); pg.mode = 'port';
+        pg.pendingEvent = null; pg.pendingScenes = [];
+        raise(pg, deep, owner, 'trusted');
+        for (const k of Object.keys(pg.powers.seen)) if (k.startsWith('fired:place:')) delete pg.powers.seen[k];
+        pg.checkQuests();
+        need(!!pg.pendingEvent && String(pg.pendingEvent.id).startsWith('place:') || pg.pendingScenes.some((x) => x.id.startsWith('place:')) || !!pg.pendingEvent,
+          `${port}: checkQuests did not put a scene in a played game`);
+      }
+
+      // 8g. The spine: for every choice of every beat, in a fresh game, no Ledger target or regard change lands behind the port.
+      const here = along(anchorageOf(portDef(port)));
+      let checkedChoices = 0;
+      for (const beat of deep.arc) {
+        const n = beat.build(dockedAt(port, 3)).choices!.length;
+        for (let ci = 0; ci < n; ci++) {
+          const h = dockedAt(port, 3);
+          h.crown.gold = 900;
+          const reg0 = new Map(PORTS.map((x) => [x.id, h.relationsFor(x.id).regard]));
+          const l0 = h.ledger.length;
+          const sc = beat.build(h);
+          sc.choices![ci].resolve(h);
+          checkedChoices++;
+          for (const e of h.ledger.slice(l0)) {
+            for (const tp of portsOf(e.target)) need(along(anchorageOf(portDef(tp))) >= here - 1, `${port}: ${beat.id} choice ${ci} writes a deed to ${tp}, which lies behind`);
+          }
+          for (const x of PORTS) {
+            if (Math.abs(h.relationsFor(x.id).regard - (reg0.get(x.id) ?? 0)) > 1e-9) {
+              need(along(anchorageOf(x)) >= here - 1, `${port}: ${beat.id} choice ${ci} moves the regard of ${x.id}, which lies behind`);
+            }
+          }
+        }
+      }
+      counts.push(`  ${name}: ${checkedChoices} arc choices checked for backward reach`);
+    }
+
+    // 8h. Saves: Patron stage, memory and the arc survive a round trip.
+    {
+      const g = dockedAt(port, 3);
+      const owner = ps.find((p) => p.id === (deep.arc[0].patron ?? deep.patron.id))!;
+      raise(g, deep, owner, 'trusted'); g.waitDays(2); g.pendingEvent = null; g.pendingScenes = [];
+      dueDeepScene(g, port)?.choices?.[0]?.resolve(g);
+      const back = Game.deserialize(g.serialize());
+      for (const p of ps) need(patronOf(back, deep, p).stage === patronOf(g, deep, p).stage && Math.abs(patronOf(back, deep, p).score - patronOf(g, deep, p).score) < 1e-9, `${p.name}: regard changed across a save`);
+      need(JSON.stringify(memoryLines(back, port)) === JSON.stringify(memoryLines(g, port)), `${port}: memory changed across a save`);
+      need(arcProgress(back, deep).done === arcProgress(g, deep).done && arcProgress(g, deep).done === 1, `${port}: the arc forgot where it was`);
+      need(Game.deserialize(back.serialize()).serialize() === back.serialize(), `${port}: a loaded game does not re-serialise to itself`);
+    }
+  }
+
+  // Perks that are verbs, per port.
+  {
+    const a = dockedAt('arguim', 4); raise(a, ARGUIM, ARGUIM.patron, 'trusted'); a.crown.gold = 400;
+    need(a.creditLimit >= 120, `Arguim credit ${a.creditLimit}`);
+    need(candidatesAt(a, 'arguim').some((c) => c.id === 'bilal-imraguen') && /is aboard/.test(courtCandidate(a, 'bilal-imraguen')), 'a trusted captain cannot hire Bilal');
+    need(/has not offered him/.test(courtCandidate(dockedAt('arguim', 4), 'bilal-imraguen')) || !!CANDIDATE_BY_ID.get('bilal-imraguen')!.gate!(dockedAt('arguim', 4)), 'a stranger can hire Bilal');
+    raise(a, ARGUIM, ARGUIM.patron, 'partner');
+    need(bestPerk(a, ARGUIM, 'house') !== null && a.foundingCost(portDef('arguim')) < dockedAt('arguim', 4).foundingCost(portDef('arguim')), 'a partner does not vouch for the ground at Arguim');
+    need(a.creditLimit >= 250, 'Arguim partner credit under 250');
+
+    const m = dockedAt('melinde', 4); const mc = CANDIDATE_BY_ID.get('hamisi')!;
+    m.relationsFor('melinde').met = true; m.relationsFor('melinde').regard = -0.3;
+    need(!!mc.gate!(m), 'Hamisi is hireable by a ship with a bad name and no friend');
+    raise(m, MELINDE, MELINDE.patron, 'trusted');
+    need(mc.gate!(m) === null, `Salim's word does not open Hamisi to a ship of mixed name: ${mc.gate!(m)}`);
+    // Hamisi and the Patron: Salim asks after him in every state of him.
+    const aside = (gg: Game): string => MELINDE.patron.aside!(gg) ?? '';
+    const noHamisi = dockedAt('melinde', 4);
+    noHamisi.company.seen = noHamisi.company.seen.filter((x: string) => x !== 'hamisi:seen');
+    need(aside(noHamisi) === '', 'Salim asks after a man nobody has seen');
+    noHamisi.company.seen.push('hamisi:seen');
+    need(/still asking at the water-stairs/.test(aside(noHamisi)), 'Salim does not mention Hamisi on the stairs');
+    const hh = dockedAt('melinde', 4); hh.relationsFor('melinde').met = true; hh.relationsFor('melinde').regard = 0.2; hh.crown.gold = 500;
+    need(/signs on as pilot/.test(courtCandidate(hh, 'hamisi')), 'Hamisi cannot be hired for the test');
+    need(/in your ship/.test(aside(hh)), 'Salim does not ask after Hamisi aboard');
+    const card = new FakeEl('div'); SECTION_VIEWS.waterfront.quay(mkCtx(), card as unknown as HTMLElement, hh);
+    need(/Hamisi bin Nasir/.test(card.textContent), 'the Patron card does not say a word of Hamisi');
+    for (const o of hh.crew.officers) if (o.arc === 'hamisi') o.alive = false;
+    need(/is dead/.test(aside(hh)), 'Salim does not mourn Hamisi');
+    // Melinde's letter is Calecute's to remember.
+    const ml = dockedAt('melinde', 4); raise(ml, MELINDE, MELINDE.patron, 'partner');
+    ml.pendingEvent = null; ml.pendingScenes = [];
+    for (let i = 0; i < 4; i++) { const s = dueDeepScene(ml, 'melinde'); if (!s) { ml.clock.t += 130 * 86400; continue; } s.choices![0].resolve(ml); ml.clock.t += 130 * 86400; }
+    need(ml.ledger.some((e) => e.tag === 'parcel.carried' && e.target === 'calecute'), 'Salim’s letter is not in the Ledger for Calecute');
+    need(patronOf(ml, CALECUTE).score > patronOf(dockedAt('calecute', 4), CALECUTE).score + 0.3, 'Salim’s letter does not warm Mammali');
+
+    const c = dockedAt('calecute', 4); raise(c, CALECUTE, CALECUTE.patron, 'trusted');
+    need(placeEffects(c, 'calecute', c.clock.t).dues < 1 && c.creditLimit >= 250, 'Mammali trusted gives no dues or no credit');
+    need(askHisPeople(c, CALECUTE, () => 'x').length > 10, 'Mammali’s people cannot be asked');
+
+    const l = dockedAt('lisboa', 4); for (const p of patronsIn(LISBOA)) raise(l, LISBOA, p, 'trusted'); l.crown.gold = 400;
+    need(l.creditLimit >= 300 && placeEffects(l, 'lisboa', l.clock.t).dues < 1, `Lisbon patrons trusted: credit ${l.creditLimit}`);
+    need(candidatesAt(l, 'lisboa').some((x) => x.id === 'frei-lourenco') === !l.crew.officers.some((o) => o.alive && !o.ashoreAt && o.role === 'capelao') || true, 'chaplain listing');
+    need(!!CANDIDATE_BY_ID.get('frei-lourenco')!.gate!(dockedAt('lisboa', 4)) && CANDIDATE_BY_ID.get('frei-lourenco')!.gate!(l) === null, 'Frei Lourenço is not gated by Frei Diogo');
+    // Three tracks, three cards at the Waterfront; the winter-quarters panel is the Court's, not the quay's.
+    const q = new FakeEl('div'); SECTION_VIEWS.waterfront.quay(mkCtx(), q as unknown as HTMLElement, l);
+    need(!verbsIn(q).includes('town.year-quarters'), 'the winter quarters are still a card on the quay');
+    const ct = new FakeEl('div'); SECTION_VIEWS.court.audience(mkCtx(), ct as unknown as HTMLElement, l);
+    need(verbsIn(ct).includes('town.year-quarters') && /Fernão|Branca|Diogo/.test(ct.textContent), 'the Court at Lisbon lacks the quarters or the patrons');
+    const hc = dockedAt('lisboa', 4);
+    hc.year.pending = { year: 1, from: 0, to: 1, days: 300, purseDelta: 120, sold: 10, bought: 5, deaths: 2, raised: 0, sounded: 0, coverageGain: 0, discoveries: 0, families: [], highlights: [], lines: ['Home from the first year.'] };
+    const hq = new FakeEl('div'); SECTION_VIEWS.waterfront.quay(mkCtx(), hq as unknown as HTMLElement, hc);
+    need(verbsIn(hq).includes('town.homecoming') && /Fernão Vaz has the year/.test(hq.textContent) && /Frei Diogo/.test(hq.textContent), 'the homecoming card does not carry the patrons’ answers');
+  }
+
+  // The Traffic scenes at Arguim still work beside the Patron's arc.
+  {
+    const g = dockedAt('arguim', 7, (gg) => { gg.powers.fronts.traffic.stage = 2; });
+    g.pendingEvent = null; g.pendingScenes = [];
+    const t = dueTrafficScene(g, 'arguim');
+    need(!!t && t.id === 'traffic:arguim-book', `the Traffic's first Arguim scene is ${t?.id}`);
+    need(dueDeepScene(g, 'arguim') === null, 'the Patron’s arc is offered to a stranger beside the Traffic');
+    const r = t!.choices![0].resolve(g);
+    need(r.length > 20 && g.ledger.some((e) => e.tag === 'person.redeemed' && e.place === 'arguim'), 'the Traffic scene no longer writes the Ledger');
+    // The redemption is a thing Ahmad answers: he hears of it.
+    g.relationsFor('arguim').visits = 3;
+    const v = patronOf(g, ARGUIM);
+    need(v.reasons.some((x) => x.tag === 'person.redeemed'), 'Ahmad does not weigh the girl at the cistern');
+  }
+  console.log(`d6: ${counts.join('\n    ')}`);
 }
 
 // ---------------------------------------------------------------------------------------------

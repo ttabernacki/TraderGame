@@ -3,6 +3,7 @@ import type { Officer, OfficerRole } from '../crew/crew';
 import type { SeaEvent } from './seaEvents';
 import type { Game } from './state';
 import { dissenters, dissentLine } from '../company/company';
+import { counselEdge, counselVoices } from '../identity/calling';
 
 export { rollConflict } from '../company/conflicts';
 
@@ -650,22 +651,23 @@ export function counselFor(g: Game, e: SeaEvent, askedT: number): Counsel[] {
   const aboard = g.crew.officers.filter((o) => o.alive && !o.ashoreAt);
   const out: Counsel[] = [];
   for (const voice of rule.voices) {
-    if (out.length >= 3) break;
-    const o = aboard.find((x) => x.role === voice);
-    if (!o) continue;
-    const readsIt = steady(`${e.id}:${o.id}:${Math.floor(askedT / 3600)}`) < judgement(o);
-    let pick = readsIt ? right : (rule.bias[voice] ?? right);
-    // When his bias happens to be the right course, being wrong means backing
-    // something else — so a biased man is not accidentally always right.
-    if (!readsIt && pick.source === right.source) {
-      const other = rule.args.map(([p]) => p).find((p) => p.source !== right.source && hasChoice(e, p));
-      if (other) pick = other;
+    // A Master's second man in a seat speaks too: the extra voice (identity/calling).
+    for (const o of aboard.filter((x) => x.role === voice)) {
+      if (out.length >= counselVoices(g)) break;
+      const readsIt = steady(`${e.id}:${o.id}:${Math.floor(askedT / 3600)}`) < judgement(o) + counselEdge(g);
+      let pick = readsIt ? right : (rule.bias[voice] ?? right);
+      // When his bias happens to be the right course, being wrong means backing
+      // something else — so a biased man is not accidentally always right.
+      if (!readsIt && pick.source === right.source) {
+        const other = rule.args.map(([p]) => p).find((p) => p.source !== right.source && hasChoice(e, p));
+        if (other) pick = other;
+      }
+      if (!hasChoice(e, pick)) pick = right;
+      const arg = rule.args.find(([p]) => p.source === pick.source)?.[1];
+      const says = arg?.[voice];
+      if (!says) continue;
+      out.push({ who: o.name, office: OFFICE[voice], says, backs: indexOf(e, pick) });
     }
-    if (!hasChoice(e, pick)) pick = right;
-    const arg = rule.args.find(([p]) => p.source === pick.source)?.[1];
-    const says = arg?.[voice];
-    if (!says) continue;
-    out.push({ who: o.name, office: OFFICE[voice], says, backs: indexOf(e, pick) });
   }
   return dissent(g, e, out);
 }

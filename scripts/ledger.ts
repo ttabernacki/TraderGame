@@ -31,7 +31,7 @@ const synth = (tag: Tag, n = 1, over: Partial<Entry> = {}): Entry[] => Array.fro
 
 // 1. The vocabulary.
 {
-  check('vocabulary is about a hundred tags', ALL_TAGS.length >= 60 && ALL_TAGS.length <= 120, `${ALL_TAGS.length} tags`);
+  check('vocabulary is a vocabulary of 60 to 160 tags', ALL_TAGS.length >= 60 && ALL_TAGS.length <= 160, `${ALL_TAGS.length} tags`);
   const bad = ALL_TAGS.filter((t) => !TAGS[t].doc || !TAGS[t].did || TAGS[t].tone < -1 || TAGS[t].tone > 1 || !/^[a-z_]+\.[a-z_]+$/.test(t));
   check('every tag has a doc, a plain line, a tone in range, family.name form', bad.length === 0, bad.join(','));
   const leaked = ALL_TAGS.filter((t) => /[{}]/.test(didLine(synth(t)[0])));

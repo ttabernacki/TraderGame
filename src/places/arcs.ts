@@ -1,7 +1,7 @@
 import type { SeaEvent } from '../game/seaEvents';
 import type { Game } from '../game/state';
 import { deepPort } from './deep';
-import { atLeast, patronOf } from './patron';
+import { atLeast, patronOf, patronsIn } from './patron';
 import type { ArcBeat, DeepPort } from './types';
 
 /**
@@ -20,7 +20,8 @@ const hadAt = (g: Game, id: string): number | undefined => g.powers.seen[`place:
 /** Whether a beat may be offered now. */
 export function beatOffered(g: Game, deep: DeepPort, b: ArcBeat): boolean {
   if (hadAt(g, b.id) !== undefined) return false;
-  if (!atLeast(patronOf(g, deep).stage, b.stage)) return false;
+  const who = patronsIn(deep).find((p) => p.id === b.patron) ?? deep.patron;
+  if (!atLeast(patronOf(g, deep, who).stage, b.stage)) return false;
   const prior = (b.after ?? []).map((a) => hadAt(g, a));
   if (prior.some((t) => t === undefined)) return false;
   const last = prior.length ? Math.max(...(prior as number[])) : -Infinity;

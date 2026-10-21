@@ -192,6 +192,10 @@ export interface Patent {
    * people, in armed carracks.
    */
   final?: boolean;
+  /** Who issued it, when it is not the King (identity/patrons), the cut it keeps, and the pay before the cut. */
+  patron?: 'crown' | 'church' | 'ruanova';
+  cut?: number;
+  gross?: number;
 }
 
 /**

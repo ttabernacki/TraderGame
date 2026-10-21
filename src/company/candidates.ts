@@ -1,6 +1,6 @@
 import type { OfficerRole } from '../crew/crew';
 import type { Game } from '../game/state';
-import { MINA } from '../places/deep';
+import { ARGUIM, LISBOA, MELINDE, MINA } from '../places/deep';
 import { atLeast, patronOf } from '../places/patron';
 
 /**
@@ -117,7 +117,8 @@ export const CANDIDATES: Candidate[] = [
     gate: (g) => {
       const rel = g.relationsFor('melinde');
       if (!rel.met) return 'He will not talk to a ship the sheikh has not received.';
-      if (rel.regard < -0.1) return 'He has heard what is said of this ship on the quay, and has gone home.';
+      const vouched = atLeast(patronOf(g, MELINDE).stage, 'trusted');
+      if (rel.regard < -0.1 && !vouched) return 'He has heard what is said of this ship on the quay, and has gone home.';
       const stopped = g.ledger.some((e) => e.tag === 'ship.stopped' && e.target !== 'portugal' && e.target !== 'castile' && e.target !== 'nation:genoese');
       if (stopped) return 'The word along the coast is that this ship stops dhows. He has asked his cousins, and they say it is so.';
       return null;
@@ -130,6 +131,22 @@ export const CANDIDATES: Candidate[] = [
     backstory: 'Kwesi’s sister’s son. Has run the surf boats from the Castle to Axim since he could lift a paddle, and the canoes east to the Benin creeks since he could be trusted with the cargo. Has never been out of sight of land, and wants to see what is beyond it.',
     gate: (g) => (atLeast(patronOf(g, MINA).stage, 'trusted') ? null
       : 'Kwesi has not offered him. The boy does not take service in a ship his uncle has not weighed.'),
+  },
+  // Arguim's Patron gives a pilot for the shoals (BUILD_PLAN D6). Invented: see places/ports/arguim.ts.
+  {
+    id: 'bilal-imraguen', name: 'Bilal of the Imraguen', role: 'piloto', ability: 0.55, trait: 'steady', languages: ['Árabe'],
+    wage: 18, cost: 40, standing: 0, at: ['arguim'], second: true,
+    backstory: 'An Imraguen fisherman who has taken his boat over the shoals of the Banc d’Arguin since he was a boy, among the banks that have wrecked more of the King’s caravels than any enemy has. Knows every sandbar of the bay, and nothing of the sea beyond the last of them.',
+    gate: (g) => (atLeast(patronOf(g, ARGUIM).stage, 'trusted') ? null
+      : 'Ahmad has not vouched for him. The fishermen do not take service in a ship the broker has not weighed.'),
+  },
+  // Lisbon's friar gives a chaplain (BUILD_PLAN D6). Invented: see places/ports/lisboa.ts.
+  {
+    id: 'frei-lourenco', name: 'Frei Lourenço', role: 'capelao', ability: 0.66, trait: 'pious', languages: ['Árabe'],
+    wage: 18, cost: 30, standing: 0, at: ['lisboa'],
+    backstory: 'A priest of the Order of Christ who learned Arabic in a captives’ school at Ceuta and has never been able to leave it alone. Believes that baptism is a thing asked for, and has said so in front of men who would rather he had not.',
+    gate: (g) => (atLeast(patronOf(g, LISBOA, LISBOA.others![1]).stage, 'trusted') ? null
+      : 'Frei Diogo has not offered him. The Order does not lend a priest to a ship it has not weighed.'),
   },
 ];
 

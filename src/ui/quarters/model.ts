@@ -3,6 +3,7 @@ import { OFFICER_ROLES } from '../../crew/crew';
 import { pendingHomecoming } from '../../game/year';
 import type { Game } from '../../game/state';
 import { deepPort } from '../../places';
+import { polityOfPort } from '../../diplomacy/polities';
 import { outstanding, errandsAt, candidates } from '../../progression/inland';
 import { hullPrice } from '../../progression/network';
 import { frontsAt, type FrontLine } from './fronts';
@@ -79,7 +80,7 @@ export const VERBS: Verb[] = [
   // ---- Waterfront: the quay
   { id: 'town.strip', quarter: 'waterfront', section: 'quay', label: 'Who they are, and how they take you', was: 'Town' },
   { id: 'town.homecoming', quarter: 'waterfront', section: 'quay', label: 'Home from the sea', was: 'Town', when: (g) => !!pendingHomecoming(g) },
-  { id: 'town.year-quarters', quarter: 'waterfront', section: 'quay', label: 'Winter quarters', was: 'Town', when: (g) => g.dockedAt === 'lisboa' },
+  { id: 'town.year-quarters', quarter: 'court', section: 'audience', label: 'Winter quarters', was: 'Town', when: (g) => g.dockedAt === 'lisboa' },
   { id: 'town.first-contact', quarter: 'waterfront', section: 'quay', label: 'First contact', was: 'Town', when: unknown },
   { id: 'town.quest-offers', quarter: 'waterfront', section: 'quay', label: 'Somebody on the quay with a story', was: 'Town', when: (g) => g.questOffersHere().length > 0 },
   { id: 'town.place', quarter: 'waterfront', section: 'quay', label: 'The place', was: 'Town' },
@@ -152,6 +153,7 @@ export const VERBS: Verb[] = [
   { id: 'court.standing', quarter: 'court', section: 'audience', label: 'Standing: regard, leave and marks', was: 'new' },
   { id: 'court.audience', quarter: 'court', section: 'audience', label: 'Seek an audience', was: 'foot', when: (g) => !portuguese(g) },
   { id: 'court.patron', quarter: 'court', section: 'audience', label: 'The Patron’s perks here', was: 'new', when: (g) => !!deepPort(g.dockedAt) },
+  { id: 'court.clauses', quarter: 'court', section: 'audience', label: 'Grants in force here, and their terms', was: 'new', when: (g) => !!polityOfPort(g.dockedAt ?? '') },
   { id: 'station.found', quarter: 'court', section: 'house', label: 'A House here: the price', was: 'House', when: (g) => !g.factoryHere },
   { id: 'station.who', quarter: 'court', section: 'house', label: 'Who is to have it', was: 'House', when: (g) => !g.factoryHere && g.canFoundFactory(here(g)) === null },
   { id: 'station.order', quarter: 'court', section: 'house', label: 'What he buys', was: 'House', when: (g) => !g.factoryHere ? g.canFoundFactory(here(g)) === null : true },

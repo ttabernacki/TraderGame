@@ -60,7 +60,7 @@ const officer = (g: Game, arc: string): Officer => g.crew.officers.find((o) => o
   check('the nine new tags exist', unread.length === 0);
   const orphan = (['faith.pressed', 'faith.respected', 'books.honest', 'books.cooked'] as Tag[]).filter((t) => !used.has(t));
   check('the new tags that feed approval are read by some table', orphan.length === 0, orphan.join(','));
-  check('the vocabulary stays inside its bound', ALL_TAGS.length <= 120, `${ALL_TAGS.length} tags`);
+  check('the vocabulary stays inside its bound', ALL_TAGS.length <= 160, `${ALL_TAGS.length} tags`);
 }
 
 // 2. Approval: scale, saturation, decay, joined-since, words.

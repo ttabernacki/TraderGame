@@ -33,12 +33,12 @@ export interface PatronRule {
 export interface Perk {
   id: string;
   stage: Stage;
-  kind: 'rumour' | 'credit' | 'pilot' | 'house' | 'price';
+  kind: 'rumour' | 'credit' | 'pilot' | 'house' | 'price' | 'hire' | 'dues' | 'hint';
   /** What it is, in a line the Quarters can print. */
   text: string;
   /** This perk replaces another once it is in force (so the Quarters list only the better). */
   supersedes?: string;
-  /** Credit: cruzados while lying here. House: the multiplier on the founding cost. Price: the multiplier on gold. */
+  /** Credit: cruzados while lying here. House: the multiplier on the founding cost. Price: the multiplier on gold. Dues: the multiplier on port dues. Hint (text only; for the clause view of D5) and hire (a named man) carry no number. */
   value?: number;
 }
 
@@ -50,6 +50,8 @@ export interface ArcBeat {
   after?: string[];
   /** Days after the previous beat before this one is offered. */
   wait?: number;
+  /** Which of the port's patrons the beat is gated on (default: the first). */
+  patron?: string;
   needs?: (g: Game) => boolean;
   build: (g: Game) => SeaEvent;
 }
@@ -73,6 +75,10 @@ export interface PatronDef {
   /** What he says of a deed, by tag, the first time he hears of it. */
   reactions: Partial<Record<Tag, string>>;
   perks: Perk[];
+  /** The Front whose stage he reports in the tavern, when he has a rumour to give (default: the Gold). */
+  front?: 'gold' | 'traffic' | 'claim' | 'crescent' | 'rule' | 'court';
+  /** A line about someone aboard or on the quay who belongs to his world (a companion he asks after). */
+  aside?: (g: Game) => string | null;
   /** Said when his opinion crosses a threshold: arriving at the stage. */
   rise: Partial<Record<Stage, string>>;
 }
@@ -115,6 +121,8 @@ export interface CalendarEntry {
 export interface DeepPort {
   port: string;
   patron: PatronDef;
+  /** More patrons at the same port (Lisbon has three). Each has his own track; perks of one kind take the best. */
+  others?: PatronDef[];
   calendar: CalendarEntry[];
   memory: MemoryDef;
   arc: ArcBeat[];

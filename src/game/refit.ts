@@ -109,7 +109,7 @@ export function quoteRefit(g: Game, job: RefitJob): RefitQuote {
 }
 
 /** Do the job. Returns a line to show, or the reason it could not be done. */
-export function doRefit(g: Game, job: RefitJob): { ok: boolean; text: string } {
+export function doRefit(g: Game, job: RefitJob, wait = true): { ok: boolean; text: string } {
   const q = quoteRefit(g, job);
   if (!q.ok) return { ok: false, text: q.why };
   if (g.crown.gold < q.gold) return { ok: false, text: 'Not enough in the purse.' };
@@ -124,7 +124,7 @@ export function doRefit(g: Game, job: RefitJob): { ok: boolean; text: string } {
   } else {
     for (const s of g.ship.state.sails) s.condition = 1;
   }
-  g.waitDays(q.days);
+  if (wait) g.waitDays(q.days);
   g.syncStores();
   const where = place.kind === 'beach' ? 'on the beach' : `at ${place.name}`;
   const used = q.fromHold > 0 ? ` ${(q.fromHold * 100).toFixed(0)}% of a set of spares went into it.` : '';

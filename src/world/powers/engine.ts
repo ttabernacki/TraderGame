@@ -10,6 +10,11 @@ import { FRONTS, SCHEDULE } from './data';
 import { ATTITUDES, FRONT_DELTAS, type AttitudeRow, type FrontRow } from './deltas';
 import { goldTick } from './gold';
 import { kongoTick } from './kongo';
+import { type Ctx, yearOf } from './moves';
+import { kilwaTick, melindeTick, mombasaTick } from './swahili';
+import { calicutTick, cochinTick, gujaratTick } from './malabar';
+import { mamlukTick } from './crescent';
+import { beninTick, castileTick, sahelTick } from './stubs';
 import { declareReader } from './modifiers';
 import { announce, hearAt, resolveDue, type Heard } from './rumours';
 import { FRONT_IDS, type FrontId, type PowerId, type PowersState, type Rumour } from './types';
@@ -32,6 +37,8 @@ export interface PowersHost extends WorldHost {
   powers?: PowersState;
   /** The Ledger (Game.ledger). Absent in a bare harness world. */
   ledger?: Entry[];
+  /** The chronicle (Game.chronicle): the act, read once, to fix the Rule when Act V opens. Absent in a bare harness world. */
+  chronicle?: { act: number };
   /** A quiet line for the player (Game.powersNote). */
   powersNote?: (text: string) => void;
 }
@@ -69,7 +76,9 @@ export function foldEntry(st: PowersState, e: Entry): { fronts: Partial<Record<F
   countLever(st, e);
   for (const r of FRONT_ROWS.get(e.tag) ?? []) {
     if (!rowMatches(r, e)) continue;
-    const d = r.delta * (r.scale === 'magnitude' ? Math.max(0, e.magnitude) : 1);
+    // The Rule sets when Act V opens: what the captain does after that counts a third as much.
+    const set = r.front === 'rule' && st.rule?.lockedAt !== undefined && e.t > st.rule.lockedAt ? 0.35 : 1;
+    const d = r.delta * set * (r.scale === 'magnitude' ? Math.max(0, e.magnitude) : 1);
     if (d === 0) continue;
     out.fronts[r.front] = (out.fronts[r.front] ?? 0) + pull(st, r.front, d);
   }
@@ -115,7 +124,7 @@ function stageChange(h: PowersHost, st: PowersState, id: FrontId, t: number, rng
   f.since = t;
   f.log.push({ t, stage: now, why: now > was ? 'The process went on.' : 'It eased.' });
   if (f.log.length > 20) f.log.shift();
-  const place = id === 'traffic' || id === 'gold' ? 'mina' : id === 'court' ? 'lisboa' : 'melinde';
+  const place = id === 'traffic' || id === 'gold' ? 'mina' : id === 'court' || id === 'claim' ? 'lisboa' : id === 'crescent' ? 'adem' : 'melinde';
   announce(st, rng, t, {
     event: `front:${id}:${now}`, place, front: id, window: 10,
     truth: { claim: `${def.name}: ${def.stages[now - 1].name}. ${def.stages[now - 1].line}`, vague: `${def.name} is not what it was.` },
@@ -164,6 +173,17 @@ export function powersMonth(host: WorldHost, t: number): void {
 
   goldTick(st, t, rng);
   kongoTick(st, t, rng, { note: (text) => h.powersNote?.(text) });
+  // The courts of the Indian Ocean, the Crescent, and the lighter stubs. Each draws from its own generator.
+  const year = yearOf(t);
+  const ctx = (id: string): Ctx => ({ st, t, rng: Rng.fromString(`powers:${h.seed}:${idx}:${id}`), year, note: (text) => h.powersNote?.(text) });
+  mombasaTick(ctx('mombasa')); melindeTick(ctx('melinde')); kilwaTick(ctx('kilwa'));
+  calicutTick(ctx('calicut')); cochinTick(ctx('cochin')); gujaratTick(ctx('gujarat'));
+  mamlukTick(ctx('mamluk')); castileTick(ctx('castile')); beninTick(ctx('benin')); sahelTick(ctx('sahel'));
+  // Act V opening fixes the Rule at the stage the captain's conduct (and the coast's history) had made it.
+  if ((h.chronicle?.act ?? 0) >= 5 && st.rule && st.rule.lockedAt === undefined) {
+    st.rule.lockedAt = t;
+    st.rule.stage = st.fronts.rule.stage;
+  }
 
   for (const id of FRONT_IDS) if (FRONTS[id].ticks) stageChange(h, st, id, t, rng);
 
@@ -204,6 +224,6 @@ export function arriveAt(h: PowersHost, port: string, t: number): Arrival {
 export const FRONT_PORTS: Record<FrontId, string[]> = {
   traffic: ['arguim', 'mina', 'mpinda', 'sao-tome-porto', 'ugoton'],
   gold: ['mina', 'axim', 'acara'],
-  claim: [], crescent: [], rule: [], court: [],
+  claim: [], crescent: ['adem', 'cambaia'], rule: ['calecute', 'quiloa', 'melinde'], court: [],
 };
 

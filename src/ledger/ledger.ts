@@ -29,6 +29,8 @@ export interface Entry {
   witnesses: string[];
   /** What happened, in the captain's plain words. */
   note: string;
+  /** Structured facts a reader needs (a clause's kind, id and term). Optional; most entries carry none. */
+  data?: Record<string, number | string>;
 }
 
 /** What `record` needs of the game; `Game` satisfies it. */
@@ -50,6 +52,7 @@ export interface Deed {
   silent?: boolean;
   /** Back-dated entries (migration). */
   t?: number;
+  data?: Record<string, number | string>;
 }
 
 /** Name of a target for display: polity, port, or the raw string. */
@@ -94,6 +97,7 @@ export function record(g: LedgerHost, tag: Tag, d: Deed = {}): Entry {
     witnesses: d.witnesses ?? [],
     note: d.note ?? '',
   };
+  if (d.data) e.data = d.data;
   g.ledger.push(e);
   const quiet = d.silent ?? TAGS[tag].silent ?? false;
   if (!quiet) {

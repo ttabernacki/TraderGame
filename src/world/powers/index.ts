@@ -11,3 +11,8 @@ export { powersMonth, foldEntry, foldLedger, arriveAt, FRONT_PORTS, type PowersH
 export { kongoTick, K, KONGO_PORTS, NDONGO_PORTS } from './kongo';
 export { goldTick } from './gold';
 export { TONS_EACH, LOSS_PER_DAY, aboardTons, parcelsAboard, survivors, takeParcel, trafficLine, trafficStage, trafficPoints } from './traffic';
+export { ruleReading, CONDUCT, KEY_PLACES, type RuleReading } from './rule';
+export { asking, clearAsk } from './moves';
+export { mombasaTick, melindeTick, kilwaTick } from './swahili';
+export { calicutTick, cochinTick, gujaratTick } from './malabar';
+export { mamlukTick } from './crescent';

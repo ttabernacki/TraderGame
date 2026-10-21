@@ -91,7 +91,7 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       T('The line is drawn', 'The line is drawn on paper, and both crowns are arguing over where it falls on water.'),
       T('The race', 'Whoever lands first, owns. Both crowns send what they have.'),
     ],
-    start: 0.5, perYear: 0.35, ticks: false,
+    start: 0.5, perYear: 0.2, ticks: true,
     levers: {
       push: { label: 'Raise another padrão', cost: 'A stone and a risk', delta: 0.15 },
       brake: { label: 'Keep the sheets in the Casa’s press', cost: 'Renown you might have sold', delta: -0.08 },
@@ -112,14 +112,16 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       T('Convoys', 'The ships out of Aden sail in company, and pepper is dearer in Europe than it has been.'),
       T('A league', 'Cairo, Gujarat and Calicut have agreed on something, and it is aimed at the ships that came round the Cape.'),
     ],
-    start: 0.0, perYear: 0.3, ticks: false,
+    start: 0.0, perYear: 0, ticks: true,
     levers: {
       push: { label: 'Press the Portuguese advantage', cost: 'The next ship you meet', delta: 0.12 },
       brake: { label: 'Spare a ship, and be known for it', cost: 'The prize', delta: -0.06 },
       contest: { label: 'Carry a peace between courts', cost: 'Weeks, and your word', delta: -0.15 },
     },
-    offsetMin: -1.6, offsetMax: 3,
+    offsetMin: -4, offsetMax: 5,
     effects: [
+      { minStage: 2, ports: ['adem'], duesMult: 1.05, line: 'Notes have gone to Cairo and Rome, and the harbour-master at Adem counts the Portuguese in every account.' },
+      { minStage: 3, ports: ['cambaia', 'diu'], price: { pimenta: 1.08 }, stock: { pimenta: 0.9 }, line: 'The merchants of Gujarat sail in company, and what they carry goes to the Red Sea first.' },
       { minStage: 3, ports: ['lisboa'], price: { pimenta: 1.06 }, line: 'The Red Sea road is moving more of the pepper, and Lisbon pays more for what comes round the Cape.' },
       { minStage: 3, ports: ['calecute', 'cochim', 'cananor'], duesMult: 1.1, line: 'Convoys of the Moorish ships make the Malabar quays dear.' },
       { minStage: 4, ports: ['lisboa'], price: { pimenta: 1.08 }, line: 'The league has raised the price of pepper on the Tagus.' },
@@ -134,14 +136,17 @@ export const FRONTS: Record<FrontId, FrontDef> = {
       T('Stopping unlicensed ships', 'A ship without the letter is stopped, searched and sometimes taken.'),
       T('Blockade', 'The ports are closed to ships without the letter, and the ocean is watched.'),
     ],
-    start: 0.0, perYear: 0.3, ticks: false,
+    start: 0.0, perYear: 0, ticks: true,
     levers: {
       push: { label: 'Stop the unlicensed', cost: 'Every captain’s opinion of you', delta: 0.20 },
       brake: { label: 'Let her pass', cost: 'The King’s letter', delta: -0.10 },
       contest: { label: 'Argue it at court', cost: 'Casa regard', delta: -0.10 },
     },
-    offsetMin: -1.6, offsetMax: 3.2,
+    offsetMin: -5, offsetMax: 7,
     effects: [
+      { minStage: 2, maxStage: 3, ports: ['melinde', 'cochim'], prosperity: 0.008, line: 'Ships with the King’s letter are left alone, and the friends who hold it are trading more.' },
+      { minStage: 3, ports: ['calecute'], prosperity: -0.012, stock: { pimenta: 0.93 }, line: 'Calecute’s own ships are stopped on the coast, and the Mappila houses ship less pepper.' },
+      { minStage: 3, ports: ['quiloa'], stock: { ouro: 0.93 }, prosperity: -0.008, line: 'Kilwa’s gold dhows are stopped for the letter, and less of it reaches the quay.' },
       { minStage: 2, ports: ['calecute', 'cochim', 'cananor', 'melinde', 'quiloa', 'mombaca', 'adem', 'ormuz'], duesMult: 1.1, line: 'Ships without a Portuguese letter pay more to land.' },
       { minStage: 3, ports: ['calecute', 'cochim', 'cananor', 'melinde', 'quiloa', 'mombaca', 'adem', 'ormuz'], duesMult: 1.2, line: 'Ships without a Portuguese letter are stopped, and the quays charge for the risk.' },
       { minStage: 4, ports: ['calecute', 'adem', 'ormuz'], closes: true, duesMult: 1.3, line: 'The great ports are shut to ships without the letter.' },
@@ -192,17 +197,19 @@ export interface PowerDef {
 
 export const POWERS: PowerDef[] = [
   { id: 'crown', name: 'The Crown’s court', polities: ['portugal'], ticks: false, intent: 'Keep the gold, find the road to India, and keep Castile south of the line.', means: { coin: 0.7, arms: 0.5, ships: 0.7 }, factions: ['the throne', 'the Order of Christ and the Church', 'the Rua Nova money'] },
-  { id: 'castile', name: 'Castile', polities: ['castile'], ticks: false, intent: 'Press for the Guinea trade and for the line to run where it suits.', means: { coin: 0.6, arms: 0.6, ships: 0.5 } },
-  { id: 'mamluk', name: 'The Mamluk–Venetian axis', polities: ['aden', 'hormuz', 'gujarat'], ticks: false, intent: 'Keep the spice road through the Red Sea open and Lisbon’s ships out of it.', means: { coin: 0.8, arms: 0.5, ships: 0.4 } },
-  { id: 'kilwa', name: 'Kilwa and Mombaça', polities: ['kilwa', 'mombasa'], ticks: false, intent: 'Keep the gold of Sofala flowing north on their own terms, and Melinde down.', means: { coin: 0.6, arms: 0.4, ships: 0.3 } },
-  { id: 'melinde', name: 'Melinde', polities: ['malindi'], ticks: false, intent: 'Find a friend against Mombaça.', means: { coin: 0.4, arms: 0.2, ships: 0.2 } },
-  { id: 'calicut', name: 'Calicut and the Mappila merchants', polities: ['calicut'], ticks: false, intent: 'Keep the Moorish merchants and the pepper under the Zamorin’s hand.', means: { coin: 0.7, arms: 0.5, ships: 0.4 } },
-  { id: 'cochin', name: 'Cochim and the Kolathiri', polities: ['cochin', 'kolathiri'], ticks: false, intent: 'Pay no tribute to Calicut, if somebody will stand behind them.', means: { coin: 0.4, arms: 0.3, ships: 0.2 } },
+  { id: 'castile', name: 'Castile', polities: ['castile'], ticks: true, intent: 'Press for the Guinea trade and for the line to run where it suits.', means: { coin: 0.6, arms: 0.6, ships: 0.5 } },
+  { id: 'mamluk', name: 'The Mamluk–Venetian axis', polities: ['aden', 'hormuz'], ticks: true, intent: 'Keep the spice road through the Red Sea open and Lisbon’s ships out of it.', means: { coin: 0.8, arms: 0.5, ships: 0.4 } },
+  { id: 'kilwa', name: 'Kilwa', polities: ['kilwa'], ticks: true, intent: 'Keep the gold of Sofala flowing north on its own terms.', means: { coin: 0.6, arms: 0.3, ships: 0.3 } },
+  { id: 'mombasa', name: 'Mombaça', polities: ['mombasa'], ticks: true, intent: 'Keep the strongest harbour on the coast, and Melinde down.', means: { coin: 0.5, arms: 0.6, ships: 0.4 } },
+  { id: 'melinde', name: 'Melinde', polities: ['malindi'], ticks: true, intent: 'Find a friend against Mombaça.', means: { coin: 0.4, arms: 0.2, ships: 0.2 } },
+  { id: 'calicut', name: 'Calicut and the Mappila merchants', polities: ['calicut'], ticks: true, intent: 'Keep the Moorish merchants and the pepper under the Zamorin’s hand.', means: { coin: 0.7, arms: 0.5, ships: 0.4 } },
+  { id: 'cochin', name: 'Cochim and the Kolathiri', polities: ['cochin', 'kolathiri'], ticks: true, intent: 'Pay no tribute to Calicut, if somebody will stand behind them.', means: { coin: 0.4, arms: 0.3, ships: 0.2 } },
+  { id: 'gujarat', name: 'Gujarat and Cambay', polities: ['gujarat'], ticks: true, intent: 'Keep the cloth going out and the Red Sea road open; wait to see who wins at Calecute.', means: { coin: 0.8, arms: 0.5, ships: 0.5 } },
   { id: 'kongo', name: 'Kongo, with Soyo', polities: ['kongo'], ticks: true, intent: 'The elders want the king’s monopoly kept; the traders want to sell to whoever comes.', means: { coin: 0.4, arms: 0.6, ships: 0.05 }, factions: ['elders', 'traders', 'warriors'] },
   // Inside the Traffic
-  { id: 'akan', name: 'The Akan of the Gold Coast', polities: ['eguafo'], ticks: false, inside: true, intent: 'Sell gold at the best price, and buy the labour the mines need from whoever brings it.', means: { coin: 0.5, arms: 0.5, ships: 0.1 } },
-  { id: 'benin', name: 'The Kingdom of Benin', polities: ['benin'], ticks: false, inside: true, intent: 'Set the terms of what Benin sells, and to whom.', means: { coin: 0.5, arms: 0.6, ships: 0.1 } },
-  { id: 'sahel', name: 'The Sahel: Azenegue, Wolof and Mandinka', polities: ['azenegue', 'jolof', 'kaabu'], ticks: false, inside: true, intent: 'Sell to whoever pays most, in horses, wheat or cloth.', means: { coin: 0.4, arms: 0.6, ships: 0.05 } },
+  { id: 'akan', name: 'The Akan of the Gold Coast', polities: ['eguafo'], ticks: true, inside: true, intent: 'Sell gold at the best price, and buy the labour the mines need from whoever brings it.', means: { coin: 0.5, arms: 0.5, ships: 0.1 } },
+  { id: 'benin', name: 'The Kingdom of Benin', polities: ['benin'], ticks: true, inside: true, intent: 'Set the terms of what Benin sells, and to whom.', means: { coin: 0.5, arms: 0.6, ships: 0.1 } },
+  { id: 'sahel', name: 'The Sahel: Azenegue, Wolof and Mandinka', polities: ['azenegue', 'jolof', 'kaabu'], ticks: true, inside: true, intent: 'Sell to whoever pays most, in horses, wheat or cloth.', means: { coin: 0.4, arms: 0.6, ships: 0.05 } },
 ];
 
 export const POWER_BY_ID = new Map<PowerId, PowerDef>(POWERS.map((p) => [p.id, p]));
@@ -289,6 +296,77 @@ export const SCHEDULE: DatedShock[] = [
     id: 'sao-tome-sugar', year: 1500, month: 6, front: 'traffic', delta: 0.25, place: 'sao-tome-porto',
     text: 'The first mills are grinding on São Tomé, and the planters are asking for more hands than the island has.',
     source: 'São Tomé’s first sugar exports fall in the first years of the 1500s; the date is approximate and the game does not claim the year.', grade: 'approximate',
+  },
+  // --- The Indian Ocean (D4). Dates are the usual ones; scenes state none. ---
+  {
+    id: 'gama-melinde', year: 1498, month: 4, power: 'melinde', attitude: 0.15, place: 'melinde',
+    text: 'Melinde has taken the Portuguese in, given them a house and a pilot, and made a friend of them against Mombaça.',
+    source: 'Da Gama at Melinde, April 1498: received by the sultan, who gave a pilot for the crossing and was Mombaça\u2019s rival (Subrahmanyam, The Career and Legend of Vasco da Gama; Portuguese and Arabic accounts). The pilot\u2019s name and origin are disputed and not used.', grade: 'documented',
+  },
+  {
+    id: 'gama-calicut', year: 1498, month: 5, front: 'crescent', delta: 1.0, power: 'calicut', attitude: -0.05, place: 'calecute',
+    text: 'Ships from the far west have anchored off Calecute, and the Zamorin has seen their captain. The Moorish houses have not liked what they saw.',
+    source: 'Da Gama reached Calicut 20 May 1498, was received by the Zamorin, and the Muslim merchants opposed him (Subrahmanyam; Malekandathil, Maritime India).', grade: 'documented',
+  },
+  {
+    id: 'gama-rule', year: 1498, month: 9, front: 'rule', delta: 0.5, place: 'melinde',
+    text: 'The Portuguese took a boat on the way out, and kept her pilots. Nobody on the coast has forgotten that.',
+    source: 'Da Gama\u2019s outward voyage took vessels and pilots by force at points on the East African coast (Subrahmanyam). Which vessel and when is not stated.', grade: 'approximate',
+  },
+  {
+    id: 'cabral-calicut', year: 1500, month: 9, front: 'rule', delta: 1.0, place: 'calecute',
+    text: 'A second Portuguese fleet is at Calecute, thirteen ships, and it has come to trade on terms and not to ask.',
+    source: 'Cabral reached Calicut in September 1500 (usual date); the fleet\u2019s size is given as thirteen ships in the sources and the game uses no figure.', grade: 'documented',
+  },
+  {
+    id: 'calicut-factory', year: 1500, month: 12, front: 'crescent', delta: 1.5, power: 'calicut', attitude: -0.25, place: 'calecute',
+    text: 'The Portuguese factory at Calecute has been attacked, and its people killed. The fleet answered with its guns.',
+    source: 'The attack on the Portuguese factory at Calicut and Cabral\u2019s bombardment, December 1500 (Subrahmanyam; Pearson, The Portuguese in India). Numbers killed vary by source and are not given.', grade: 'documented',
+  },
+  {
+    id: 'cochin-friend', year: 1501, month: 1, front: 'rule', delta: 0.5, power: 'cochin', attitude: 0.2, place: 'cochim',
+    text: 'Cochim has given the Portuguese a house, and a warehouse for pepper, and has made a friend against the Zamorin.',
+    source: 'Cabral at Cochin and Cannanore, December 1500 to January 1501: factories agreed with the Raja of Cochin and the ruler of Cannanore (Pearson; Subrahmanyam).', grade: 'documented',
+  },
+  {
+    id: 'venice-alarm', year: 1501, month: 7, front: 'crescent', delta: 1.0, power: 'mamluk', attitude: -0.05, place: 'adem',
+    text: 'Venice has seen the first Portuguese pepper arrive in Lisbon, and Cairo is asked what it means for the spice road.',
+    source: 'Venetian alarm at the Portuguese spice route recorded by Girolamo Priuli in his diaries (1501-02); the Venetian embassy to Cairo followed in 1504. The game dates the alarm only to the year.', grade: 'documented',
+  },
+  {
+    id: 'gama-1502', year: 1502, month: 2, front: 'rule', delta: 2.5, place: 'quiloa',
+    text: 'The Admiral is back with a larger fleet. Kilwa has been made to pay tribute, and ships of the coast are now asked for a Portuguese letter.',
+    source: 'Da Gama\u2019s second voyage left in February 1502 and forced tribute from Kilwa that summer; cartaz passes became regular practice in the following years (Subrahmanyam; Pearson). The exact first use of a pass is not fixed here.', grade: 'approximate',
+  },
+  {
+    id: 'gama-1502-c', year: 1502, month: 2, front: 'crescent', delta: 0.8, power: 'kilwa', attitude: -0.15, place: 'quiloa',
+    text: 'Kilwa has been made to pay tribute to the Portuguese, and the coast is counting what it cost.',
+    source: 'Da Gama\u2019s second voyage forced tribute from Kilwa in the summer of 1502 (Subrahmanyam); the sum is not given here.', grade: 'approximate',
+  },
+  {
+    id: 'almeida-1505', year: 1505, month: 7, front: 'rule', delta: 1.5, power: 'kilwa', attitude: -0.25, place: 'quiloa',
+    text: 'The Viceroy\u2019s fleet has taken Kilwa and Mombaça, and built a fort at Kilwa.',
+    source: 'Almeida\u2019s fleet took Kilwa and Mombasa in July 1505; a fort was built at Kilwa (Pearson; Subrahmanyam).', grade: 'documented',
+  },
+  {
+    id: 'almeida-1505-m', year: 1505, month: 8, front: 'crescent', delta: 0.7, power: 'mombasa', attitude: -0.3, place: 'mombaca',
+    text: 'Mombaça has been sacked. The sultans along the coast have each begun to think about whom to write to.',
+    source: 'Almeida\u2019s fleet sacked Mombasa in August 1505, after Kilwa in July (Pearson; Subrahmanyam).', grade: 'documented',
+  },
+  {
+    id: 'mamluk-fleet', year: 1507, month: 1, front: 'crescent', delta: 3.0, power: 'mamluk', attitude: -0.1, place: 'adem',
+    text: 'A fleet is fitting out at Suez under the Sultan\u2019s order, to go against the Portuguese in India with Gujarat\u2019s help.',
+    source: 'The Mamluk fleet under Amir Husayn al-Kurdi reached Gujarat in 1507-08; Chaul 1508; defeat at Diu 1509 (Pearson; Subrahmanyam). The game gives the year only.', grade: 'documented',
+  },
+  {
+    id: 'diu-1509', year: 1509, month: 2, front: 'crescent', delta: -1.0, power: 'gujarat', attitude: -0.1, place: 'cambaia',
+    text: 'The Egyptian fleet has been beaten off Diu, and Gujarat has to think again about its friends.',
+    source: 'Battle of Diu, February 1509 (usual date).', grade: 'documented',
+  },
+  {
+    id: 'albuquerque-1513', year: 1513, month: 3, front: 'rule', delta: 2.0, place: 'adem',
+    text: 'The Governor has taken a fleet up to Adem, and means to shut the Red Sea to ships without the letter.',
+    source: 'Albuquerque\u2019s attack on Aden, 1513 (failed), and the plan to blockade the Red Sea; Hormuz taken 1515. The Rule\u2019s \u201cblockade\u201d stage follows this policy; the game does not claim a particular year for it in any scene.', grade: 'approximate',
   },
   {
     id: 'kongo-succession', year: 1506, month: 6, power: 'kongo', place: 'mpinda',

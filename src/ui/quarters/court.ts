@@ -1,14 +1,17 @@
 import { markCounts } from '../../diplomacy/marks';
 import { polityOfPort } from '../../diplomacy/polities';
 import type { Game } from '../../game/state';
-import { deepPort, patronOf, stageWord } from '../../places';
+import { quartersView } from '../../game/year';
+import { deepPort, lisbonBusiness, patronViews, shortName, stageWord } from '../../places';
 import { hullPrice } from '../../progression/network';
 import { people } from '../../world/peoples';
-import { button, card, el, kv } from '../dom';
+import { button, card, el, foldCard, kv } from '../dom';
 import { openLineCard } from '../networkView';
 import type { Ctx } from './ctx';
 import { regardWord } from './quay';
 import { verb } from './verb';
+import { clauseCard } from '../identityView';
+import { hasClause } from '../../identity/clauses';
 
 /** Fort and Court: where you stand with whoever governs the place, and what the Patron's goodwill is worth here. */
 export function audienceSection(ctx: Ctx, host: HTMLElement, g: Game): void {
@@ -29,6 +32,17 @@ export function audienceSection(ctx: Ctx, host: HTMLElement, g: Game): void {
       ? 'These are your own people. The Casa and the Crown are reached through the court at Lisbon.'
       : 'What a court thinks of you is the sum of what you have done in its hearing, and it is told to the next court along the road.'))));
 
+  if (pol) {
+    const grants = clauseCard(g, () => ctx.render(), (text, grave) => { ctx.notice = { text, grave }; ctx.render(); }, pol.id);
+    // Men for hire, as trade: a clause makes the court's rate the rate here. One verb, inside the grants.
+    const short = g.crew.complement - g.crew.count;
+    if (hasClause(g, pol.id, 'men') && short > 0) {
+      const cost = g.handWage() * short;
+      grants.append(button(`Hire ${short} men at the court's rate \u2014 ${cost} cruzados`, () => { const r = g.shipHands(short); ctx.notice = { text: r.message, grave: !r.ok }; ctx.render(); }, { disabled: g.crown.gold < cost }));
+    }
+    host.append(verb('court.clauses', grants));
+  }
+
   if (def.people !== 'portuguese') {
     host.append(verb('court.audience', card('Seek an audience',
       el('p', {}, rel.mayTrade
@@ -40,14 +54,24 @@ export function audienceSection(ctx: Ctx, host: HTMLElement, g: Game): void {
         def.people === 'han' ? button('To the Admiral', () => ctx.onCourt()) : null))));
   }
 
+  // Lisbon: the Year's winter-quarters panel lives here, beside the Casa and the Court, with the patrons' business in place of a
+  // generic line (game/year.ts, places/ports/lisboa.ts).
+  const qv = quartersView(g);
+  if (qv) {
+    host.append(verb('town.year-quarters', foldCard(card(qv.title,
+      el('p', {}, qv.season),
+      ...qv.items.map((i) => kv(i.label, i.label === 'Patron' ? lisbonBusiness(g) : i.value)),
+      el('p', { class: 'flavour' }, qv.consequence + ' Leaving early is always allowed.')), qv.phase === 'quarters' ? '' : 'The season is open.', qv.phase === 'quarters')));
+  }
+
   const deep = deepPort(def.id);
   if (deep) {
-    const v = patronOf(g, deep);
-    host.append(verb('court.patron', card(`What ${deep.patron.name}’s goodwill is worth here`,
-      kv('To you, he is', stageWord(v.stage)),
+    const views = patronViews(g, deep);
+    host.append(verb('court.patron', card(views.length > 1 ? 'What the patrons’ goodwill is worth here' : `What ${deep.patron.name}’s goodwill is worth here`,
+      ...views.map((v) => kv(`To you, ${shortName(v.patron)} is`, stageWord(v.stage))),
       kv('A House here would cost', `${g.foundingCost(def)} cruzados`),
-      kv('Credit while you lie here', v.unlocked.some((k) => k.kind === 'credit') ? `${g.creditLimit} cruzados` : 'none yet'),
-      ...v.shown.map((k) => el('p', { class: 'perk on' }, el('b', {}, '✓ '), k.text)))));
+      kv('Credit while you lie here', views.some((v) => v.unlocked.some((k) => k.kind === 'credit')) ? `${g.creditLimit} cruzados` : 'none yet'),
+      ...views.flatMap((v) => v.shown.map((k) => el('p', { class: 'perk on' }, el('b', {}, '✓ '), `${shortName(v.patron)}: ${k.text}`))))));
   }
 }
 

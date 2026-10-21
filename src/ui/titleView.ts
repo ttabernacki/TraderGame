@@ -5,6 +5,8 @@ import { ORIGINS, originDef, type OriginId } from '../progression/origins';
 import { ACTIVE_CAMPAIGN, XIYANG_SHELVED, keepCampaign } from '../campaigns/active';
 import { CAMPAIGNS, campaignDef } from '../game/campaign';
 import { button, card, clear, el, kv } from './dom';
+import { generateName } from '../identity/names';
+import { Rng } from '../core/rng';
 
 export class TitleView {
   root = el('div', { class: 'screen title-screen' });
@@ -23,6 +25,12 @@ export class TitleView {
    */
   private origin: OriginId = 'segundo';
   private origins = el('div', { class: 'difficulty' });
+  /** The captain's name: drawn from the origin, and the player's to change. */
+  private captainName = '';
+  private nameInput = el('input', { type: 'text', class: 'captain-name', maxlength: '40', 'aria-label': 'The captain’s name' }) as HTMLInputElement;
+  private nameRolls = 0;
+  private edited = false;
+  private nameTouched(): boolean { return this.edited; }
   private originBlurb = el('div', { class: 'difficulty-blurb' });
 
   /**
@@ -37,7 +45,7 @@ export class TitleView {
   private onVoyages: () => void;
 
   constructor(
-    onNew: (d: Difficulty, o: OriginId) => void, onContinue: () => void, hasSave: boolean,
+    onNew: (d: Difficulty, o: OriginId, heirOf?: Game, name?: string) => void, onContinue: () => void, hasSave: boolean,
     onVoyages: () => void = () => {},
   ) {
     this.onContinue = onContinue;
@@ -66,7 +74,9 @@ export class TitleView {
         },
       }, el('span', { class: 'difficulty-name' }, c.title),
         el('span', { class: 'difficulty-english' }, c.inDevelopment ? `${c.tagline} \u00b7 preview` : c.tagline))))]),
-      ...(xiyang ? [] : [el('div', { class: 'difficulty-head' }, 'Who are you?'), this.origins, this.originBlurb]),
+      ...(xiyang ? [] : [el('div', { class: 'difficulty-head' }, 'Who are you?'), this.origins, this.originBlurb,
+        el('div', { class: 'difficulty-head' }, 'What are you called?'),
+        el('div', { class: 'row' }, this.nameInput, button('Another name', () => this.rollName(), { ghost: true }))]),
       el('div', { class: 'difficulty-head' }, 'How is she to be worked?'),
       this.choices,
       this.blurb,
@@ -77,16 +87,24 @@ export class TitleView {
         'Neither setting changes any of that \u2014 only how much of the ship\u2019s routine work is yours to do.'),
     );
     this.onNew = onNew;
+    this.nameInput.addEventListener('input', () => { this.captainName = this.nameInput.value; this.edited = true; });
+    this.rollName();
     this.renderChoices();
     this.setHasSave(hasSave);
   }
 
-  private onNew!: (d: Difficulty, o: OriginId) => void;
+  private onNew!: (d: Difficulty, o: OriginId, heirOf?: Game, name?: string) => void;
+
+  private rollName(): void {
+    this.captainName = generateName(this.origin, new Rng(0x9e37 + this.nameRolls++ * 7919 + Math.floor(Math.random() * 1e6)));
+    this.nameInput.value = this.captainName;
+    this.edited = false;
+  }
 
   /** Called once the shelf has answered. Safe to call more than once. */
   setHasSave(has: boolean, looking = false): void {
     clear(this.actions);
-    this.actions.append(button('Sail', () => this.onNew(this.difficulty, this.origin),
+    this.actions.append(button('Sail', () => this.onNew(this.difficulty, this.origin, undefined, this.nameInput.value || this.captainName),
       { primary: true }));
     if (has) this.actions.append(button('Continue the voyage', this.onContinue));
     // Still waiting on the account: say so, rather than let a player who has a
@@ -113,7 +131,7 @@ export class TitleView {
     for (const o of ORIGINS) {
       this.origins.append(el('button', {
         class: `difficulty-btn${this.origin === o.id ? ' active' : ''}`,
-        onclick: () => { this.origin = o.id; this.renderChoices(); },
+        onclick: () => { this.origin = o.id; if (!this.nameTouched()) this.rollName(); this.renderChoices(); },
       },
         el('span', { class: 'difficulty-name' }, o.name),
         el('span', { class: 'difficulty-english' }, o.english),

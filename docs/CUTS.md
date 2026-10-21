@@ -64,3 +64,34 @@ Net: about 1,236 lines deleted, 601 added (resolvers, ambient barks, the folded 
 
 ## Not cut
 `neverLose` / `reprieve`, `fleet/*`, finance, upgrades (B3), Xiyang.
+
+## 7. The pieces, audited against clauses (D5)
+
+Rule (BUILD_PLAN D5): a kept piece must end by naming a **clause granted, refused or poisoned**, or it is cut or folded.
+`identity/clauses.ts` (`PIECE_CLAUSE`) is the table; `diplomacy/table.ts` `resolve` applies it when a piece ends, whether by a
+choice or by a passage's beat, and the UI prints the line (`Outcome.clauseLine`, `PieceRun.outcome.clause`). Win grants, half
+grants **with strings** (poisoned: half the benefit, two years, lost at the first offence), fail is refused. A grant already in
+force is not granted twice; it is renewed for gifts from the Book (`renewClause`).
+
+| Piece | Before D5 ended in | Now ends in | Verdict |
+|---|---|---|---|
+| Silent Trade (`silent`) | marks only (`silent.fair/blood/none`) | **Berth and watering rights** at the beach | kept, reworked |
+| Gift Table (`gifts`) | marks, the deal's gift value | **Free dues** (the presents are the dues) | kept, reworked |
+| The Case (`case`) | marks (`judgement.*`) | **Fortress licence** (a court that finds you just lets you wall a House) | kept, reworked |
+| Go-Between (`between`) | marks at two courts | **Cartaz recognised**, at both courts | kept, reworked |
+| Envoy (`envoy`) | an agreement and marks | **Exclusive buyer** | kept, reworked |
+| Informer (`informer`) | marks, a person only in the text | **Cartaz recognised** (the rival's letter is not honoured beside yours) | kept, reworked |
+| Refusal (`refusal`) | marks (`refusal.honest/curt`), a friend only in the text | **Men for hire** (the friend lends boatmen and porters, as trade) | kept, reworked |
+| Pilot's Test (`pilot`) | marks, days lost | **Pilot loan** | kept, reworked |
+| Hostage's Letters (`hostage`) | marks, a boy who becomes a person in the text | **Exclusive buyer** (the father's trade); the boy stays the person | kept, reworked |
+| Bow (`bow`) | the custom of the court, marks | nothing: the greeting is not a piece in the sense of the rule; it leads to the terms, where clauses are asked for by name | kept as the greeting |
+
+Nothing was folded or deleted in D5: no kept piece was found that could not honestly end in a clause. The audit's finding is that
+**Refusal** and **Informer** were the two that ended in nothing the game could use (a friend, a clerk, a mark); both now end in a
+grant. If playtests find either dishonest to its piece (a refused friend does not lend men), they are the first to fold into the
+Envoy. The pairing of piece to clause is **invented** (the design docs name the rule, not the pairs).
+
+The audience's own terms (`audienceView`) now ask for the same seven clauses by name, each with its price in gifts
+(`clausePrice`, a share of `expectedGift`) and its term in years; `concludeTreaty` grants, poisons or refuses each by the gifts
+laid down. The old "pilot" ask is the Pilot loan clause. `marks.ts` stays as it was migrated (Ledger entries with the echo); the
+clause is the only new store, and it is the Ledger.

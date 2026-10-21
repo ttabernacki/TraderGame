@@ -5,6 +5,7 @@ import { writeMarkAndRecord } from './marks';
 import type { Outcome, Piece, PieceCtx, PieceRun, PieceView } from './piece';
 import { POLITY_BY_ID } from './polities';
 import { PIECES } from './pieces';
+import { PIECE_CLAUSE, settlePieceClause } from '../identity/clauses';
 
 /**
  * The Table: starts a piece, steps it, resolves it into marks, measures and
@@ -81,7 +82,14 @@ function resolve(g: Game, run: PieceRun, o: Outcome): void {
     }
   }
   if (o.gold) g.crown.gold = Math.max(0, g.crown.gold + o.gold);
-  run.outcome = { grade: o.grade, line: o.line, t: now };
+  // Every kept piece ends by naming a clause granted, refused or poisoned (identity/clauses).
+  let clause = '';
+  if (PIECE_CLAUSE[run.pieceId]) {
+    clause = settlePieceClause(g, run.pieceId, run.polity, o.grade);
+    if (run.pieceId === 'between') for (const a of o.also ?? []) settlePieceClause(g, 'between', a.polity, o.grade);
+    o.clauseLine = clause;
+  }
+  run.outcome = { grade: o.grade, line: o.line, t: now, ...(clause ? { clause } : {}) };
   // The ledger keeps the last twenty-four runs and the open ones.
   const done = g.diplomacy.pieces.runs.filter((r) => r.outcome);
   if (done.length > 24) {
@@ -122,7 +130,7 @@ export function tickPieces(g: Game, days: number): void {
     const b = piece.beat(ctx, run.state, days);
     if (!b) continue;
     run.state = b.state;
-    if (b.outcome) { resolve(g, run, b.outcome); g.logEvent('contact', b.outcome.line + '.'); continue; }
+    if (b.outcome) { resolve(g, run, b.outcome); g.logEvent('contact', b.outcome.line + '.' + (b.outcome.clauseLine ? ` ${b.outcome.clauseLine}` : '')); continue; }
     const scene = b.scene;
     if (!scene) continue;
     g.queueScene({

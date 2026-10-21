@@ -76,13 +76,15 @@ The port screen is six quarters (Waterfront, Tavern, Yard, Market, Fort & Court,
 every port in several states, and every golden save at every port, renders every section with every available verb found
 in the DOM by `data-verb`; the Fronts show at the place (an embargo shuts the Market's strip and stock); Mina's Patron
 tracks the Ledger, reacts in a played career, and tells a four-beat arc in order whose reward lies ahead on the road; a
-Ledger entry becomes a line, said once, and moves dues, price and the town's regard; every non-Deep port is a four-line Stop.
+Ledger entry becomes a line, said once, and moves dues, price and the town's regard; every non-Deep port is a four-line Stop. D6 adds Arguim, Melinde, Calecute and Lisboa (Lisbon with three Patrons): each Patron's regard follows the Ledger and
+reaches the log in a played career (careerCore seeds), every calendar entry shows on the quay in its months, a deed becomes a town line said once and moves dues,
+the four-beat arcs run in order, and **every choice of every beat is checked for deeds or regard that land behind the port on the road** (`road.ts: along()`).
 
 ```
 npx esbuild scripts/quarters.ts --bundle --platform=node --format=cjs --outfile=/tmp/quarters.cjs && node /tmp/quarters.cjs
 ```
 
-About 35 s. Pixels are not checked here; for those, bundle `ui/portView` and screenshot it (see `scripts/render`).
+About 65 s. Pixels are not checked here; for those, bundle `ui/portView` and screenshot it (see `scripts/render`).
 
 ## 4. Lanes, contracts, the weigh-house, dues, the rival's house — `scripts/lanes.ts`, `econ.ts --world`
 

@@ -6,6 +6,7 @@ import { BONDS } from '../progression/arcs';
 import { originDef } from '../progression/origins';
 import { lateEndings, originEnding } from '../progression/quests';
 import { casaEnding } from '../progression/casa';
+import { patronEnding, TITLE_BY_ID } from '../identity';
 import { portName } from '../progression/crown';
 import type { Game } from '../game/state';
 import { chronicles, muster } from '../ledger/chronicle';
@@ -298,6 +299,15 @@ export class EpilogueView {
             )
           : null,
 
+        // Whose captain he was, and what the world called him (identity/).
+        ...(() => {
+          const p = patronEnding(g);
+          const worn = g.identity.worn.map((id) => TITLE_BY_ID.get(id)?.english).filter(Boolean);
+          return [card(p ? p.title : g.identity.name || 'The captain',
+            g.identity.name ? el('p', { class: 'flavour' }, `${g.identity.name}${worn.length ? `, ${worn.join(', ')}` : ''}.`) : null,
+            p ? el('p', {}, p.text) : null)];
+        })(),
+
         // The shore end. The rival is what the sea made of you; this is what
         // the building made of you, and it is the version that survives.
         ...(() => {
@@ -422,7 +432,7 @@ export class EpilogueView {
     this.root.append(
       el('div', { class: 'screen-head' },
         el('h1', {}, 'The carreira is opened'),
-        el('div', { class: 'sub' }, `${g.crown.title.name} · ${g.clock.formatDate()}`),
+        el('div', { class: 'sub' }, `${g.identity.name ? `${g.identity.name} \u00b7 ` : ''}${g.crown.title.name} · ${g.clock.formatDate()}`),
       ),
       body,
       el('div', { class: 'screen-foot' },

@@ -11,6 +11,7 @@
  * is 18 t.
  */
 import { clamp } from '../core/math';
+import { wateringFree } from '../identity/clauses';
 import { haversine, NM } from '../core/math';
 import type { CrewState } from '../crew/crew';
 import type { PortDef } from '../world/ports';
@@ -77,7 +78,7 @@ export function planCost(def: PortDef, g: Game, plan: StoresPlan): number {
   const have = planOf(g.crew);
   const men = Math.max(g.crew.count, 1);
   const avail = clamp(def.refit, 0.05, 1);
-  const water = Math.max(0, plan.water - have.water) * men * WATER_RATE;
+  const water = wateringFree(g, def.id) ? 0 : Math.max(0, plan.water - have.water) * men * WATER_RATE;
   const food = Math.max(0, plan.victuals - have.victuals) * men * VICTUAL_RATE;
   const spares = Math.max(0, plan.spares - have.spares) * SPARES_SET_COST * (g.ship.baseHull.hold / 30) ** 0.6;
   return Math.ceil((water + food + spares) / avail);

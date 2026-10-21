@@ -2,7 +2,7 @@ import { Clock, dateFromDays, formatDateAt, monthName } from '../core/clock';
 import { counselFor, rollConflict, type Counsel } from './counsel';
 import { characterOf } from '../world/portCharacter';
 import {
-  crisisFor, newDiplomacy, newPolityState, rulerName, spreadWord,
+  crisisFor, isClauseAsk, newDiplomacy, newPolityState, rulerName, spreadWord,
   type Agreement, type Deal, type DiplomacyState, type Verdict,
 } from '../diplomacy/courts';
 import { POLITIES, POLITY_BY_ID, polityOfPort, politiesOfPeople, type PolityDef } from '../diplomacy/polities';
@@ -23,6 +23,7 @@ import { noteSeen, prosperityOf, prosperityShock, tickWorldDue, type PortState, 
 import { dueDeepScene, placeCallbackAt, placeCredit, placeHouseFactor, placeMods, rememberDeed } from '../places';
 import { arriveAt, foldLedger, marketModifiers, migratePowers, newPowers, setHistorySource, type PowersState } from '../world/powers';
 import { dueTrafficScene } from '../progression/trafficScenes';
+import { duePowerScene } from '../progression/powerScenes';
 import { MILESTONES, checkMilestones } from '../progression/milestones';
 import { newPassageRecord, passageQuestion, type PassageRecord } from './passage';
 import { azoresHigh, itczLatitude } from '../world/wind';
@@ -134,6 +135,8 @@ import { quoteTrend } from '../economy/trade';
 import { type LaneState } from '../world/laneState';
 import { addHeat, coolForDeed, inspect, isRun, newHeat, runPrice, type HeatState } from '../economy/contraband';
 import { duesFor } from '../economy/dues';
+import { type IdentityState, newIdentity, migrateIdentity, ensureName, inheritIdentity, tickIdentity, patronOffers, orderDischarged, patronCredit, titleWageMult, entryRadiusNm, noteLeadEntry, canFoundWithoutCourt, designBlocked } from '../identity';
+import { CLAUSES, clauseLine, clauseMods, grantClause, judgeClause, menWageMult, presentWaived, refuseClause } from '../identity/clauses';
 import { migrateVentures } from './saveResolvers';
 import { along as roadAlong } from '../progression/road';
 import { ally as rivalAllyHouse, bindRival, buyOut as rivalBuyOutHouse, buyOutPrice, canAlly, houseOf } from '../progression/rivalHouse';
@@ -305,8 +308,10 @@ export class Game {
     const act = this.chronicle.act;
     // Act I's commission waits on the island voyage the pilot teaches; after
     // that, each act's own commission is always on the table.
-    return this.crown.offers(this.clock.date.year, (title) => patentAllowed(act, title),
+    const crown = this.crown.offers(this.clock.date.year, (title) => patentAllowed(act, title),
       act >= 2 ? ACT_CHARGE[act] : undefined);
+    // The patron of record puts its own orders beside the King's charge (identity/patrons).
+    return patronOffers(this, crown);
   }
 
   /**
@@ -441,6 +446,7 @@ export class Game {
     if (this.mode === 'gameover' || this.mode === 'title') return;
     noteSightings(this);
     tickCompany(this);
+    tickIdentity(this);
     tickWorldDue(this, this.clock.t);
     tickLines(this);
     if (this.dockedAt) deliverFactoryMail(this, this.dockedAt);
@@ -479,7 +485,7 @@ export class Game {
       const id = `quest:${q.id}:${q.step}`;
       if (this.pendingEvent?.id !== id && !this.pendingScenes.some((x) => x.id === id)) q.fired = false;
     }
-    const s = dueScene(this, this.dockedAt) ?? dueTrafficScene(this, this.dockedAt) ?? dueDeepScene(this, this.dockedAt);
+    const s = dueScene(this, this.dockedAt) ?? dueTrafficScene(this, this.dockedAt) ?? duePowerScene(this, this.dockedAt) ?? dueDeepScene(this, this.dockedAt);
     if (!s) return;
     this.easeTheClock(1);
     if (!this.pendingEvent) this.pendingEvent = s;
@@ -997,7 +1003,7 @@ export class Game {
     this.markets = new Markets(seed);
     this.markets.adjust = (p, gid, t) => this.worldAdjust(p, gid, t);
     this.markets.prosperityOf = (id) => prosperityOf(this, id);
-    this.markets.modifiers = (p, t) => placeMods(this, p, t, marketModifiers(p, t, this.powers));
+    this.markets.modifiers = (p, t) => clauseMods(this, p, t, placeMods(this, p, t, marketModifiers(p, t, this.powers)));
     this.trade = newTrade(this.clock.t);
     this.rival = newRival(this.rng);
     this.rival.lastNews = this.clock.t;
@@ -1094,7 +1100,8 @@ export class Game {
     this.chartedThisPassage = 0;
     this.correctedNm = 0;
     this.captain.points += points;
-    this.noteDeed('patent.completed', { target: 'portugal', magnitude: 0.8, note: `"${patent.title}" discharged and entered at the Casa.` });
+    this.noteDeed('patent.completed', { target: patent.patron && patent.patron !== 'crown' ? patent.patron : 'portugal', magnitude: 0.8, note: `"${patent.title}" discharged and entered at the Casa.` });
+    orderDischarged(this, patent);
 
     this.logEvent('crown',
       `"${patent.title}" is discharged and entered at the Casa. ${points} points to spend on `
@@ -1243,7 +1250,9 @@ export class Game {
     if (this.can('ownAccount')) limit += 400 + this.crown.lifetimeStanding * 3;
     // A Deep port's Patron lets a note run while she lies there (places/).
     limit += placeCredit(this);
-    return Math.round(limit);
+    // The Rua Nova, when it is the patron of record (or has fallen on its clients).
+    limit += patronCredit(this);
+    return Math.max(0, Math.round(limit));
   }
 
   get creditFree(): number {
@@ -1755,7 +1764,7 @@ export class Game {
   static readonly PILOT_REACH_NM = 120;
 
   approachablePorts(): { def: PortDef; distNm: number }[] {
-    return portsNear(this.ship.state.pos, 8).map((p) => ({ def: p.def, distNm: p.distNm }));
+    return portsNear(this.ship.state.pos, entryRadiusNm(this)).map((p) => ({ def: p.def, distNm: p.distNm }));
   }
 
   /**
@@ -2256,7 +2265,10 @@ export class Game {
       return `Leave to trade, given at the mouth of a gun${extra.length ? `, with ${extra.join(' and ')}` : ''}. It will be remembered.`;
     }
     if (!verdict.accepted) {
-      if (pol) this.adjustPolity(pol.id, { trust: 0.02, interest: -0.05 }, '');
+      if (pol) {
+        this.adjustPolity(pol.id, { trust: 0.02, interest: -0.05 }, '');
+        for (const ask of deal.asks) if (isClauseAsk(ask)) refuseClause(this, pol.id, ask);
+      }
       return 'Nothing was agreed. You were heard, and sent back to your ship.';
     }
     const now = this.clock.t;
@@ -2264,10 +2276,11 @@ export class Game {
       if (ask === 'trade') { for (const port of pol?.ports ?? [def.id]) this.relationsFor(port).mayTrade = true; lines.push('leave to trade'); }
       if (ask === 'factory') { rel.factory = true; rel.mayTrade = true; this.crown.record('port', `Feitoria at ${def.name}`, this.nav.estimated, 45, now); lines.push('ground for a House'); }
       if (ask === 'exclusive') { for (const port of pol?.ports ?? [def.id]) this.relationsFor(port).exclusive = true; lines.push('exclusive terms'); }
-      if (ask === 'pilot') {
-        const a = anchorageOf(def);
-        this.soundedGround.push({ lat: a.lat, lon: a.lon, nm: 200, source: `the pilots of ${def.name}` });
-        lines.push('a pilot and his soundings');
+      if (pol && isClauseAsk(ask)) {
+        // A clause: named, for a term of years, priced in gifts (identity/clauses).
+        const how = judgeClause(pol, ask, deal.giftValue);
+        if (how === 'refused') { refuseClause(this, pol.id, ask); lines.push(`${CLAUSES[ask].name.toLowerCase()} refused`); }
+        else { grantClause(this, pol.id, ask, how); lines.push(clauseLine(this, pol.id, ask, how).replace(`${pol.name} `, '')); }
       }
       if (ask === 'padrao') {
         rel.padrao = true;
@@ -2935,6 +2948,8 @@ export class Game {
     wage *= 1 - clamp(rel.regard, -1, 1) * 0.18;
     // And what it is known she is going to do with them.
     if (Math.abs(def.lat) < 15 && def.people === 'portuguese') wage *= 1.4;
+    // The court's men at the court's rate (a clause), and what a hand makes of the names he has heard.
+    wage *= menWageMult(this, def.id) * titleWageMult(this);
     return Math.max(4, Math.round(wage));
   }
 
@@ -4976,6 +4991,7 @@ export class Game {
     this.nextLineId = old.nextLineId;
     // The Ledger is inherited, faded: what is older than eight years loses weight, and past sixteen is gone.
     this.ledger = decayedLedger(old.ledger, old.clock.t);
+    inheritIdentity(this, old);
     this.logEvent('note',
       `You are the ${['', 'first', 'second', 'third', 'fourth', 'fifth', 'sixth'][this.generation] ?? `${this.generation}th`} `
       + `of your line. Your ${old.generation === 1 ? 'father' : 'predecessor'} left ${purse} cruzados, a name worth ${name} at court, `
@@ -5859,6 +5875,8 @@ export class Game {
   commissionBlocked(d: ShipDesign): string | null {
     if (this.dockedAt !== 'lisboa') return 'Ships are laid down at the Ribeira das Naus, in Lisbon.';
     if (this.building) return 'There is already a ship of yours on the stocks.';
+    const lines = designBlocked(this);
+    if (lines) return lines;
     if (!d.name.trim()) return 'She wants a name before the keel is laid.';
     const h = hullFromDesign(d, 'draught');
     if (h.tons > tonsAllowed(this.chronicle.act)) {
@@ -7670,12 +7688,15 @@ export class Game {
   year: YearState = newYear();
   /** The Ledger (B1): every consequential act, tagged. Append-only. See ledger/. */
   ledger: LedgerEntry[] = [];
+  /** Who the captain is (D5): name, patron of record, titles, Calling. Clauses live in the Ledger. See identity/. */
+  identity: IdentityState = newIdentity();
   // --- Port dues, the weigh-house and the other house (D1, D2) ---------------
 
   /** Port dues and presents for the call (economy/dues): charged on arrival, never more than the purse holds. */
   private payPortDues(def: PortDef): void {
     const mods = this.markets.modifiers?.(def.id, this.clock.t);
     const d = duesFor(def, this.ship.baseHull.tons, mods?.duesMult ?? 1, this.relationsFor(def.id).regard);
+    if (presentWaived(this, def.id)) d.present = 0;
     const due = d.dues + d.present;
     if (due <= 0) return;
     const paid = Math.min(due, Math.max(0, Math.floor(this.crown.gold)));
@@ -8020,6 +8041,7 @@ export class Game {
     this.anchored = true;
     const near = this.approachablePorts();
     if (near.length > 0) {
+      noteLeadEntry(this, near[0].distNm);
       this.enterPort(near[0].def);
       return 'Anchor let go.';
     }
@@ -8069,7 +8091,7 @@ export class Game {
   canFoundFactory(def: PortDef): string | null {
     if (def.id === 'lisboa') return 'Lisbon is home. Your Lines run from here without a House.';
     const rel = this.relationsFor(def.id);
-    if (def.people !== 'portuguese' && !rel.mayTrade && !rel.factory) {
+    if (def.people !== 'portuguese' && !rel.mayTrade && !rel.factory && !canFoundWithoutCourt(this)) {
       return 'Nobody here will deal with a House of yours until you have leave to trade.';
     }
     if (this.feitorias.some((f) => f.portId === def.id && !f.lost)) return 'There is one here already.';
@@ -9668,6 +9690,7 @@ export class Game {
       crew: this.crew,
       hands: this.hands,
       casa: this.casa,
+      identity: this.identity,
       captain: this.captain,
       bonds: [...this.bonds],
       company: this.company,
@@ -9932,6 +9955,9 @@ export class Game {
     g.soundedGround = d.soundedGround ?? [];
     g.quests = d.quests ?? [];
     g.diplomacy = d.diplomacy ?? newDiplomacy();
+    // Identity is additive: a save from before it has no patron, no titles and no Calling, and a name from its origin.
+    g.identity = migrateIdentity(d.identity);
+    ensureName(g);
     g.fleet = d.fleet ? PlayerFleet.deserialize(d.fleet as FleetSave) : null;
     g.imperial = (d.imperial as ImperialState | null) ?? null;
     // Careers from before the set pieces have no marks, Book or runs yet.

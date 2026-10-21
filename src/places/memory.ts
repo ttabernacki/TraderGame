@@ -7,7 +7,7 @@ import { callbackAt } from '../progression/quests';
 import type { Game } from '../game/state';
 import { activeEntries } from './calendar';
 import { deepPort } from './deep';
-import { patronArrival, patronOf, perkOf } from './patron';
+import { bestPerk, patronArrival, patronsIn } from './patron';
 import type { DeepPort } from './types';
 
 /**
@@ -88,8 +88,10 @@ export function placeCallbackAt(g: Game, port: string): string | null {
   if (quest) return quest;
   const deep = deepPort(port);
   if (deep) {
-    const said = patronArrival(g, deep);
-    if (said) return said;
+    for (const who of patronsIn(deep)) {
+      const said = patronArrival(g, deep, who);
+      if (said) return said;
+    }
   }
   const seen = g.powers.seen;
   const entries = hereEntries(g, port).filter((e) => e.t <= g.clock.t - DAY).sort((a, b) => a.t - b.t);
@@ -163,11 +165,15 @@ export function placeEffects(g: Game, port: string, t: number): PlaceMods {
   }
 
   // The Patron's goodwill.
-  const v = patronOf(g, deep);
-  const gold = perkOf(v, 'price');
-  if (gold?.value) {
-    out.price.ouro = (out.price.ouro ?? 1) * gold.value;
-    out.reasons.push(`${deep.patron.name}: ${gold.text}`);
+  const gold = bestPerk(g, deep, 'price');
+  if (gold?.perk.value) {
+    out.price.ouro = (out.price.ouro ?? 1) * gold.perk.value;
+    out.reasons.push(`${gold.by.name}: ${gold.perk.text}`);
+  }
+  const lighter = bestPerk(g, deep, 'dues');
+  if (lighter?.perk.value) {
+    out.dues *= lighter.perk.value;
+    out.reasons.push(`${lighter.by.name}: ${lighter.perk.text}`);
   }
   return out;
 }
@@ -197,12 +203,12 @@ export function placeMods(g: Game, port: string, t: number, base: MarketMods): M
 export function placeCredit(g: Game): number {
   const deep = deepPort(g.dockedAt);
   if (!deep) return 0;
-  return perkOf(patronOf(g, deep), 'credit')?.value ?? 0;
+  return bestPerk(g, deep, 'credit')?.perk.value ?? 0;
 }
 
 /** The multiplier on the founding cost of a House at a port (1 where nobody vouches for the ground). */
 export function placeHouseFactor(g: Game, port: string | null | undefined): number {
   const deep = deepPort(port);
   if (!deep) return 1;
-  return perkOf(patronOf(g, deep), 'house')?.value ?? 1;
+  return bestPerk(g, deep, 'house')?.perk.value ?? 1;
 }

@@ -1,8 +1,10 @@
+import { TITLE_BY_ID } from '../identity/titles';
 import type { Game, GameMode } from '../game/state';
 import { entriesOf } from '../diplomacy/book';
 import { POLITY_BY_ID } from '../diplomacy/polities';
 import { KIND_ORDER, KIND_TITLE, byKind, knownFacts, type FactKind } from '../knowledge/information';
 import { life } from '../ledger/life';
+import { ruleReading } from '../world/powers/rule';
 import { button, card, clear, el, fold } from './dom';
 import { factCard } from './factCard';
 import { fameBlock, fameLines } from './fameMap';
@@ -174,6 +176,11 @@ export class KnowledgeView {
   }
 
   private renderLife(host: HTMLElement, g: Game): void {
+    // The Rule, in one plain line: what stage it is at and what the captain did to put it there (world/powers/rule).
+    if (g.chronicle.act >= 4 || g.powers.fronts.rule.stage > 1) {
+      host.append(el('p', { class: 'quote', 'data-rule': 'line' }, ruleReading(g.powers, g.ledger).line));
+    }
+    if (g.identity.name) host.append(el('p', { class: 'life-name' }, `The book of ${g.identity.name}${g.identity.worn.length ? `, ${g.identity.worn.map((id) => TITLE_BY_ID.get(id)?.english).filter(Boolean).join(', ')}` : ''}.`));
     const chapters = life(g.ledger);
     if (chapters.length === 0) {
       host.append(el('p', { class: 'quote' },

@@ -2,6 +2,7 @@ import { clamp, smoothstep } from '../core/math';
 import { makeOfficer, type Officer } from '../crew/crew';
 import { aboardHands, shiftAll, type Hand, type Temper } from '../crew/hands';
 import type { Game } from '../game/state';
+import { secondSeat } from '../identity/calling';
 import { monsoonGrip } from '../navigation/monsoon';
 import { ARC_BY_ID, BONDS, dueBeat, type BondId } from '../progression/arcs';
 import { PORT_BY_ID } from '../world/ports';
@@ -328,7 +329,10 @@ export function officerFromCandidate(g: Game, c: Candidate): Officer {
     giveLinguaArc(g, o);
   }
   g.company.hired.push(c.id);
-  g.crew.officers = g.crew.officers.filter((x) => x.role !== c.role || !x.alive || c.id === 'hamisi' || c.second || x.arc === 'hamisi');
+  // A Master keeps a second man in the seat (identity/calling).
+  const second = c.second || secondSeat(g, c.role);
+  if (second && !c.second) g.identity.seats += 1;
+  g.crew.officers = g.crew.officers.filter((x) => x.role !== c.role || !x.alive || c.id === 'hamisi' || second || x.arc === 'hamisi');
   g.crew.officers.push(o);
   return o;
 }

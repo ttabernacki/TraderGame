@@ -19,7 +19,8 @@ export function noteDeparture(g: Game): void {
   g.legStart = { from: g.dockedAt, t: g.clock.t, deaths: g.crew.deaths };
   // A voyage is what lies between sailing from Lisbon and coming home to it.
   if (g.dockedAt === 'lisboa') {
-    g.noteDeed('voyage.begun', { place: 'lisboa', note: `Sailed from Lisbon in ${g.ship.name}.` });
+    g.identity.patronVoyage += 1;
+    g.noteDeed('voyage.begun', { place: 'lisboa', note: `Sailed from Lisbon in ${g.ship.name}${g.identity.name ? `, under ${g.identity.name}` : ''}.` });
   }
 }
 

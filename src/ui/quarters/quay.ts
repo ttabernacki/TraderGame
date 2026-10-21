@@ -1,8 +1,8 @@
 import { people } from '../../world/peoples';
 import type { Game } from '../../game/state';
-import { dismissHomecoming, pendingHomecoming, quartersView } from '../../game/year';
-import { deepPort } from '../../places';
-import { button, card, el, fold, foldCard, kv } from '../dom';
+import { dismissHomecoming, pendingHomecoming } from '../../game/year';
+import { deepPort, homecomingWord } from '../../places';
+import { button, card, el, fold } from '../dom';
 import type { Ctx } from './ctx';
 import { deepPlaceCard, memoryCard, patronCard, stopCard } from './place';
 import { verb } from './verb';
@@ -32,21 +32,14 @@ export function quaySection(ctx: Ctx, host: HTMLElement, g: Game): void {
   const left = el('div', {});
   const right = el('div', {});
 
-  // The Year (game/year.ts): the homecoming card, once, then the quarters panel.
+  // The Year (game/year.ts): the homecoming card, once, with the Lisbon patrons' answers to it. The quarters panel is the Fort & Court's.
   const home = pendingHomecoming(g);
   if (home) {
     left.append(verb('town.homecoming', card(`Home from the sea: year ${home.year}`,
       ...home.lines.map((l, i) => el('p', i === 0 ? { class: 'epilogue-lede' } : {}, l)),
+      ...homecomingWord(g, home).map((l) => el('p', { class: 'flavour' }, l)),
       el('div', { class: 'row' }, button('Lay it by', () => { dismissHomecoming(g); ctx.render(); }, { primary: true })))));
   }
-  const qv = quartersView(g);
-  if (qv) {
-    left.append(verb('town.year-quarters', foldCard(card(qv.title,
-      el('p', {}, qv.season),
-      ...qv.items.map((i) => kv(i.label, i.value)),
-      el('p', { class: 'flavour' }, qv.consequence + ' Leaving early is always allowed.')), qv.phase === 'quarters' ? '' : 'The season is open.', qv.phase === 'quarters')));
-  }
-
   // Coming among a people nobody from Europe has met is the single most dramatic thing in the game.
   if (unknown) {
     left.append(verb('town.first-contact', el('div', { class: 'first-contact' },

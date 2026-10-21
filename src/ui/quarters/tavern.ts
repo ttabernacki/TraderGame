@@ -1,7 +1,7 @@
 import { regionOf } from '../../economy/trade';
 import type { Game } from '../../game/state';
 import type { Fact } from '../../knowledge/information';
-import { askHisPeople, canAskHisPeople, deepPort, patronOf, perkOf } from '../../places';
+import { askHisPeople, canAskHisPeople, deepPort, patronViews, perkOf } from '../../places';
 import { FRONTS } from '../../world/powers';
 import { arriveAt, rumourFacts } from '../../world/powers';
 import { button, card, el, fold } from '../dom';
@@ -51,20 +51,26 @@ export function boardSection(ctx: Ctx, host: HTMLElement, g: Game): void {
       ctx.render();
     }, { disabled: g.crown.gold < ROUND }))));
 
-  // The Patron's word, where there is one.
+  // The Patron's word, where there is one: each patron of the port reports the Front he knows best.
   if (deep) {
-    const v = patronOf(g, deep);
-    const word = perkOf(v, 'rumour');
-    if (word) {
-      const gold = g.powers.fronts.gold;
-      const stage = FRONTS.gold.stages[gold.stage - 1];
+    const views = patronViews(g, deep);
+    const speaking = views.filter((v) => perkOf(v, 'rumour'));
+    if (speaking.length === 0) {
+      host.append(verb('tavern.patron-word', card(`${deep.patron.name}’s word`,
+        el('p', { class: 'flavour' }, `${deep.patron.name} says nothing to a stranger. That changes when he has weighed you.`))));
+    }
+    speaking.forEach((v, i) => {
+      const p = v.patron;
+      const fid = p.front ?? 'gold';
+      const front = g.powers.fronts[fid];
+      const stage = FRONTS[fid].stages[front.stage - 1];
       const fact: Fact = {
-        id: `patron:${deep.port}`, kind: 'politics',
-        claim: `${FRONTS.gold.name}: ${stage.name}. ${stage.line}`,
-        source: `${deep.patron.name}, a ${deep.patron.title} at ${def.name}`,
+        id: `patron:${deep.port}:${p.id}`, kind: 'politics',
+        claim: `${FRONTS[fid].name}: ${stage.name}. ${stage.line}`,
+        source: `${p.name}, ${p.title}, at ${def.name}`,
         age: 0, confidence: 0.8, place: def.id, ref: { store: 'chart', port: def.id },
       };
-      host.append(verb('tavern.patron-word', card(`${deep.patron.name}’s word`,
+      const card1 = card(`${p.name}’s word`,
         ...v.unlocked.filter((k) => k.kind === 'rumour').map((k) => el('p', { class: 'flavour' }, k.text)),
         factCard(g, fact, hooks),
         v.unlocked.some((k) => k.id === 'second')
@@ -72,12 +78,9 @@ export function boardSection(ctx: Ctx, host: HTMLElement, g: Game): void {
             ctx.say(askHisPeople(g, deep, regionOf));
             ctx.render();
           }, { disabled: !canAskHisPeople(g, deep), title: 'A free second opinion on every tale of this coast you have heard' })
-          : null,
-      )));
-    } else {
-      host.append(verb('tavern.patron-word', card(`${deep.patron.name}’s word`,
-        el('p', { class: 'flavour' }, `${deep.patron.name} says nothing to a stranger. That changes when he has weighed you.`))));
-    }
+          : null);
+      host.append(i === 0 ? verb('tavern.patron-word', card1) : card1);
+    });
   }
 
   const heard = g.openLeads;

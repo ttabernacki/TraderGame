@@ -43,4 +43,29 @@ export const POWERS_TAGS = {
     did: '{n} of those carried died on the passage; they are in the muster.',
     tone: -0.5, readers: ['book', 'epilogue.muster'], planned: ['powers', 'company'],
   }),
+  'pass.granted': d({
+    doc: 'Wrote a pass for a master who asked for one, or honoured one he held: the cartaz as a licence of friends.',
+    did: 'A master sails with your letter in his chest, and the ships of {target} have heard of it.',
+    tone: 0.5, readers: ['book'], planned: ['powers', 'titles'],
+  }),
+  'pass.refused': d({
+    doc: 'Would not write a pass for a master who asked, and sent him off to be stopped by the next ship.',
+    did: 'A master goes on without a letter. The next of the King’s ships will stop him.',
+    tone: -0.4, readers: ['book'], planned: ['powers', 'titles'],
+  }),
+  'compact.made': d({
+    doc: 'Stood beside a harbour officer and kept a local list of passes honoured in the King’s name, once, at real cost.',
+    did: 'At {target} the Rule is a list of friends, written in the sultan’s own hand, and the coast knows who agreed to it.',
+    tone: 0.9, readers: ['book'], planned: ['powers', 'titles', 'epilogue'],
+  }),
+  'ally.sworn': d({
+    doc: 'Gave a court his word that the ship would stand with it against its enemy.',
+    did: '{target} has your word, and its enemies have heard that you gave it.',
+    tone: 0.2, readers: ['book'], planned: ['powers', 'company'],
+  }),
+  'favour.done': d({
+    doc: 'Did a court a favour it asked: a letter carried, a man brought, a message kept.',
+    did: '{target} marks that the favour was done.',
+    tone: 0.5, readers: ['book'], planned: ['powers', 'company'],
+  }),
 };

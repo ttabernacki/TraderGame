@@ -37,7 +37,7 @@ import {
 const LEGACY_KEY = 'carreira-da-india:save';
 
 export interface UiCallbacks {
-  onNewGame: (difficulty: Difficulty, origin: OriginId, heirOf?: Game) => void;
+  onNewGame: (difficulty: Difficulty, origin: OriginId, heirOf?: Game, name?: string) => void;
   onContinue: () => void;
   /** Resume a voyage that has already been decoded to JSON. */
   onResume: (json: string) => void;

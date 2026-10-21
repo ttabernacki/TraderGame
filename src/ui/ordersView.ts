@@ -16,11 +16,12 @@ import { good } from '../economy/goods';
 import { FAIRS, bookTotals, currentBook, sheetAgeWord } from '../economy/trade';
 import { formatDateAt } from '../core/clock';
 import { POLITY_BY_ID, TEMPER_WORD } from '../diplomacy/polities';
+import { captainCards, clauseCard } from './identityView';
 import { measureWord, rulerName, standingWord } from '../diplomacy/courts';
 import { house, kindName } from '../economy/finance';
 import { portDef } from '../world/ports';
 
-type Tab = 'chronicle' | 'missions' | 'trade' | 'courts' | 'network' | 'wardroom';
+type Tab = 'chronicle' | 'missions' | 'trade' | 'courts' | 'network' | 'wardroom' | 'captain';
 
 /**
  * The captain's orders.
@@ -73,10 +74,11 @@ export class OrdersView {
       courts: g.diplomacy.agreements.filter((a) => a.status === 'open').length,
       network: g.liveFactories.length + g.lines.filter((l) => !l.lost).length,
       wardroom: g.crew.officers.filter((o) => o.alive && !o.ashoreAt).length,
+      captain: 0,
     };
     const names: Record<Tab, string> = {
       chronicle: 'Chronicle', missions: 'Missions', trade: 'Trade', courts: 'Courts',
-      network: 'Houses & Lines', wardroom: 'Wardroom',
+      network: 'Houses & Lines', wardroom: 'Wardroom', captain: 'Captain',
     };
 
     const tabs = (Object.keys(names) as Tab[])
@@ -105,7 +107,8 @@ export class OrdersView {
       this.renderMilestones(g);
     }
     else if (this.tab === 'trade') this.renderTrade(g);
-    else if (this.tab === 'courts') this.renderCourts(g);
+    else if (this.tab === 'courts') { this.body.append(clauseCard(g, () => this.render(), (t, grave) => g.pushAlert(t, grave ? 'warning' : 'note'))); this.renderCourts(g); }
+    else if (this.tab === 'captain') for (const c of captainCards(g, () => this.render(), (t, grave) => g.pushAlert(t, grave ? 'warning' : 'note'))) this.body.append(c);
     else if (this.tab === 'network') for (const c of networkCards(g, () => this.render(), (t) => g.pushAlert(t, 'note'))) this.body.append(c);
     else this.renderWardroom(g);
   }

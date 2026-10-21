@@ -1,6 +1,9 @@
 import { clamp } from '../core/math';
-import type { SeaChoice, SeaEvent } from '../game/seaEvents';
-import type { Game } from '../game/state';
+import { mark, scene } from './kit';
+import { ARGUIM } from './ports/arguim';
+import { CALECUTE } from './ports/calecute';
+import { LISBOA } from './ports/lisboa';
+import { MELINDE } from './ports/melinde';
 import type { CalendarEntry, DeepPort, MemoryDef, PatronDef } from './types';
 
 /**
@@ -24,7 +27,6 @@ import type { CalendarEntry, DeepPort, MemoryDef, PatronDef } from './types';
  *               the factor, the name of the house, the year of anything but the foundation.
  */
 
-const mark = (g: Game, id: string): void => { g.powers.seen[`place:${id}`] = g.clock.t; delete g.powers.seen[`fired:place:${id}`]; };
 
 // ---------------------------------------------------------------------------------------------
 // The Patron
@@ -158,9 +160,6 @@ const MINA_MEMORY: MemoryDef = {
 // The arc: Kwesi's house and the Castle's clerk. Four beats; the first two when he trusts you, the last two when he calls you a partner.
 // Nothing here asks the captain to come back for a clue: each beat is offered on a call at Mina, nothing is lost by missing it, and the
 // reward of the third is a letter that is carried FORWARD along the road, to Acará and Ugoton.
-
-const scene = (id: string, title: string, text: string, choices: SeaChoice[]): SeaEvent =>
-  ({ id: `place:${id}`, title, text, severity: 'note', choices, council: false });
 
 const ARC1 = 'mina-arc-1';
 const ARC2 = 'mina-arc-2';
@@ -330,8 +329,9 @@ export const MINA: DeepPort = {
   ],
 };
 
-/** The Deep ports, by port id. D6 adds to this. */
-export const DEEP_PORTS: Record<string, DeepPort> = { mina: MINA };
+/** The Deep ports, by port id (D6 added Lisboa, Arguim, Melinde and Calecute; each lives in `places/ports/`). */
+export const DEEP_PORTS: Record<string, DeepPort> = { lisboa: LISBOA, arguim: ARGUIM, mina: MINA, melinde: MELINDE, calecute: CALECUTE };
+export { ARGUIM, CALECUTE, LISBOA, MELINDE };
 
 export const deepPort = (port: string | null | undefined): DeepPort | null => (port ? DEEP_PORTS[port] ?? null : null);
 

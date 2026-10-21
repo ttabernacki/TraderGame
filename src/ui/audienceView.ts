@@ -3,13 +3,14 @@ import { good, GIFT_GOODS } from '../economy/goods';
 import { people } from '../world/peoples';
 import { hasInterpreterFor } from '../crew/crew';
 import {
-  ASK_LABEL, evaluate, expectedGift, measureWord, offerLabel, rulerName, standingWord,
+  ASK_LABEL, CLAUSE_ASKS, evaluate, isClauseAsk, expectedGift, measureWord, offerLabel, rulerName, standingWord,
   type Ask, type Deal, type Offer, type PolityState, type Verdict,
 } from '../diplomacy/courts';
 import { offered, startPiece } from '../diplomacy/table';
 import type { Outcome, PieceRun } from '../diplomacy/piece';
 import { pieceCard } from './pieceView';
 import { echoFor } from '../diplomacy/marks';
+import { CLAUSES, clausePrice, hasClause, type ClauseKind } from '../identity/clauses';
 import { POLITY_BY_ID, TEMPER_WORD, polityOfPort, type PolityDef } from '../diplomacy/polities';
 import type { Game } from '../game/state';
 import { button, card, clear, el, kv, meter } from './dom';
@@ -352,7 +353,7 @@ export class AudienceView {
       ['factory', !rel.factory, complex ? null : 'Needs an interpreter'],
       ['exclusive', !rel.exclusive, complex ? null : 'Needs an interpreter'],
       ['padrao', !rel.padrao, null],
-      ['pilot', true, null],
+      ...(CLAUSE_ASKS.map((k): [Ask, boolean, string | null] => [k, !hasClause(g, pol.id, k as ClauseKind), k === 'fortress' || k === 'cartaz' ? (complex ? null : 'Needs an interpreter') : null])),
     ];
     const offers: [Offer, boolean, string | null][] = [
       ['return', true, null],
@@ -372,7 +373,7 @@ export class AudienceView {
       el('div', { class: 'terms-head' }, 'What you ask'),
       ...asks.filter(([, show]) => show).map(([a, , why]) => el('label', { class: `term${why ? ' off' : ''}` },
         el('input', { type: 'checkbox', checked: this.deal.asks.includes(a), disabled: !!why, onchange: () => toggle(this.deal.asks, a) }),
-        el('span', {}, ASK_LABEL[a]), why ? el('em', {}, why) : null)),
+        el('span', {}, isClauseAsk(a) ? `${ASK_LABEL[a]} \u2014 ${clausePrice(pol, a)} cruzados in gifts, ${CLAUSES[a].years} years` : ASK_LABEL[a]), why ? el('em', {}, why) : null)),
       el('div', { class: 'terms-head' }, 'What you offer'),
       ...offers.filter(([, show]) => show).map(([o, , why]) => el('label', { class: `term${why ? ' off' : ''}` },
         el('input', { type: 'checkbox', checked: this.deal.offers.includes(o), disabled: !!why, onchange: () => toggle(this.deal.offers, o) }),

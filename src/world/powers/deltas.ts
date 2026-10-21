@@ -26,7 +26,11 @@ export type ReaderId =
   | 'modifiers.dues'    // marketModifiers: a Power's attitude becomes dues at its ports
   | 'moves.kongo'       // the Kongo tick: attitude, balance and the Traffic's stage decide its moves
   | 'moves.gold'        // the Gold tick: strain at the fort, fever, the Akan's patience
-  | 'scenes.traffic';   // trafficScenes: which scenes are offered, and what they say
+  | 'scenes.traffic'   // trafficScenes: which scenes are offered, and what they say
+  | 'moves.swahili'    // the Swahili tick: Kilwa, Mombaça and Melinde read attitude, relations and the Rule
+  | 'moves.malabar'    // the Malabar tick: Calicut, Cochim and Gujarat
+  | 'moves.crescent'   // the Mamluk tick: notes, convoys, the league, read from the Crescent's stage
+  | 'scenes.powers';   // powerScenes: the courts of the Swahili coast and Malabar, and the Rule's evaluation
 
 export const READERS: Record<ReaderId, string> = {
   'modifiers.stage': 'A Front’s stage turns on its stage effects in marketModifiers (world/powers/modifiers.ts).',
@@ -34,6 +38,10 @@ export const READERS: Record<ReaderId, string> = {
   'moves.kongo': 'The Kongo Power’s monthly move reads its attitude, its balance and the Traffic (world/powers/kongo.ts).',
   'moves.gold': 'The Gold tick reads the Gold clock for strain and fever at the fort (world/powers/gold.ts).',
   'scenes.traffic': 'The Traffic scenes are offered, and worded, from the Front and the Ledger (progression/trafficScenes.ts).',
+  'moves.swahili': 'Kilwa, Mombaça and Melinde decide their monthly moves from attitude, relations and the Rule (world/powers/swahili.ts).',
+  'moves.malabar': 'Calicut, Cochim and Gujarat decide their moves from attitude, relations and the Crescent (world/powers/malabar.ts).',
+  'moves.crescent': 'The Mamluk Power sends notes, convoys and a league as the Crescent rises (world/powers/crescent.ts).',
+  'scenes.powers': 'The Swahili and Malabar scenes and the Rule’s reading of the captain are offered and worded from these (progression/powerScenes.ts, world/powers/rule.ts).',
 };
 
 export interface FrontRow {
@@ -59,6 +67,8 @@ const F = (
 const GOLD_COAST = ['mina', 'axim', 'acara'];
 const TRAFFIC_PORTS = ['arguim', 'mina', 'mpinda', 'luanda', 'benguela', 'sao-tome-porto', 'ugoton', 'portudal'];
 const CRESCENT_POLITIES = ['calicut', 'gujarat', 'aden', 'hormuz', 'kilwa', 'mombasa', 'malindi', 'cochin', 'kolathiri', 'mogadishu', 'mahra'];
+/** Where the captain's conduct in Act IV sets the Rule (BUILD_PLAN D4): Calecute and Kilwa. */
+export const RULE_KEY_PORTS = ['calecute', 'quiloa'];
 const RULE_WATERS = ['kilwa', 'mombasa', 'malindi', 'calicut', 'cochin', 'kolathiri', 'gujarat', 'aden', 'hormuz'];
 
 export const FRONT_DELTAS: FrontRow[] = [
@@ -119,6 +129,22 @@ export const FRONT_DELTAS: FrontRow[] = [
   F('ship.repulsed', 'rule', 0.06, 'A boarding that failed hardens the next.', 'modifiers.stage', { about: RULE_WATERS }),
   F('ship.succoured', 'rule', -0.06, 'Help given to a ship of any flag is a precedent the other way.', 'modifiers.stage', { about: RULE_WATERS }),
   F('ship.abandoned', 'rule', 0.03, 'A ship left in distress: a sea nobody is bound to help in.', 'modifiers.stage', { about: RULE_WATERS }),
+  // The Rule is the captain's own: at Calecute and Kilwa, in Act IV, what he does there counts again over.
+  F('ship.stopped', 'rule', 0.6, 'The Rule is made at Calecute and Kilwa by what is done there: a stop here is the regime.', 'scenes.powers', { where: RULE_KEY_PORTS, about: RULE_KEY_PORTS }),
+  F('ship.spared', 'rule', -0.4, 'A ship let go at Calecute or Kilwa is a precedent the other way.', 'scenes.powers', { where: RULE_KEY_PORTS, about: RULE_KEY_PORTS }),
+  F('gift.great', 'rule', -0.15, 'A gift praised at Calecute or Kilwa: the court takes the Portuguese for friends, and friends have passes.', 'scenes.powers', { where: RULE_KEY_PORTS, about: RULE_KEY_PORTS }),
+  F('gift.insult', 'rule', 0.15, 'A gift mocked at Calecute or Kilwa: the court takes the Portuguese for strangers to be stopped.', 'scenes.powers', { where: RULE_KEY_PORTS, about: RULE_KEY_PORTS }),
+  F('courtesy.kept', 'rule', -0.1, 'Asked before acting at Calecute or Kilwa: the Rule there is asked for, not imposed.', 'scenes.powers', { where: RULE_KEY_PORTS, about: RULE_KEY_PORTS }),
+  F('courtesy.broken', 'rule', 0.1, 'Stood where a stranger should have bowed at Calecute or Kilwa.', 'scenes.powers', { where: RULE_KEY_PORTS, about: RULE_KEY_PORTS }),
+  F('promise.kept', 'rule', -0.2, 'A word kept at Calecute or Kilwa: a licence of friends is a thing a court will believe.', 'scenes.powers', { where: RULE_KEY_PORTS, about: RULE_KEY_PORTS }),
+  F('promise.broken', 'rule', 0.3, 'A word broken at Calecute or Kilwa: nothing is left but the guns.', 'scenes.powers', { where: RULE_KEY_PORTS, about: RULE_KEY_PORTS }),
+  F('parcel.carried', 'rule', -0.1, 'A merchant’s parcel carried without a question at Calecute or Kilwa: the houses there learn they can deal with the ship.', 'scenes.powers', { where: RULE_KEY_PORTS }),
+  F('parcel.refused', 'rule', 0.1, 'A merchant’s parcel refused at Calecute or Kilwa.', 'scenes.powers', { where: RULE_KEY_PORTS }),
+  F('pass.granted', 'rule', -0.4, 'A pass written for a master who asked for it: friends have passes, and nothing is stopped for lack of one.', 'scenes.powers', { about: RULE_WATERS }),
+  F('pass.granted', 'crescent', -0.05, 'A pass in a dhow master’s chest is a story told in Adem.', 'moves.crescent', { about: CRESCENT_POLITIES }),
+  F('pass.refused', 'rule', 0.3, 'A pass refused: the next ship without one is stopped.', 'scenes.powers', { about: RULE_WATERS }),
+  F('compact.made', 'rule', -1.2, 'A local list of passes honoured in the King’s name: the Rule is a licence here, not a blockade.', 'scenes.powers', { about: ['melinde', 'malindi'] }),
+  F('compact.made', 'crescent', -0.2, 'A friend of Melinde who honours a sultan’s pass is a hard man to write up in Cairo.', 'moves.crescent', { about: ['melinde', 'malindi'] }),
   F('order.breached', 'rule', -0.04, 'An interloper let alone against the letter: the Rule bends where the captain stands.', 'modifiers.stage', { about: RULE_WATERS }),
 
   // --- The Court (home): the throne, the Church, the Rua Nova ------------------------------
@@ -220,6 +246,13 @@ export const ATTITUDES: AttitudeRow[] = [
   A('ship.succoured', 'target', 0.10, 'He got her sailing.'),
   A('ship.abandoned', 'target', -0.04, 'He held his course.', 'modifiers.dues', false),
   A('ship.repulsed', 'target', -0.05, 'Boats beaten back.', 'modifiers.dues', false),
+
+  // The courts of the Indian Ocean (D4)
+  A('ally.sworn', 'target', 0.12, 'He gave his word to stand with them.', 'moves.swahili'),
+  A('favour.done', 'target', 0.10, 'He did what the court asked of him.', 'moves.malabar'),
+  A('pass.granted', 'target', 0.08, 'A master left with a pass in his chest.', 'moves.malabar'),
+  A('pass.refused', 'target', -0.08, 'A master sent off without one.', 'moves.malabar'),
+  A('compact.made', 'target', 0.18, 'He stood beside the harbour-master and kept the list.', 'moves.swahili'),
 
   // The Traffic: these are the sellers’ and buyers’ own views of a hull on their coast, not a verdict
   A('traffic.carried', 'sahel', 0.05, 'A hull that will take what the brokers have; they notice who does.', 'modifiers.dues', false),

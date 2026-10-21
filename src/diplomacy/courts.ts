@@ -8,6 +8,8 @@ import { POLITIES, POLITY_BY_ID, polityOfPort, type Cares, type PolityDef, type 
 import { newMarks, type MarksState } from './marks';
 import { newBook, type BookState } from './book';
 import { newPieces, type PiecesState } from './piece';
+import { CLAUSES, type ClauseKind } from '../identity/clauses';
+import { titleEdge } from '../identity/titles';
 
 /**
  * Where you stand with each state, and what you owe it.
@@ -150,7 +152,7 @@ export function spreadWord(g: Game, from: string, trust: number, respect: number
 // ---------------------------------------------------------------------------
 // Negotiation
 
-export type Ask = 'trade' | 'factory' | 'exclusive' | 'padrao' | 'pilot';
+export type Ask = 'trade' | 'factory' | 'exclusive' | 'padrao' | ClauseKind;
 export type Offer = 'return' | 'deliver' | 'ally' | 'envoy' | 'tribute';
 
 export interface Deal {
@@ -172,7 +174,16 @@ export const ASK_LABEL: Record<Ask, string> = {
   exclusive: 'Trade with Portugal alone',
   padrao: 'Leave to set a padrão',
   pilot: 'A pilot and his soundings',
+  dues: 'Free dues at their quays',
+  berth: 'Berth and watering rights',
+  buyer: 'First call on what they grow',
+  fortress: 'Leave to hold a fortified House',
+  cartaz: 'The Portuguese letter honoured',
+  men: 'Men for hire, as trade',
 };
+/** The clause asks: each is a named grant for a term, priced in gifts (identity/clauses). */
+export const CLAUSE_ASKS: Ask[] = ['dues', 'berth', 'buyer', 'fortress', 'pilot', 'cartaz', 'men'];
+export const isClauseAsk = (a: Ask): a is ClauseKind => a in CLAUSES;
 
 export function offerLabel(def: PolityDef, o: Offer): string {
   switch (o) {
@@ -196,6 +207,12 @@ const ASK_COST: Record<Ask, Partial<Record<Cares, number>>> = {
   exclusive: { trade: -0.4, war: -0.1, custom: -0.05 },
   padrao: { faith: -0.35, custom: -0.25, war: -0.05 },
   pilot: { trade: -0.08, war: -0.05, custom: -0.05 },
+  dues: { trade: -0.3, custom: -0.05, war: -0.05 },
+  berth: { trade: -0.1, war: -0.1, custom: -0.05 },
+  buyer: { trade: -0.25, custom: -0.05 },
+  fortress: { war: -0.3, custom: -0.2, faith: -0.1, trade: -0.05 },
+  cartaz: { custom: -0.1, war: -0.05, trade: 0.05 },
+  men: { trade: -0.05, war: -0.08, custom: -0.05 },
 };
 const OFFER_GAIN: Record<Offer, Partial<Record<Cares, number>>> = {
   return: { trade: 0.28, custom: 0.05 },
@@ -236,7 +253,9 @@ export function evaluate(g: Game, def: PolityDef, s: PolityState, deal: Deal): V
     a -= noise * 0.5;
     return { id: f.id, name: f.name, approval: clamp(a, -1, 1) };
   });
-  let ruler = s.trust * 0.35 + s.respect * 0.3 + s.interest * 0.25 + giftScore + protocol;
+  // What the titles he wears have told this court (identity/titles).
+  const te = g.identity ? titleEdge(g, def.id) : { trust: 0, respect: 0, interest: 0 };
+  let ruler = (s.trust + te.trust) * 0.35 + (s.respect + te.respect) * 0.3 + (s.interest + te.interest) * 0.25 + giftScore + protocol;
   if (t === 'proud') ruler += (deal.giftValue > 0 ? 0.05 : -0.1) + protocol * 0.5;
   if (t === 'mercantile') ruler += deal.offers.includes('return') ? 0.1 : 0;
   if (t === 'warlike') ruler += deal.offers.includes('ally') ? 0.15 : 0;

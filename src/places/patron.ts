@@ -42,8 +42,12 @@ function counts(e: Entry, port: string, anywhere: boolean | undefined): boolean 
   return anywhere ? true : e.place === port || e.target === port;
 }
 
-export function patronOf(g: Game, deep: DeepPort): PatronView {
-  const p = deep.patron;
+/** What to call him in a line: the first name, or the whole of it for a friar. */
+export const shortName = (p: PatronDef): string => (/^(Frei|Dom|Dona) /.test(p.name) ? p.name : p.name.split(' ')[0]);
+
+export const patronsIn = (deep: DeepPort): PatronDef[] => [deep.patron, ...(deep.others ?? [])];
+
+export function patronOf(g: Game, deep: DeepPort, p: PatronDef = deep.patron): PatronView {
   const now = g.clock.t;
   const visits = Math.min(p.visitCap, (g.relationsFor(deep.port).visits ?? 0) * p.visitWeight);
   const reasons: PatronReason[] = [];
@@ -69,6 +73,20 @@ export function patronOf(g: Game, deep: DeepPort): PatronView {
   };
 }
 
+/** Every patron of a port, each with his own track. */
+export const patronViews = (g: Game, deep: DeepPort): PatronView[] => patronsIn(deep).map((p) => patronOf(g, deep, p));
+
+/** The best perk of a kind that any patron of the port gives (the better value wins by stage), with whoever gives it. */
+export function bestPerk(g: Game, deep: DeepPort, kind: Perk['kind']): { perk: Perk; by: PatronDef } | null {
+  let best: { perk: Perk; by: PatronDef } | null = null;
+  for (const v of patronViews(g, deep)) {
+    const k = perkOf(v, kind);
+    if (!k) continue;
+    if (!best || stageIndex(k.stage) > stageIndex(best.perk.stage)) best = { perk: k, by: v.patron };
+  }
+  return best;
+}
+
 /** The best perk of a kind he gives at this regard (credit and price perks supersede one another). */
 export function perkOf(v: PatronView, kind: Perk['kind']): Perk | null {
   const ks = v.unlocked.filter((k) => k.kind === kind);
@@ -78,18 +96,21 @@ export function perkOf(v: PatronView, kind: Perk['kind']): Perk | null {
 
 // -- What he says on seeing you ----------------------------------------------------------
 
-const tKey = (port: string) => `place:patron:${port}:t`;
-const sKey = (port: string) => `place:patron:${port}:stage`;
+// The first patron keeps the keys Mina's saves already have; the others add their id.
+const sfx = (deep: DeepPort, p: PatronDef): string => (p === deep.patron ? '' : `:${p.id}`);
+const tKey = (port: string, x = '') => `place:patron:${port}${x}:t`;
+const sKey = (port: string, x = '') => `place:patron:${port}${x}:stage`;
 
 /**
  * The Patron's word on a call: a reaction to the strongest deed he has heard of since he last spoke, else the
  * line for a new regard, else the plain greeting on the first call. Said once; null when he has nothing new.
  */
-export function patronArrival(g: Game, deep: DeepPort): string | null {
-  const v = patronOf(g, deep);
+export function patronArrival(g: Game, deep: DeepPort, who: PatronDef = deep.patron): string | null {
+  const v = patronOf(g, deep, who);
+  const x = sfx(deep, who);
   const seen = g.powers.seen;
-  const lastT = seen[tKey(deep.port)];
-  const lastStage = seen[sKey(deep.port)];
+  const lastT = seen[tKey(deep.port, x)];
+  const lastStage = seen[sKey(deep.port, x)];
   const first = lastT === undefined;
   // He hears of a deed a day after it is done, not as the pen leaves the page.
   const heardBy = g.clock.t - 86400;
@@ -115,19 +136,22 @@ export function patronArrival(g: Game, deep: DeepPort): string | null {
   if (best && rose && v.patron.rise[v.stage]) said += ` ${v.patron.rise[v.stage]}`;
   if (!said && fell) said = v.patron.greet[v.stage];
 
-  seen[tKey(deep.port)] = heardBy;
-  seen[sKey(deep.port)] = idx;
+  seen[tKey(deep.port, x)] = heardBy;
+  seen[sKey(deep.port, x)] = idx;
   return said;
 }
 
 // -- The perks that are verbs ----------------------------------------------------------
 
+/** The patron whose people can be asked (the first who has the 'second' perk in force). */
+export const whoAsks = (g: Game, deep: DeepPort): PatronDef | null =>
+  patronViews(g, deep).find((v) => v.unlocked.some((k) => k.id === 'second'))?.patron ?? null;
+
 const askKey = (port: string) => `place:asked:${port}`;
 
 /** Whether his people have been asked today (they are asked once a call, not once a day: a day is enough to keep it honest). */
 export function canAskHisPeople(g: Game, deep: DeepPort): boolean {
-  const v = patronOf(g, deep);
-  if (!perkOf(v, 'rumour') || !v.unlocked.some((k) => k.id === 'second')) return false;
+  if (!whoAsks(g, deep)) return false;
   const last = g.powers.seen[askKey(deep.port)];
   return last === undefined || g.clock.t - last >= 14 * 86400;
 }
@@ -138,9 +162,10 @@ export function canAskHisPeople(g: Game, deep: DeepPort): boolean {
  */
 export function askHisPeople(g: Game, deep: DeepPort, regionOf: (p: string) => string): string {
   if (!canAskHisPeople(g, deep)) return 'His people have been asked this fortnight already.';
+  const who = whoAsks(g, deep)!;
   const here = regionOf(deep.port);
   const asked = g.powers.rumours.filter((r) => r.heard && !r.checked && regionOf(r.place) === here);
-  if (asked.length === 0) return `${deep.patron.name} says there is nothing on this coast you have heard that his people have not heard told the same way.`;
+  if (asked.length === 0) return `${who.name} says there is nothing on this coast you have heard that his people have not heard told the same way.`;
   let agree = 0;
   for (const r of asked) {
     r.checked = secondOpinion(r, g.seed);
@@ -150,7 +175,7 @@ export function askHisPeople(g: Game, deep: DeepPort, regionOf: (p: string) => s
   g.powers.seen[askKey(deep.port)] = g.clock.t;
   g.noteDeed('fact.checked', {
     target: deep.port, place: deep.port, magnitude: 0.2,
-    note: `${deep.patron.name}'s people were asked about ${asked.length} tale${asked.length === 1 ? '' : 's'} of this coast; ${agree} told the same way.`,
+    note: `${who.name}'s people were asked about ${asked.length} tale${asked.length === 1 ? '' : 's'} of this coast; ${agree} told the same way.`,
   });
-  return `${deep.patron.name}'s people go over ${asked.length === 1 ? 'the tale' : `${asked.length} tales`}. ${agree} told the same way at their end, and ${asked.length - agree} not.`;
+  return `${who.name}'s people go over ${asked.length === 1 ? 'the tale' : `${asked.length} tales`}. ${agree} told the same way at their end, and ${asked.length - agree} not.`;
 }

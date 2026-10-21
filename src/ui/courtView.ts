@@ -3,6 +3,8 @@ import { commissionPoints, monarchAt, nextTitle, type Patent } from '../progress
 import { rivalStanding } from '../progression/rival';
 import type { Game } from '../game/state';
 import { append, button, card, clear, el, kv, meter } from './dom';
+import { callingPickCard, patronCard } from './identityView';
+import { orderTaken } from '../identity';
 
 /** The court at Lisbon: report the voyage, collect what you are owed, take the next commission. */
 export class CourtView {
@@ -99,6 +101,13 @@ export class CourtView {
       ));
     }
 
+    // --- Who you sail for, and the Calling at the end of the first act ------
+    const say = (t: string, grave?: boolean) => g.pushAlert(t, grave ? 'warning' : 'note');
+    const again = () => { this.offers = g.crown.patent ? [] : g.commissionOffers(); this.render(); };
+    const pickCalling = callingPickCard(g, again, say);
+    if (pickCalling) right.append(pickCalling);
+    if (!g.crown.patent) right.append(patronCard(g, again, say));
+
     // --- Reporting ---------------------------------------------------------
     const unreported = g.crown.unreportedValue();
     const patent = g.crown.patent;
@@ -179,7 +188,7 @@ export class CourtView {
     // --- Current commission ------------------------------------------------
     if (patent) {
       right.append(card('Your commission',
-        el('div', { style: { fontSize: '16px', marginBottom: '7px' } }, patent.title),
+        el('div', { style: { fontSize: '16px', marginBottom: '7px' } }, patent.title, patent.patron && patent.patron !== 'crown' ? ` — ${patent.monarch}` : ''),
         el('p', { class: 'quote' }, patent.narrative),
         el('ul', { class: 'list' }, ...patent.objectives.map((o) => el('li', {},
           el('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '10px' } },
@@ -235,10 +244,11 @@ export class CourtView {
               + `${commissionPoints(p.standingReward)} skill points`),
             button('Take it', () => {
               const stones = g.crown.accept(p, g.clock.t);
+              orderTaken(g, p);
               g.layCourseForCommission();
               g.crown.hasKingsLetter = true;
               g.logEvent('crown',
-                `Received the King's commission: "${p.title}". ${p.advance} cruzados advanced, and a sealed letter for any Christian prince who may be found.`, true);
+                p.patron && p.patron !== 'crown' ? `Took an order from ${p.monarch}: "${p.title}". ${p.advance} cruzados advanced; ${p.gross ? p.gross - p.reward : 0} will stay with the patron when it is discharged.` : `Received the King's commission: "${p.title}". ${p.advance} cruzados advanced, and a sealed letter for any Christian prince who may be found.`, true);
               // A commission that wants pillars is issued with the pillars. See
               // Crown.accept: a captain told to raise them on his first voyage
               // has no way of knowing he was supposed to have bought them, and
